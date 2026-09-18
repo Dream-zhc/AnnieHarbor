@@ -1,7 +1,7 @@
-# Internal runtime config only. robot_id/source binding仍不是WebSocket wire字段。
+# 当前 MIC_AUDIO 无帧内设备身份；Phase 2真实Gateway用 room_id 作为输入隔离边界。
 [[robots]]
 robot_id = "annie-a"
-room_id = "demo-room"
+room_id = "roomv2"
 persona_id = "annie"
 enabled = true
 listen_enabled = true
@@ -13,7 +13,7 @@ audio_max_age_ms = 500
 
 [[robots]]
 robot_id = "annie-b"
-room_id = "demo-room"
+room_id = "roomv3"
 persona_id = "annie"
 enabled = true
 listen_enabled = true

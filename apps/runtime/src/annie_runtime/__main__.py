@@ -16,7 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, build_opener
 
 import uvicorn
-from annie_adapters import load_robots, resolve_database
+from annie_adapters import load_robots, load_room_server, resolve_database
 from annie_web import create_app
 
 from annie_runtime import HarborRuntime
@@ -158,7 +158,11 @@ def main():
         root,
         args.database or os.environ.get("ANNIE_DATABASE") or config["storage"]["database"],
     )
-    runtime = HarborRuntime(load_robots(root / "config/robots.toml"), database)
+    runtime = HarborRuntime(
+        load_robots(root / "config/robots.toml"),
+        database,
+        load_room_server(root / "config/rooms.toml"),
+    )
     try:
         runtime.preflight()
     except ValueError as exc:
@@ -169,6 +173,8 @@ def main():
         async def check():
             await runtime.start()
             try:
+                if runtime.room_server is not None:
+                    await runtime.wait_room_gateway(runtime.room_server.connect_timeout_sec + 0.5)
                 await runtime.recorder.flush()
                 health = runtime.health()
                 print(json.dumps(health, ensure_ascii=False, sort_keys=True))

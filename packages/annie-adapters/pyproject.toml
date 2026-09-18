@@ -2,7 +2,7 @@
 name = "annie-adapters"
 version = "0.1.0"
 requires-python = ">=3.11,<3.12"
-dependencies = ["annie-core"]
+dependencies = ["annie-core", "websocket-client>=1.9.2,<2"]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]

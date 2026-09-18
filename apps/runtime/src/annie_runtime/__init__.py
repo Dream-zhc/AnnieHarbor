@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from annie_adapters import (
     VERIFIED_MIC_FORMAT,
+    RoomPcmConnection,
     RuntimeStore,
     decode_room_binary_frame,
     normalize_room_event,
@@ -332,7 +333,7 @@ class RobotRuntime:
 
 
 class HarborRuntime:
-    def __init__(self, configs: list[RobotConfig], database: Path):
+    def __init__(self, configs: list[RobotConfig], database: Path, room_server=None):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
         self.store = RuntimeStore(database)
@@ -340,7 +341,30 @@ class HarborRuntime:
         self.robots = {c.robot_id: RobotRuntime(c, self.recorder) for c in configs}
         self.input_bindings: dict[str, tuple[str, ...]] = {}
         self.local_input_sources: set[str] = set()
+        self.room_server = room_server
+        self.room_connections = {}
+        self.room_sources = {}
         self.started = False
+        if room_server is not None:
+            live_configs = [c for c in configs if c.enabled and c.listen_enabled]
+            room_ids = [c.room_id for c in live_configs]
+            if len(set(room_ids)) != len(room_ids):
+                raise ValueError(
+                    "live Room PCM requires a unique room_id per enabled listening robot; "
+                    "MIC_AUDIO has no proven wire target field"
+                )
+            for config in live_configs:
+                source_id = f"room:{config.room_id}:{room_server.mic_channel}"
+                self.bind_input_source(source_id, [config.robot_id])
+                self.room_sources[config.robot_id] = source_id
+                self.room_connections[config.robot_id] = RoomPcmConnection(
+                    room_server,
+                    config.room_id,
+                    lambda frame, robot_id=config.robot_id, source_id=source_id: self._ingest_live_room_pcm(
+                        robot_id, source_id, frame
+                    ),
+                    lambda source_id=source_id: self._room_input_disconnected(source_id),
+                )
 
     def bind_input_source(self, source_id: str, robot_ids, *, local=False):
         if not isinstance(source_id, str) or not source_id.strip():
@@ -510,6 +534,61 @@ class HarborRuntime:
         self.ingest_pcm(source_id, frame, target_robot_id=robot_id)
         return self.input_stats(robot_id)
 
+    def _ingest_live_room_pcm(self, robot_id: str, source_id: str, frame: bytes):
+        if not self.started:
+            return
+        decoded = decode_room_binary_frame(frame)
+        if decoded is None or decoded[0] != "MIC_AUDIO":
+            self.robots[robot_id].record(
+                "room_pcm_rejected",
+                error="invalid_or_unsupported_binary_frame",
+                source=source_id,
+            )
+            return
+        robot = self.robots[robot_id]
+        try:
+            if robot.audio.source_id != source_id:
+                self.start_pcm_stream(
+                    source_id,
+                    VERIFIED_MIC_FORMAT,
+                    target_robot_id=robot_id,
+                )
+            self.ingest_pcm(source_id, frame, target_robot_id=robot_id)
+        except InputRejectedError as exc:
+            robot.record("room_pcm_rejected", error=exc.reason, source=source_id)
+
+    def _room_input_disconnected(self, source_id: str):
+        if not self.started:
+            return
+        try:
+            self.reconnect_input_source(source_id)
+        except InputRejectedError:
+            logger.exception("failed to reset disconnected Room input source=%s", source_id)
+
+    def room_routes(self):
+        routes = []
+        for robot_id, connection in self.room_connections.items():
+            robot = self.robots[robot_id]
+            status = connection.snapshot()
+            stats = self.input_stats(robot_id)
+            routes.append(
+                {
+                    "robot_id": robot_id,
+                    "room_id": robot.config.room_id,
+                    "urls": self.room_server.urls_for_room(robot.config.room_id),
+                    "mic_url": status["url"],
+                    "source_id": self.room_sources[robot_id],
+                    "state": status["state"],
+                    "connected": status["connected"],
+                    "subscribed": status["subscribed"],
+                    "frames_received": status["frames_received"],
+                    "accepted": stats["accepted"],
+                    "queue_depth": stats["queue_depth"],
+                    "last_error": status["last_error"],
+                }
+            )
+        return routes
+
     def preflight(self):
         self.store.preflight()
 
@@ -521,13 +600,30 @@ class HarborRuntime:
         self.started = True
         for robot in self.robots.values():
             await robot.start()
+        loop = asyncio.get_running_loop()
+        for connection in self.room_connections.values():
+            connection.start(loop)
+
+    async def wait_room_gateway(self, timeout: float) -> bool:
+        if not self.room_connections:
+            return True
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            if all(connection.snapshot()["subscribed"] for connection in self.room_connections.values()):
+                return True
+            await asyncio.sleep(0.05)
+        return all(connection.snapshot()["subscribed"] for connection in self.room_connections.values())
 
     async def close(self):
         if self.started:
+            self.started = False
+            if self.room_connections:
+                await asyncio.gather(
+                    *(asyncio.to_thread(connection.stop) for connection in self.room_connections.values())
+                )
             for robot in self.robots.values():
                 await robot.stop()
             await self.recorder.close()
-            self.started = False
 
     async def submit(self, robot_id, text, *, fail=False):
         return await self.robots[robot_id].submit(text, fail=fail)
@@ -552,11 +648,26 @@ class HarborRuntime:
             snapshots.append(robot.snapshot.to_dict())
         active = sum(s["state"] in ("idle", "running") for s in snapshots)
         expected_active = sum(robot.config.enabled for robot in self.robots.values())
-        ready = self.started and self.recorder.last_error is None and active > 0
+        local_ready = self.started and self.recorder.last_error is None and active > 0
+        room_status = {
+            robot_id: connection.snapshot()
+            for robot_id, connection in self.room_connections.items()
+        }
+        room_required = bool(room_status)
+        room_ready = room_required and all(status["subscribed"] for status in room_status.values())
+        ready = local_ready and (not room_required or room_ready)
+        if not room_required:
+            room_capability = "protocol_ready_not_connected"
+        elif room_ready:
+            room_capability = "connected"
+        elif any(status["connected"] for status in room_status.values()):
+            room_capability = "partial"
+        else:
+            room_capability = "connecting"
         return {
             "project": "Annie Harbor",
             "phase": 2,
-            "mode": "fake_brain_pcm_gate",
+            "mode": "fake_brain_live_room_pcm" if room_required else "fake_brain_pcm_gate",
             "pid": os.getpid(),
             "ready": ready,
             "status": "healthy"
@@ -570,10 +681,15 @@ class HarborRuntime:
                 "error": self.recorder.last_error,
                 "trace_dropped": self.recorder.dropped,
             },
+            "room_gateway": {
+                "configured": room_required,
+                "ready": room_ready,
+                "connections": room_status,
+            },
             "capabilities": {
                 "brain": "fake",
-                "room": "protocol_ready_not_connected",
-                "pcm_input": "gate_ready",
+                "room": room_capability,
+                "pcm_input": "room_gateway_ready" if room_ready else "gate_ready",
                 "llm": "not_connected",
                 "tts": "not_connected",
                 "memory": "not_started",

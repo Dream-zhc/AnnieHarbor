@@ -1,15 +1,270 @@
 """Local config/storage plus the verified Phase 0 Room protocol boundary."""
 
 import json
+import logging
+import re
 import sqlite3
+import threading
+import time
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
+import websocket
 from annie_core import AudioFormat, NormalizedEvent, RobotConfig
 
 VERIFIED_MIC_FORMAT = AudioFormat("pcm_s16le", 16000, 1, 20, 640)
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RoomServerConfig:
+    base_url: str
+    room_root: str
+    channels: dict[str, str]
+    default_urls: dict[str, str]
+    subscribe_types: tuple[str, ...] = ("*",)
+    reconnect_min_sec: float = 1.0
+    reconnect_max_sec: float = 15.0
+    connect_timeout_sec: float = 3.0
+
+    def __post_init__(self):
+        for name, value in (("base_url", self.base_url), ("room_root", self.room_root)):
+            parsed = urlparse(value)
+            if parsed.scheme not in {"ws", "wss"} or not parsed.netloc:
+                raise ValueError(f"Room {name} must be an absolute ws:// or wss:// URL")
+            if parsed.query or parsed.fragment:
+                raise ValueError(f"Room {name} must not contain query or fragment")
+        required_channels = {"main", "tts", "mic", "visualdata", "vision", "sam"}
+        if set(self.channels) != required_channels or set(self.default_urls) != required_channels:
+            raise ValueError("Room config must define main/tts/mic/visualdata/vision/sam channels and URLs")
+        if not all(self._path_segment(value) for value in self.channels.values()):
+            raise ValueError("Room channel names must be URL path segments")
+        if not all(urlparse(value).scheme in {"ws", "wss"} for value in self.default_urls.values()):
+            raise ValueError("Room default URLs must use ws:// or wss://")
+        if not self.subscribe_types or not all(
+            isinstance(value, str) and value for value in self.subscribe_types
+        ):
+            raise ValueError("subscribe_types must contain non-empty strings")
+        for name, value in (
+            ("reconnect_min_sec", self.reconnect_min_sec),
+            ("reconnect_max_sec", self.reconnect_max_sec),
+            ("connect_timeout_sec", self.connect_timeout_sec),
+        ):
+            if type(value) not in (int, float) or value <= 0:
+                raise ValueError(f"{name} must be a positive number")
+        if self.reconnect_max_sec < self.reconnect_min_sec:
+            raise ValueError("reconnect_max_sec must be >= reconnect_min_sec")
+
+    @staticmethod
+    def _path_segment(value: str) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._-]+", value) is not None
+
+    @property
+    def default_room(self) -> str:
+        room_id = urlparse(self.base_url).path.rstrip("/").rsplit("/", 1)[-1]
+        if not self._path_segment(room_id):
+            raise ValueError("Room base_url must end with a room id")
+        return room_id
+
+    @property
+    def mic_channel(self) -> str:
+        return self.channels["mic"]
+
+    def url_for(self, room_id: str, channel: str) -> str:
+        if channel not in self.channels:
+            raise ValueError(f"unknown Room channel: {channel}")
+        if not self._path_segment(room_id):
+            raise ValueError("room_id must be one URL path segment")
+        if room_id == self.default_room:
+            return self.default_urls[channel]
+        return f"{self.room_root.rstrip('/')}/{room_id}/{self.channels[channel]}"
+
+    def urls_for_room(self, room_id: str) -> dict[str, str]:
+        return {channel: self.url_for(room_id, channel) for channel in self.channels}
+
+    def mic_url(self, room_id: str) -> str:
+        return self.url_for(room_id, "mic")
+
+
+class RoomPcmConnection:
+    """One reconnecting reb_mic consumer bound to exactly one configured Room."""
+
+    def __init__(self, config: RoomServerConfig, room_id: str, on_binary, on_disconnect):
+        self.config = config
+        self.room_id = room_id
+        self.url = config.mic_url(room_id)
+        self.on_binary = on_binary
+        self.on_disconnect = on_disconnect
+        self._loop = None
+        self._thread = None
+        self._ws = None
+        self._stopped = threading.Event()
+        self._lock = threading.Lock()
+        self._state = "stopped"
+        self._client_id = None
+        self._last_error = None
+        self._frames_received = 0
+        self._reconnects = 0
+
+    def start(self, loop):
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._loop = loop
+        self._stopped.clear()
+        with self._lock:
+            self._state = "connecting"
+            self._last_error = None
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"harbor:room:{self.room_id}",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self, timeout=2.0):
+        self._stopped.set()
+        with self._lock:
+            ws = self._ws
+        if ws is not None:
+            try:
+                ws.close()
+            except Exception:
+                pass
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout)
+        with self._lock:
+            self._state = "stopped"
+            self._ws = None
+        self._thread = None
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "room_id": self.room_id,
+                "url": self.url,
+                "state": self._state,
+                "connected": self._state in {"connected", "subscribed"},
+                "subscribed": self._state == "subscribed",
+                "client_id": self._client_id,
+                "frames_received": self._frames_received,
+                "reconnects": self._reconnects,
+                "last_error": self._last_error,
+            }
+
+    @staticmethod
+    def _json_message(raw):
+        if not isinstance(raw, str):
+            raise ValueError("expected Room JSON control message")
+        message = json.loads(raw)
+        if not isinstance(message, dict):
+            raise ValueError("Room control message must be an object")
+        return message
+
+    def _handshake(self, ws):
+        welcome = parse_room_welcome(self._json_message(ws.recv()))
+        if welcome.room != self.room_id:
+            raise ValueError(f"WELCOME room mismatch: expected {self.room_id}, got {welcome.room}")
+        if welcome.robot_id != self.config.mic_channel:
+            raise ValueError(
+                f"WELCOME robotId mismatch: expected {self.config.mic_channel}, got {welcome.robot_id}"
+            )
+        if "MIC_AUDIO" not in welcome.catalog_types:
+            raise ValueError("WELCOME catalog does not advertise MIC_AUDIO")
+        with self._lock:
+            self._state = "connected"
+            self._client_id = welcome.client_id
+
+        ws.send(
+            json.dumps(
+                {"type": "SUBSCRIBE", "data": {"types": list(self.config.subscribe_types)}},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+        deadline = time.monotonic() + self.config.connect_timeout_sec
+        pending_binary = []
+        while time.monotonic() < deadline:
+            raw = ws.recv()
+            if isinstance(raw, bytes):
+                pending_binary.append(raw)
+                continue
+            message = self._json_message(raw)
+            if message.get("type") != "ACK":
+                continue
+            ack = parse_subscribe_ack(message)
+            if not set(self.config.subscribe_types).issubset(ack.subscriptions):
+                raise ValueError("Room ACK subscriptions do not include requested types")
+            with self._lock:
+                self._state = "subscribed"
+                self._last_error = None
+            for frame in pending_binary:
+                self._dispatch_binary(frame)
+            return
+        raise TimeoutError("Room SUBSCRIBE ACK timeout")
+
+    def _dispatch_binary(self, frame: bytes):
+        with self._lock:
+            self._frames_received += 1
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self.on_binary, frame)
+
+    def _run(self):
+        backoff = self.config.reconnect_min_sec
+        while not self._stopped.is_set():
+            subscribed = False
+            try:
+                with self._lock:
+                    self._state = "connecting"
+                ws = websocket.create_connection(self.url, timeout=self.config.connect_timeout_sec)
+                ws.settimeout(1.0)
+                with self._lock:
+                    self._ws = ws
+                self._handshake(ws)
+                subscribed = True
+                backoff = self.config.reconnect_min_sec
+                logger.info("room_pcm connected room=%s url=%s", self.room_id, self.url)
+                while not self._stopped.is_set():
+                    try:
+                        raw = ws.recv()
+                    except websocket.WebSocketTimeoutException:
+                        continue
+                    if raw in (None, ""):
+                        raise ConnectionError("Room WebSocket closed")
+                    if isinstance(raw, bytes):
+                        self._dispatch_binary(raw)
+            except Exception as exc:
+                if not self._stopped.is_set():
+                    with self._lock:
+                        self._last_error = str(exc)
+                    logger.warning(
+                        "room_pcm disconnected room=%s url=%s error=%s retry=%.1fs",
+                        self.room_id,
+                        self.url,
+                        exc,
+                        backoff,
+                    )
+            finally:
+                with self._lock:
+                    ws = self._ws
+                    self._ws = None
+                    if not self._stopped.is_set():
+                        self._state = "disconnected"
+                        if subscribed:
+                            self._reconnects += 1
+                if ws is not None:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+                if subscribed and not self._stopped.is_set() and self._loop is not None:
+                    self._loop.call_soon_threadsafe(self.on_disconnect)
+            if not self._stopped.is_set():
+                self._stopped.wait(backoff)
+                backoff = min(backoff * 2, self.config.reconnect_max_sec)
 
 
 @dataclass(frozen=True)
@@ -270,6 +525,29 @@ def load_robots(path: Path) -> list[RobotConfig]:
     if not configs or len({c.robot_id for c in configs}) != len(configs):
         raise ValueError("robots must have unique robot_id values")
     return configs
+
+
+def load_room_server(path: Path) -> RoomServerConfig:
+    with path.open("rb") as file:
+        data = tomllib.load(file)
+    server = data.get("server")
+    rooms = data.get("rooms")
+    urls = data.get("urls")
+    if not isinstance(server, dict) or not isinstance(rooms, dict) or not isinstance(urls, dict):
+        raise ValueError("rooms.toml requires [server], [rooms], and [urls]")
+    subscribe_types = server.get("subscribe_types", ["*"])
+    if not isinstance(subscribe_types, list):
+        raise ValueError("server.subscribe_types must be a list")
+    return RoomServerConfig(
+        base_url=server.get("base_url"),
+        room_root=server.get("room_root"),
+        channels=dict(rooms),
+        default_urls=dict(urls),
+        subscribe_types=tuple(subscribe_types),
+        reconnect_min_sec=server.get("reconnect_min_sec", 1.0),
+        reconnect_max_sec=server.get("reconnect_max_sec", 15.0),
+        connect_timeout_sec=server.get("connect_timeout_sec", 3.0),
+    )
 
 
 def resolve_database(root: Path, value: str) -> Path:

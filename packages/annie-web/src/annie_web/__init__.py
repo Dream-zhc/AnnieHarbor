@@ -1,4 +1,4 @@
-"""Local Dashboard, Fake text controls, and explicit Phase 2 PCM debug ingress."""
+"""Local Dashboard, Fake text controls, and Phase 2 Room PCM diagnostics."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -51,6 +51,10 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         if robot_id not in runtime.robots:
             raise HTTPException(404, "unknown robot_id")
         return runtime.input_stats(robot_id)
+
+    @app.get("/api/phase2/rooms")
+    async def phase2_rooms():
+        return runtime.room_routes()
 
     @app.post("/api/debug/robots/{robot_id}/room-pcm")
     async def debug_room_pcm(robot_id: str, request: Request, source: str):

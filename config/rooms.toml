@@ -1,10 +1,12 @@
-# V1 已核实 Java Room Server 地址。Phase 2只实现协议/准入边界，尚未自动建立真实Room连接。
+# Java Room Server。一个机器人绑定一个 room；该 room 下的 main/tts/mic/visualdata/vision/sam 都属于这个机器人。
 
 [server]
 base_url = "ws://192.168.1.47:8090/robot/roomv2"
+room_root = "ws://192.168.1.47:8090/robot"
 subscribe_types = ["*"]
 reconnect_min_sec = 1.0
 reconnect_max_sec = 15.0
+connect_timeout_sec = 3.0
 
 [rooms]
 main = "reb_main"

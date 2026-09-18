@@ -22,6 +22,31 @@ def load_contract(contract_id):
 
 
 class ProtocolAdapterTests(unittest.TestCase):
+    def test_room_config_keeps_all_robot_channels_and_expands_other_rooms(self):
+        from annie_adapters import load_room_server
+
+        server = load_room_server(ROOT / "config/rooms.toml")
+        self.assertEqual(server.default_room, "roomv2")
+        self.assertEqual(
+            server.urls_for_room("roomv2"),
+            {
+                "main": "ws://192.168.1.47:8090/robot/roomv2/reb_main",
+                "tts": "ws://192.168.1.47:8090/robot/roomv2/reb_tts",
+                "mic": "ws://192.168.1.47:8090/robot/roomv2/reb_mic",
+                "visualdata": "ws://192.168.1.47:8090/robot/roomv2/reb_visualdata",
+                "vision": "ws://192.168.1.47:8090/robot/roomv2/reb_vision",
+                "sam": "ws://192.168.1.47:8090/robot/roomv2/reb_sam",
+            },
+        )
+        self.assertEqual(
+            server.urls_for_room("roomv3")["mic"],
+            "ws://192.168.1.47:8090/robot/roomv3/reb_mic",
+        )
+        self.assertEqual(
+            server.urls_for_room("roomv3")["vision"],
+            "ws://192.168.1.47:8090/robot/roomv3/reb_vision",
+        )
+
     def test_live_room_control_welcome_and_subscribe_ack_are_strictly_parsed(self):
         from annie_adapters import parse_room_welcome, parse_subscribe_ack
 
@@ -271,6 +296,57 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(row[0], 10)
         self.assertEqual(row[1], "mic-a")
 
+    def test_live_room_pcm_routes_only_to_robot_bound_to_that_room(self):
+        from annie_adapters import load_room_server
+        from annie_core import RobotConfig
+        from annie_runtime import HarborRuntime
+
+        runtime = HarborRuntime(
+            [
+                RobotConfig("room2-head", room_id="roomv2", listen_enabled=True, fake_delay_ms=0),
+                RobotConfig("room3-head", room_id="roomv3", listen_enabled=True, fake_delay_ms=0),
+            ],
+            Path(self.tmp.name) / "live-room.db",
+            load_room_server(ROOT / "config/rooms.toml"),
+        )
+        runtime.started = True
+        runtime._ingest_live_room_pcm(
+            "room2-head",
+            runtime.room_sources["room2-head"],
+            self.binary,
+        )
+        self.assertEqual(runtime.input_stats("room2-head")["accepted"], 1)
+        self.assertEqual(runtime.input_stats("room3-head")["accepted"], 0)
+
+        runtime._ingest_live_room_pcm(
+            "room3-head",
+            runtime.room_sources["room3-head"],
+            self.binary,
+        )
+        self.assertEqual(runtime.input_stats("room2-head")["accepted"], 1)
+        self.assertEqual(runtime.input_stats("room3-head")["accepted"], 1)
+        routes = {route["room_id"]: route for route in runtime.room_routes()}
+        self.assertEqual(routes["roomv2"]["robot_id"], "room2-head")
+        self.assertEqual(routes["roomv3"]["robot_id"], "room3-head")
+        self.assertEqual(routes["roomv2"]["urls"]["main"].rsplit("/", 1)[-1], "reb_main")
+        self.assertEqual(routes["roomv3"]["urls"]["sam"].rsplit("/", 1)[-1], "reb_sam")
+        runtime.started = False
+
+    def test_live_room_pcm_refuses_two_listening_robots_on_same_room(self):
+        from annie_adapters import load_room_server
+        from annie_core import RobotConfig
+        from annie_runtime import HarborRuntime
+
+        with self.assertRaisesRegex(ValueError, "unique room_id"):
+            HarborRuntime(
+                [
+                    RobotConfig("head-a", room_id="roomv2", listen_enabled=True),
+                    RobotConfig("head-b", room_id="roomv2", listen_enabled=True),
+                ],
+                Path(self.tmp.name) / "duplicate-room.db",
+                load_room_server(ROOT / "config/rooms.toml"),
+            )
+
 
 class Phase2HTTPTests(unittest.TestCase):
     def setUp(self):
@@ -315,7 +391,8 @@ class Phase2HTTPTests(unittest.TestCase):
         self.assertIn("Phase 2", page.text)
         self.assertIn("Room BinaryFrame", page.text)
         self.assertIn("操作日志", page.text)
-        self.assertIn("并发向全部机器人头注入", page.text)
+        self.assertIn("真实麦克风", page.text)
+        self.assertIn("多房间隔离测试", page.text)
 
 
 if __name__ == "__main__":

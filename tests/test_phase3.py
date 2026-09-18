@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -71,6 +72,109 @@ class SessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(context), 20)
         self.assertEqual(context[0]["user_text"], "turn-05")
         self.assertEqual(context[-1]["user_text"], "turn-24")
+
+    async def test_turn_hot_path_does_not_wait_for_sqlite_ledger_write(self):
+        original_create = self.runtime.store.create_conversation_turn
+        write_started = threading.Event()
+        release_write = threading.Event()
+
+        def blocked_create(turn):
+            write_started.set()
+            if not release_write.wait(1):
+                raise TimeoutError("test did not release ledger writer")
+            return original_create(turn)
+
+        self.runtime.store.create_conversation_turn = blocked_create
+        task = asyncio.create_task(self.runtime.submit("annie-a", "nonblocking ledger"))
+        started = await asyncio.to_thread(write_started.wait, 0.5)
+        self.assertTrue(started)
+        result = await asyncio.wait_for(task, 0.1)
+        self.assertEqual(result.status, "completed")
+        self.assertGreaterEqual(self.runtime.ledger.queue.qsize(), 1)
+
+        release_write.set()
+        await self.runtime.ledger.flush()
+        persisted = await asyncio.to_thread(
+            self.runtime.store.get_conversation_turn,
+            "annie-a",
+            result.request_id,
+        )
+        self.assertEqual(persisted["status"], "completed")
+
+    async def test_explicit_delete_waits_for_ledger_barrier_before_removing_current_chat(self):
+        original_create = self.runtime.store.create_conversation_turn
+        write_started = threading.Event()
+        release_write = threading.Event()
+
+        def blocked_create(turn):
+            write_started.set()
+            if not release_write.wait(1):
+                raise TimeoutError("test did not release ledger writer")
+            return original_create(turn)
+
+        self.runtime.store.create_conversation_turn = blocked_create
+        result = await asyncio.wait_for(self.runtime.submit("annie-a", "delete barrier"), 0.1)
+        self.assertEqual(result.status, "completed")
+        self.assertTrue(await asyncio.to_thread(write_started.wait, 0.5))
+
+        delete_task = asyncio.create_task(
+            self.runtime.delete_conversation("annie-a", "default", "annie")
+        )
+        await asyncio.sleep(0)
+        self.assertFalse(delete_task.done())
+        release_write.set()
+        deleted = await asyncio.wait_for(delete_task, 0.5)
+        self.assertEqual(deleted["deleted_turns"], 1)
+        rows = await self.runtime.load_conversation("annie-a", "default", "annie")
+        self.assertEqual(rows["turns"], [])
+
+    async def test_current_context_is_memory_backed_after_session_load(self):
+        await self.runtime.submit("annie-a", "memory context")
+
+        def forbidden_read(*_args, **_kwargs):
+            raise AssertionError("recent_context must not read SQLite on every turn")
+
+        self.runtime.store.recent_conversation_context = forbidden_read
+        context = await self.runtime.recent_context("annie-a")
+        self.assertEqual(context[-1]["user_text"], "memory context")
+
+    async def test_playback_ledger_update_does_not_wait_for_sqlite(self):
+        result = await self.runtime.submit("annie-a", "playback update")
+        await self.runtime.ledger.flush()
+        original_update = self.runtime.store.update_playback
+        write_started = threading.Event()
+        release_write = threading.Event()
+
+        def blocked_update(*args, **kwargs):
+            write_started.set()
+            if not release_write.wait(1):
+                raise TimeoutError("test did not release playback writer")
+            return original_update(*args, **kwargs)
+
+        self.runtime.store.update_playback = blocked_update
+        task = asyncio.create_task(
+            self.runtime.update_playback(
+                "annie-a",
+                result.request_id,
+                published_text=result.reply,
+                spoken_text="[FAKE annie-a] playback",
+                evidence_status="confirmed_partial",
+                playback_state="playing",
+            )
+        )
+        updated = await asyncio.wait_for(task, 0.1)
+        self.assertEqual(updated["assistant_spoken_text"], "[FAKE annie-a] playback")
+        started = await asyncio.to_thread(write_started.wait, 0.5)
+        self.assertTrue(started)
+
+        release_write.set()
+        await self.runtime.ledger.flush()
+        persisted = await asyncio.to_thread(
+            self.runtime.store.get_conversation_turn,
+            "annie-a",
+            result.request_id,
+        )
+        self.assertEqual(persisted["assistant_spoken_text"], "[FAKE annie-a] playback")
 
     async def test_context_excludes_failed_cancelled_and_stale_results_and_prefers_spoken_text(self):
         await self.runtime.switch_session("annie-a", chat_id="meaningful", persona_id="annie")

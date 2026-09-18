@@ -1,4 +1,4 @@
-"""One process with isolated robot turns and Phase 2 bounded input gates."""
+"""One process with isolated Phase 3 sessions, ledger, and bounded PCM input gates."""
 
 import asyncio
 import logging
@@ -120,6 +120,71 @@ class TurnCoordinator:
         }
 
 
+class ConversationLedgerWriter:
+    """Ordered, bounded SQLite writer that never makes a normal turn await disk I/O."""
+
+    def __init__(self, store: RuntimeStore, capacity: int = 512):
+        self.store = store
+        self.queue = asyncio.Queue(maxsize=capacity)
+        self.task = None
+        self.last_error: str | None = None
+
+    def start(self):
+        if self.task is None:
+            self.task = asyncio.create_task(self._run(), name="harbor:conversation-ledger")
+
+    def enqueue(self, method: str, *args, **kwargs):
+        if self.task is None or self.task.done():
+            raise RobotUnavailableError("conversation ledger writer is not running")
+        if self.last_error is not None:
+            raise RobotUnavailableError(f"conversation ledger unavailable: {self.last_error}")
+        try:
+            self.queue.put_nowait((method, args, kwargs))
+        except asyncio.QueueFull as exc:
+            self.last_error = "conversation ledger queue full"
+            raise RobotQueueFullError(self.last_error) from exc
+
+    async def _run(self):
+        while True:
+            method, args, kwargs = await self.queue.get()
+            try:
+                if method == "__barrier__":
+                    future = args[0]
+                    if self.last_error is None:
+                        if not future.done():
+                            future.set_result(None)
+                    elif not future.done():
+                        future.set_exception(RuntimeError(self.last_error))
+                    continue
+                await asyncio.to_thread(getattr(self.store, method), *args, **kwargs)
+            except Exception as exc:
+                self.last_error = str(exc)
+                logger.exception("conversation ledger write failed method=%s", method)
+            finally:
+                self.queue.task_done()
+
+    async def flush(self):
+        if self.task is None:
+            return
+        future = asyncio.get_running_loop().create_future()
+        await self.queue.put(("__barrier__", (future,), {}))
+        await future
+
+    async def close(self):
+        if self.task is None:
+            return
+        error = None
+        try:
+            await self.flush()
+        except Exception as exc:
+            error = exc
+        self.task.cancel()
+        await asyncio.gather(self.task, return_exceptions=True)
+        self.task = None
+        if error is not None:
+            raise error
+
+
 class AudioInputGate:
     """Per-robot PCM admission and freshness boundary; it does not infer wire identity."""
 
@@ -230,10 +295,19 @@ class RobotRuntime:
         "advice_readiness",
     }
 
-    def __init__(self, config: RobotConfig, recorder: Recorder, store: RuntimeStore):
+    def __init__(
+        self,
+        config: RobotConfig,
+        recorder: Recorder,
+        store: RuntimeStore,
+        ledger: ConversationLedgerWriter,
+        context_limit: int,
+    ):
         self.config = config
         self.recorder = recorder
         self.store = store
+        self.ledger = ledger
+        self.context_limit = context_limit
         self.brain = FakeBrain(config)
         self.snapshot = RobotSnapshot(
             config.robot_id,
@@ -255,6 +329,82 @@ class RobotRuntime:
         self.session_epoch = 0
         self.generation = 0
         self.coordinator = TurnCoordinator()
+        self.context_cache: list[dict] = []
+        self.turn_cache: dict[str, dict] = {}
+
+    def _remember_turn(self, turn: dict):
+        turn_id = turn["turn_id"]
+        self.turn_cache[turn_id] = turn
+        while len(self.turn_cache) > max(64, self.context_limit * 4):
+            self.turn_cache.pop(next(iter(self.turn_cache)))
+
+    def _cache_context_turn(self, turn: dict):
+        context = dict(turn)
+        context["assistant_context_text"] = (
+            context.get("assistant_spoken_text")
+            or context.get("assistant_published_text")
+            or context.get("assistant_generated_text")
+        )
+        if not context["assistant_context_text"]:
+            return
+        self.context_cache = [item for item in self.context_cache if item["turn_id"] != turn["turn_id"]]
+        self.context_cache.append(context)
+        if len(self.context_cache) > self.context_limit:
+            del self.context_cache[: len(self.context_cache) - self.context_limit]
+
+    async def _load_context_cache(self):
+        rows = await asyncio.to_thread(
+            self.store.recent_conversation_context,
+            self.config.robot_id,
+            self.chat_id,
+            self.persona_id,
+            self.context_limit,
+        )
+        self.context_cache = rows
+        for row in rows:
+            self._remember_turn(dict(row))
+
+    def recent_context(self):
+        return [dict(item) for item in self.context_cache]
+
+    def cached_turn(self, turn_id: str):
+        turn = self.turn_cache.get(turn_id)
+        return None if turn is None else dict(turn)
+
+    def update_cached_playback(
+        self,
+        turn_id: str,
+        *,
+        published_text: str | None,
+        spoken_text: str | None,
+        evidence_status: str,
+        updated_ms: int,
+    ):
+        turn = self.turn_cache.get(turn_id)
+        if turn is None:
+            return None
+        if published_text is not None:
+            turn["assistant_published_text"] = published_text
+        if spoken_text is not None:
+            turn["assistant_spoken_text"] = spoken_text
+        turn["playback_evidence_status"] = evidence_status
+        turn["updated_ms"] = updated_ms
+        for item in self.context_cache:
+            if item["turn_id"] != turn_id:
+                continue
+            if published_text is not None:
+                item["assistant_published_text"] = published_text
+            if spoken_text is not None:
+                item["assistant_spoken_text"] = spoken_text
+            item["playback_evidence_status"] = evidence_status
+            item["updated_ms"] = updated_ms
+            item["assistant_context_text"] = (
+                item.get("assistant_spoken_text")
+                or item.get("assistant_published_text")
+                or item.get("assistant_generated_text")
+            )
+            break
+        return dict(turn)
 
     def sync_input_snapshot(self):
         stats = self.audio.stats()
@@ -334,6 +484,7 @@ class RobotRuntime:
             self.generation = 1
         self._sync_session_snapshot()
         await self._persist_session()
+        await self._load_context_cache()
 
     async def _persist_session(self):
         session = self.session_state()
@@ -361,24 +512,42 @@ class RobotRuntime:
             self.session_epoch += 1
             self.generation += 1
             self.coordinator.reset()
+            self.context_cache = []
             self._sync_session_snapshot()
             await self._persist_session()
-        await self.cancel(cancel_source="session_switch")
-        await self.discard_pending(cancel_source="session_switch")
+            await self.cancel(cancel_source="session_switch")
+            await self.discard_pending(cancel_source="session_switch")
+            await self.ledger.flush()
+            await self._load_context_cache()
         self.record("session_switched")
         return self.session_state()
 
-    async def invalidate_current_session(self, *, cancel_source: str):
+    async def delete_current_conversation(self):
         async with self.session_lock:
+            chat_id = self.chat_id
+            persona_id = self.persona_id
             self.session_epoch += 1
             self.generation += 1
             self.coordinator.reset()
             self._sync_session_snapshot()
             await self._persist_session()
-        await self.cancel(cancel_source=cancel_source)
-        await self.discard_pending(cancel_source=cancel_source)
-        self.record("session_invalidated")
-        return self.session_state()
+            await self.cancel(cancel_source="conversation_delete")
+            await self.discard_pending(cancel_source="conversation_delete")
+            await self.ledger.flush()
+            self.context_cache = []
+            deleted = await asyncio.to_thread(
+                self.store.delete_conversation,
+                self.config.robot_id,
+                chat_id,
+                persona_id,
+            )
+            self.turn_cache = {
+                turn_id: turn
+                for turn_id, turn in self.turn_cache.items()
+                if not (turn["chat_id"] == chat_id and turn["persona_id"] == persona_id)
+            }
+        self.record("conversation_deleted")
+        return deleted
 
     async def start(self):
         async with self.lifecycle:
@@ -410,8 +579,31 @@ class RobotRuntime:
                 self.generation,
             )
             created_ms = time.time_ns() // 1_000_000
-            await asyncio.to_thread(
-                self.store.create_conversation_turn,
+            turn = {
+                "id": None,
+                "turn_id": request_id,
+                "robot_id": self.config.robot_id,
+                "room_id": self.config.room_id,
+                "chat_id": job.chat_id,
+                "persona_id": job.persona_id,
+                "persona_revision": job.persona_revision,
+                "session_epoch": job.session_epoch,
+                "generation": job.generation,
+                "user_text": text,
+                "assistant_planned_text": None,
+                "assistant_generated_text": None,
+                "assistant_published_text": None,
+                "assistant_spoken_text": None,
+                "playback_evidence_status": "unknown",
+                "status": "queued",
+                "interrupted": False,
+                "cancelled": False,
+                "cancel_source": None,
+                "created_ms": created_ms,
+                "updated_ms": created_ms,
+            }
+            self.ledger.enqueue(
+                "create_conversation_turn",
                 {
                     "turn_id": request_id,
                     "robot_id": self.config.robot_id,
@@ -427,6 +619,7 @@ class RobotRuntime:
                     "updated_ms": created_ms,
                 },
             )
+            self._remember_turn(turn)
             self.queue.put_nowait(job)
         self.record("queued", job.request_id)
         return await asyncio.shield(job.future)
@@ -435,15 +628,33 @@ class RobotRuntime:
         while not self.queue.empty():
             job = self.queue.get_nowait()
             elapsed = round((time.perf_counter() - job.enqueued_at) * 1000, 3)
-            await asyncio.to_thread(
-                self.store.finish_conversation_turn,
-                self.config.robot_id,
-                job.request_id,
-                status="discarded",
-                cancelled=bool(cancel_source),
-                cancel_source=cancel_source,
-                updated_ms=time.time_ns() // 1_000_000,
-            )
+            updated_ms = time.time_ns() // 1_000_000
+            try:
+                self.ledger.enqueue(
+                    "finish_conversation_turn",
+                    self.config.robot_id,
+                    job.request_id,
+                    status="discarded",
+                    cancelled=bool(cancel_source),
+                    cancel_source=cancel_source,
+                    updated_ms=updated_ms,
+                )
+            except (RobotQueueFullError, RobotUnavailableError) as exc:
+                self.snapshot.error = str(exc)
+                logger.error(
+                    "conversation ledger unavailable while discarding robot=%s request_id=%s error=%s",
+                    self.config.robot_id,
+                    job.request_id,
+                    exc,
+                )
+            turn = self.turn_cache.get(job.request_id)
+            if turn is not None:
+                turn.update(
+                    status="discarded",
+                    cancelled=bool(cancel_source),
+                    cancel_source=cancel_source,
+                    updated_ms=updated_ms,
+                )
             result = TurnResult(
                 self.config.robot_id,
                 job.request_id,
@@ -482,8 +693,6 @@ class RobotRuntime:
                         status = "discarded"
                     else:
                         reply = generated
-                        snap.completed += 1
-                        snap.last_reply = reply
                 except asyncio.CancelledError:
                     status = "cancelled"
                     snap.cancelled += 1
@@ -501,20 +710,43 @@ class RobotRuntime:
                 snap.service_ms = service
                 snap.elapsed_ms = elapsed
                 snap.current_request_id = None
-                snap.state = "stopped" if self.stopping else "failed" if status == "failed" else "idle"
                 self.turn_task = None
                 self.job = None
-                await asyncio.to_thread(
-                    self.store.finish_conversation_turn,
-                    self.config.robot_id,
-                    job.request_id,
-                    status=status,
-                    planned_text=generated,
-                    generated_text=generated,
-                    cancelled=status == "cancelled",
-                    cancel_source=job.cancel_source,
-                    updated_ms=time.time_ns() // 1_000_000,
-                )
+                updated_ms = time.time_ns() // 1_000_000
+                try:
+                    self.ledger.enqueue(
+                        "finish_conversation_turn",
+                        self.config.robot_id,
+                        job.request_id,
+                        status=status,
+                        planned_text=generated,
+                        generated_text=generated,
+                        cancelled=status == "cancelled",
+                        cancel_source=job.cancel_source,
+                        updated_ms=updated_ms,
+                    )
+                except (RobotQueueFullError, RobotUnavailableError) as exc:
+                    status = "failed"
+                    reply = None
+                    error = str(exc)
+                    snap.failures += 1
+                    snap.error = error
+                turn = self.turn_cache.get(job.request_id)
+                if turn is not None:
+                    turn.update(
+                        status=status,
+                        assistant_planned_text=generated,
+                        assistant_generated_text=generated,
+                        cancelled=status == "cancelled",
+                        cancel_source=job.cancel_source,
+                        updated_ms=updated_ms,
+                    )
+                    if status == "completed":
+                        self._cache_context_turn(turn)
+                if status == "completed":
+                    snap.completed += 1
+                    snap.last_reply = reply
+                snap.state = "stopped" if self.stopping else "failed" if status == "failed" else "idle"
                 self.record(status, job.request_id, elapsed, error)
                 job.future.set_result(
                     TurnResult(
@@ -576,8 +808,18 @@ class HarborRuntime:
             raise ValueError("conversation_history_turns must be an integer between 1 and 100")
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
-        self.robots = {c.robot_id: RobotRuntime(c, self.recorder, self.store) for c in configs}
+        self.ledger = ConversationLedgerWriter(self.store)
         self.conversation_history_turns = conversation_history_turns
+        self.robots = {
+            c.robot_id: RobotRuntime(
+                c,
+                self.recorder,
+                self.store,
+                self.ledger,
+                conversation_history_turns,
+            )
+            for c in configs
+        }
         self.input_bindings: dict[str, tuple[str, ...]] = {}
         self.local_input_sources: set[str] = set()
         self.room_server = room_server
@@ -832,6 +1074,7 @@ class HarborRuntime:
         if self.started:
             return
         await asyncio.to_thread(self.store.migrate)
+        self.ledger.start()
         self.recorder.start()
         self.started = True
         for robot in self.robots.values():
@@ -857,7 +1100,14 @@ class HarborRuntime:
                 await asyncio.gather(*(connection.stop() for connection in self.room_connections.values()))
             for robot in self.robots.values():
                 await robot.stop()
+            ledger_error = None
+            try:
+                await self.ledger.close()
+            except Exception as exc:
+                ledger_error = exc
             await self.recorder.close()
+            if ledger_error is not None:
+                raise ledger_error
 
     async def submit(self, robot_id, text, *, fail=False):
         return await self.robots[robot_id].submit(text, fail=fail)
@@ -883,9 +1133,11 @@ class HarborRuntime:
         )
 
     async def list_conversations(self, robot_id: str):
+        await self.ledger.flush()
         return await asyncio.to_thread(self.store.list_conversations, robot_id)
 
     async def load_conversation(self, robot_id: str, chat_id: str, persona_id: str):
+        await self.ledger.flush()
         turns = await asyncio.to_thread(
             self.store.load_conversation,
             robot_id,
@@ -900,31 +1152,36 @@ class HarborRuntime:
         }
 
     async def recent_context(self, robot_id: str):
-        robot = self.robots[robot_id]
-        return await asyncio.to_thread(
-            self.store.recent_conversation_context,
-            robot_id,
-            robot.chat_id,
-            robot.persona_id,
-            self.conversation_history_turns,
-        )
+        return self.robots[robot_id].recent_context()
 
     async def get_turn(self, robot_id: str, turn_id: str):
+        cached = self.robots[robot_id].cached_turn(turn_id)
+        if cached is not None:
+            return cached
+        await self.ledger.flush()
         turn = await asyncio.to_thread(self.store.get_conversation_turn, robot_id, turn_id)
         if turn is None:
             raise KeyError(turn_id)
+        self.robots[robot_id]._remember_turn(dict(turn))
         return turn
 
     async def delete_conversation(self, robot_id: str, chat_id: str, persona_id: str):
         robot = self.robots[robot_id]
         if robot.chat_id == chat_id and robot.persona_id == persona_id:
-            await robot.invalidate_current_session(cancel_source="conversation_delete")
-        deleted = await asyncio.to_thread(
-            self.store.delete_conversation,
-            robot_id,
-            chat_id,
-            persona_id,
-        )
+            deleted = await robot.delete_current_conversation()
+        else:
+            await self.ledger.flush()
+            deleted = await asyncio.to_thread(
+                self.store.delete_conversation,
+                robot_id,
+                chat_id,
+                persona_id,
+            )
+            robot.turn_cache = {
+                turn_id: turn
+                for turn_id, turn in robot.turn_cache.items()
+                if not (turn["chat_id"] == chat_id and turn["persona_id"] == persona_id)
+            }
         return {
             "robot_id": robot_id,
             "chat_id": chat_id,
@@ -944,18 +1201,29 @@ class HarborRuntime:
     ):
         robot = self.robots[robot_id]
         robot.coordinator.set_playback_state(playback_state)
-        changed = await asyncio.to_thread(
-            self.store.update_playback,
+        updated_ms = time.time_ns() // 1_000_000
+        if robot.cached_turn(turn_id) is None:
+            await self.ledger.flush()
+            stored = await asyncio.to_thread(self.store.get_conversation_turn, robot_id, turn_id)
+            if stored is None:
+                raise KeyError(turn_id)
+            robot._remember_turn(dict(stored))
+        self.ledger.enqueue(
+            "update_playback",
             robot_id,
             turn_id,
             published_text=published_text,
             spoken_text=spoken_text,
             evidence_status=evidence_status,
-            updated_ms=time.time_ns() // 1_000_000,
+            updated_ms=updated_ms,
         )
-        if not changed:
-            raise KeyError(turn_id)
-        return await self.get_turn(robot_id, turn_id)
+        return robot.update_cached_playback(
+            turn_id,
+            published_text=published_text,
+            spoken_text=spoken_text,
+            evidence_status=evidence_status,
+            updated_ms=updated_ms,
+        )
 
     async def set_playback_state(self, robot_id: str, state: str):
         self.robots[robot_id].coordinator.set_playback_state(state)
@@ -1041,7 +1309,12 @@ class HarborRuntime:
             snapshots.append(robot.snapshot.to_dict())
         active = sum(s["state"] in ("idle", "running") for s in snapshots)
         expected_active = sum(robot.config.enabled for robot in self.robots.values())
-        local_ready = self.started and self.recorder.last_error is None and active > 0
+        local_ready = (
+            self.started
+            and self.recorder.last_error is None
+            and self.ledger.last_error is None
+            and active > 0
+        )
         room_status = {
             robot_id: connection.snapshot()
             for robot_id, connection in self.room_connections.items()
@@ -1073,6 +1346,9 @@ class HarborRuntime:
                 "schema_version": self.store.SCHEMA_VERSION,
                 "error": self.recorder.last_error,
                 "trace_dropped": self.recorder.dropped,
+                "ledger_error": self.ledger.last_error,
+                "ledger_queue_depth": self.ledger.queue.qsize(),
+                "ledger_queue_capacity": self.ledger.queue.maxsize,
             },
             "room_gateway": {
                 "configured": room_required,
@@ -1083,7 +1359,7 @@ class HarborRuntime:
                 "brain": "fake",
                 "room": room_capability,
                 "pcm_input": "room_gateway_ready" if room_ready else "gate_ready",
-                "conversation": "ledger_ready",
+                "conversation": "ledger_ready" if self.ledger.last_error is None else "ledger_failed",
                 "llm": "not_connected",
                 "tts": "not_connected",
                 "memory": "not_started",

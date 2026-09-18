@@ -600,9 +600,8 @@ class HarborRuntime:
         self.started = True
         for robot in self.robots.values():
             await robot.start()
-        loop = asyncio.get_running_loop()
         for connection in self.room_connections.values():
-            connection.start(loop)
+            connection.start()
 
     async def wait_room_gateway(self, timeout: float) -> bool:
         if not self.room_connections:
@@ -618,9 +617,7 @@ class HarborRuntime:
         if self.started:
             self.started = False
             if self.room_connections:
-                await asyncio.gather(
-                    *(asyncio.to_thread(connection.stop) for connection in self.room_connections.values())
-                )
+                await asyncio.gather(*(connection.stop() for connection in self.room_connections.values()))
             for robot in self.robots.values():
                 await robot.stop()
             await self.recorder.close()

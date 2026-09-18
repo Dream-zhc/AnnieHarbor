@@ -1,19 +1,18 @@
 """Local config/storage plus the verified Phase 0 Room protocol boundary."""
 
+import asyncio
 import json
 import logging
 import re
 import sqlite3
-import threading
-import time
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-import websocket
 from annie_core import AudioFormat, NormalizedEvent, RobotConfig
+from websockets.asyncio.client import connect
 
 VERIFIED_MIC_FORMAT = AudioFormat("pcm_s16le", 16000, 1, 20, 640)
 logger = logging.getLogger(__name__)
@@ -98,62 +97,54 @@ class RoomPcmConnection:
         self.url = config.mic_url(room_id)
         self.on_binary = on_binary
         self.on_disconnect = on_disconnect
-        self._loop = None
-        self._thread = None
+        self._task = None
         self._ws = None
-        self._stopped = threading.Event()
-        self._lock = threading.Lock()
+        self._stopped = True
         self._state = "stopped"
         self._client_id = None
         self._last_error = None
         self._frames_received = 0
         self._reconnects = 0
 
-    def start(self, loop):
-        if self._thread is not None and self._thread.is_alive():
+    def start(self):
+        if self._task is not None and not self._task.done():
             return
-        self._loop = loop
-        self._stopped.clear()
-        with self._lock:
-            self._state = "connecting"
-            self._last_error = None
-        self._thread = threading.Thread(
-            target=self._run,
+        self._stopped = False
+        self._state = "connecting"
+        self._last_error = None
+        self._task = asyncio.create_task(
+            self._run(),
             name=f"harbor:room:{self.room_id}",
-            daemon=True,
         )
-        self._thread.start()
 
-    def stop(self, timeout=2.0):
-        self._stopped.set()
-        with self._lock:
-            ws = self._ws
+    async def stop(self):
+        self._stopped = True
+        ws = self._ws
         if ws is not None:
             try:
-                ws.close()
+                await ws.close()
             except Exception:
                 pass
-        thread = self._thread
-        if thread is not None and thread.is_alive():
-            thread.join(timeout)
-        with self._lock:
-            self._state = "stopped"
-            self._ws = None
-        self._thread = None
+        task = self._task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self._state = "stopped"
+        self._ws = None
+        self._task = None
 
     def snapshot(self):
-        with self._lock:
-            return {
-                "room_id": self.room_id,
-                "url": self.url,
-                "state": self._state,
-                "connected": self._state in {"connected", "subscribed"},
-                "subscribed": self._state == "subscribed",
-                "client_id": self._client_id,
-                "frames_received": self._frames_received,
-                "reconnects": self._reconnects,
-                "last_error": self._last_error,
-            }
+        return {
+            "room_id": self.room_id,
+            "url": self.url,
+            "state": self._state,
+            "connected": self._state in {"connected", "subscribed"},
+            "subscribed": self._state == "subscribed",
+            "client_id": self._client_id,
+            "frames_received": self._frames_received,
+            "reconnects": self._reconnects,
+            "last_error": self._last_error,
+        }
 
     @staticmethod
     def _json_message(raw):
@@ -164,82 +155,73 @@ class RoomPcmConnection:
             raise ValueError("Room control message must be an object")
         return message
 
-    def _handshake(self, ws):
-        welcome = parse_room_welcome(self._json_message(ws.recv()))
-        if welcome.room != self.room_id:
-            raise ValueError(f"WELCOME room mismatch: expected {self.room_id}, got {welcome.room}")
-        if welcome.robot_id != self.config.mic_channel:
-            raise ValueError(
-                f"WELCOME robotId mismatch: expected {self.config.mic_channel}, got {welcome.robot_id}"
-            )
-        if "MIC_AUDIO" not in welcome.catalog_types:
-            raise ValueError("WELCOME catalog does not advertise MIC_AUDIO")
-        with self._lock:
+    async def _handshake(self, ws):
+        async with asyncio.timeout(self.config.connect_timeout_sec):
+            welcome = parse_room_welcome(self._json_message(await ws.recv()))
+            if welcome.room != self.room_id:
+                raise ValueError(f"WELCOME room mismatch: expected {self.room_id}, got {welcome.room}")
+            if welcome.robot_id != self.config.mic_channel:
+                raise ValueError(
+                    f"WELCOME robotId mismatch: expected {self.config.mic_channel}, got {welcome.robot_id}"
+                )
+            if "MIC_AUDIO" not in welcome.catalog_types:
+                raise ValueError("WELCOME catalog does not advertise MIC_AUDIO")
             self._state = "connected"
             self._client_id = welcome.client_id
 
-        ws.send(
-            json.dumps(
-                {"type": "SUBSCRIBE", "data": {"types": list(self.config.subscribe_types)}},
-                ensure_ascii=False,
-                separators=(",", ":"),
+            await ws.send(
+                json.dumps(
+                    {"type": "SUBSCRIBE", "data": {"types": list(self.config.subscribe_types)}},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
             )
-        )
-        deadline = time.monotonic() + self.config.connect_timeout_sec
-        pending_binary = []
-        while time.monotonic() < deadline:
-            raw = ws.recv()
-            if isinstance(raw, bytes):
-                pending_binary.append(raw)
-                continue
-            message = self._json_message(raw)
-            if message.get("type") != "ACK":
-                continue
-            ack = parse_subscribe_ack(message)
-            if not set(self.config.subscribe_types).issubset(ack.subscriptions):
-                raise ValueError("Room ACK subscriptions do not include requested types")
-            with self._lock:
+            pending_binary = []
+            while True:
+                raw = await ws.recv()
+                if isinstance(raw, bytes):
+                    pending_binary.append(raw)
+                    continue
+                message = self._json_message(raw)
+                if message.get("type") != "ACK":
+                    continue
+                ack = parse_subscribe_ack(message)
+                if not set(self.config.subscribe_types).issubset(ack.subscriptions):
+                    raise ValueError("Room ACK subscriptions do not include requested types")
                 self._state = "subscribed"
                 self._last_error = None
-            for frame in pending_binary:
-                self._dispatch_binary(frame)
-            return
-        raise TimeoutError("Room SUBSCRIBE ACK timeout")
+                for frame in pending_binary:
+                    self._dispatch_binary(frame)
+                return
 
     def _dispatch_binary(self, frame: bytes):
-        with self._lock:
-            self._frames_received += 1
-        if self._loop is not None:
-            self._loop.call_soon_threadsafe(self.on_binary, frame)
+        self._frames_received += 1
+        self.on_binary(frame)
 
-    def _run(self):
+    async def _run(self):
         backoff = self.config.reconnect_min_sec
-        while not self._stopped.is_set():
+        while not self._stopped:
             subscribed = False
             try:
-                with self._lock:
-                    self._state = "connecting"
-                ws = websocket.create_connection(self.url, timeout=self.config.connect_timeout_sec)
-                ws.settimeout(1.0)
-                with self._lock:
+                self._state = "connecting"
+                async with connect(
+                    self.url,
+                    open_timeout=self.config.connect_timeout_sec,
+                    close_timeout=self.config.connect_timeout_sec,
+                ) as ws:
                     self._ws = ws
-                self._handshake(ws)
-                subscribed = True
-                backoff = self.config.reconnect_min_sec
-                logger.info("room_pcm connected room=%s url=%s", self.room_id, self.url)
-                while not self._stopped.is_set():
-                    try:
-                        raw = ws.recv()
-                    except websocket.WebSocketTimeoutException:
-                        continue
-                    if raw in (None, ""):
-                        raise ConnectionError("Room WebSocket closed")
-                    if isinstance(raw, bytes):
-                        self._dispatch_binary(raw)
+                    await self._handshake(ws)
+                    subscribed = True
+                    backoff = self.config.reconnect_min_sec
+                    logger.info("room_pcm connected room=%s url=%s", self.room_id, self.url)
+                    async for raw in ws:
+                        if isinstance(raw, bytes):
+                            self._dispatch_binary(raw)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
-                if not self._stopped.is_set():
-                    with self._lock:
-                        self._last_error = str(exc)
+                if not self._stopped:
+                    self._last_error = str(exc)
                     logger.warning(
                         "room_pcm disconnected room=%s url=%s error=%s retry=%.1fs",
                         self.room_id,
@@ -248,22 +230,14 @@ class RoomPcmConnection:
                         backoff,
                     )
             finally:
-                with self._lock:
-                    ws = self._ws
-                    self._ws = None
-                    if not self._stopped.is_set():
-                        self._state = "disconnected"
-                        if subscribed:
-                            self._reconnects += 1
-                if ws is not None:
-                    try:
-                        ws.close()
-                    except Exception:
-                        pass
-                if subscribed and not self._stopped.is_set() and self._loop is not None:
-                    self._loop.call_soon_threadsafe(self.on_disconnect)
-            if not self._stopped.is_set():
-                self._stopped.wait(backoff)
+                self._ws = None
+                if not self._stopped:
+                    self._state = "disconnected"
+                    if subscribed:
+                        self._reconnects += 1
+                        self.on_disconnect()
+            if not self._stopped:
+                await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, self.config.reconnect_max_sec)
 
 

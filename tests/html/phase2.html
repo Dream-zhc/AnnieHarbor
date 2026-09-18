@@ -13,8 +13,16 @@
 </head>
 <body>
   <h1>Annie Harbor · Phase 2</h1>
-  <p>Room BinaryFrame / Audio Input Gate / 有界PCM队列 / 输入等待Trace</p>
+  <p>单进程多机器人头 / Room BinaryFrame / Audio Input Gate / 有界PCM队列 / 输入等待Trace</p>
   <p class="muted warn">本页通过HTTP调试入口注入Phase 0已验证的MIC_AUDIO BinaryFrame，仅验证协议解析和本地准入；不代表真实Room连接、设备来源绑定或同房间定向已联调通过。</p>
+
+  <section>
+    <strong>本页要测什么</strong>
+    <p>确认同一个 Annie Harbor 进程中的多个机器人头各自拥有 PCM Gate，并且可以在同一时刻分别接收自己的音频帧。</p>
+    <p>“并发向全部机器人头注入”会给每个 robot_id 使用独立测试 source，同时发出一帧 MIC_AUDIO。预期每个头的 accepted 都增加，互不覆盖。</p>
+    <button id="inject-all">并发向全部机器人头注入1帧 PCM</button>
+    <pre id="all-result">尚未执行多头PCM并发测试</pre>
+  </section>
 
   <section>
     <button id="health-button">刷新 /health</button>
@@ -39,6 +47,8 @@
     const resultNode = document.querySelector('#result');
     const robotNode = document.querySelector('#robot');
     const logNode = document.querySelector('#log');
+    const allResultNode = document.querySelector('#all-result');
+    let healthData;
 
     function log(message, data) {
       const now = new Date().toLocaleTimeString();
@@ -61,6 +71,7 @@
 
     async function health() {
       const result = await readJson('/health');
+      healthData = result.data;
       healthNode.textContent = JSON.stringify(result, null, 2);
       log(`GET /health -> ${result.status}`, {ready:result.data.ready, room:result.data.capabilities?.room});
       const selected = robotNode.value;
@@ -92,6 +103,27 @@
     document.querySelector('#health-button').onclick = health;
     document.querySelector('#inputs').onclick = inputs;
     document.querySelector('#clear-log').onclick = () => { logNode.textContent = '日志已清空。'; };
+    document.querySelector('#inject-all').onclick = async () => {
+      if (!healthData) await health();
+      const started = performance.now();
+      const robots = healthData.robots;
+      log(`开始多头PCM并发注入：pid=${healthData.pid}，robot heads=${robots.map(r => r.robot_id).join(', ')}`);
+      const results = await Promise.all(robots.map(robot => {
+        const source = `phase2-html-${robot.robot_id}`;
+        return readJson(`/api/debug/robots/${robot.robot_id}/room-pcm?source=${source}`, {
+          method:'POST', headers:{'content-type':'application/octet-stream'}, body:micAudioFrame()
+        });
+      }));
+      const summary = {
+        pid: healthData.pid,
+        robot_count: robots.length,
+        elapsed_ms: Math.round(performance.now() - started),
+        results: results.map((r, index) => ({robot_id:robots[index].robot_id, http_status:r.status, accepted:r.data.accepted, queue_depth:r.data.queue_depth, source_id:r.data.source_id}))
+      };
+      allResultNode.textContent = JSON.stringify(summary, null, 2);
+      log('多头PCM并发注入完成', summary);
+      await health();
+    };
     document.querySelector('#inject').onclick = async () => {
       const robotId = robotNode.value;
       const source = `phase2-html-${robotId}`;

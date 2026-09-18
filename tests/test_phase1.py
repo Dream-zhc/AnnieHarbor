@@ -11,6 +11,7 @@ import socket
 import sqlite3
 import sys
 import tempfile
+import time
 import tomllib
 import unittest
 from pathlib import Path
@@ -73,6 +74,31 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({h["room_id"] for h in self.runtime.health()["robots"]}, {"demo-room"})
         self.assertEqual((await a).status, "completed")
         await self.assert_b(b, request_id)
+
+    async def test_runtime_supports_more_than_two_heads_concurrently(self):
+        Runtime, Config = require_runtime(self)
+        extra = Runtime(
+            [
+                Config("head-1", fake_delay_ms=80),
+                Config("head-2", fake_delay_ms=80),
+                Config("head-3", fake_delay_ms=80),
+            ],
+            Path(self.tmp.name) / "three-heads.db",
+        )
+        await extra.start()
+        try:
+            started = time.perf_counter()
+            results = await asyncio.gather(
+                extra.submit("head-1", "A"),
+                extra.submit("head-2", "B"),
+                extra.submit("head-3", "C"),
+            )
+            elapsed = time.perf_counter() - started
+            self.assertEqual({result.robot_id for result in results}, {"head-1", "head-2", "head-3"})
+            self.assertLess(elapsed, 0.20, "three heads should run concurrently, not serially")
+            self.assertEqual(extra.health()["pid"], os.getpid())
+        finally:
+            await extra.close()
 
     async def test_stop_one_head_does_not_stop_inflight_other_head(self):
         a, b, request_id = await self.pair()
@@ -519,6 +545,7 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(phase_page.status_code, 200)
         self.assertIn("Phase 1", phase_page.text)
         self.assertIn("操作日志", phase_page.text)
+        self.assertIn("并发向全部机器人头发送", phase_page.text)
 
 
 if __name__ == "__main__":

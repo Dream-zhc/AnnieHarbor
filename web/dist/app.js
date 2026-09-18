@@ -82,7 +82,7 @@ if (typeof document !== 'undefined') {
     if (button.dataset.pending === 'true') return;
     button.dataset.pending = 'true';
     button.disabled = true;
-    showMessage(card, name === 'turns' ? '回合已提交；其他机器人不受影响。' : '正在执行实例操作…');
+    showMessage(card, name === 'turns' ? '回合已提交；其它机器人头可同时处理自己的回合。' : '正在执行机器人头操作…');
     try {
       const result = await requestJSON(`/api/robots/${encodeURIComponent(id)}/${name}`, { method: 'POST', body });
       if (result.state) updateRobot(result);
@@ -107,7 +107,7 @@ if (typeof document !== 'undefined') {
         document.querySelector('#health-status').textContent = healthLabel(health);
         document.querySelector('#health-dot').dataset.status = health.ready ? health.status : 'unavailable';
         document.querySelector('#process-id').textContent = health.pid ?? '—';
-        document.querySelector('#robot-count').textContent = `${health.robots.length} 个独立实例`;
+        document.querySelector('#robot-count').textContent = `${health.robots.length} 个机器人头`;
         for (const robot of health.robots) updateRobot(robot);
         const capabilityList = document.querySelector('#capability-list');
         capabilityList.replaceChildren();

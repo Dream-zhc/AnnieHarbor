@@ -55,7 +55,7 @@ ready=true, status=healthy, annie-a=idle, annie-b=idle
 => GET /health => 200, ready=true, annie-a/annie-b均idle
 ```
 
-阶段可视化验收页位于`tests/html/phase1.html`；Runtime启动后访问`/phase-tests/phase1.html`，可直接查看health、两个机器人状态并触发Fake turn/cancel/stop/start/fail。
+阶段可视化验收页位于`tests/html/phase1.html`；Runtime启动后访问`/phase-tests/phase1.html`，页面会列出当前配置中的全部机器人头，并可一键并发向全部头发送Fake回合，验证“单进程、多robot_id、并发执行、状态隔离”。单头turn/cancel/stop/start/fail仍可分别测试。
 
 测试允许读取本机真实`.env`做泄漏边界检查；但Fake Runtime基础回归不要求真实Provider密钥存在，因此新机器/CI没有本机`.env`时仍可执行基础测试。
 

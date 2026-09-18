@@ -59,6 +59,11 @@ test('dashboard markup is accessible and loads only local assets', async () => {
   assert.match(html, /role="status"/);
   assert.match(html, /type="module" src="\/app.js"/);
   assert.match(html, /Fake/);
+  assert.match(html, /一个进程/);
+  assert.match(html, /多个机器人头并发/);
+  assert.match(html, /\/phase-tests\/phase1\.html/);
+  assert.match(html, /\/phase-tests\/phase2\.html/);
+  assert.doesNotMatch(html, /两个独立的 Fake RobotRuntime/);
   assert.doesNotMatch(html, /https?:\/\//);
   const js = await readFile(appPath, 'utf8');
   assert.doesNotMatch(js, /\.innerHTML\s*=/);

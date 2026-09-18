@@ -18,7 +18,7 @@
 - Python 3.11 + `uv` workspace，成员仅`apps/runtime`与五个`annie-*`包；sidecar不进入workspace，第三方源码目录只在真实需要时创建。
 - `start.sh`与`start.bat`统一进入`uv run --locked python -m annie_runtime`。
 - Phase 1建立`runtime_snapshots` + `runtime_events`和WAL/幂等migration；Phase 2当前schema v2仅新增输入`source`与`queue_wait_ms`，仍未创建Ledger/Memory/Graph表。
-- 一个Python进程内同时运行`annie-a`、`annie-b`两个Fake RobotRuntime；每头独立queue/worker/current turn/cancel状态。
+- 一个Python进程内承载配置中的全部机器人头；当前示例配置为`annie-a`、`annie-b`。每个`robot_id`拥有独立queue/worker/current turn/cancel状态，但所有头由同一项目进程并发调度；自动化测试额外覆盖3头并发，证明实现不写死为两个头。
 - `/health`、本地Fake控制API和最小Dashboard；真实Room/LLM/TTS/长期记忆/嘴型全部明确显示未接入。
 - 自动化测试证明停止、取消、FakeBrain异常与A队列积压不会破坏B。
 - V1 可复用配置资产已提前迁入：阿里/DashScope、Qwen TTS、MiniCPM视觉地址、Java Room六个WS地址、天气、动作/attention/嘴型配置；真实服务仍未接线。V1 `skills.json` 不迁入。
@@ -58,7 +58,7 @@ uv run --locked ruff check apps packages tests/test_phase1.py tests/test_phase2.
 
 Windows使用`start.bat`进入同一个Python入口。当前sidecar仍未多头化，同房间真实设备寻址仍是已知协议缺口。
 
-可视化验收页：`/phase-tests/phase1.html`、`/phase-tests/phase2.html`。阶段HTML统一放`tests/html/`，最终整合时删除。
+可视化验收页：`/phase-tests/phase1.html`用于单进程多头并发回合验收，`/phase-tests/phase2.html`用于多头PCM Gate并发准入验收。首页也提供这两个入口；阶段HTML统一放`tests/html/`，最终整合时删除。
 
 配置优先级固定为：CLI参数 > 已导出的系统环境变量 > 根目录`.env` > `config/*.toml`。机器本地配置从`.env.example`复制为`.env`；`.env`不提交。
 

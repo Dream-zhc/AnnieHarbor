@@ -15,7 +15,15 @@
 </head>
 <body>
   <h1>Annie Harbor · Phase 1</h1>
-  <div class="muted">最小Runtime / 两机器人隔离 / Fake Brain / SQLite / HTTP健康检查</div>
+  <div class="muted">单进程多机器人头 / 并发回合 / 状态隔离 / Fake Brain / SQLite / HTTP健康检查</div>
+
+  <section>
+    <strong>本页要测什么</strong>
+    <p>确认项目只运行一个 Runtime 进程；所有配置的 robot_id 都挂在这个进程里，并且可以同时处理请求。</p>
+    <p>点击下面的“并发向全部机器人头发送”，预期所有头同时进入处理，默认两个头各延迟约 800ms，总耗时仍应接近一次处理时间，而不是两个请求串行相加。</p>
+    <button id="concurrent-all">并发向全部机器人头发送</button>
+    <pre id="concurrent-result">尚未执行多头并发测试</pre>
+  </section>
 
   <section>
     <button id="refresh">刷新 /health</button>
@@ -101,7 +109,29 @@
         container.append(card);
       }
     }
+    async function concurrentAll() {
+      const healthResult = await json('/health');
+      const robots = healthResult.data.robots;
+      const started = performance.now();
+      log(`开始并发测试：同一进程 pid=${healthResult.data.pid}，robot heads=${robots.map(r => r.robot_id).join(', ')}`);
+      const results = await Promise.all(robots.map((robot, index) => json(`/api/robots/${robot.robot_id}/turns`, {
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({text:`并发测试 ${index + 1} / ${robot.robot_id}`})
+      })));
+      const elapsedMs = Math.round(performance.now() - started);
+      const summary = {
+        pid: healthResult.data.pid,
+        robot_count: robots.length,
+        elapsed_ms: elapsedMs,
+        results: results.map((r, index) => ({robot_id:robots[index].robot_id, http_status:r.status, status:r.data.status, reply:r.data.reply}))
+      };
+      $('#concurrent-result').textContent = JSON.stringify(summary, null, 2);
+      log(`并发测试完成：${robots.length} 个机器人头，总耗时 ${elapsedMs}ms`, summary);
+      await refresh();
+    }
     $('#refresh').onclick = refresh;
+    $('#concurrent-all').onclick = concurrentAll;
     $('#clear-log').onclick = () => { $('#log').textContent = '日志已清空。'; };
     refresh();
   </script>

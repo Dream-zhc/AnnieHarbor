@@ -29,7 +29,7 @@
 
 ## Phase 2 当前状态
 
-- 已按Phase 0 fixtures实现Room BinaryFrame、严格`mic.start`（16kHz/mono/S16LE/20ms/640B）、ASR/传感器/视觉/robot_event归一和cancel身份匹配。
+- 已按Phase 0 fixtures实现Room BinaryFrame、兼容`mic.start`严格解析、ASR/传感器/视觉/robot_event归一和cancel身份匹配；live `reb_mic` catalog未登记`mic.start`，因此PCM Gate已与该wire消息解耦，transport直接以已验证16kHz/mono/S16LE/20ms/640B格式启动。
 - 每个`robot_id`有独立Audio Input Gate与有界PCM队列；默认容量25帧、最大排队年龄500ms，满队列丢最旧帧保新鲜度。
 - `source_id`、sequence、定向/广播仅是Runtime显式绑定的内部元数据，不是新增wire字段；未知来源、回流、乱序、过期、错误格式和重连旧帧均有回归。
 - Web文本调试继续保留；`/api/debug/.../room-pcm`与`tests/html/phase2.html`仅用于本地协议/准入验收，不代表真实Room已连接。
@@ -37,7 +37,7 @@
 
 ## 当前下一步
 
-Phase 2尚未满足“真实Adapter联调”门槛。先取得真实Room发送/服务端证据，确认`MIC_AUDIO`连接身份、来源/序号/时间语义、同房间定向/广播方式、AEC责任及输出目标/回执；证据不足时保持`protocol_ready_not_connected`，禁止猜字段。完成真实Adapter与双头联调后再进入Phase 3。
+Phase 2尚未满足“真实Adapter联调”门槛。已实测`reb_mic`可建立WebSocket，服务端返回`WELCOME/ACK`；其中`robotId=reb_mic`是路径标识，`clientId=anonymous-*`会随重连变化，不能当稳定设备身份。下一步取得真实`MIC_AUDIO`数据面样本，确认发送端来源/序号/时间语义、同房间定向/广播方式、AEC责任及输出目标/回执；证据不足时保持`protocol_ready_not_connected`。完成真实Adapter与双头联调后再进入Phase 3。
 
 后续按`3会话/协调 → 4 Realtime音频输入/文本输出 → 4B独立TTS+最小嘴型 → 5上下文 → 6记忆 → 7真实工具/多设备 → 8事件/复杂工作流 → 9完整嘴型/观测 → 10复验`推进；Phase 11再评估复杂任务模型策略。
 

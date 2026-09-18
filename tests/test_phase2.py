@@ -348,6 +348,145 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+class RoomPcmNetworkIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_async_websocket_lifecycle_reconnect_and_room_isolation(self):
+        from annie_adapters import RoomServerConfig
+        from annie_core import RobotConfig
+        from annie_runtime import HarborRuntime
+        from websockets.asyncio.server import serve
+
+        connection_count = {"roomv2": 0, "roomv3": 0}
+        server_errors = []
+
+        def binary_frame(marker):
+            message_type = b"MIC_AUDIO"
+            return len(message_type).to_bytes(2, "big") + message_type + bytes([marker]) * 640
+
+        async def room_handler(ws):
+            try:
+                room_id = ws.request.path.rstrip("/").split("/")[-2]
+                connection_count[room_id] += 1
+                attempt = connection_count[room_id]
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "WELCOME",
+                            "ok": True,
+                            "clientId": f"test-{room_id}-{attempt}",
+                            "robotId": "reb_mic",
+                            "room": room_id,
+                            "size": 1,
+                            "subscriptions": [],
+                            "catalog": [{"type": "MIC_AUDIO"}],
+                        }
+                    )
+                )
+                subscribe = json.loads(await ws.recv())
+                if subscribe != {"type": "SUBSCRIBE", "data": {"types": ["*"]}}:
+                    raise AssertionError(f"unexpected SUBSCRIBE: {subscribe!r}")
+                await ws.send(
+                    json.dumps(
+                        {
+                            "type": "ACK",
+                            "data": {"what": "subscribed", "subscriptions": ["*"]},
+                        }
+                    )
+                )
+                if room_id == "roomv2":
+                    await ws.send(binary_frame(0x21 if attempt == 1 else 0x22))
+                    if attempt == 1:
+                        await ws.close()
+                        return
+                elif room_id == "roomv3":
+                    await ws.send(binary_frame(0x31))
+                else:
+                    raise AssertionError(f"unexpected room: {room_id}")
+                await ws.wait_closed()
+            except Exception as exc:
+                server_errors.append(exc)
+                raise
+
+        server = await serve(room_handler, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        root_url = f"ws://127.0.0.1:{port}/robot"
+        channels = {
+            "main": "reb_main",
+            "tts": "reb_tts",
+            "mic": "reb_mic",
+            "visualdata": "reb_visualdata",
+            "vision": "reb_vision",
+            "sam": "reb_sam",
+        }
+        room_server = RoomServerConfig(
+            base_url=f"{root_url}/roomv2",
+            room_root=root_url,
+            channels=channels,
+            default_urls={
+                name: f"{root_url}/roomv2/{channel}" for name, channel in channels.items()
+            },
+            reconnect_min_sec=0.01,
+            reconnect_max_sec=0.02,
+            connect_timeout_sec=0.5,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="phase2-network-", dir=ROOT / "var") as tmp:
+            runtime = HarborRuntime(
+                [
+                    RobotConfig(
+                        "room2-head",
+                        room_id="roomv2",
+                        listen_enabled=True,
+                        fake_delay_ms=0,
+                        audio_queue_capacity=4,
+                    ),
+                    RobotConfig(
+                        "room3-head",
+                        room_id="roomv3",
+                        listen_enabled=True,
+                        fake_delay_ms=0,
+                        audio_queue_capacity=4,
+                    ),
+                ],
+                Path(tmp) / "runtime.db",
+                room_server,
+            )
+            await runtime.start()
+            try:
+                async with asyncio.timeout(2.0):
+                    while True:
+                        room2 = runtime.room_connections["room2-head"].snapshot()
+                        room3 = runtime.room_connections["room3-head"].snapshot()
+                        stats2 = runtime.input_stats("room2-head")
+                        stats3 = runtime.input_stats("room3-head")
+                        if (
+                            connection_count["roomv2"] >= 2
+                            and room2["reconnects"] >= 1
+                            and room2["subscribed"]
+                            and room3["subscribed"]
+                            and stats2["accepted"] >= 2
+                            and stats3["accepted"] >= 1
+                        ):
+                            break
+                        await asyncio.sleep(0.01)
+
+                self.assertEqual(server_errors, [])
+                self.assertGreaterEqual(connection_count["roomv2"], 2)
+                self.assertEqual(connection_count["roomv3"], 1)
+                self.assertEqual(runtime.input_stats("room2-head")["queue_depth"], 1)
+                self.assertEqual(runtime.input_stats("room3-head")["queue_depth"], 1)
+
+                frame2, _ = runtime.next_pcm_nowait("room2-head")
+                frame3, _ = runtime.next_pcm_nowait("room3-head")
+                self.assertEqual(frame2.payload, bytes([0x22]) * 640)
+                self.assertEqual(frame3.payload, bytes([0x31]) * 640)
+                self.assertEqual(frame2.source_id, "room:roomv2:reb_mic")
+                self.assertEqual(frame3.source_id, "room:roomv3:reb_mic")
+            finally:
+                await runtime.close()
+                server.close()
+                await server.wait_closed()
+
+
 class Phase2HTTPTests(unittest.TestCase):
     def setUp(self):
         from annie_core import RobotConfig

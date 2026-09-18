@@ -1,0 +1,38 @@
+# V1 已核实 Java Room Server 地址。当前只迁移配置，不在 Phase 1 建立连接。
+
+[server]
+base_url = "ws://192.168.1.47:8090/robot/roomv2"
+subscribe_types = ["*"]
+reconnect_min_sec = 1.0
+reconnect_max_sec = 15.0
+
+[rooms]
+main = "reb_main"
+tts = "reb_tts"
+mic = "reb_mic"
+visualdata = "reb_visualdata"
+vision = "reb_vision"
+sam = "reb_sam"
+
+[urls]
+main = "ws://192.168.1.47:8090/robot/roomv2/reb_main"
+tts = "ws://192.168.1.47:8090/robot/roomv2/reb_tts"
+mic = "ws://192.168.1.47:8090/robot/roomv2/reb_mic"
+visualdata = "ws://192.168.1.47:8090/robot/roomv2/reb_visualdata"
+vision = "ws://192.168.1.47:8090/robot/roomv2/reb_vision"
+sam = "ws://192.168.1.47:8090/robot/roomv2/reb_sam"
+
+[protocol]
+asr_types = ["asr", "ASR_RESULT"]
+asr_text_keys = ["text", "result", "asr", "transcript", "content"]
+tts_message_type = "tts"
+tts_frame_max_age_ms = 2000
+tts_backpressure_high_ms = 1500
+tts_backpressure_low_ms = 600
+tts_playback_status_stale_ms = 3000
+visuals_command_queue_max = 500
+visuals_max_message_bytes = 524288
+visuals_raw_history_max = 100
+visuals_event_history_max = 200
+visual_command_timeout_ms = 30000
+visual_state_ttl_ms = 60000

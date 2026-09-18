@@ -1,0 +1,70 @@
+[
+  {
+    "id": "valid-mic",
+    "file": "fixtures/valid-mic.bin",
+    "sha256": "e28ceca301d0e7ee1e646d93ebb18353a370da10ae09250de6b66eea8c16e871",
+    "evidence": {
+      "kind": "source",
+      "path": "src/robot_brain/robot/bridge/room_protocol.py",
+      "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+      "line": 26
+    },
+    "status": "synthetic",
+    "expected": {
+      "type": "MIC_AUDIO",
+      "payload_size": 640
+    }
+  },
+  {
+    "id": "empty",
+    "file": "fixtures/empty.bin",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "evidence": {
+      "kind": "source",
+      "path": "src/robot_brain/robot/bridge/room_protocol.py",
+      "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+      "line": 26
+    },
+    "status": "synthetic",
+    "expected": null
+  },
+  {
+    "id": "zero-type",
+    "file": "fixtures/zero-type.bin",
+    "sha256": "11665c6d347989d4552044e140d88bd5a21a9f8b0933dfe7dc5886205579ebe2",
+    "evidence": {
+      "kind": "source",
+      "path": "src/robot_brain/robot/bridge/room_protocol.py",
+      "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+      "line": 26
+    },
+    "status": "synthetic",
+    "expected": null
+  },
+  {
+    "id": "truncated-type",
+    "file": "fixtures/truncated-type.bin",
+    "sha256": "c076fe2c93a2ff40c890697f9e4373765f136051ba45ae344ca11f80e0e0f3d1",
+    "evidence": {
+      "kind": "source",
+      "path": "src/robot_brain/robot/bridge/room_protocol.py",
+      "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+      "line": 26
+    },
+    "status": "synthetic",
+    "expected": null
+  },
+  {
+    "id": "bad-utf8",
+    "file": "fixtures/bad-utf8.bin",
+    "sha256": "8ebf86c85ee7f02ef85492cba38a4ab6bf1aefea49b5daf6a7cc18cf648322bf",
+    "evidence": {
+      "kind": "source",
+      "path": "src/robot_brain/robot/bridge/room_protocol.py",
+      "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+      "line": 26
+    },
+    "status": "synthetic",
+    "expected": null
+  }
+]

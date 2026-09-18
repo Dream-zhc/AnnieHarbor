@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "threshold": 80,
+  "rules": {
+    "asr_final": {
+      "label": "机器人 ASR 识别完成",
+      "score": 80,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "用户输入",
+      "description": "reb_main 收到有效 ASR 文本;与本回合其它信号求和过阈值才进 LLM."
+    },
+    "web_user_message": {
+      "label": "网页转发用户消息",
+      "score": 80,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "用户输入",
+      "description": "网页转发到嵌入式/主脑的用户文本;与本回合其它信号求和过阈值才进 LLM."
+    },
+    "user_touch": {
+      "label": "触摸传感器",
+      "score": 100,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "传感器",
+      "description": "三部位(1额头/2鼻子/3脸颊);level≥1 才计分,过阈值进 LLM;level=0 只观察."
+    },
+    "gas_detected": {
+      "label": "气味传感器",
+      "score": 100,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "传感器",
+      "description": "收到 level=1 气味事件才计分,过阈值进 LLM;level=0 只观察."
+    },
+    "vision_new_frame": {
+      "label": "视觉新帧/新摘要",
+      "score": 10,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "新画面本身只给少量分,避免每帧都调用 LLM."
+    },
+    "face_appeared": {
+      "label": "检测到人进入画面",
+      "score": 70,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "人脸或人物从无到有;可与身份识别分组合过阈值."
+    },
+    "face_state": {
+      "label": "人脸检测状态",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉状态",
+      "description": "连续人脸检测状态只更新黑板,不创建 LLM 回合."
+    },
+    "face_identity_changed": {
+      "label": "人脸身份发生变化",
+      "score": 50,
+      "enabled": false,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "识别到姓名或已识别身份发生变化;可与人脸出现分组合过阈值."
+    },
+    "face_disappeared": {
+      "label": "用户离开画面",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉状态",
+      "description": "确认人脸消失后只更新状态."
+    },
+    "user_too_close": {
+      "label": "用户距离过近",
+      "score": 35,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "用户距离小于约 0.6 米,或视觉事件明确标记 too_close."
+    },
+    "scene_change_large": {
+      "label": "场景变化较大",
+      "score": 70,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "场景变化比例达到约 35%,或视觉事件明确标记大变化."
+    },
+    "sustained_gaze": {
+      "label": "持续注视机器人",
+      "score": 65,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "用户持续看向机器人约 1.5 秒以上."
+    },
+    "object_presented": {
+      "label": "向机器人展示物体",
+      "score": 85,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "物体被举到机器人面前."
+    },
+    "object_state": {
+      "label": "物体检测状态",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉状态",
+      "description": "连续物体检测和跟踪状态只更新黑板."
+    },
+    "object_target_lost": {
+      "label": "丢失物体目标",
+      "score": 35,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "稳定跟踪目标确认丢失."
+    },
+    "gesture_started": {
+      "label": "斗鸡眼聚焦手势开始",
+      "score": 85,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "视觉",
+      "description": "斗鸡眼(index)聚焦手势开始边沿;走打分准入,与上下文分组合过阈值,一次手势只触发一次."
+    },
+    "gesture_active": {
+      "label": "用户手势持续",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉状态",
+      "description": "手势持续阶段只维持状态,不重复触发."
+    },
+    "gesture_stopped": {
+      "label": "用户手势停止",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉状态",
+      "description": "手势停止只清除状态."
+    },
+    "face_avoidance_started": {
+      "label": "人脸避障开始",
+      "score": 100,
+      "enabled": true,
+      "mode": "safety",
+      "locked": true,
+      "category": "安全事件",
+      "description": "人脸避障边沿必须立即进入安全处理,不依赖阈值."
+    },
+    "object_avoidance_started": {
+      "label": "物体避障开始",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉状态",
+      "description": "物体 area_ratio 大只说明追踪目标近,不是安全事件;只更新状态."
+    },
+    "vision_runtime_status": {
+      "label": "视觉运行状态",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉运维",
+      "description": "视觉流上线,离线和等待状态只进入运行状态."
+    },
+    "vision_command_progress": {
+      "label": "视觉命令进度",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉事务",
+      "description": "视觉管理命令的开始和进度只更新事务状态."
+    },
+    "face_management_terminal": {
+      "label": "人脸管理命令终态",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉事务",
+      "description": "人脸管理事务终态只更新事务面板状态,不进黑板也不触发主动播报."
+    },
+    "object_command_terminal": {
+      "label": "物体命令终态",
+      "score": 0,
+      "enabled": true,
+      "mode": "state_only",
+      "locked": false,
+      "category": "视觉事务",
+      "description": "物体管理事务终态只更新事务面板状态,不进黑板也不触发主动播报."
+    },
+    "dialogue_active": {
+      "label": "处于活跃对话",
+      "score": 20,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "对话状态",
+      "description": "当前仍在活跃对话窗口,主动回应的语境更自然."
+    },
+    "long_silence": {
+      "label": "长时间沉默",
+      "score": 40,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "对话状态",
+      "description": "达到主动问候的沉默时长;仍需与其他信号共同过阈值."
+    },
+    "ambient_noise_unawakened": {
+      "label": "未唤醒时明显噪音",
+      "score": 20,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "声音",
+      "description": "未唤醒小安妮时,麦克风能量达到约 65dB;网页 PCM 未校准时使用近似值."
+    },
+    "interruption_cost_high": {
+      "label": "主动开口打扰成本高",
+      "score": -50,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "抑制",
+      "description": "用户专注别处,明确忙碌等情况下抑制主动开口."
+    },
+    "user_recently_interrupted": {
+      "label": "最近被用户打断",
+      "score": -50,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "抑制",
+      "description": "30 秒内被用户打断;扣分随时间衰减."
+    },
+    "robot_just_spoke": {
+      "label": "机器人刚说过话",
+      "score": -80,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "抑制",
+      "description": "避免机器人连续抢话."
+    },
+    "user_screen_focus": {
+      "label": "用户专注屏幕",
+      "score": -45,
+      "enabled": true,
+      "mode": "scored",
+      "locked": false,
+      "category": "抑制",
+      "description": "用户正在看屏幕时降低主动打扰概率."
+    }
+  },
+  "deleted_rules": [
+    "object_target_acquired",
+    "object_target_changed",
+    "gesture_detected",
+    "avoidance_cleared"
+  ],
+  "saved_at_ms": 1787194536429
+}

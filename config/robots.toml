@@ -1,0 +1,20 @@
+# Internal Fake config only. These are not WebSocket wire fields.
+[[robots]]
+robot_id = "annie-a"
+room_id = "demo-room"
+persona_id = "annie"
+enabled = true
+listen_enabled = false
+publish_enabled = false
+queue_capacity = 16
+fake_delay_ms = 800
+
+[[robots]]
+robot_id = "annie-b"
+room_id = "demo-room"
+persona_id = "annie"
+enabled = true
+listen_enabled = false
+publish_enabled = false
+queue_capacity = 16
+fake_delay_ms = 800

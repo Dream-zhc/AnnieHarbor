@@ -1,0 +1,8 @@
+{"id": "same-room-broadcast", "input_scenario": "同房间广播ASR", "expected": "已显式订阅的A/B各处理一次；各自state/turn/output独立", "status": "future_acceptance_not_executed", "gap": "待Phase 1/2实现与接收端联调"}
+{"id": "same-room-directed", "input_scenario": "同房间定向设备事件", "expected": "只到目标机器人；无可验证目标时记录未路由", "status": "future_acceptance_not_executed", "gap": "待确认服务端目标标识"}
+{"id": "cancel-a", "input_scenario": "A当前ASR匹配action_prep", "expected": "只停止A的Brain/TTS；B继续；保留小脑动作", "status": "future_acceptance_not_executed", "gap": "待实例隔离实现"}
+{"id": "mouth-a-b", "input_scenario": "A/B交错conversation PCM", "expected": "不因B的cid切换重置A嘴型；每头使用自己的sample clock", "status": "future_acceptance_not_executed", "gap": "旧sidecar单活动cid，需改造"}
+{"id": "tts-overlap", "input_scenario": "A/B同时TTS", "expected": "独立session/timeout/queue；不被全局单连接串行化", "status": "future_acceptance_not_executed", "gap": "旧全局池size=1，需改造"}
+{"id": "shadow", "input_scenario": "A/B都是shadow listener", "expected": "publish=false覆盖两头TTS/动作/嘴型出口", "status": "future_acceptance_not_executed", "gap": "待V2配置实现"}
+{"id": "self-echo", "input_scenario": "自身LLM/嘴型/动作消息回流", "expected": "不创建新ASR turn", "status": "future_acceptance_not_executed", "gap": "待协议路由测试"}
+{"id": "reconnect", "input_scenario": "房间重连同事件重投", "expected": "逐机器人去重，不丢B合法广播", "status": "future_acceptance_not_executed", "gap": "待事件ID与服务端语义确认"}

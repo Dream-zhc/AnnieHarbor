@@ -1,0 +1,29 @@
+# V2 后续阶段仍需要的业务默认值。
+# 当前 Phase 1 Runtime 尚未读取这些开关；接入时只消费对应阶段需要的字段。
+
+[features]
+robot_output_enabled = true
+asr_forward = true
+web_forward = true
+eye_enabled = true
+
+[duplex]
+enabled = false
+mode = "wake"
+followup_ms = 8000
+pcm_source = "web"
+
+[tts]
+provider = "qwen_audio"
+# V1 tts_voice=null，表示使用 provider 默认音色；TOML 不写 null。
+
+[conversation]
+history_turns = 6
+turn_cooldown_ms = 1500
+sensor_rearm_gap_ms = 3000
+
+[vision]
+companion_context_enabled = true
+shared_attention_ttl_ms = 45000
+realtime_on_query = false
+attach_frame_to_main_brain = true

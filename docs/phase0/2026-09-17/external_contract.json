@@ -1,0 +1,593 @@
+{
+  "version": "phase0.v1",
+  "basis": "verified consumers/producers; not a complete server schema",
+  "contracts": {
+    "subscribe": {
+      "room": "all",
+      "direction": "client → room",
+      "required_fields": {
+        "type": "str",
+        "data.types": "list"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/service.py",
+        "sha256": "7f4f46c5a6a50d4c0db2c9d6171244649ba10b765dc776243e0827995b9c55aa",
+        "line": 2344
+      },
+      "notes": "发送 SUBSCRIBE/data.types=[\"*\"]；WELCOME/ACK 等不进 Brain；服务端源码缺失。",
+      "unknown_fields_allowed": true
+    },
+    "asr": {
+      "room": "reb_main",
+      "direction": "ASR → Brain",
+      "required_fields": {
+        "type": "str"
+      },
+      "optional_fields": {
+        "text": "str",
+        "data.text": "str",
+        "data.payload.text": "str",
+        "from": "str",
+        "ts": "int",
+        "event_id": "str",
+        "asr_turn_token": "str"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/room_protocol.py",
+        "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+        "line": 44
+      },
+      "notes": "asr/ASR_RESULT；文本字段 text/result/asr/transcript/content，逐字段按 payload→data→顶层取首个非空值；文本位置择一。from 是来源，不等于输出目标。",
+      "unknown_fields_allowed": true
+    },
+    "text_input": {
+      "room": "/ws/voice",
+      "direction": "Web → Brain",
+      "required_fields": {
+        "type": "str",
+        "text": "str"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/interfaces/legacy_application.py",
+        "sha256": "4ff02fb7e584888e50441d56af26ff4fede8674661a6fcbb70f4ad8f685dbcf7",
+        "line": 2278
+      },
+      "notes": "空文本不创建回合。",
+      "unknown_fields_allowed": true
+    },
+    "robot_event": {
+      "room": "reb_main",
+      "direction": "device/algorithm → Brain",
+      "required_fields": {
+        "type": "str",
+        "data.event_type": "str",
+        "data.payload": "dict"
+      },
+      "optional_fields": {
+        "data.source": "str",
+        "data.event_id": "str",
+        "data.ts_ms": "int",
+        "data.ttl_ms": "int",
+        "data.confidence": "number"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/brain/context/protocol_adapter.py",
+        "sha256": "a6d1a697f9cba62c6e30d8a32bb0c22203f27bcb277c73da2c0162dba8c6d8d7",
+        "line": 248
+      },
+      "notes": "这里锁定一个已支持的 envelope 形状；event_type/source/payload 也有顶层兼容路径。算法专用业务字段没有单独证据，待确认。",
+      "unknown_fields_allowed": true
+    },
+    "pressure": {
+      "room": "reb_main",
+      "direction": "device → Brain",
+      "required_fields": {
+        "type": "str",
+        "level": "int"
+      },
+      "optional_fields": {
+        "id": "int",
+        "sensor_type": "str",
+        "text": "str",
+        "data": "dict",
+        "from": "str",
+        "room": "str",
+        "ts": "int"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/room_protocol.py",
+        "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+        "line": 67
+      },
+      "notes": "顶层与data兼容；pressure 0–5（0无压力），id=1额头/2鼻子/3脸颊/4肩膀拍打；gas/touch归一到0/1；V2第一版仅更新WorldState，不自动开口。",
+      "unknown_fields_allowed": true
+    },
+    "touch": {
+      "room": "reb_main",
+      "direction": "device → Brain",
+      "required_fields": {
+        "type": "str",
+        "level": "int"
+      },
+      "optional_fields": {
+        "id": "int",
+        "sensor_type": "str",
+        "text": "str",
+        "data": "dict",
+        "from": "str",
+        "room": "str",
+        "ts": "int"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/room_protocol.py",
+        "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+        "line": 67
+      },
+      "notes": "顶层与data兼容；pressure 0–5（0无压力），id=1额头/2鼻子/3脸颊/4肩膀拍打；gas/touch归一到0/1；V2第一版仅更新WorldState，不自动开口。",
+      "unknown_fields_allowed": true
+    },
+    "gas": {
+      "room": "reb_main",
+      "direction": "device → Brain",
+      "required_fields": {
+        "type": "str",
+        "level": "int"
+      },
+      "optional_fields": {
+        "id": "int",
+        "sensor_type": "str",
+        "text": "str",
+        "data": "dict",
+        "from": "str",
+        "room": "str",
+        "ts": "int"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/room_protocol.py",
+        "sha256": "49bbcfd1552a1620e71582e852579ffe90fcd8eac803a1127af1133e80d0af68",
+        "line": 67
+      },
+      "notes": "顶层与data兼容；pressure 0–5（0无压力），id=1额头/2鼻子/3脸颊/4肩膀拍打；gas/touch归一到0/1；V2第一版仅更新WorldState，不自动开口。",
+      "unknown_fields_allowed": true
+    },
+    "tts": {
+      "room": "reb_tts",
+      "direction": "Brain → playback/viseme",
+      "required_fields": {
+        "type": "str",
+        "ts": "int",
+        "data.audio": "str",
+        "data.format": "str",
+        "data.sample_rate": "int",
+        "data.channels": "int",
+        "data.text": "str",
+        "data.seq": "int",
+        "data.final": "bool"
+      },
+      "optional_fields": {
+        "data.turn_id": "str",
+        "data.conversation_id": "str",
+        "data.source": "str",
+        "data.stop": "bool",
+        "data.stream_epoch": "int",
+        "data.playback_protocol": "str",
+        "data.protocol_version": "int",
+        "data.audio_total_samples": "int",
+        "data.audio_total_ms": "number"
+      },
+      "evidence": {
+        "kind": "protocol_document",
+        "path": "project/tts_viseme/PROTOCOL.md",
+        "sha256": "05ca27ba0ece6ecc6d230648f30a8cb0430f692850efc7e0463c46cbe8d7f91b",
+        "line": 54
+      },
+      "notes": "audio 为既有 JSON/Base64 PCM；非空当前运行PCM=24000Hz/mono/S16LE。conversation_id整轮，turn_id分段；final不代表扬声器drained。文档22050仅示例。",
+      "unknown_fields_allowed": true
+    },
+    "expression": {
+      "room": "reb_tts",
+      "direction": "Brain → device",
+      "required_fields": {
+        "type": "str",
+        "ts": "int",
+        "data.expression": "str",
+        "data.turn_id": "str",
+        "data.source": "str"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/service.py",
+        "sha256": "7f4f46c5a6a50d4c0db2c9d6171244649ba10b765dc776243e0827995b9c55aa",
+        "line": 1713
+      },
+      "notes": "喜/怒/哀/乐/中；独立JSON，排在对应PCM前，source兼容值不说明LLM实际来源。",
+      "unknown_fields_allowed": true
+    },
+    "action_trigger": {
+      "room": "reb_main",
+      "direction": "Brain → device",
+      "required_fields": {
+        "type": "str",
+        "ts": "int",
+        "data.script_id": "str",
+        "data.offset_ms": "int",
+        "data.conversation_id": "str",
+        "data.anchor_source": "str"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/generation/text_utils.py",
+        "sha256": "31fde9c89913de90f8047496f6bff2b4c424e2f60ac5a8e5de6cad96e39c59a3",
+        "line": 343
+      },
+      "notes": "只按conversation_id绑定整轮；offset锚定首个source=robot_main_brain PCM的真实播放sample，不使用网络接收时间；无action_cancel。",
+      "unknown_fields_allowed": true
+    },
+    "robot_command": {
+      "room": "reb_main",
+      "direction": "Brain → device",
+      "required_fields": {
+        "type": "str",
+        "ts": "int",
+        "data.command_type": "str",
+        "data.target": "str",
+        "data.priority": "int",
+        "data.payload": "dict"
+      },
+      "optional_fields": {
+        "data.metadata": "dict"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/service.py",
+        "sha256": "7f4f46c5a6a50d4c0db2c9d6171244649ba10b765dc776243e0827995b9c55aa",
+        "line": 2301
+      },
+      "notes": "motion.stop 示例来自中断出口；target=motion.primary是动作通道，不是机器人身份。",
+      "unknown_fields_allowed": true
+    },
+    "cancel": {
+      "room": "reb_main",
+      "direction": "small brain → Brain",
+      "required_fields": {
+        "type": "str",
+        "reason": "str"
+      },
+      "optional_fields": {
+        "text": "str",
+        "source": "str",
+        "asr_from": "str",
+        "asr_ts": "int",
+        "asr_event_id": "str",
+        "asr_turn_token": "str",
+        "turn_token": "str",
+        "script_id": "str",
+        "latency_ms": "number"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "dev/tests/companion/test_small_brain_cancel.py",
+        "sha256": "c542d36bf07d2d5f1295516154fc2944f69894e352d179c2c127577a551f32c3",
+        "line": 137
+      },
+      "notes": "reason=action_prep；先event_id再turn_token，双方存在却冲突不退回弱匹配；否则from+ts一致且文本不矛盾；停Brain/TTS，不停小脑接管动作。发送端项目未提供。",
+      "unknown_fields_allowed": true
+    },
+    "llm_delta": {
+      "room": "reb_sam",
+      "direction": "Brain → viseme",
+      "required_fields": {
+        "type": "str",
+        "sender": "str",
+        "initiator": "str",
+        "conversation_id": "str",
+        "turn_id": "str",
+        "seq": "int",
+        "text": "str",
+        "final": "bool",
+        "ts": "int"
+      },
+      "optional_fields": {
+        "llm_delta_created_ms": "int",
+        "llm_delta_enqueue_ms": "int"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/viseme_sam.py",
+        "sha256": "cffb860c32f9d2e6030c39106b2806b3a230878b82340737de013752b5a0dd33",
+        "line": 519
+      },
+      "notes": "提前G2P；最终以tts.data.text为准；结束空text/final=true。",
+      "unknown_fields_allowed": true
+    },
+    "viseme_control": {
+      "room": "reb_sam",
+      "direction": "Brain → sidecar",
+      "required_fields": {
+        "type": "str",
+        "sender": "str",
+        "initiator": "str",
+        "enabled": "bool",
+        "ts": "int"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/viseme_sam.py",
+        "sha256": "cffb860c32f9d2e6030c39106b2806b3a230878b82340737de013752b5a0dd33",
+        "line": 516
+      },
+      "notes": "现有enabled是全局开关，未带robot_id；多头实例级控制需确认外部契约。",
+      "unknown_fields_allowed": true
+    },
+    "mouth_script": {
+      "room": "reb_sam",
+      "direction": "sidecar → device",
+      "required_fields": {
+        "type": "str",
+        "sender": "str",
+        "initiator": "str",
+        "stream_id": "str",
+        "seq": "int",
+        "script_id": "int",
+        "viseme": "str",
+        "at_sample": "int",
+        "start_sample": "int",
+        "end_sample": "int",
+        "duration_ms": "number",
+        "timing_source": "str"
+      },
+      "optional_fields": {
+        "char": "str",
+        "pinyin": "str",
+        "final": "str",
+        "sample_rate": "int",
+        "duration_samples": "int",
+        "at_ms": "number",
+        "start_ms": "number",
+        "end_ms": "number",
+        "conversation_id": "str",
+        "turn_id": "str",
+        "ts": "int",
+        "from": "str",
+        "room": "str"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "project/tts_viseme/qwen_stream_room_g2pw.py",
+        "sha256": "07846762cf5a92ab02fea79646d68d3895ad58f5c2a79f6f147d0a634ac14cd9",
+        "line": 1463
+      },
+      "notes": "a/o/e/i/u/ü→1/2/3/4/5/6；final是拼音韵母字符串，不是tts结束标记。由真实声学边界决定时刻；不平均分配，不拉长尾字；允许真实静音及轻微原始重叠。",
+      "unknown_fields_allowed": true
+    },
+    "mouth_sync_summary": {
+      "room": "reb_sam + observation HTTP",
+      "direction": "sidecar → observation",
+      "required_fields": {
+        "type": "str",
+        "conversation_id": "str",
+        "turn_id": "str",
+        "synthetic_stretch_count": "int",
+        "forced_fill_ms": "number"
+      },
+      "optional_fields": {
+        "sample_rate": "int",
+        "expected_syllable_count": "int",
+        "mouth_event_count": "int",
+        "dropped_chars": "list",
+        "unaligned_tail_ms": "number",
+        "coverage_ratio": "number",
+        "duration_matches_last_end": "bool"
+      },
+      "evidence": {
+        "kind": "protocol_document",
+        "path": "project/tts_viseme/PROTOCOL.md",
+        "sha256": "05ca27ba0ece6ecc6d230648f30a8cb0430f692850efc7e0463c46cbe8d7f91b",
+        "line": 136
+      },
+      "notes": "完整字段以现有文档示例为准。synthetic_stretch_count/forced_fill_ms必须0；coverage和duration_match仅观测。 当前源码final尝试send_mouth(summary)，但main的_deliver_mouth统一要求timing_source前缀qwen3_forced_aligner，summary不带该字段会被丢弃；9/17日志出现MOUTH_DROP source=-且trace sync_summary=null。文档定义不代表当前实际发送成功。",
+      "unknown_fields_allowed": true
+    },
+    "vision_perception": {
+      "room": "reb_visualdata",
+      "direction": "vision → Brain",
+      "required_fields": {
+        "type": "str",
+        "kind": "str"
+      },
+      "optional_fields": {
+        "tracks": "list",
+        "gesture": "dict",
+        "from": "str",
+        "ts": "int",
+        "timestamp_ms": "int",
+        "sequence": "int",
+        "room": "str"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/perception/vision/visual_room_protocol.py",
+        "sha256": "9eee1d0b44d2f7d8fc8515c2392ee3a025081866840eb5878e120b5685279d7f",
+        "line": 318
+      },
+      "notes": "face/object需要tracks；gesture需要gesture对象；tracks字段name/label/bbox/expression来自已支持形状，不猜设备额外字段。",
+      "unknown_fields_allowed": true
+    },
+    "vision_legacy": {
+      "room": "reb_visualdata",
+      "direction": "vision → Brain",
+      "required_fields": {
+        "type": "str",
+        "source": "str",
+        "sequence": "int",
+        "timestamp_ms": "int"
+      },
+      "optional_fields": {
+        "face": "dict",
+        "object": "dict",
+        "gesture": "dict",
+        "avoidance": "dict",
+        "runtime_status": "dict",
+        "face_management": "dict",
+        "object_command": "dict"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/perception/vision/visual_room_protocol.py",
+        "sha256": "9eee1d0b44d2f7d8fc8515c2392ee3a025081866840eb5878e120b5685279d7f",
+        "line": 397
+      },
+      "notes": "type=face/object/gesture；source=face(仅face)或object(object/gesture)；至少一个business字段。",
+      "unknown_fields_allowed": true
+    },
+    "vision_command": {
+      "room": "reb_visualdata",
+      "direction": "Brain → vision",
+      "required_fields": {
+        "type": "str",
+        "action": "str",
+        "request_id": "str"
+      },
+      "optional_fields": {
+        "name": "str",
+        "samples": "int",
+        "target": "str"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/perception/vision/visual_command_router.py",
+        "sha256": "75e1cdb3eba8c042a07ff455515c121a5f659c8968f4a4f6307049c8164ae241",
+        "line": 14
+      },
+      "notes": "face动作register/cancel_register/delete/train/audit_face；object动作set_object_target/set_object_auto/clear_object_target；参数按动作白名单，request_id关联结果，不是robot_id。",
+      "unknown_fields_allowed": true
+    },
+    "mic_start": {
+      "room": "reb_mic",
+      "direction": "audio publisher → consumer",
+      "required_fields": {
+        "type": "str",
+        "data.audio.codec": "str",
+        "data.audio.sample_rate": "int",
+        "data.audio.channels": "int",
+        "data.audio.frame_ms": "int",
+        "data.audio.bytes_per_frame": "int"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/mic_channel.py",
+        "sha256": "eb852161bd8dbd793d3d40a43655b204004a9193681acd646724d01b9401aab9",
+        "line": 259
+      },
+      "notes": "也接受data平铺形状；PCM S16LE/mono/16kHz/20ms/640B。V2首版不消费本地音频/全双工，作为外部保留参考。",
+      "unknown_fields_allowed": true
+    },
+    "playback_control": {
+      "room": "reb_tts",
+      "direction": "Brain → playback",
+      "required_fields": {
+        "type": "str",
+        "ts": "int",
+        "data.control": "str",
+        "data.playback_protocol": "str",
+        "data.protocol_version": "int",
+        "data.stream_epoch": "int",
+        "data.conversation_id": "str",
+        "data.reason": "str"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/playback_runtime.py",
+        "sha256": "15f321010d6567309aadf00d0646d52cb8c15215e074bfaa6cdfc6b29889da5a",
+        "line": 176
+      },
+      "notes": "hold/resume/clear为现有duplex条件分支；V2首版不自动引入全双工；clear与stop至少要兼容接收端。",
+      "unknown_fields_allowed": true
+    },
+    "playback_receipt": {
+      "room": "reb_main",
+      "direction": "playback → Brain",
+      "required_fields": {
+        "type": "str",
+        "data.conversation_id": "str",
+        "data.stream_epoch": "int"
+      },
+      "optional_fields": {},
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/service.py",
+        "sha256": "7f4f46c5a6a50d4c0db2c9d6171244649ba10b765dc776243e0827995b9c55aa",
+        "line": 2639
+      },
+      "notes": "held/resumed/cleared/drained/underflow；旧epoch/cid不应更新当前轮。",
+      "unknown_fields_allowed": true
+    },
+    "playback_status": {
+      "room": "reb_tts",
+      "direction": "playback → Brain",
+      "required_fields": {
+        "type": "str",
+        "data.queue_ahead_ms": "int"
+      },
+      "optional_fields": {
+        "data.state": "str",
+        "data.conversation_id": "str"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "src/robot_brain/robot/bridge/tts_channel.py",
+        "sha256": "2181bb7e1b31355cd488dc731287072a40644632cc23e7c2d8af704de73c09ee",
+        "line": 226
+      },
+      "notes": "client.playback.status或tts.playback.status；队列毫秒反压，无状态回执时兼容旧客户端。",
+      "unknown_fields_allowed": true
+    },
+    "viseme_health": {
+      "room": "HTTP POST /api/dev/viseme/events",
+      "direction": "sidecar → observation",
+      "required_fields": {
+        "type": "str",
+        "status": "str",
+        "pid": "int",
+        "ts": "int"
+      },
+      "optional_fields": {
+        "sam_connected": "bool",
+        "tts_connected": "bool",
+        "sam_subscribed": "bool",
+        "tts_subscribed": "bool",
+        "aligner_backend": "str",
+        "reason": "str|null"
+      },
+      "evidence": {
+        "kind": "source",
+        "path": "project/tts_viseme/qwen_stream_room_g2pw.py",
+        "sha256": "07846762cf5a92ab02fea79646d68d3895ad58f5c2a79f6f147d0a634ac14cd9",
+        "line": 2983
+      },
+      "notes": "当前启动脚本TTS_VISEME_OBSERVE_URL默认http://127.0.0.1:<port>/api/dev/viseme/events；ready需sam与tts均subscribed，进程存在不等于ready；源码:3256的ready reason=null，未订阅reason=room_not_subscribed。",
+      "unknown_fields_allowed": true
+    }
+  },
+  "pending": [
+    "房间服务端目标寻址/广播/去重",
+    "小脑发送端项目和action消息schema",
+    "设备实际播放回执与动作收尾策略",
+    "算法专用payload",
+    "原始网络完整抓包缺口"
+  ]
+}

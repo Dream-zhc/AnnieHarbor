@@ -1,0 +1,15 @@
+[project]
+name = "annie-adapters"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = ["annie-core"]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/annie_adapters"]
+
+[tool.uv.sources]
+annie-core = { workspace = true }

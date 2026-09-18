@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Annie Harbor · 安妮港</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Annie Harbor 首页"><span class="brand-mark" aria-hidden="true">a.</span><span>Annie Harbor <span class="brand-cn">安妮港</span></span></a>
+      <div class="phase-label">PHASE 01 <span>LOCAL / FAKE</span></div>
+    </header>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <div class="eyebrow">MULTI-ROBOT RUNTIME</div>
+        <h1 id="page-title">同一个港口，<br><span>独立的每一颗心。</span></h1>
+        <p class="intro-copy">一个 Python 进程，两个独立的 Fake RobotRuntime。<br>在这里验证并发、取消与故障隔离，不连接真实机器人。</p>
+      </section>
+      <section class="overview" aria-label="运行状态">
+        <div class="overview-main"><span class="status-dot" id="health-dot" aria-hidden="true"></span><div><span class="caption">进程健康</span><strong id="health-status" role="status">正在连接 Runtime…</strong></div></div>
+        <div class="overview-detail"><span class="caption">进程 PID</span><strong id="process-id">—</strong></div>
+        <div class="overview-detail"><span class="caption">机器人</span><strong id="robot-count">—</strong></div>
+        <div class="overview-detail"><span class="caption">存储</span><strong>本地 SQLite</strong></div>
+      </section>
+      <div class="section-heading"><h2>机器人工作台</h2><span>同房间 · 各自独立队列</span></div>
+      <div id="robots" class="robot-grid" aria-label="机器人实例"></div>
+      <p id="connection-error" class="connection-error" role="alert" hidden></p>
+      <section class="capabilities" aria-labelledby="capabilities-title">
+        <div><h2 id="capabilities-title">只验证基础架构</h2><p>本阶段是确定性 Fake 回显，不调用 LLM，不产生 TTS 音频或嘴型。</p></div>
+        <div id="capability-list" class="capability-list"><span class="capability">FAKE BRAIN · 本地</span></div>
+      </section>
+    </main>
+    <footer><span>ANNIE HARBOR <span class="footer-muted">/ 安妮港</span></span><span>Phase 1 · 单进程 / 双实例 / 隔离验证</span></footer>
+  </div>
+  <template id="robot-template">
+    <article class="robot-card">
+      <div class="robot-header"><div class="robot-avatar" aria-hidden="true">A</div><div class="robot-identity"><h3></h3><p class="robot-room"></p></div><span class="robot-state"></span></div>
+      <dl class="robot-metrics"><div><dt>已完成</dt><dd class="completed">0</dd></div><div><dt>已取消</dt><dd class="cancelled">0</dd></div><div><dt>故障</dt><dd class="failures">0</dd></div><div><dt>队列</dt><dd class="queue-depth">0</dd></div></dl>
+      <div class="turn-context"><div><span class="caption">最近输入</span><p class="last-input">—</p></div><div><span class="caption">当前请求</span><p class="current-request">—</p></div></div>
+      <div class="reply-box"><span class="caption">最近回复 <span class="fake-label">FAKE</span></span><p class="last-reply">发送一条消息，开始验证这个机器人。</p><p class="runtime-error" hidden></p></div>
+      <form class="turn-form"><label class="input-label">向这个机器人发送文本</label><div class="input-row"><input type="text" name="text" maxlength="2000" required autocomplete="off" placeholder="你好，安妮"><button class="send-button" type="submit">发送 <span aria-hidden="true">↗</span></button></div></form>
+      <div class="robot-actions"><button type="button" data-action="cancel">取消回合</button><button type="button" data-action="stop">停止</button><button type="button" data-action="start">启动</button><button type="button" data-action="fail" class="failure-button">模拟故障</button></div>
+      <p class="action-message" role="status" aria-live="polite">实例状态、回合与取消均按 robot_id 隔离。</p>
+    </article>
+  </template>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

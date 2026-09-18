@@ -1,0 +1,319 @@
+{
+  "source": {
+    "kind": "configuration",
+    "path": "data/config/action_scripts.json",
+    "sha256": "0888b3ffa9f2345cc6a6b3c5023edac6e8c5d7a939b004581de8e649199951c7",
+    "line": 1
+  },
+  "value": {
+    "_doc": "小安妮动作脚本目录。script_id 必须与云端 action_trigger 支持列表一致；动作本体在嵌入式/云端执行侧。",
+    "scripts": [
+      {
+        "id": "agree_micro_nod",
+        "llm_id": 1,
+        "name": "附和小点头",
+        "description": "轻微附和、同意、确认、听懂时自然点一下头。",
+        "duration_ms": 850,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "listen_tilt",
+        "llm_id": 2,
+        "name": "倾听",
+        "description": "认真倾听、等用户继续说、表现专注时使用。",
+        "duration_ms": 2500,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "listen_turn",
+        "llm_id": 3,
+        "name": "侧耳听",
+        "description": "需要更明显表现侧耳倾听、没完全听清或等续句时使用。",
+        "duration_ms": 2500,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "confused_tilt",
+        "llm_id": 4,
+        "name": "疑惑歪头",
+        "description": "轻中度疑惑、没理解、觉得奇怪、需要确认时使用。",
+        "duration_ms": 3800,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "confused_up",
+        "llm_id": 5,
+        "name": "疑惑仰看",
+        "description": "明显在想、被问住、需要回忆或推敲时使用。",
+        "duration_ms": 6000,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "shy_retract",
+        "llm_id": 6,
+        "name": "害羞蜷缩",
+        "description": "害羞、被夸后有点不好意思、轻微躲闪时使用。",
+        "duration_ms": 2200,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "embarrass_left",
+        "llm_id": 7,
+        "name": "尴尬偏左",
+        "description": "尴尬、心虚、被点破、轻微社死时偏左躲闪。",
+        "duration_ms": 5600,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "embarrass_right",
+        "llm_id": 8,
+        "name": "尴尬偏右",
+        "description": "尴尬、心虚、被点破、轻微社死时偏右躲闪。",
+        "duration_ms": 5600,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "sniff_forward",
+        "llm_id": 9,
+        "name": "嗅闻寻源",
+        "description": "语境明确涉及闻、气味、嗅探或寻找气味来源时使用。",
+        "duration_ms": 3350,
+        "category": "special",
+        "enabled": true
+      },
+      {
+        "id": "sigh_droop",
+        "llm_id": 10,
+        "name": "叹气低头",
+        "description": "无奈、轻度失落、疲惫、叹气式吐槽时使用；严肃悲伤不要夸张。",
+        "duration_ms": 2500,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "yawn_stretch",
+        "llm_id": 11,
+        "name": "哈欠伸展",
+        "description": "困倦、犯困、熬夜、打哈欠等明确语境时使用。",
+        "duration_ms": 2100,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "look_left",
+        "llm_id": 12,
+        "name": "看左边",
+        "description": "用户明确要求看左边或当前视觉目标明确在左侧时使用。",
+        "duration_ms": 1300,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "look_right",
+        "llm_id": 13,
+        "name": "看右边",
+        "description": "用户明确要求看右边或当前视觉目标明确在右侧时使用。",
+        "duration_ms": 1300,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "look_up",
+        "llm_id": 14,
+        "name": "往上看",
+        "description": "用户明确要求往上看或当前视觉目标明确在上方时使用。",
+        "duration_ms": 1300,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "micro_pitch",
+        "llm_id": 15,
+        "name": "轻抬下巴",
+        "description": "轻微强调、自信回应、短促注意转移时使用。",
+        "duration_ms": 800,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "micro_tilt",
+        "llm_id": 16,
+        "name": "轻歪右",
+        "description": "轻微好奇、俏皮、随口反问或自然活人感时使用。",
+        "duration_ms": 950,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "micro_tilt_left",
+        "llm_id": 17,
+        "name": "轻歪左",
+        "description": "轻微好奇、俏皮、随口反问或自然活人感时使用。",
+        "duration_ms": 950,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "micro_turn",
+        "llm_id": 18,
+        "name": "小转右",
+        "description": "轻微转向右侧、自然注意变化时使用。",
+        "duration_ms": 850,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "micro_turn_left",
+        "llm_id": 19,
+        "name": "小转左",
+        "description": "轻微转向左侧、自然注意变化时使用。",
+        "duration_ms": 850,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "eye_glance_left",
+        "llm_id": 20,
+        "name": "眼瞟左",
+        "description": "只需眼神快速瞟向左侧、无需明显转头时使用。",
+        "duration_ms": 720,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "eye_glance_right",
+        "llm_id": 21,
+        "name": "眼瞟右",
+        "description": "只需眼神快速瞟向右侧、无需明显转头时使用。",
+        "duration_ms": 720,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "eye_glance_up",
+        "llm_id": 22,
+        "name": "眼瞟上",
+        "description": "只需眼神快速向上看、思索或注意上方时使用。",
+        "duration_ms": 720,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "eye_glance_down",
+        "llm_id": 23,
+        "name": "眼瞟下",
+        "description": "只需眼神快速向下看、轻微回避或注意下方时使用。",
+        "duration_ms": 720,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "eye_drift",
+        "llm_id": 24,
+        "name": "眼微漂移",
+        "description": "无强语义动作时的轻微眼神漂移，增加自然活人感；不要频繁触发。",
+        "duration_ms": 920,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "glance_co_left",
+        "llm_id": 25,
+        "name": "眼颈协同左",
+        "description": "需要比眼瞟更明显但又不是完整转头地看左侧时使用。",
+        "duration_ms": 920,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "glance_co_right",
+        "llm_id": 26,
+        "name": "眼颈协同右",
+        "description": "需要比眼瞟更明显但又不是完整转头地看右侧时使用。",
+        "duration_ms": 920,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "shake_head",
+        "llm_id": 27,
+        "name": "摇头",
+        "description": "明确否定、不同意、拒绝、劝阻、不是这样时使用。",
+        "duration_ms": 3700,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "tilt_head_left",
+        "llm_id": 28,
+        "name": "左歪头",
+        "description": "明显歪头表达疑惑、好奇、没听清或重新确认时使用。",
+        "duration_ms": 1800,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "cross_eyes",
+        "llm_id": 29,
+        "name": "斗鸡眼",
+        "description": "只用于明确搞怪、扮鬼脸、逗趣或轻松玩笑。",
+        "duration_ms": 3300,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "think_tilt",
+        "llm_id": 30,
+        "name": "思考倾",
+        "description": "正在思考、权衡、回忆、准备给判断时使用。",
+        "duration_ms": 3000,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "think_curious",
+        "llm_id": 31,
+        "name": "思考复合",
+        "description": "带一点好奇和搞怪的思考语境使用；严肃场景不用。",
+        "duration_ms": 3100,
+        "category": "primary",
+        "enabled": true
+      },
+      {
+        "id": "fast_double_blink",
+        "llm_id": 32,
+        "name": "连眨两下",
+        "description": "轻微困惑、意外、怀疑、重新确认、被问懵或自然表达‘嗯？’时使用。",
+        "duration_ms": 550,
+        "category": "micro",
+        "enabled": true
+      },
+      {
+        "id": "wink_left",
+        "llm_id": 33,
+        "name": "左眼 Wink",
+        "description": "轻松玩笑、默契、俏皮暗示时偶尔左眼眨一下；严肃场景不用。",
+        "duration_ms": 520,
+        "category": "special",
+        "enabled": true
+      },
+      {
+        "id": "wink_right",
+        "llm_id": 34,
+        "name": "右眼 Wink",
+        "description": "轻松玩笑、默契、俏皮暗示时偶尔右眼眨一下；严肃场景不用。",
+        "duration_ms": 520,
+        "category": "special",
+        "enabled": true
+      }
+    ]
+  }
+}

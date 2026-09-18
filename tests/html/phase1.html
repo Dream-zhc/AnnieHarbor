@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Annie Harbor · Phase 1 验收</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:960px;margin:32px auto;padding:0 16px;background:#f6f6f6;color:#111}
+    h1{margin-bottom:4px}.muted{color:#666}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+    section{background:#fff;border:1px solid #ddd;border-radius:10px;padding:16px;margin:16px 0}
+    pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#eee;padding:12px;border-radius:8px;min-height:80px}
+    button,input{font:inherit;padding:8px 10px}input{width:65%}button{cursor:pointer}
+    .ok{color:#087c2c}.bad{color:#b42318}
+  </style>
+</head>
+<body>
+  <h1>Annie Harbor · Phase 1</h1>
+  <div class="muted">最小Runtime / 两机器人隔离 / Fake Brain / SQLite / HTTP健康检查</div>
+
+  <section>
+    <button id="refresh">刷新 /health</button>
+    <strong id="status">未检查</strong>
+    <pre id="health"></pre>
+  </section>
+
+  <section>
+    <strong>最近一次操作</strong>
+    <pre id="last-result">尚未执行操作</pre>
+  </section>
+
+  <div class="grid" id="robots"></div>
+
+  <template id="robot">
+    <section>
+      <h2></h2>
+      <div class="state"></div>
+      <p><input value="Phase 1 test"><button class="send">发送 Fake 回合</button></p>
+      <p>
+        <button data-action="cancel">Cancel</button>
+        <button data-action="stop">Stop</button>
+        <button data-action="start">Start</button>
+        <button data-action="fail">Fail</button>
+      </p>
+    </section>
+  </template>
+
+  <script>
+    const $ = (q, root=document) => root.querySelector(q);
+    async function json(url, options={}) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      return {status: response.status, data};
+    }
+    async function refresh() {
+      const result = await json('/health');
+      $('#status').textContent = result.data.ready ? 'READY' : 'NOT READY';
+      $('#status').className = result.data.ready ? 'ok' : 'bad';
+      $('#health').textContent = JSON.stringify(result.data, null, 2);
+      const container = $('#robots');
+      container.textContent = '';
+      for (const robot of result.data.robots) {
+        const card = $('#robot').content.firstElementChild.cloneNode(true);
+        $('h2', card).textContent = robot.robot_id;
+        $('.state', card).textContent = `state=${robot.state} queue=${robot.queue_depth}`;
+        $('.send', card).onclick = async () => {
+          const text = $('input', card).value.trim();
+          const r = await json(`/api/robots/${robot.robot_id}/turns`, {
+            method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({text})
+          });
+          $('#last-result').textContent = JSON.stringify(r, null, 2);
+          await refresh();
+        };
+        for (const button of card.querySelectorAll('[data-action]')) {
+          button.onclick = async () => {
+            const r = await json(`/api/robots/${robot.robot_id}/${button.dataset.action}`, {method:'POST'});
+            $('#last-result').textContent = JSON.stringify(r, null, 2);
+            await refresh();
+          };
+        }
+        container.append(card);
+      }
+    }
+    $('#refresh').onclick = refresh;
+    refresh();
+  </script>
+</body>
+</html>

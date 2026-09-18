@@ -1,0 +1,129 @@
+{
+  "status": "historical_small_sample_not_performance_acceptance",
+  "method": "linear interpolation (n-1)*q",
+  "sampling": "2026-09-17现有trace中有真实MainBrain request、tts_published=true及first PCM publish的用户回合；排除proactive/Gate DROP/HOLD/RETRY",
+  "samples": [
+    {
+      "source": {
+        "kind": "runtime_trace",
+        "path": "sessions/default/traces/brain_trace/2026-09-17.jsonl",
+        "sha256": "5ba117920ceb266c7d00ad6990ede8ba2b3ec32ae6457fa20596ca1025cd9226",
+        "line": 1
+      },
+      "turn_id": "6a7b827e4da9",
+      "input_source": "web",
+      "metrics": {
+        "llm_ttft_ms": 697.63,
+        "speech_first_sentence_ready_ms": 1083.26,
+        "tts_first_pcm_published_ms": 3497.15,
+        "tts_provider_first_packet_ms": 541.3,
+        "tts_session_sleep_ms": 1870.26,
+        "total_ms": 3575.67
+      }
+    },
+    {
+      "source": {
+        "kind": "runtime_trace",
+        "path": "sessions/default/traces/brain_trace/2026-09-17.jsonl",
+        "sha256": "5ba117920ceb266c7d00ad6990ede8ba2b3ec32ae6457fa20596ca1025cd9226",
+        "line": 3
+      },
+      "turn_id": "a41e83f8fa97",
+      "input_source": "robot",
+      "metrics": {
+        "llm_ttft_ms": 416.79,
+        "speech_first_sentence_ready_ms": 1785.58,
+        "tts_first_pcm_published_ms": 2281.73,
+        "tts_provider_first_packet_ms": 479.22,
+        "tts_session_sleep_ms": 1800.95,
+        "total_ms": 3505.57
+      }
+    },
+    {
+      "source": {
+        "kind": "runtime_trace",
+        "path": "sessions/default/traces/brain_trace/2026-09-17.jsonl",
+        "sha256": "5ba117920ceb266c7d00ad6990ede8ba2b3ec32ae6457fa20596ca1025cd9226",
+        "line": 5
+      },
+      "turn_id": "96b7f9cb16cf",
+      "input_source": "robot",
+      "metrics": {
+        "llm_ttft_ms": 1011.29,
+        "speech_first_sentence_ready_ms": 1480.79,
+        "tts_first_pcm_published_ms": 2256.81,
+        "tts_provider_first_packet_ms": 415.66,
+        "tts_session_sleep_ms": 1810.57,
+        "total_ms": 3597.43
+      }
+    },
+    {
+      "source": {
+        "kind": "runtime_trace",
+        "path": "sessions/default/traces/brain_trace/2026-09-17.jsonl",
+        "sha256": "5ba117920ceb266c7d00ad6990ede8ba2b3ec32ae6457fa20596ca1025cd9226",
+        "line": 9
+      },
+      "turn_id": "bca81d4b3dc4",
+      "input_source": "robot",
+      "metrics": {
+        "llm_ttft_ms": 823.59,
+        "speech_first_sentence_ready_ms": 1169.25,
+        "tts_first_pcm_published_ms": 2397.87,
+        "tts_provider_first_packet_ms": 456.64,
+        "tts_session_sleep_ms": 1877.39,
+        "total_ms": 5741.95
+      }
+    }
+  ],
+  "metrics": {
+    "llm_ttft_ms": {
+      "n": 4,
+      "p50_ms": 760.61,
+      "p95_ms": 983.13,
+      "min_ms": 416.79,
+      "max_ms": 1011.29
+    },
+    "speech_first_sentence_ready_ms": {
+      "n": 4,
+      "p50_ms": 1325.02,
+      "p95_ms": 1739.86,
+      "min_ms": 1083.26,
+      "max_ms": 1785.58
+    },
+    "tts_first_pcm_published_ms": {
+      "n": 4,
+      "p50_ms": 2339.8,
+      "p95_ms": 3332.26,
+      "min_ms": 2256.81,
+      "max_ms": 3497.15
+    },
+    "tts_provider_first_packet_ms": {
+      "n": 4,
+      "p50_ms": 467.93,
+      "p95_ms": 531.99,
+      "min_ms": 415.66,
+      "max_ms": 541.3
+    },
+    "tts_session_sleep_ms": {
+      "n": 4,
+      "p50_ms": 1840.41,
+      "p95_ms": 1876.32,
+      "min_ms": 1800.95,
+      "max_ms": 1877.39
+    },
+    "total_ms": {
+      "n": 4,
+      "p50_ms": 3586.55,
+      "p95_ms": 5420.27,
+      "min_ms": 3505.57,
+      "max_ms": 5741.95
+    }
+  },
+  "unknown": [
+    "扬声器真实起播时间（playback_started为null）",
+    "真正ASR到首次可听音频（web回合与robot回合混合）",
+    "多机器人并发P50/P95",
+    "完整统计基线需更大固定场景样本"
+  ]
+}

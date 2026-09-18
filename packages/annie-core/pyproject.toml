@@ -1,0 +1,12 @@
+[project]
+name = "annie-core"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/annie_core"]

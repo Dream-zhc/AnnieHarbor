@@ -19,7 +19,7 @@ Phase 2 的内部协议/PCM Gate与**真实Java Room网络Adapter均已落地**�
 - Runtime启动后为每个机器人独立连接`/{room_id}/reb_mic`，严格检查WELCOME中的room/robotId/catalog，发送SUBSCRIBE并等待ACK。首个合法MIC_AUDIO自动启动对应机器人PCM stream；断线会清空该Room旧队列/stream并重连。
 - `RoomPcmConnection`已从`websocket-client + threading.Thread + call_soon_threadsafe`重构为`websockets`纯`asyncio`协程；每个Room对应一个asyncio task，PCM在同一event loop直接进入Audio Input Gate，不再每20ms做跨线程调度。
 - 同一显式source的PCM流激活后，legacy ASR兼容入口拒绝再次触发，避免已知同源双触发。
-- SQLite升级到schema v2，只给`runtime_events`增加`queue_wait_ms`和`source`；PCM dequeue可观测输入排队等待。
+- SQLite保留低频Runtime事件，但PCM逐帧enqueue/dequeue不再进入Recorder或SQLite；`accepted/dropped/queue_depth`继续走内存统计，测试消费接口仍直接返回本帧`queue_wait_ms`。
 - 全部配置Room订阅成功后`/health`返回`phase=2`、`room=connected`、`pcm_input=room_gateway_ready`；连接中/部分连接会如实降级。`publish_enabled`仍禁止。
 - live `WELCOME/ACK`投影已固化到`room_control_live.jsonl`，Adapter有严格`WELCOME`/订阅`ACK`解析回归；不把连接级`clientId`提升为稳定设备身份。
 - `/api/debug/robots/{robot_id}/room-pcm`只保留自动化协议边界回归。`tests/html/phase2.html`已改成真实回环页：浏览器直接连接选中Room的`reb_mic`，可发送测试PCM或采集真实麦克风，随后通过`/api/phase2/rooms`核对Runtime收帧和多Room隔离。

@@ -192,8 +192,6 @@ class RobotRuntime:
             self.snapshot.to_dict(),
         )
         log = logger.warning if error else logger.info
-        if kind == "pcm_enqueued":
-            log = logger.debug
         log(
             "runtime_event robot=%s kind=%s request_id=%s source=%s elapsed_ms=%s queue_wait_ms=%s error=%s",
             self.config.robot_id,
@@ -456,14 +454,11 @@ class HarborRuntime:
             robot = self.robots[robot_id]
             robot.audio.put(source_id, payload, sequence=sequence, received_at=received_at)
             robot.snapshot.last_input_source = source_id
-            robot.record("pcm_enqueued", source=source_id)
         return targets
 
     def next_pcm_nowait(self, robot_id: str):
         robot = self.robots[robot_id]
-        frame, queue_wait_ms = robot.audio.next_nowait()
-        robot.record("pcm_dequeued", queue_wait_ms=queue_wait_ms, source=frame.source_id)
-        return frame, queue_wait_ms
+        return robot.audio.next_nowait()
 
     def reconnect_input_source(self, source_id: str):
         targets = self.input_bindings.get(source_id)

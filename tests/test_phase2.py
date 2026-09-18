@@ -279,7 +279,7 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stats["event_count"], 1)
         self.assertIsNone(self.runtime.robots["annie-a"].snapshot.last_reply)
 
-    async def test_pcm_queue_wait_is_typed_trace_and_persisted(self):
+    async def test_pcm_queue_wait_stays_in_memory_without_per_frame_trace(self):
         self.runtime.bind_input_source("mic-a", ["annie-a"])
         self.runtime.ingest_mic_start("mic-a", self.mic_start)
         self.runtime.ingest_pcm("mic-a", self.binary, sequence=1)
@@ -289,12 +289,10 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.recorder.flush()
         with sqlite3.connect(self.db) as db:
             self.assertEqual(db.execute("pragma user_version").fetchone()[0], 2)
-            row = db.execute(
-                "select queue_wait_ms, source from runtime_events where kind='pcm_dequeued' order by id desc limit 1"
-            ).fetchone()
-        self.assertIsNotNone(row)
-        self.assertGreater(row[0], 10)
-        self.assertEqual(row[1], "mic-a")
+            per_frame_rows = db.execute(
+                "select count(*) from runtime_events where kind in ('pcm_enqueued', 'pcm_dequeued')"
+            ).fetchone()[0]
+        self.assertEqual(per_frame_rows, 0)
 
     def test_live_room_pcm_routes_only_to_robot_bound_to_that_room(self):
         from annie_adapters import load_room_server

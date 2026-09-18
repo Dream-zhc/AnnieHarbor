@@ -47,7 +47,7 @@
 
 | ID | 问题 | 所需证据 | 对下一阶段影响 |
 |---|---|---|---|
-| OPEN-01 | 同房间如何定向多设备？ | Java Room Server协议、目标字段/连接绑定及接收端过滤 | 阻塞真实同房间多头发布；不阻塞FakeRuntime隔离验证 |
+| OPEN-01 | Java Room是否支持同房间定向多设备？ | Java Room Server协议、目标字段/连接绑定及接收端过滤 | 历史协议缺口；当前V2采用一机器人一Room，不阻塞Phase 2输入Gateway |
 | OPEN-02 | 小脑在哪个项目启动、用什么模型、是否另有action消息？ | 发送端仓库/启动配置/真实ASR→cancel/action记录 | 当前只能锁定action_prep cancel消费契约 |
 | OPEN-03 | 算法/雷达/嵌入式完整字段？ | 发送端schema与真实业务packet | robot_event envelope支持不意味着payload定义完整 |
 | OPEN-04 | 定制Annie音色当前账号/地域可用吗？ | 同账号有效请求/运行健康记录 | 静态音色ID不是在线可用性验证 |

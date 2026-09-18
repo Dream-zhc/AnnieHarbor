@@ -6,5 +6,6 @@
 - 只调用当前阶段已经存在的HTTP接口，不复制后端业务逻辑。
 - 页面应能直观看到当前阶段的核心能力、失败状态和隔离边界。
 - Runtime存在本目录时会把它挂到`/phase-tests/`。
+- 当前只保留两个人工验收页：`phase1.html`和`phase2.html`；两页都在页面内打印操作日志，同时浏览器Console保留同样日志。
 - `phase2.html`只通过HTTP调试入口注入已验证Room BinaryFrame，用于本地协议/PCM Gate验收；不是生产Room连接器。
 - 所有阶段完成并进入最终整合后，直接删除整个`tests/html/`目录；正式产品能力必须进入`web/`而不是留在这里。

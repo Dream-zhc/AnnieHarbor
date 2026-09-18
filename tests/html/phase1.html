@@ -10,7 +10,7 @@
     section{background:#fff;border:1px solid #ddd;border-radius:10px;padding:16px;margin:16px 0}
     pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#eee;padding:12px;border-radius:8px;min-height:80px}
     button,input{font:inherit;padding:8px 10px}input{width:65%}button{cursor:pointer}
-    .ok{color:#087c2c}.bad{color:#b42318}
+    .ok{color:#087c2c}.bad{color:#b42318}.log{max-height:240px;overflow:auto}
   </style>
 </head>
 <body>
@@ -26,6 +26,12 @@
   <section>
     <strong>最近一次操作</strong>
     <pre id="last-result">尚未执行操作</pre>
+  </section>
+
+  <section>
+    <strong>操作日志</strong>
+    <button id="clear-log">清空</button>
+    <pre id="log" class="log">页面已加载，等待操作。</pre>
   </section>
 
   <div class="grid" id="robots"></div>
@@ -46,13 +52,26 @@
 
   <script>
     const $ = (q, root=document) => root.querySelector(q);
+    function log(message, data) {
+      const now = new Date().toLocaleTimeString();
+      const suffix = data === undefined ? '' : `\n${JSON.stringify(data, null, 2)}`;
+      $('#log').textContent += `\n[${now}] ${message}${suffix}`;
+      $('#log').scrollTop = $('#log').scrollHeight;
+      console.log(`[Phase1 ${now}] ${message}`, data ?? '');
+    }
     async function json(url, options={}) {
-      const response = await fetch(url, options);
-      const data = await response.json();
-      return {status: response.status, data};
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        return {status: response.status, data};
+      } catch (error) {
+        log(`请求失败 ${url}`, {error:String(error)});
+        throw error;
+      }
     }
     async function refresh() {
       const result = await json('/health');
+      log(`GET /health -> ${result.status}`, {ready:result.data.ready, phase:result.data.phase});
       $('#status').textContent = result.data.ready ? 'READY' : 'NOT READY';
       $('#status').className = result.data.ready ? 'ok' : 'bad';
       $('#health').textContent = JSON.stringify(result.data, null, 2);
@@ -68,12 +87,14 @@
             method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({text})
           });
           $('#last-result').textContent = JSON.stringify(r, null, 2);
+          log(`POST ${robot.robot_id} Fake 回合 -> ${r.status}`, r.data);
           await refresh();
         };
         for (const button of card.querySelectorAll('[data-action]')) {
           button.onclick = async () => {
             const r = await json(`/api/robots/${robot.robot_id}/${button.dataset.action}`, {method:'POST'});
             $('#last-result').textContent = JSON.stringify(r, null, 2);
+            log(`POST ${robot.robot_id}/${button.dataset.action} -> ${r.status}`, r.data);
             await refresh();
           };
         }
@@ -81,6 +102,7 @@
       }
     }
     $('#refresh').onclick = refresh;
+    $('#clear-log').onclick = () => { $('#log').textContent = '日志已清空。'; };
     refresh();
   </script>
 </body>

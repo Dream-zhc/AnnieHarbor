@@ -518,6 +518,7 @@ class HTTPTests(unittest.TestCase):
         phase_page = self.client.get("/phase-tests/phase1.html")
         self.assertEqual(phase_page.status_code, 200)
         self.assertIn("Phase 1", phase_page.text)
+        self.assertIn("操作日志", phase_page.text)
 
 
 if __name__ == "__main__":

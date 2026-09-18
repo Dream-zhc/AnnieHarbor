@@ -314,6 +314,7 @@ class Phase2HTTPTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn("Phase 2", page.text)
         self.assertIn("Room BinaryFrame", page.text)
+        self.assertIn("操作日志", page.text)
 
 
 if __name__ == "__main__":

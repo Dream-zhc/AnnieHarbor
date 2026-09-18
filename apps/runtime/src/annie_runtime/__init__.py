@@ -190,6 +190,19 @@ class RobotRuntime:
             ),
             self.snapshot.to_dict(),
         )
+        log = logger.warning if error else logger.info
+        if kind == "pcm_enqueued":
+            log = logger.debug
+        log(
+            "runtime_event robot=%s kind=%s request_id=%s source=%s elapsed_ms=%s queue_wait_ms=%s error=%s",
+            self.config.robot_id,
+            kind,
+            request_id,
+            source,
+            elapsed_ms,
+            queue_wait_ms,
+            error,
+        )
 
     async def start(self):
         async with self.lifecycle:

@@ -1,5 +1,6 @@
 """Local Dashboard, Fake text controls, and explicit Phase 2 PCM debug ingress."""
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+logger = logging.getLogger(__name__)
 
 
 class TurnInput(BaseModel):
@@ -56,8 +59,26 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         if not source.strip():
             raise HTTPException(422, "source must not be blank")
         try:
-            return runtime.debug_ingest_room_pcm(robot_id, source, await request.body())
+            body = await request.body()
+            result = runtime.debug_ingest_room_pcm(robot_id, source, body)
+            logger.info(
+                "phase2_pcm_debug accepted robot=%s source=%s frame_bytes=%s queue_depth=%s accepted=%s dropped=%s rejected=%s",
+                robot_id,
+                source,
+                len(body),
+                result["queue_depth"],
+                result["accepted"],
+                result["dropped"],
+                result["rejected"],
+            )
+            return result
         except InputRejectedError as exc:
+            logger.warning(
+                "phase2_pcm_debug rejected robot=%s source=%s reason=%s",
+                robot_id,
+                source,
+                exc.reason,
+            )
             raise HTTPException(422, exc.reason) from exc
 
     async def operation(robot_id, name, text=None):
@@ -66,7 +87,9 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
 
         try:
             if name == "turns":
-                return (await runtime.submit(robot_id, text)).to_dict()
+                result = (await runtime.submit(robot_id, text)).to_dict()
+                logger.info("phase1_debug action=turn robot=%s request_id=%s", robot_id, result.get("request_id"))
+                return result
             if name == "fail":
                 return (await runtime.submit(robot_id, "Fake failure probe", fail=True)).to_dict()
             if name == "cancel":

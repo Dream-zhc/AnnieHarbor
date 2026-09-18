@@ -8,7 +8,7 @@
     body{font-family:system-ui,sans-serif;max-width:920px;margin:32px auto;padding:0 16px;background:#f6f6f6;color:#111}
     section{background:#fff;border:1px solid #ddd;border-radius:10px;padding:16px;margin:16px 0}
     pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#eee;padding:12px;border-radius:8px;min-height:72px}
-    button,select{font:inherit;padding:8px 10px}.muted{color:#666}.warn{border-left:4px solid #a15c00;padding-left:12px}
+    button,select{font:inherit;padding:8px 10px}.muted{color:#666}.warn{border-left:4px solid #a15c00;padding-left:12px}.log{max-height:280px;overflow:auto}
   </style>
 </head>
 <body>
@@ -28,20 +28,41 @@
     <pre id="result">尚未执行</pre>
   </section>
 
+  <section>
+    <strong>操作日志</strong>
+    <button id="clear-log">清空</button>
+    <pre id="log" class="log">页面已加载，等待操作。</pre>
+  </section>
+
   <script>
     const healthNode = document.querySelector('#health');
     const resultNode = document.querySelector('#result');
     const robotNode = document.querySelector('#robot');
+    const logNode = document.querySelector('#log');
+
+    function log(message, data) {
+      const now = new Date().toLocaleTimeString();
+      const suffix = data === undefined ? '' : `\n${JSON.stringify(data, null, 2)}`;
+      logNode.textContent += `\n[${now}] ${message}${suffix}`;
+      logNode.scrollTop = logNode.scrollHeight;
+      console.log(`[Phase2 ${now}] ${message}`, data ?? '');
+    }
 
     async function readJson(url, options={}) {
-      const response = await fetch(url, options);
-      const data = await response.json();
-      return {status: response.status, data};
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        return {status: response.status, data};
+      } catch (error) {
+        log(`请求失败 ${url}`, {error:String(error)});
+        throw error;
+      }
     }
 
     async function health() {
       const result = await readJson('/health');
       healthNode.textContent = JSON.stringify(result, null, 2);
+      log(`GET /health -> ${result.status}`, {ready:result.data.ready, room:result.data.capabilities?.room});
       const selected = robotNode.value;
       robotNode.textContent = '';
       for (const robot of result.data.robots) {
@@ -65,16 +86,22 @@
     async function inputs() {
       const result = await readJson(`/api/robots/${robotNode.value}/inputs`);
       resultNode.textContent = JSON.stringify(result, null, 2);
+      log(`GET ${robotNode.value}/inputs -> ${result.status}`, result.data);
     }
 
     document.querySelector('#health-button').onclick = health;
     document.querySelector('#inputs').onclick = inputs;
+    document.querySelector('#clear-log').onclick = () => { logNode.textContent = '日志已清空。'; };
     document.querySelector('#inject').onclick = async () => {
+      const robotId = robotNode.value;
+      const source = `phase2-html-${robotId}`;
+      log(`准备注入 MIC_AUDIO robot=${robotId} source=${source} payload=640B`);
       const result = await readJson(
-        `/api/debug/robots/${robotNode.value}/room-pcm?source=phase2-html-${robotNode.value}`,
+        `/api/debug/robots/${robotId}/room-pcm?source=${source}`,
         {method:'POST', headers:{'content-type':'application/octet-stream'}, body:micAudioFrame()}
       );
       resultNode.textContent = JSON.stringify(result, null, 2);
+      log(`POST room-pcm -> ${result.status}`, result.data);
       await health();
     };
     health();

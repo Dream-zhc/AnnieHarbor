@@ -1,4 +1,4 @@
-"""The only Phase 1 brain is an asynchronous deterministic Fake."""
+"""The Phase 2 brain remains an asynchronous deterministic Fake."""
 
 import asyncio
 

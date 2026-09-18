@@ -1,5 +1,5 @@
 # V2 后续阶段仍需要的业务默认值。
-# 当前 Phase 1 Runtime 尚未读取这些开关；接入时只消费对应阶段需要的字段。
+# 当前Phase 2仅消费PCM准入所需配置；其余开关在对应阶段接入时再读取。
 
 [features]
 robot_output_enabled = true

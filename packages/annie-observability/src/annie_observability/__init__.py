@@ -16,6 +16,8 @@ class RuntimeEvent:
     request_id: str | None = None
     elapsed_ms: float | None = None
     error: str | None = None
+    queue_wait_ms: float | None = None
+    source: str | None = None
     ts_ms: int = field(default_factory=lambda: time.time_ns() // 1_000_000)
 
 

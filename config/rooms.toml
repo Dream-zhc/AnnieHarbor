@@ -1,4 +1,4 @@
-# V1 已核实 Java Room Server 地址。当前只迁移配置，不在 Phase 1 建立连接。
+# V1 已核实 Java Room Server 地址。Phase 2只实现协议/准入边界，尚未自动建立真实Room连接。
 
 [server]
 base_url = "ws://192.168.1.47:8090/robot/roomv2"

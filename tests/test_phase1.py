@@ -174,7 +174,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         store.migrate()
         store.migrate()
         with sqlite3.connect(self.db) as db:
-            self.assertEqual(db.execute("pragma user_version").fetchone()[0], 1)
+            self.assertEqual(db.execute("pragma user_version").fetchone()[0], RuntimeStore.SCHEMA_VERSION)
             self.assertEqual(db.execute("pragma journal_mode").fetchone()[0], "wal")
             rows = dict(db.execute("select robot_id, snapshot from runtime_snapshots"))
             self.assertEqual(json.loads(rows["annie-a"])["last_reply"], "[FAKE annie-a] one")
@@ -232,9 +232,11 @@ class StorageConfigTests(unittest.TestCase):
 
         configs = load_robots(ROOT / "config/robots.toml")
         self.assertEqual([c.robot_id for c in configs], ["annie-a", "annie-b"])
-        self.assertTrue(all(not c.listen_enabled and not c.publish_enabled for c in configs))
+        self.assertTrue(all(c.listen_enabled and not c.publish_enabled for c in configs))
+        self.assertTrue(all(c.audio_queue_capacity == 25 and c.audio_max_age_ms == 500 for c in configs))
+        self.assertTrue(self.Config("phase2-input", listen_enabled=True).listen_enabled)
         with self.assertRaises(ValueError):
-            self.Config("bad", listen_enabled=True)
+            self.Config("bad-output", publish_enabled=True)
         with self.assertRaises(ValueError):
             resolve_database(ROOT, "../outside.db")
         with self.assertRaises(ValueError):
@@ -250,6 +252,10 @@ class StorageConfigTests(unittest.TestCase):
             {"queue_capacity": True},
             {"fake_delay_ms": "100"},
             {"fake_delay_ms": False},
+            {"audio_queue_capacity": "25"},
+            {"audio_queue_capacity": True},
+            {"audio_max_age_ms": "500"},
+            {"audio_max_age_ms": False},
         ):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 self.Config("bad-types", **kwargs)

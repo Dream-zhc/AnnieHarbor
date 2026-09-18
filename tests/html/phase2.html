@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Annie Harbor · Phase 2 验收</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:920px;margin:32px auto;padding:0 16px;background:#f6f6f6;color:#111}
+    section{background:#fff;border:1px solid #ddd;border-radius:10px;padding:16px;margin:16px 0}
+    pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#eee;padding:12px;border-radius:8px;min-height:72px}
+    button,select{font:inherit;padding:8px 10px}.muted{color:#666}.warn{border-left:4px solid #a15c00;padding-left:12px}
+  </style>
+</head>
+<body>
+  <h1>Annie Harbor · Phase 2</h1>
+  <p>Room BinaryFrame / Audio Input Gate / 有界PCM队列 / 输入等待Trace</p>
+  <p class="muted warn">本页通过HTTP调试入口注入Phase 0已验证的MIC_AUDIO BinaryFrame，仅验证协议解析和本地准入；不代表真实Room连接、设备来源绑定或同房间定向已联调通过。</p>
+
+  <section>
+    <button id="health-button">刷新 /health</button>
+    <pre id="health"></pre>
+  </section>
+
+  <section>
+    <label>机器人 <select id="robot"></select></label>
+    <button id="inject">注入1帧 16kHz/mono/S16LE/20ms PCM</button>
+    <button id="inputs">刷新输入状态</button>
+    <pre id="result">尚未执行</pre>
+  </section>
+
+  <script>
+    const healthNode = document.querySelector('#health');
+    const resultNode = document.querySelector('#result');
+    const robotNode = document.querySelector('#robot');
+
+    async function readJson(url, options={}) {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      return {status: response.status, data};
+    }
+
+    async function health() {
+      const result = await readJson('/health');
+      healthNode.textContent = JSON.stringify(result, null, 2);
+      const selected = robotNode.value;
+      robotNode.textContent = '';
+      for (const robot of result.data.robots) {
+        const option = document.createElement('option');
+        option.value = robot.robot_id;
+        option.textContent = robot.robot_id;
+        robotNode.append(option);
+      }
+      if ([...robotNode.options].some(option => option.value === selected)) robotNode.value = selected;
+    }
+
+    function micAudioFrame() {
+      const type = new TextEncoder().encode('MIC_AUDIO');
+      const frame = new Uint8Array(2 + type.length + 640);
+      frame[0] = type.length >> 8;
+      frame[1] = type.length & 255;
+      frame.set(type, 2);
+      return frame;
+    }
+
+    async function inputs() {
+      const result = await readJson(`/api/robots/${robotNode.value}/inputs`);
+      resultNode.textContent = JSON.stringify(result, null, 2);
+    }
+
+    document.querySelector('#health-button').onclick = health;
+    document.querySelector('#inputs').onclick = inputs;
+    document.querySelector('#inject').onclick = async () => {
+      const result = await readJson(
+        `/api/debug/robots/${robotNode.value}/room-pcm?source=phase2-html-${robotNode.value}`,
+        {method:'POST', headers:{'content-type':'application/octet-stream'}, body:micAudioFrame()}
+      );
+      resultNode.textContent = JSON.stringify(result, null, 2);
+      await health();
+    };
+    health();
+  </script>
+</body>
+</html>

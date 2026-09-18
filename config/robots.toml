@@ -1,20 +1,24 @@
-# Internal Fake config only. These are not WebSocket wire fields.
+# Internal runtime config only. robot_id/source binding仍不是WebSocket wire字段。
 [[robots]]
 robot_id = "annie-a"
 room_id = "demo-room"
 persona_id = "annie"
 enabled = true
-listen_enabled = false
+listen_enabled = true
 publish_enabled = false
 queue_capacity = 16
 fake_delay_ms = 800
+audio_queue_capacity = 25
+audio_max_age_ms = 500
 
 [[robots]]
 robot_id = "annie-b"
 room_id = "demo-room"
 persona_id = "annie"
 enabled = true
-listen_enabled = false
+listen_enabled = true
 publish_enabled = false
 queue_capacity = 16
 fake_delay_ms = 800
+audio_queue_capacity = 25
+audio_max_age_ms = 500

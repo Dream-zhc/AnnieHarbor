@@ -134,7 +134,7 @@ def resolve_log_level(value: str) -> int:
 
 def main():
     root = Path(__file__).resolve().parents[4]
-    parser = argparse.ArgumentParser(description="Annie Harbor Phase 1 — two local Fake robot heads")
+    parser = argparse.ArgumentParser(description="Annie Harbor Phase 2 — bounded PCM gateway with Fake brain")
     parser.add_argument("--root", type=Path, default=root)
     parser.add_argument("--host")
     parser.add_argument("--port", type=int)

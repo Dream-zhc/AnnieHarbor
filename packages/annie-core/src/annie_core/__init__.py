@@ -1,6 +1,58 @@
-"""Phase 1 internal Fake types. These are not room wire protocol fields."""
+"""Small internal domain types. Room wire parsing stays in annie-adapters."""
 
 from dataclasses import dataclass
+
+
+class InputRejectedError(RuntimeError):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+@dataclass(frozen=True)
+class AudioFormat:
+    codec: str
+    sample_rate: int
+    channels: int
+    frame_ms: int
+    bytes_per_frame: int
+
+    def __post_init__(self):
+        if self.codec != "pcm_s16le":
+            raise ValueError("only pcm_s16le is supported by the verified mic contract")
+        for name, value in (
+            ("sample_rate", self.sample_rate),
+            ("channels", self.channels),
+            ("frame_ms", self.frame_ms),
+            ("bytes_per_frame", self.bytes_per_frame),
+        ):
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        expected = self.sample_rate * self.frame_ms * self.channels * 2
+        if expected % 1000 or expected // 1000 != self.bytes_per_frame:
+            raise ValueError("bytes_per_frame does not match S16LE sample rate/channels/frame_ms")
+
+
+@dataclass(frozen=True)
+class PcmFrame:
+    robot_id: str
+    source_id: str
+    payload: bytes
+    sequence: int
+    received_at: float
+    enqueued_at: float
+
+
+@dataclass(frozen=True)
+class NormalizedEvent:
+    kind: str
+    payload: dict
+    source: str | None = None
+    event_id: str | None = None
+    ts_ms: int | None = None
+    ttl_ms: int | None = None
+    confidence: float | None = None
+    target_robot_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -13,6 +65,8 @@ class RobotConfig:
     publish_enabled: bool = False
     queue_capacity: int = 16
     fake_delay_ms: int = 100
+    audio_queue_capacity: int = 25
+    audio_max_age_ms: int = 500
 
     def __post_init__(self):
         if not all(isinstance(s, str) and s.strip() for s in (self.robot_id, self.room_id, self.persona_id)):
@@ -23,8 +77,12 @@ class RobotConfig:
             raise ValueError("queue_capacity must be a positive integer")
         if type(self.fake_delay_ms) is not int or not 0 <= self.fake_delay_ms <= 60000:
             raise ValueError("fake_delay_ms must be an integer between 0 and 60000")
-        if self.listen_enabled or self.publish_enabled:
-            raise ValueError("Phase 1 only supports Fake local input/output")
+        if type(self.audio_queue_capacity) is not int or self.audio_queue_capacity < 1:
+            raise ValueError("audio_queue_capacity must be a positive integer")
+        if type(self.audio_max_age_ms) is not int or not 1 <= self.audio_max_age_ms <= 60000:
+            raise ValueError("audio_max_age_ms must be an integer between 1 and 60000")
+        if self.publish_enabled:
+            raise ValueError("Phase 2 has no real Room output path")
 
 
 @dataclass
@@ -44,6 +102,13 @@ class RobotSnapshot:
     queue_wait_ms: float | None = None
     service_ms: float | None = None
     elapsed_ms: float | None = None
+    audio_queue_depth: int = 0
+    audio_accepted: int = 0
+    audio_dropped: int = 0
+    audio_rejected: int = 0
+    event_count: int = 0
+    last_input_source: str | None = None
+    last_event_kind: str | None = None
 
     def to_dict(self):
         return {
@@ -62,6 +127,13 @@ class RobotSnapshot:
             "queue_wait_ms": self.queue_wait_ms,
             "service_ms": self.service_ms,
             "elapsed_ms": self.elapsed_ms,
+            "audio_queue_depth": self.audio_queue_depth,
+            "audio_accepted": self.audio_accepted,
+            "audio_dropped": self.audio_dropped,
+            "audio_rejected": self.audio_rejected,
+            "event_count": self.event_count,
+            "last_input_source": self.last_input_source,
+            "last_event_kind": self.last_event_kind,
         }
 
 

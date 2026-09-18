@@ -1,6 +1,6 @@
 # Annie Harbor · 安妮港 Dashboard
 
-Phase 1 的最小独立前端，仅展示同一 Python 进程内 Fake RobotRuntime 的健康、回合和实例操作。没有前端依赖、CDN 或真实 Provider。
+当前最小独立前端展示同一 Python 进程内 Fake RobotRuntime 的健康、回合和实例操作；Phase 2 PCM准入验收使用`tests/html/phase2.html`。没有前端依赖、CDN或真实Provider/Room连接。
 
 ## 运行与构建
 

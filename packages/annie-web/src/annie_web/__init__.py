@@ -1,10 +1,10 @@
-"""Phase 1 local Fake controls and static Dashboard, not room protocols."""
+"""Local Dashboard, Fake text controls, and explicit Phase 2 PCM debug ingress."""
 
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from annie_core import RobotQueueFullError, RobotUnavailableError
-from fastapi import FastAPI, HTTPException
+from annie_core import InputRejectedError, RobotQueueFullError, RobotUnavailableError
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -32,7 +32,7 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         finally:
             await runtime.close()
 
-    app = FastAPI(title="Annie Harbor — Phase 1 Fake", lifespan=lifespan)
+    app = FastAPI(title="Annie Harbor — Phase 2 PCM Gateway", lifespan=lifespan)
 
     @app.get("/health")
     async def health():
@@ -42,6 +42,23 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     @app.get("/api/robots")
     async def robots():
         return runtime.health()["robots"]
+
+    @app.get("/api/robots/{robot_id}/inputs")
+    async def inputs(robot_id: str):
+        if robot_id not in runtime.robots:
+            raise HTTPException(404, "unknown robot_id")
+        return runtime.input_stats(robot_id)
+
+    @app.post("/api/debug/robots/{robot_id}/room-pcm")
+    async def debug_room_pcm(robot_id: str, request: Request, source: str):
+        if robot_id not in runtime.robots:
+            raise HTTPException(404, "unknown robot_id")
+        if not source.strip():
+            raise HTTPException(422, "source must not be blank")
+        try:
+            return runtime.debug_ingest_room_pcm(robot_id, source, await request.body())
+        except InputRejectedError as exc:
+            raise HTTPException(422, exc.reason) from exc
 
     async def operation(robot_id, name, text=None):
         if robot_id not in runtime.robots:

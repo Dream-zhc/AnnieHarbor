@@ -13,6 +13,7 @@
 
 - 外部协议、Room、小脑、设备、兼容性：读`docs/phase0/2026-09-17/`中的README、External Contract、协议清单、行为清单与fixtures。
 - 核对已完成Phase 1骨架：读`docs/phase1/2026-09-17/README.md`。
+- 处理当前Phase 2 PCM Gateway、来源绑定或真实Room联调：读`docs/phase2/2026-09-18/README.md`。
 - 其他任务不要默认递归扫描整个`docs/`。
 
 ## 文档保留规则

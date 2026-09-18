@@ -5,7 +5,7 @@
 - 根目录只保留必要入口/规则文件（README.md、AGENTS.md、PROJECT_RULES.md 等）；规划、进度、发现、交接和评审类 Markdown 必须归档到 docs/ 对应中文目录，文件名优先中文。
 - 配置唯一规则：非敏感可提交配置进config/；机器本地覆盖/密钥进根.env（只提交.env.example）；Python/uv/pytest/ruff/SQLite/临时数据按PROJECT_RULES统一落位，禁止各模块自行发明目录。
 - 启动器必须真实拉起进程和HTTP验收；`start.sh/start.bat`遇到同一Annie Harbor旧实例时先终止旧PID再拉起新实例，其他程序占用必须明确报错且禁止误杀，禁止静默换端口。
-- Phase 1最小骨架已完成：uv workspace、统一启动、基础SQLite、health、最小Dashboard，以及同进程两个Fake RobotRuntime；Phase 1审查收尾待核验（总计划第25节）；先补预检、无密钥测试、配置校验与排队指标，再进入Phase 2。Phase 2尚未开始。
+- Phase 1最小骨架及本机审查收尾已通过；进入Phase 2前已建立独立Git基线。Phase 2当前已完成协议解析、Audio Input Gate、有界PCM队列、内部来源绑定/双头投递、事件归一、输入Trace和HTML验收；真实Room网络连接仍未启用，`health.capabilities.room=protocol_ready_not_connected`。下一步先补真实Room来源/寻址证据并做真实Adapter联调，不提前进入Phase 3。
 - V1外部配置资产已迁到config/与根.env：Provider/模型/Room/视觉/天气/动作等可直接作为后续接线输入；V1 `skills.json` 不迁入，能力在各阶段按最小契约重建；配置存在不代表能力已连接，禁止提前改health能力状态。
 - 旧代码只证明已有外部协议和行为，不决定新模块结构；信息不足标待确认，不猜wire字段，不搬RobotBridge。
 - apps/runtime负责未来bootstrap；annie-core无SDK/Graph依赖；LangGraph只进annie-brain；第三方SDK只通过annie-adapters接入。
@@ -13,7 +13,7 @@
 - sidecars/tts_viseme是未改造的旧listener副本；不向父目录import，不搬venv/模型/真实.env。
 - 多头以robot_id隔离状态与取消；同房间定向输出仍待接收端证据，不把from/conversation_id当成设备目标。
 - 每个实现阶段自动化测试之外，必须在`tests/html/`提供当前阶段的可视化验收页；这些HTML和目录内README都是临时测试资产，所有阶段完成并进入最终整合后直接删除整个`tests/html/`目录。
-- Phase 1回归：`uv run --locked pytest -q`、`node --test web/tests/dashboard.test.mjs`、`uv lock --check`、`uv run --locked ruff check apps packages tests/test_phase1.py`；启动验收必须额外真实执行`sh start.sh`/空闲端口HTTP。
+- 当前回归：`uv run --locked pytest -q`、`node --test web/tests/dashboard.test.mjs`、`uv lock --check`、`uv run --locked ruff check apps packages tests/test_phase1.py tests/test_phase2.py`；启动验收必须额外真实执行`sh start.sh`/空闲端口HTTP。
 
 - 新架构：Room PCM → Audio Input Gate → Qwen-Audio 3.0 Realtime Flash（ASR/smart_turn/对话/Persona/Function Calling）→ 文本 → 独立Qwen-Audio-3.0-TTS-Flash → PCM；同一PCM+文本送ForcedAligner再映射嘴型。普通聊天禁止经过LangGraph；动作/表情/简单工具经Function Calling校验执行。
 - 事件走Event Router + Speak Policy；需要发声才提交SpeakRequest，由TurnCoordinator协调，Realtime最终表达。LangGraph仅负责按需多步骤任务/状态/工具与结构化结果；Persona按Session/revision加载，不每轮重发。

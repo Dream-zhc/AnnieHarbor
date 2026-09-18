@@ -63,13 +63,13 @@ ready=true, status=healthy, annie-a=idle, annie-b=idle
 
 ## 已知边界
 
-- 当前只有本地Fake输入/输出，不定义或猜测真实Room wire字段。
+- Phase 1验收时只有本地Fake输入/输出，不定义或猜测真实Room wire字段。
 - Phase 0确认的同房间真实设备输出寻址仍未解决，留到External Gateway阶段基于证据处理。
 - sidecar仍未多头化；长期记忆尚未进入本阶段。
-- 当前目录不是Git仓库；本阶段不擅自初始化Git，因此无法产生Phase 1 commit。旧版Git不修改。
+- Phase 1开发时当前目录尚不是Git仓库；进入Phase 2前核对忽略规则后建立独立基线`2cebdf6`。旧版Git始终未修改。
 
 历史红绿日志、迁移快照和重复变更清单已在后续文档精简中删除；本README保留阶段结论，真实能力以当前代码和可重跑测试为准。
 
 ## 下一阶段
 
-Phase 2尚未开始。后续若明确进入Phase 2，只实现External Gateway + Protocol Contract，并继续以Phase 0真实fixtures作为协议依据；不要把RobotBridge整体搬入V2。
+Phase 2已进入实施，当前结果见`docs/phase2/2026-09-18/README.md`；仍继续以Phase 0 fixtures作为协议依据，不把RobotBridge整体搬入V2。

@@ -18,7 +18,7 @@ provider = "qwen_audio"
 # V1 tts_voice=null，表示使用 provider 默认音色；TOML 不写 null。
 
 [conversation]
-history_turns = 6
+history_turns = 20
 turn_cooldown_ms = 1500
 sensor_rearm_gap_ms = 3000
 

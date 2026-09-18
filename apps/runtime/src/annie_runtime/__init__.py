@@ -39,6 +39,85 @@ class Job:
     fail: bool
     future: asyncio.Future
     enqueued_at: float
+    chat_id: str
+    persona_id: str
+    persona_revision: int
+    session_epoch: int
+    generation: int
+    cancel_source: str | None = None
+
+
+class TurnCoordinator:
+    """Per-robot bounded manual-response arbitration for Phase 3."""
+
+    def __init__(self, capacity: int = 16):
+        self.capacity = capacity
+        self.playback_state = "idle"
+        self.pending: dict[str, dict] = {}
+        self.dedupe_until: dict[str, int] = {}
+        self.expired = 0
+
+    def reset(self):
+        self.pending.clear()
+        self.dedupe_until.clear()
+        self.playback_state = "idle"
+
+    def set_playback_state(self, state: str):
+        if state not in {"idle", "playing", "unknown", "stopped"}:
+            raise ValueError("invalid_playback_state")
+        self.playback_state = state
+
+    def _prune(self, now_ms: int):
+        expired = [
+            key
+            for key, request in self.pending.items()
+            if request["expires_at_ms"] <= now_ms
+        ]
+        for key in expired:
+            self.pending.pop(key, None)
+        self.expired += len(expired)
+        for key in [key for key, expires_at in self.dedupe_until.items() if expires_at <= now_ms]:
+            self.dedupe_until.pop(key, None)
+
+    def request(self, *, source: str, dedupe_key: str, ttl_ms: int, model_busy: bool):
+        if not source.strip() or not dedupe_key.strip():
+            raise ValueError("source and dedupe_key must not be blank")
+        if type(ttl_ms) is not int or ttl_ms < 1 or ttl_ms > 60000:
+            raise ValueError("ttl_ms must be an integer between 1 and 60000")
+        now_ms = time.time_ns() // 1_000_000
+        self._prune(now_ms)
+        if dedupe_key in self.dedupe_until:
+            return {"status": "dropped", "reason": "duplicate", "dedupe_key": dedupe_key}
+        waiting_reason = "model_busy" if model_busy else None
+        if waiting_reason is None and self.playback_state in {"playing", "unknown"}:
+            waiting_reason = "playback_active"
+        if waiting_reason is None:
+            self.dedupe_until[dedupe_key] = now_ms + ttl_ms
+            return {"status": "allowed", "reason": None, "dedupe_key": dedupe_key}
+        if len(self.pending) >= self.capacity:
+            return {"status": "dropped", "reason": "capacity", "dedupe_key": dedupe_key}
+        request = {
+            "source": source,
+            "dedupe_key": dedupe_key,
+            "created_ms": now_ms,
+            "expires_at_ms": now_ms + ttl_ms,
+            "reason": waiting_reason,
+        }
+        self.pending[dedupe_key] = request
+        self.dedupe_until[dedupe_key] = now_ms + ttl_ms
+        return {"status": "waiting", "reason": waiting_reason, "dedupe_key": dedupe_key}
+
+    def snapshot(self, *, model_busy: bool):
+        self._prune(time.time_ns() // 1_000_000)
+        return {
+            "model_busy": model_busy,
+            "playback_state": self.playback_state,
+            "pending_count": len(self.pending),
+            "pending": list(self.pending.values()),
+            "expired": self.expired,
+            "dedupe_count": len(self.dedupe_until),
+            "capacity": self.capacity,
+        }
 
 
 class AudioInputGate:
@@ -141,9 +220,20 @@ class AudioInputGate:
 
 
 class RobotRuntime:
-    def __init__(self, config: RobotConfig, recorder: Recorder):
+    SOCIAL_STATE_KEYS = {
+        "user_affect",
+        "conversation_mode",
+        "relationship_tone",
+        "response_need",
+        "question_pressure",
+        "humor_level",
+        "advice_readiness",
+    }
+
+    def __init__(self, config: RobotConfig, recorder: Recorder, store: RuntimeStore):
         self.config = config
         self.recorder = recorder
+        self.store = store
         self.brain = FakeBrain(config)
         self.snapshot = RobotSnapshot(
             config.robot_id,
@@ -158,6 +248,13 @@ class RobotRuntime:
         self.job = None
         self.stopping = False
         self.lifecycle = asyncio.Lock()
+        self.session_lock = asyncio.Lock()
+        self.chat_id = "default"
+        self.persona_id = config.persona_id
+        self.persona_revision = 1
+        self.session_epoch = 0
+        self.generation = 0
+        self.coordinator = TurnCoordinator()
 
     def sync_input_snapshot(self):
         stats = self.audio.stats()
@@ -203,6 +300,86 @@ class RobotRuntime:
             error,
         )
 
+    def session_state(self):
+        return {
+            "robot_id": self.config.robot_id,
+            "room_id": self.config.room_id,
+            "chat_id": self.chat_id,
+            "persona_id": self.persona_id,
+            "persona_revision": self.persona_revision,
+            "session_epoch": self.session_epoch,
+            "generation": self.generation,
+        }
+
+    def _sync_session_snapshot(self):
+        self.snapshot.persona_id = self.persona_id
+        self.snapshot.chat_id = self.chat_id
+        self.snapshot.persona_revision = self.persona_revision
+        self.snapshot.session_epoch = self.session_epoch
+        self.snapshot.generation = self.generation
+
+    async def initialize_session(self):
+        stored = await asyncio.to_thread(
+            self.store.load_conversation_session,
+            self.config.robot_id,
+        )
+        if stored is not None:
+            self.chat_id = stored["chat_id"]
+            self.persona_id = stored["persona_id"]
+            self.persona_revision = stored["persona_revision"]
+            self.session_epoch = stored["session_epoch"] + 1
+            self.generation = stored["generation"] + 1
+        else:
+            self.session_epoch = 1
+            self.generation = 1
+        self._sync_session_snapshot()
+        await self._persist_session()
+
+    async def _persist_session(self):
+        session = self.session_state()
+        session["updated_ms"] = time.time_ns() // 1_000_000
+        await asyncio.to_thread(self.store.save_conversation_session, session)
+
+    async def switch_session(self, *, chat_id: str, persona_id: str, persona_revision: int = 1):
+        chat_id = chat_id.strip()
+        persona_id = persona_id.strip()
+        if not chat_id or not persona_id:
+            raise ValueError("chat_id and persona_id must not be blank")
+        if type(persona_revision) is not int or persona_revision < 1:
+            raise ValueError("persona_revision must be a positive integer")
+        async with self.session_lock:
+            unchanged = (
+                self.chat_id == chat_id
+                and self.persona_id == persona_id
+                and self.persona_revision == persona_revision
+            )
+            if unchanged:
+                return self.session_state()
+            self.chat_id = chat_id
+            self.persona_id = persona_id
+            self.persona_revision = persona_revision
+            self.session_epoch += 1
+            self.generation += 1
+            self.coordinator.reset()
+            self._sync_session_snapshot()
+            await self._persist_session()
+        await self.cancel(cancel_source="session_switch")
+        await self.discard_pending(cancel_source="session_switch")
+        self.record("session_switched")
+        return self.session_state()
+
+    async def invalidate_current_session(self, *, cancel_source: str):
+        async with self.session_lock:
+            self.session_epoch += 1
+            self.generation += 1
+            self.coordinator.reset()
+            self._sync_session_snapshot()
+            await self._persist_session()
+        await self.cancel(cancel_source=cancel_source)
+        await self.discard_pending(cancel_source=cancel_source)
+        self.record("session_invalidated")
+        return self.session_state()
+
     async def start(self):
         async with self.lifecycle:
             if not self.config.enabled or self.worker is not None and not self.worker.done():
@@ -216,24 +393,57 @@ class RobotRuntime:
     async def submit(self, text, *, fail=False):
         if self.snapshot.state not in ("idle", "running"):
             raise RobotUnavailableError(f"{self.config.robot_id} is {self.snapshot.state}")
-        job = Job(
-            uuid4().hex,
-            text,
-            fail,
-            asyncio.get_running_loop().create_future(),
-            time.perf_counter(),
-        )
-        try:
+        async with self.session_lock:
+            if self.queue.full():
+                raise RobotQueueFullError(f"{self.config.robot_id} queue full")
+            request_id = uuid4().hex
+            job = Job(
+                request_id,
+                text,
+                fail,
+                asyncio.get_running_loop().create_future(),
+                time.perf_counter(),
+                self.chat_id,
+                self.persona_id,
+                self.persona_revision,
+                self.session_epoch,
+                self.generation,
+            )
+            created_ms = time.time_ns() // 1_000_000
+            await asyncio.to_thread(
+                self.store.create_conversation_turn,
+                {
+                    "turn_id": request_id,
+                    "robot_id": self.config.robot_id,
+                    "room_id": self.config.room_id,
+                    "chat_id": job.chat_id,
+                    "persona_id": job.persona_id,
+                    "persona_revision": job.persona_revision,
+                    "session_epoch": job.session_epoch,
+                    "generation": job.generation,
+                    "user_text": text,
+                    "status": "queued",
+                    "created_ms": created_ms,
+                    "updated_ms": created_ms,
+                },
+            )
             self.queue.put_nowait(job)
-        except asyncio.QueueFull as exc:
-            raise RobotQueueFullError(f"{self.config.robot_id} queue full") from exc
         self.record("queued", job.request_id)
         return await asyncio.shield(job.future)
 
-    def discard_pending(self):
+    async def discard_pending(self, *, cancel_source: str | None = None):
         while not self.queue.empty():
             job = self.queue.get_nowait()
             elapsed = round((time.perf_counter() - job.enqueued_at) * 1000, 3)
+            await asyncio.to_thread(
+                self.store.finish_conversation_turn,
+                self.config.robot_id,
+                job.request_id,
+                status="discarded",
+                cancelled=bool(cancel_source),
+                cancel_source=cancel_source,
+                updated_ms=time.time_ns() // 1_000_000,
+            )
             result = TurnResult(
                 self.config.robot_id,
                 job.request_id,
@@ -260,11 +470,20 @@ class RobotRuntime:
                 self.turn_task = asyncio.create_task(
                     self.brain.generate(job.text, fail=job.fail), name=f"harbor:turn:{self.config.robot_id}"
                 )
-                status, reply, error = "completed", None, None
+                status, reply, generated, error = "completed", None, None, None
                 try:
-                    reply = await self.turn_task
-                    snap.completed += 1
-                    snap.last_reply = reply
+                    generated = await self.turn_task
+                    if (
+                        job.session_epoch != self.session_epoch
+                        or job.generation != self.generation
+                        or job.chat_id != self.chat_id
+                        or job.persona_id != self.persona_id
+                    ):
+                        status = "discarded"
+                    else:
+                        reply = generated
+                        snap.completed += 1
+                        snap.last_reply = reply
                 except asyncio.CancelledError:
                     status = "cancelled"
                     snap.cancelled += 1
@@ -285,6 +504,17 @@ class RobotRuntime:
                 snap.state = "stopped" if self.stopping else "failed" if status == "failed" else "idle"
                 self.turn_task = None
                 self.job = None
+                await asyncio.to_thread(
+                    self.store.finish_conversation_turn,
+                    self.config.robot_id,
+                    job.request_id,
+                    status=status,
+                    planned_text=generated,
+                    generated_text=generated,
+                    cancelled=status == "cancelled",
+                    cancel_source=job.cancel_source,
+                    updated_ms=time.time_ns() // 1_000_000,
+                )
                 self.record(status, job.request_id, elapsed, error)
                 job.future.set_result(
                     TurnResult(
@@ -302,12 +532,13 @@ class RobotRuntime:
                 if self.stopping or status == "failed":
                     break
         finally:
-            self.discard_pending()
+            await self.discard_pending(cancel_source="runtime_stop" if self.stopping else None)
 
-    async def cancel(self):
+    async def cancel(self, *, cancel_source: str = "local"):
         async with self.lifecycle:
             if self.turn_task is not None:
                 job = self.job
+                job.cancel_source = cancel_source
                 self.turn_task.cancel()
                 await asyncio.shield(job.future)
             return self.snapshot.to_dict()
@@ -319,7 +550,7 @@ class RobotRuntime:
                 self.worker.cancel()
                 await asyncio.gather(self.worker, return_exceptions=True)
             self.worker = None
-            self.discard_pending()
+            await self.discard_pending(cancel_source="runtime_stop")
             self.audio._clear()
             self.audio.source_id = None
             self.audio.audio_format = None
@@ -331,12 +562,22 @@ class RobotRuntime:
 
 
 class HarborRuntime:
-    def __init__(self, configs: list[RobotConfig], database: Path, room_server=None):
+    def __init__(
+        self,
+        configs: list[RobotConfig],
+        database: Path,
+        room_server=None,
+        *,
+        conversation_history_turns: int = 20,
+    ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
+        if type(conversation_history_turns) is not int or not 1 <= conversation_history_turns <= 100:
+            raise ValueError("conversation_history_turns must be an integer between 1 and 100")
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
-        self.robots = {c.robot_id: RobotRuntime(c, self.recorder) for c in configs}
+        self.robots = {c.robot_id: RobotRuntime(c, self.recorder, self.store) for c in configs}
+        self.conversation_history_turns = conversation_history_turns
         self.input_bindings: dict[str, tuple[str, ...]] = {}
         self.local_input_sources: set[str] = set()
         self.room_server = room_server
@@ -594,6 +835,7 @@ class HarborRuntime:
         self.recorder.start()
         self.started = True
         for robot in self.robots.values():
+            await robot.initialize_session()
             await robot.start()
         for connection in self.room_connections.values():
             connection.start()
@@ -622,6 +864,165 @@ class HarborRuntime:
 
     async def cancel(self, robot_id):
         return await self.robots[robot_id].cancel()
+
+    def session_state(self, robot_id: str):
+        return self.robots[robot_id].session_state()
+
+    async def switch_session(
+        self,
+        robot_id: str,
+        *,
+        chat_id: str,
+        persona_id: str,
+        persona_revision: int = 1,
+    ):
+        return await self.robots[robot_id].switch_session(
+            chat_id=chat_id,
+            persona_id=persona_id,
+            persona_revision=persona_revision,
+        )
+
+    async def list_conversations(self, robot_id: str):
+        return await asyncio.to_thread(self.store.list_conversations, robot_id)
+
+    async def load_conversation(self, robot_id: str, chat_id: str, persona_id: str):
+        turns = await asyncio.to_thread(
+            self.store.load_conversation,
+            robot_id,
+            chat_id,
+            persona_id,
+        )
+        return {
+            "robot_id": robot_id,
+            "chat_id": chat_id,
+            "persona_id": persona_id,
+            "turns": turns,
+        }
+
+    async def recent_context(self, robot_id: str):
+        robot = self.robots[robot_id]
+        return await asyncio.to_thread(
+            self.store.recent_conversation_context,
+            robot_id,
+            robot.chat_id,
+            robot.persona_id,
+            self.conversation_history_turns,
+        )
+
+    async def get_turn(self, robot_id: str, turn_id: str):
+        turn = await asyncio.to_thread(self.store.get_conversation_turn, robot_id, turn_id)
+        if turn is None:
+            raise KeyError(turn_id)
+        return turn
+
+    async def delete_conversation(self, robot_id: str, chat_id: str, persona_id: str):
+        robot = self.robots[robot_id]
+        if robot.chat_id == chat_id and robot.persona_id == persona_id:
+            await robot.invalidate_current_session(cancel_source="conversation_delete")
+        deleted = await asyncio.to_thread(
+            self.store.delete_conversation,
+            robot_id,
+            chat_id,
+            persona_id,
+        )
+        return {
+            "robot_id": robot_id,
+            "chat_id": chat_id,
+            "persona_id": persona_id,
+            "deleted_turns": deleted,
+        }
+
+    async def update_playback(
+        self,
+        robot_id: str,
+        turn_id: str,
+        *,
+        published_text: str | None,
+        spoken_text: str | None,
+        evidence_status: str,
+        playback_state: str,
+    ):
+        robot = self.robots[robot_id]
+        robot.coordinator.set_playback_state(playback_state)
+        changed = await asyncio.to_thread(
+            self.store.update_playback,
+            robot_id,
+            turn_id,
+            published_text=published_text,
+            spoken_text=spoken_text,
+            evidence_status=evidence_status,
+            updated_ms=time.time_ns() // 1_000_000,
+        )
+        if not changed:
+            raise KeyError(turn_id)
+        return await self.get_turn(robot_id, turn_id)
+
+    async def set_playback_state(self, robot_id: str, state: str):
+        self.robots[robot_id].coordinator.set_playback_state(state)
+        return self.coordinator_state(robot_id)
+
+    def request_response(self, robot_id: str, *, source: str, dedupe_key: str, ttl_ms: int):
+        robot = self.robots[robot_id]
+        return robot.coordinator.request(
+            source=source,
+            dedupe_key=dedupe_key,
+            ttl_ms=ttl_ms,
+            model_busy=robot.turn_task is not None,
+        )
+
+    def coordinator_state(self, robot_id: str):
+        robot = self.robots[robot_id]
+        return robot.coordinator.snapshot(model_busy=robot.turn_task is not None)
+
+    async def update_social_state(
+        self,
+        robot_id: str,
+        fields: dict,
+        *,
+        source: str,
+        generation: int,
+        source_turn_id: str | None = None,
+        ttl_ms: int | None = None,
+    ):
+        robot = self.robots[robot_id]
+        if generation != robot.generation:
+            raise ValueError("stale_generation")
+        if not isinstance(fields, dict) or not fields:
+            raise ValueError("social state fields required")
+        unknown = set(fields) - robot.SOCIAL_STATE_KEYS
+        if unknown:
+            raise ValueError(f"unknown social state key: {sorted(unknown)[0]}")
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError("social state source required")
+        if ttl_ms is not None and (type(ttl_ms) is not int or not 1 <= ttl_ms <= 86_400_000):
+            raise ValueError("ttl_ms must be between 1 and 86400000")
+        now_ms = time.time_ns() // 1_000_000
+        expires_at_ms = None if ttl_ms is None else now_ms + ttl_ms
+        for key, value in fields.items():
+            await asyncio.to_thread(
+                self.store.upsert_social_state,
+                robot_id,
+                robot.chat_id,
+                robot.persona_id,
+                key,
+                value,
+                source=source,
+                source_turn_id=source_turn_id,
+                generation=generation,
+                expires_at_ms=expires_at_ms,
+                updated_ms=now_ms,
+            )
+        return await self.social_state(robot_id)
+
+    async def social_state(self, robot_id: str):
+        robot = self.robots[robot_id]
+        return await asyncio.to_thread(
+            self.store.load_social_state,
+            robot_id,
+            robot.chat_id,
+            robot.persona_id,
+            time.time_ns() // 1_000_000,
+        )
 
     async def stop_robot(self, robot_id):
         return await self.robots[robot_id].stop()
@@ -658,8 +1059,8 @@ class HarborRuntime:
             room_capability = "connecting"
         return {
             "project": "Annie Harbor",
-            "phase": 2,
-            "mode": "fake_brain_live_room_pcm" if room_required else "fake_brain_pcm_gate",
+            "phase": 3,
+            "mode": "fake_brain_session_live_room_pcm" if room_required else "fake_brain_session_control",
             "pid": os.getpid(),
             "ready": ready,
             "status": "healthy"
@@ -682,6 +1083,7 @@ class HarborRuntime:
                 "brain": "fake",
                 "room": room_capability,
                 "pcm_input": "room_gateway_ready" if room_ready else "gate_ready",
+                "conversation": "ledger_ready",
                 "llm": "not_connected",
                 "tts": "not_connected",
                 "memory": "not_started",

@@ -1,4 +1,4 @@
-"""Local Dashboard, Fake text controls, and Phase 2 Room PCM diagnostics."""
+"""Local Dashboard plus Phase 3 session, ledger, and PCM diagnostics."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -26,6 +26,45 @@ class TurnInput(BaseModel):
         return value
 
 
+class SessionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chat_id: str = Field(min_length=1, max_length=128)
+    persona_id: str = Field(min_length=1, max_length=128)
+    persona_revision: int = Field(default=1, ge=1)
+
+    @field_validator("chat_id", "persona_id")
+    @classmethod
+    def strip_identity(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("session identity must not be blank")
+        return value
+
+
+class PlaybackInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    published_text: str | None = Field(default=None, max_length=8000)
+    spoken_text: str | None = Field(default=None, max_length=8000)
+    evidence_status: str = Field(min_length=1, max_length=64)
+    playback_state: str = Field(min_length=1, max_length=32)
+
+
+class ResponseRequestInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field(min_length=1, max_length=64)
+    dedupe_key: str = Field(min_length=1, max_length=256)
+    ttl_ms: int = Field(ge=1, le=60000)
+
+
+class SocialStateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fields: dict
+    source: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=0)
+    source_turn_id: str | None = Field(default=None, max_length=128)
+    ttl_ms: int | None = Field(default=None, ge=1, le=86_400_000)
+
+
 def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
@@ -35,7 +74,11 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         finally:
             await runtime.close()
 
-    app = FastAPI(title="Annie Harbor — Phase 2 PCM Gateway", lifespan=lifespan)
+    app = FastAPI(title="Annie Harbor — Phase 3 Session Control", lifespan=lifespan)
+
+    def require_robot(robot_id: str):
+        if robot_id not in runtime.robots:
+            raise HTTPException(404, "unknown robot_id")
 
     @app.get("/health")
     async def health():
@@ -48,8 +91,7 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
 
     @app.get("/api/robots/{robot_id}/inputs")
     async def inputs(robot_id: str):
-        if robot_id not in runtime.robots:
-            raise HTTPException(404, "unknown robot_id")
+        require_robot(robot_id)
         return runtime.input_stats(robot_id)
 
     @app.get("/api/phase2/rooms")
@@ -58,8 +100,7 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
 
     @app.post("/api/debug/robots/{robot_id}/room-pcm")
     async def debug_room_pcm(robot_id: str, request: Request, source: str):
-        if robot_id not in runtime.robots:
-            raise HTTPException(404, "unknown robot_id")
+        require_robot(robot_id)
         if not source.strip():
             raise HTTPException(422, "source must not be blank")
         try:
@@ -86,8 +127,7 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
             raise HTTPException(422, exc.reason) from exc
 
     async def operation(robot_id, name, text=None):
-        if robot_id not in runtime.robots:
-            raise HTTPException(404, "unknown robot_id")
+        require_robot(robot_id)
 
         try:
             if name == "turns":
@@ -109,6 +149,111 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     @app.post("/api/robots/{robot_id}/turns")
     async def turn(robot_id: str, body: TurnInput):
         return await operation(robot_id, "turns", body.text)
+
+    @app.get("/api/robots/{robot_id}/session")
+    async def session(robot_id: str):
+        require_robot(robot_id)
+        return runtime.session_state(robot_id)
+
+    @app.post("/api/robots/{robot_id}/session")
+    async def switch_session(robot_id: str, body: SessionInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.switch_session(
+                robot_id,
+                chat_id=body.chat_id,
+                persona_id=body.persona_id,
+                persona_revision=body.persona_revision,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/conversations")
+    async def conversations(robot_id: str):
+        require_robot(robot_id)
+        return await runtime.list_conversations(robot_id)
+
+    @app.get("/api/robots/{robot_id}/conversations/{chat_id}")
+    async def conversation(robot_id: str, chat_id: str, persona_id: str):
+        require_robot(robot_id)
+        if not chat_id.strip() or not persona_id.strip():
+            raise HTTPException(422, "chat_id and persona_id must not be blank")
+        return await runtime.load_conversation(robot_id, chat_id, persona_id)
+
+    @app.delete("/api/robots/{robot_id}/conversations/{chat_id}")
+    async def delete_conversation(robot_id: str, chat_id: str, persona_id: str):
+        require_robot(robot_id)
+        if not chat_id.strip() or not persona_id.strip():
+            raise HTTPException(422, "chat_id and persona_id must not be blank")
+        return await runtime.delete_conversation(robot_id, chat_id, persona_id)
+
+    @app.get("/api/robots/{robot_id}/context")
+    async def context(robot_id: str):
+        require_robot(robot_id)
+        return await runtime.recent_context(robot_id)
+
+    @app.get("/api/robots/{robot_id}/turns/{turn_id}")
+    async def ledger_turn(robot_id: str, turn_id: str):
+        require_robot(robot_id)
+        try:
+            return await runtime.get_turn(robot_id, turn_id)
+        except KeyError as exc:
+            raise HTTPException(404, "unknown turn_id") from exc
+
+    @app.post("/api/robots/{robot_id}/turns/{turn_id}/playback")
+    async def playback(robot_id: str, turn_id: str, body: PlaybackInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.update_playback(
+                robot_id,
+                turn_id,
+                published_text=body.published_text,
+                spoken_text=body.spoken_text,
+                evidence_status=body.evidence_status,
+                playback_state=body.playback_state,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "unknown turn_id") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/coordinator")
+    async def coordinator(robot_id: str):
+        require_robot(robot_id)
+        return runtime.coordinator_state(robot_id)
+
+    @app.post("/api/robots/{robot_id}/response-requests")
+    async def response_request(robot_id: str, body: ResponseRequestInput):
+        require_robot(robot_id)
+        try:
+            return runtime.request_response(
+                robot_id,
+                source=body.source,
+                dedupe_key=body.dedupe_key,
+                ttl_ms=body.ttl_ms,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/social-state")
+    async def social_state(robot_id: str):
+        require_robot(robot_id)
+        return await runtime.social_state(robot_id)
+
+    @app.put("/api/robots/{robot_id}/social-state")
+    async def update_social_state(robot_id: str, body: SocialStateInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.update_social_state(
+                robot_id,
+                body.fields,
+                source=body.source,
+                generation=body.generation,
+                source_turn_id=body.source_turn_id,
+                ttl_ms=body.ttl_ms,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/robots/{robot_id}/{action}")
     async def control(robot_id: str, action: str):

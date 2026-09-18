@@ -536,7 +536,7 @@ def resolve_database(root: Path, value: str) -> Path:
 
 
 class RuntimeStore:
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(self, path: Path):
         self.path = path
@@ -586,6 +586,51 @@ class RuntimeStore:
                 db.execute("ALTER TABLE runtime_events ADD COLUMN queue_wait_ms REAL")
             if "source" not in columns:
                 db.execute("ALTER TABLE runtime_events ADD COLUMN source TEXT")
+            db.execute("""CREATE TABLE IF NOT EXISTS conversation_sessions (
+                robot_id TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                persona_id TEXT NOT NULL,
+                persona_revision INTEGER NOT NULL,
+                session_epoch INTEGER NOT NULL,
+                generation INTEGER NOT NULL,
+                updated_ms INTEGER NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS conversation_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                turn_id TEXT NOT NULL UNIQUE,
+                robot_id TEXT NOT NULL,
+                room_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                persona_id TEXT NOT NULL,
+                persona_revision INTEGER NOT NULL,
+                session_epoch INTEGER NOT NULL,
+                generation INTEGER NOT NULL,
+                user_text TEXT NOT NULL,
+                assistant_planned_text TEXT,
+                assistant_generated_text TEXT,
+                assistant_published_text TEXT,
+                assistant_spoken_text TEXT,
+                playback_evidence_status TEXT NOT NULL DEFAULT 'unknown',
+                status TEXT NOT NULL,
+                interrupted INTEGER NOT NULL DEFAULT 0,
+                cancelled INTEGER NOT NULL DEFAULT 0,
+                cancel_source TEXT,
+                created_ms INTEGER NOT NULL,
+                updated_ms INTEGER NOT NULL)""")
+            db.execute("""CREATE INDEX IF NOT EXISTS conversation_turn_scope_idx
+                ON conversation_turns(robot_id, chat_id, persona_id, id)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS conversation_social_state (
+                robot_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                persona_id TEXT NOT NULL,
+                state_key TEXT NOT NULL,
+                value_json TEXT NOT NULL,
+                source TEXT NOT NULL,
+                source_turn_id TEXT,
+                generation INTEGER NOT NULL,
+                expires_at_ms INTEGER,
+                updated_ms INTEGER NOT NULL,
+                PRIMARY KEY(robot_id, chat_id, persona_id, state_key))""")
             db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
 
     def write_batch(self, records):
@@ -612,3 +657,310 @@ class RuntimeStore:
                     ON CONFLICT(robot_id) DO UPDATE SET snapshot=excluded.snapshot,updated_ms=excluded.updated_ms""",
                     (event.robot_id, json.dumps(snapshot, ensure_ascii=False), event.ts_ms),
                 )
+
+    def load_conversation_session(self, robot_id: str):
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT robot_id,room_id,chat_id,persona_id,persona_revision,
+                session_epoch,generation,updated_ms
+                FROM conversation_sessions WHERE robot_id=?""",
+                (robot_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "robot_id",
+            "room_id",
+            "chat_id",
+            "persona_id",
+            "persona_revision",
+            "session_epoch",
+            "generation",
+            "updated_ms",
+        )
+        return dict(zip(keys, row, strict=True))
+
+    def save_conversation_session(self, session: dict):
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO conversation_sessions
+                (robot_id,room_id,chat_id,persona_id,persona_revision,session_epoch,generation,updated_ms)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(robot_id) DO UPDATE SET
+                room_id=excluded.room_id,
+                chat_id=excluded.chat_id,
+                persona_id=excluded.persona_id,
+                persona_revision=excluded.persona_revision,
+                session_epoch=excluded.session_epoch,
+                generation=excluded.generation,
+                updated_ms=excluded.updated_ms""",
+                (
+                    session["robot_id"],
+                    session["room_id"],
+                    session["chat_id"],
+                    session["persona_id"],
+                    session["persona_revision"],
+                    session["session_epoch"],
+                    session["generation"],
+                    session["updated_ms"],
+                ),
+            )
+
+    def create_conversation_turn(self, turn: dict):
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO conversation_turns
+                (turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
+                session_epoch,generation,user_text,status,created_ms,updated_ms)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    turn["turn_id"],
+                    turn["robot_id"],
+                    turn["room_id"],
+                    turn["chat_id"],
+                    turn["persona_id"],
+                    turn["persona_revision"],
+                    turn["session_epoch"],
+                    turn["generation"],
+                    turn["user_text"],
+                    turn["status"],
+                    turn["created_ms"],
+                    turn["updated_ms"],
+                ),
+            )
+
+    def finish_conversation_turn(
+        self,
+        robot_id: str,
+        turn_id: str,
+        *,
+        status: str,
+        planned_text: str | None = None,
+        generated_text: str | None = None,
+        interrupted: bool = False,
+        cancelled: bool = False,
+        cancel_source: str | None = None,
+        updated_ms: int,
+    ):
+        with self.connect() as db:
+            db.execute(
+                """UPDATE conversation_turns SET
+                status=?,
+                assistant_planned_text=COALESCE(?,assistant_planned_text),
+                assistant_generated_text=COALESCE(?,assistant_generated_text),
+                interrupted=?,
+                cancelled=?,
+                cancel_source=?,
+                updated_ms=?
+                WHERE robot_id=? AND turn_id=?""",
+                (
+                    status,
+                    planned_text,
+                    generated_text,
+                    int(interrupted),
+                    int(cancelled),
+                    cancel_source,
+                    updated_ms,
+                    robot_id,
+                    turn_id,
+                ),
+            )
+
+    def update_playback(
+        self,
+        robot_id: str,
+        turn_id: str,
+        *,
+        published_text: str | None,
+        spoken_text: str | None,
+        evidence_status: str,
+        updated_ms: int,
+    ):
+        with self.connect() as db:
+            changed = db.execute(
+                """UPDATE conversation_turns SET
+                assistant_published_text=COALESCE(?,assistant_published_text),
+                assistant_spoken_text=COALESCE(?,assistant_spoken_text),
+                playback_evidence_status=?,
+                updated_ms=?
+                WHERE robot_id=? AND turn_id=?""",
+                (published_text, spoken_text, evidence_status, updated_ms, robot_id, turn_id),
+            ).rowcount
+        return changed
+
+    @staticmethod
+    def _turn_row(row):
+        keys = (
+            "id",
+            "turn_id",
+            "robot_id",
+            "room_id",
+            "chat_id",
+            "persona_id",
+            "persona_revision",
+            "session_epoch",
+            "generation",
+            "user_text",
+            "assistant_planned_text",
+            "assistant_generated_text",
+            "assistant_published_text",
+            "assistant_spoken_text",
+            "playback_evidence_status",
+            "status",
+            "interrupted",
+            "cancelled",
+            "cancel_source",
+            "created_ms",
+            "updated_ms",
+        )
+        item = dict(zip(keys, row, strict=True))
+        item["interrupted"] = bool(item["interrupted"])
+        item["cancelled"] = bool(item["cancelled"])
+        return item
+
+    def get_conversation_turn(self, robot_id: str, turn_id: str):
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
+                session_epoch,generation,user_text,assistant_planned_text,assistant_generated_text,
+                assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
+                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                FROM conversation_turns WHERE robot_id=? AND turn_id=?""",
+                (robot_id, turn_id),
+            ).fetchone()
+        return None if row is None else self._turn_row(row)
+
+    def load_conversation(self, robot_id: str, chat_id: str, persona_id: str):
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
+                session_epoch,generation,user_text,assistant_planned_text,assistant_generated_text,
+                assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
+                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                FROM conversation_turns
+                WHERE robot_id=? AND chat_id=? AND persona_id=?
+                ORDER BY id""",
+                (robot_id, chat_id, persona_id),
+            ).fetchall()
+        return [self._turn_row(row) for row in rows]
+
+    def list_conversations(self, robot_id: str):
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT chat_id,persona_id,COUNT(*),MAX(updated_ms)
+                FROM conversation_turns WHERE robot_id=?
+                GROUP BY chat_id,persona_id ORDER BY MAX(updated_ms) DESC""",
+                (robot_id,),
+            ).fetchall()
+        return [
+            {
+                "chat_id": chat_id,
+                "persona_id": persona_id,
+                "turn_count": turn_count,
+                "updated_ms": updated_ms,
+            }
+            for chat_id, persona_id, turn_count, updated_ms in rows
+        ]
+
+    def recent_conversation_context(self, robot_id: str, chat_id: str, persona_id: str, limit: int):
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
+                session_epoch,generation,user_text,assistant_planned_text,assistant_generated_text,
+                assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
+                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                FROM conversation_turns
+                WHERE robot_id=? AND chat_id=? AND persona_id=?
+                  AND status='completed' AND cancelled=0 AND interrupted=0
+                  AND TRIM(user_text) <> ''
+                  AND COALESCE(NULLIF(TRIM(assistant_spoken_text),''),
+                               NULLIF(TRIM(assistant_published_text),''),
+                               NULLIF(TRIM(assistant_generated_text),'')) IS NOT NULL
+                ORDER BY id DESC LIMIT ?""",
+                (robot_id, chat_id, persona_id, limit),
+            ).fetchall()
+        result = []
+        for row in reversed(rows):
+            item = self._turn_row(row)
+            item["assistant_context_text"] = (
+                item["assistant_spoken_text"]
+                or item["assistant_published_text"]
+                or item["assistant_generated_text"]
+            )
+            result.append(item)
+        return result
+
+    def delete_conversation(self, robot_id: str, chat_id: str, persona_id: str):
+        with self.connect() as db:
+            deleted_turns = db.execute(
+                "DELETE FROM conversation_turns WHERE robot_id=? AND chat_id=? AND persona_id=?",
+                (robot_id, chat_id, persona_id),
+            ).rowcount
+            db.execute(
+                """DELETE FROM conversation_social_state
+                WHERE robot_id=? AND chat_id=? AND persona_id=?""",
+                (robot_id, chat_id, persona_id),
+            )
+        return deleted_turns
+
+    def upsert_social_state(
+        self,
+        robot_id: str,
+        chat_id: str,
+        persona_id: str,
+        state_key: str,
+        value,
+        *,
+        source: str,
+        source_turn_id: str | None,
+        generation: int,
+        expires_at_ms: int | None,
+        updated_ms: int,
+    ):
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO conversation_social_state
+                (robot_id,chat_id,persona_id,state_key,value_json,source,source_turn_id,
+                 generation,expires_at_ms,updated_ms)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(robot_id,chat_id,persona_id,state_key) DO UPDATE SET
+                value_json=excluded.value_json,
+                source=excluded.source,
+                source_turn_id=excluded.source_turn_id,
+                generation=excluded.generation,
+                expires_at_ms=excluded.expires_at_ms,
+                updated_ms=excluded.updated_ms""",
+                (
+                    robot_id,
+                    chat_id,
+                    persona_id,
+                    state_key,
+                    json.dumps(value, ensure_ascii=False),
+                    source,
+                    source_turn_id,
+                    generation,
+                    expires_at_ms,
+                    updated_ms,
+                ),
+            )
+
+    def load_social_state(self, robot_id: str, chat_id: str, persona_id: str, now_ms: int):
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT state_key,value_json,source,source_turn_id,generation,expires_at_ms,updated_ms
+                FROM conversation_social_state
+                WHERE robot_id=? AND chat_id=? AND persona_id=?
+                  AND (expires_at_ms IS NULL OR expires_at_ms>?)""",
+                (robot_id, chat_id, persona_id, now_ms),
+            ).fetchall()
+        return {
+            state_key: {
+                "value": json.loads(value_json),
+                "source": source,
+                "source_turn_id": source_turn_id,
+                "generation": generation,
+                "expires_at_ms": expires_at_ms,
+                "updated_ms": updated_ms,
+            }
+            for state_key, value_json, source, source_turn_id, generation, expires_at_ms, updated_ms in rows
+        }

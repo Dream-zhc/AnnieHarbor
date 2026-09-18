@@ -1,7 +1,7 @@
 [project]
 name = "annie-harbor"
 version = "0.1.0"
-description = "Annie Harbor Phase 2: bounded Room PCM gateway with Fake brain"
+description = "Annie Harbor Phase 3: isolated sessions and conversation ledger with Fake brain"
 requires-python = ">=3.11,<3.12"
 dependencies = ["annie-runtime"]
 

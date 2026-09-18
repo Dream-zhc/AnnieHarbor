@@ -82,7 +82,7 @@ class RobotConfig:
         if type(self.audio_max_age_ms) is not int or not 1 <= self.audio_max_age_ms <= 60000:
             raise ValueError("audio_max_age_ms must be an integer between 1 and 60000")
         if self.publish_enabled:
-            raise ValueError("Phase 2 has no real Room output path")
+            raise ValueError("Phase 3 has no real Room output path")
 
 
 @dataclass
@@ -90,6 +90,10 @@ class RobotSnapshot:
     robot_id: str
     room_id: str
     persona_id: str
+    chat_id: str = "default"
+    persona_revision: int = 1
+    session_epoch: int = 0
+    generation: int = 0
     state: str = "stopped"
     current_request_id: str | None = None
     last_input: str | None = None
@@ -115,6 +119,10 @@ class RobotSnapshot:
             "robot_id": self.robot_id,
             "room_id": self.room_id,
             "persona_id": self.persona_id,
+            "chat_id": self.chat_id,
+            "persona_revision": self.persona_revision,
+            "session_epoch": self.session_epoch,
+            "generation": self.generation,
             "state": self.state,
             "current_request_id": self.current_request_id,
             "last_input": self.last_input,

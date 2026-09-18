@@ -134,7 +134,7 @@ def resolve_log_level(value: str) -> int:
 
 def main():
     root = Path(__file__).resolve().parents[4]
-    parser = argparse.ArgumentParser(description="Annie Harbor Phase 2 — bounded PCM gateway with Fake brain")
+    parser = argparse.ArgumentParser(description="Annie Harbor Phase 3 — isolated sessions with Fake brain")
     parser.add_argument("--root", type=Path, default=root)
     parser.add_argument("--host")
     parser.add_argument("--port", type=int)
@@ -150,6 +150,8 @@ def main():
     load_local_env(root / ".env")
     with (root / "config/app.toml").open("rb") as file:
         config = tomllib.load(file)
+    with (root / "config/runtime_defaults.toml").open("rb") as file:
+        runtime_defaults = tomllib.load(file)
     logging.basicConfig(
         level=resolve_log_level(os.environ.get("ANNIE_LOG_LEVEL", config["app"].get("log_level", "INFO"))),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -162,6 +164,7 @@ def main():
         load_robots(root / "config/robots.toml"),
         database,
         load_room_server(root / "config/rooms.toml"),
+        conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
     )
     try:
         runtime.preflight()

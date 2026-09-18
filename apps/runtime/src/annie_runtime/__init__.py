@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from annie_adapters import RuntimeStore, decode_room_binary_frame, normalize_room_event, parse_mic_start
+from annie_adapters import (
+    VERIFIED_MIC_FORMAT,
+    RuntimeStore,
+    decode_room_binary_frame,
+    normalize_room_event,
+    parse_mic_start,
+)
 from annie_brain import FakeBrain
 from annie_core import (
     AudioFormat,
@@ -357,8 +363,16 @@ class HarborRuntime:
             raise InputRejectedError("ambiguous_target")
         return targets
 
-    def ingest_mic_start(self, source_id: str, message: dict, *, target_robot_id=None, broadcast=False):
-        audio_format = parse_mic_start(message)
+    def start_pcm_stream(
+        self,
+        source_id: str,
+        audio_format: AudioFormat,
+        *,
+        target_robot_id=None,
+        broadcast=False,
+    ):
+        if audio_format != VERIFIED_MIC_FORMAT:
+            raise InputRejectedError("unsupported_audio_format")
         targets = self._input_targets(
             source_id, target_robot_id=target_robot_id, broadcast=broadcast
         )
@@ -370,8 +384,16 @@ class HarborRuntime:
             robot = self.robots[robot_id]
             robot.audio.start_stream(source_id, audio_format)
             robot.snapshot.last_input_source = source_id
-            robot.record("mic_stream_started", source=source_id)
+            robot.record("pcm_stream_started", source=source_id)
         return targets
+
+    def ingest_mic_start(self, source_id: str, message: dict, *, target_robot_id=None, broadcast=False):
+        return self.start_pcm_stream(
+            source_id,
+            parse_mic_start(message),
+            target_robot_id=target_robot_id,
+            broadcast=broadcast,
+        )
 
     def ingest_pcm(
         self,
@@ -471,21 +493,7 @@ class HarborRuntime:
             raise InputRejectedError("debug_source_conflict")
         robot = self.robots[robot_id]
         if robot.audio.source_id != source_id:
-            self.ingest_mic_start(
-                source_id,
-                {
-                    "type": "mic.start",
-                    "data": {
-                        "audio": {
-                            "codec": "pcm_s16le",
-                            "sample_rate": 16000,
-                            "channels": 1,
-                            "frame_ms": 20,
-                            "bytes_per_frame": 640,
-                        }
-                    },
-                },
-            )
+            self.start_pcm_stream(source_id, VERIFIED_MIC_FORMAT)
         self.ingest_pcm(source_id, frame, target_robot_id=robot_id)
         return self.input_stats(robot_id)
 

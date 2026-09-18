@@ -4,11 +4,77 @@ import json
 import sqlite3
 import tomllib
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from annie_core import AudioFormat, NormalizedEvent, RobotConfig
 
 VERIFIED_MIC_FORMAT = AudioFormat("pcm_s16le", 16000, 1, 20, 640)
+
+
+@dataclass(frozen=True)
+class RoomWelcome:
+    client_id: str
+    robot_id: str
+    room: str
+    size: int
+    subscriptions: tuple[str, ...]
+    catalog_types: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SubscriptionAck:
+    subscriptions: tuple[str, ...]
+
+
+def parse_room_welcome(message: dict) -> RoomWelcome:
+    """Validate the live-observed Room control-plane WELCOME shape."""
+    if not isinstance(message, dict) or message.get("type") != "WELCOME" or message.get("ok") is not True:
+        raise ValueError("expected successful WELCOME")
+    client_id = message.get("clientId")
+    robot_id = message.get("robotId")
+    room = message.get("room")
+    size = message.get("size")
+    subscriptions = message.get("subscriptions")
+    catalog = message.get("catalog")
+    if not all(isinstance(value, str) and value for value in (client_id, robot_id, room)):
+        raise ValueError("WELCOME identity fields must be non-empty strings")
+    if type(size) is not int or size < 1:
+        raise ValueError("WELCOME size must be a positive integer")
+    if not isinstance(subscriptions, list) or not all(
+        isinstance(value, str) and value for value in subscriptions
+    ):
+        raise ValueError("WELCOME subscriptions must be a string list")
+    if not isinstance(catalog, list):
+        raise ValueError("WELCOME catalog must be a list")
+    catalog_types = []
+    for entry in catalog:
+        if not isinstance(entry, dict) or not isinstance(entry.get("type"), str) or not entry["type"]:
+            raise ValueError("WELCOME catalog entries must have a non-empty type")
+        catalog_types.append(entry["type"])
+    return RoomWelcome(
+        client_id=client_id,
+        robot_id=robot_id,
+        room=room,
+        size=size,
+        subscriptions=tuple(subscriptions),
+        catalog_types=tuple(catalog_types),
+    )
+
+
+def parse_subscribe_ack(message: dict) -> SubscriptionAck:
+    """Validate the live-observed ACK returned after SUBSCRIBE."""
+    if not isinstance(message, dict) or message.get("type") != "ACK":
+        raise ValueError("expected ACK")
+    data = message.get("data")
+    if not isinstance(data, dict) or data.get("what") != "subscribed":
+        raise ValueError("expected subscribed ACK")
+    subscriptions = data.get("subscriptions")
+    if not isinstance(subscriptions, list) or not all(
+        isinstance(value, str) and value for value in subscriptions
+    ):
+        raise ValueError("ACK subscriptions must be a string list")
+    return SubscriptionAck(tuple(subscriptions))
 
 
 def decode_room_binary_frame(frame: bytes) -> tuple[str, bytes] | None:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "docs/phase0/2026-09-17/fixtures"
+PHASE2_CONTROL_FIXTURES = ROOT / "docs/phase2/2026-09-18/room_control_live.jsonl"
 
 
 def load_contract(contract_id):
@@ -21,6 +22,23 @@ def load_contract(contract_id):
 
 
 class ProtocolAdapterTests(unittest.TestCase):
+    def test_live_room_control_welcome_and_subscribe_ack_are_strictly_parsed(self):
+        from annie_adapters import parse_room_welcome, parse_subscribe_ack
+
+        rows = [json.loads(raw) for raw in PHASE2_CONTROL_FIXTURES.read_text().splitlines()]
+        welcome = parse_room_welcome(rows[0]["message"])
+        self.assertEqual((welcome.robot_id, welcome.room), ("reb_mic", "roomv2"))
+        self.assertTrue(welcome.client_id.startswith("anonymous-"))
+        self.assertIn("MIC_AUDIO", welcome.catalog_types)
+        self.assertNotIn("mic.start", welcome.catalog_types)
+        ack = parse_subscribe_ack(rows[1]["message"])
+        self.assertEqual(ack.subscriptions, ("*",))
+
+        with self.assertRaises(ValueError):
+            parse_room_welcome({"type": "WELCOME", "ok": True, "clientId": "x"})
+        with self.assertRaises(ValueError):
+            parse_subscribe_ack({"type": "ACK", "data": {"what": "other"}})
+
     def test_binary_frame_decoder_matches_phase0_fixtures(self):
         from annie_adapters import decode_room_binary_frame
 
@@ -195,6 +213,22 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.runtime.ingest_pcm("mic-a", self.binary, sequence=2)
         self.runtime.ingest_mic_start("mic-a", self.mic_start)
         self.runtime.ingest_pcm("mic-a", self.binary, sequence=1)
+
+    def test_verified_transport_format_can_start_gate_without_wire_mic_start(self):
+        from annie_adapters import VERIFIED_MIC_FORMAT
+        from annie_core import AudioFormat, InputRejectedError
+
+        self.runtime.bind_input_source("room-reb-mic", ["annie-a"])
+        self.runtime.start_pcm_stream("room-reb-mic", VERIFIED_MIC_FORMAT)
+        self.runtime.ingest_pcm("room-reb-mic", self.binary, sequence=1)
+        stats = self.runtime.input_stats("annie-a")
+        self.assertEqual(stats["accepted"], 1)
+        self.assertEqual(stats["format"]["bytes_per_frame"], 640)
+        with self.assertRaisesRegex(InputRejectedError, "unsupported_audio_format"):
+            self.runtime.start_pcm_stream(
+                "room-reb-mic",
+                AudioFormat("pcm_s16le", 24000, 1, 20, 960),
+            )
 
     async def test_pcm_active_blocks_same_source_legacy_asr_double_trigger(self):
         from annie_core import InputRejectedError

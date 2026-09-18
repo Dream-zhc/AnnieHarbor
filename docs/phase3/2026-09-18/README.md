@@ -19,6 +19,8 @@ Phase 3 的会话事实、隔离、Conversation Ledger、TurnCoordinator 最小�
 ## 已落地
 
 - SQLite schema 升级到 v3，新增 conversation_sessions、conversation_turns、conversation_social_state。
+- Conversation Ledger 的 create/finish/playback 写入已改为有界后台单写队列；正常 Turn 只做内存更新与 `put_nowait`，不再等待 SQLite 落盘。队列满或 writer 故障会 fail-stop，并在 health 的 storage 中暴露 ledger_error/queue depth，不静默丢必需 Ledger。
+- 当前 Session 的最近 20 轮有效上下文进入 Session 时从 SQLite 加载一次，随后由内存窗口增量维护；`recent_context` 不再每轮查询 SQLite。会话列表、完整历史、显式删除、切 Session 和关闭属于控制路径，会先通过 Ledger barrier/flush 保证读写顺序。
 - Runtime 启动会恢复上次选中的 Chat/Persona，但递增 session_epoch/generation，防止进程重启后重放旧副作用。
 - 切 Chat/Persona 会使旧 generation 失效、取消当前 Fake 回合、清理旧排队请求；迟到结果不会写成当前回复。
 - 显式删除当前 Chat 时也先使 generation 失效并取消旧回合，避免删除后迟到结果又写回来。
@@ -52,10 +54,10 @@ Phase 3 为正式前端保留了以下后端接口边界：
     18 passed, 2 warnings, 14 subtests passed
 
     uv run --locked pytest -q tests/test_phase3.py
-    11 passed, 2 warnings
+    15 passed, 2 warnings
 
     uv run --locked pytest -q
-    63 passed, 2 warnings, 25 subtests passed
+    67 passed, 2 warnings, 25 subtests passed
 
     uv run --locked ruff check apps packages tests
     All checks passed!

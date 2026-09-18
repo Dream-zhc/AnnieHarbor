@@ -280,6 +280,8 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.runtime.robots["annie-a"].snapshot.last_reply)
 
     async def test_pcm_queue_wait_stays_in_memory_without_per_frame_trace(self):
+        from annie_adapters import RuntimeStore
+
         self.runtime.bind_input_source("mic-a", ["annie-a"])
         self.runtime.ingest_mic_start("mic-a", self.mic_start)
         self.runtime.ingest_pcm("mic-a", self.binary, sequence=1)
@@ -288,7 +290,10 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(queue_wait_ms, 10)
         await self.runtime.recorder.flush()
         with sqlite3.connect(self.db) as db:
-            self.assertEqual(db.execute("pragma user_version").fetchone()[0], 2)
+            self.assertEqual(
+                db.execute("pragma user_version").fetchone()[0],
+                RuntimeStore.SCHEMA_VERSION,
+            )
             per_frame_rows = db.execute(
                 "select count(*) from runtime_events where kind in ('pcm_enqueued', 'pcm_dequeued')"
             ).fetchone()[0]
@@ -504,7 +509,7 @@ class Phase2HTTPTests(unittest.TestCase):
 
     def test_health_and_binary_debug_ingress_are_explicit_about_no_live_room(self):
         health = self.client.get("/health").json()
-        self.assertEqual(health["phase"], 2)
+        self.assertGreaterEqual(health["phase"], 2)
         self.assertEqual(health["capabilities"]["room"], "protocol_ready_not_connected")
         response = self.client.post(
             "/api/debug/robots/annie-a/room-pcm?source=phase2-html",

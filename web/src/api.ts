@@ -4,7 +4,7 @@ export type Session = {robot_id:string;room_id:string;chat_id:string;persona_id:
 export type Health = {ready:boolean;status:string;pid:number;robots:Robot[];capabilities:Record<string,string>};
 export type RealtimeEvent={
   seq:number;kind:string;robot_id:string;chat_id:string;persona_id:string;
-  session_epoch:number;generation:number;text?:string;delta?:string;status?:string;
+  session_epoch:number;generation:number;turn_id?:string|null;text?:string;stash?:string;delta?:string;status?:string;
   error?:string;result?:unknown;name?:string;arguments?:string;first_text_ms?:number;
 };
 export type RealtimeEvents={events:RealtimeEvent[];gap:boolean;latest:number};

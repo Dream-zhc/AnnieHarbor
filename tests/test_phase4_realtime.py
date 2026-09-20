@@ -142,6 +142,29 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored["turns"][0]["user_text"], "我想聊天")
         self.assertEqual(stored["turns"][0]["assistant_generated_text"], "好的")
 
+    async def test_final_transcript_corrects_partial_text_after_response(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed", "transcript": "你好"}, gen)
+        turn_id = client.turn_id
+        await client.handle({"type": "response.text.delta", "delta": "你好！"}, gen)
+        await client.handle({"type": "response.done", "response": {"status": "completed"}}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed", "transcript": "你好，你好。"}, gen)
+        await self.runtime.ledger.flush()
+        turns = (await self.runtime.load_conversation("annie-a", "default", "annie"))["turns"]
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0]["turn_id"], turn_id)
+        self.assertEqual(turns[0]["user_text"], "你好，你好。")
+        self.assertEqual(client.robot.recent_context()[0]["user_text"], turns[0]["user_text"])
+        self.assertEqual(client.events[-1]["turn_id"], turn_id)
+
+    async def test_audio_transcription_does_not_change_manual_text(self):
+        client = self.runtime.realtime["annie-a"]
+        await self.runtime.realtime_text("annie-a", "manual text")
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed", "transcript": "audio"}, client.robot.generation)
+        turns = (await self.runtime.load_conversation("annie-a", "default", "annie"))["turns"]
+        self.assertEqual(turns[0]["user_text"], "manual text")
+
     async def test_deleted_active_turn_cannot_resurrect_old_context(self):
         client = self.runtime.realtime["annie-a"]
         await self.runtime.realtime_text("annie-a", "旧会话的句子")

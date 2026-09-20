@@ -53,7 +53,9 @@ class RoomPcmPlayback extends AudioWorkletProcessor {
       }
       const ratio=24000/sampleRate;
       for(let i=0;i<mono.length && this.running;i++){
-        if(this.length<2 && !(this.final && this.length===1)){
+        // Hold the final available sample for interpolation; one remaining
+        // sample is valid audio, not a network underrun.
+        if(this.length===0){
           if(this.final && this.length===0)break;
           this.running=false;
           this.underflows++;

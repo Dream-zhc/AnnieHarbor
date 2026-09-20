@@ -32,6 +32,7 @@ class RealtimeRobot:
         self.events = deque(maxlen=512)
         self.response_id = None
         self.turn_id = None
+        self.audio_turn_id = None  # retain the audio turn across response.done for late final ASR
         self.transcript = ""
         self.text = ""
         self.speech_active = False
@@ -122,6 +123,7 @@ class RealtimeRobot:
         self.ready = False
         self.session = None
         self._reset_turn()
+        self.audio_turn_id = None
         logger.info("realtime_shutdown robot=%s complete", self.robot.config.robot_id)
 
     async def restart(self):
@@ -264,7 +266,7 @@ class RealtimeRobot:
             finally:
                 audio.queue.task_done()
 
-    def _create_turn(self, user_text):
+    def _create_turn(self, user_text, *, audio=False):
         if self.turn_id:
             return
         now = time.time_ns() // 1_000_000
@@ -280,6 +282,8 @@ class RealtimeRobot:
             "cancel_source": None,
         })
         self.turn_id = turn_id
+        if audio:
+            self.audio_turn_id = turn_id
         self.turn_identity = identity
         self.began = time.perf_counter()
         self.publish("turn.started", turn_id=turn_id, user_text=user_text)
@@ -326,6 +330,7 @@ class RealtimeRobot:
             raise RobotUnavailableError("Realtime Session not ready")
         if self.speech_active or self.response_id or self.turn_id:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
+        self.audio_turn_id = None
         self._create_turn(text)
         try:
             await self.socket.send({
@@ -357,6 +362,7 @@ class RealtimeRobot:
             raise RuntimeError(self._provider_error(event))
         if kind == "input_audio_buffer.speech_started":
             self.speech_active = True
+            self.audio_turn_id = None
             self.publish("speech.started", item_id=event.get("item_id"))
         elif kind == "input_audio_buffer.speech_stopped":
             invalid = event.get("reason") == "turn_invalid"
@@ -370,23 +376,30 @@ class RealtimeRobot:
         elif kind == "conversation.item.input_audio_transcription.completed":
             self.transcript = event.get("transcript", "")
             if self.transcript.strip() and not self.turn_id:
-                self._create_turn(self.transcript)
-            elif self.transcript.strip() and self.turn_id:
-                cached = self.robot.turn_cache.get(self.turn_id)
-                if cached is not None and not cached.get("user_text"):
+                # A final transcript can arrive after response.done; update its
+                # audio turn rather than creating a duplicate completed turn.
+                if self.audio_turn_id is None:
+                    self._create_turn(self.transcript, audio=True)
+            target = self.audio_turn_id
+            if self.transcript.strip() and target:
+                cached = self.robot.turn_cache.get(target)
+                if cached is not None and cached.get("user_text") != self.transcript:
                     now = time.time_ns() // 1_000_000
                     cached.update(user_text=self.transcript, updated_ms=now)
+                    for context in self.robot.context_cache:
+                        if context["turn_id"] == target:
+                            context["user_text"] = self.transcript
                     self.robot.ledger.enqueue(
                         "set_conversation_turn_user_text",
-                        self.robot.config.robot_id, self.turn_id, self.transcript, now,
+                        self.robot.config.robot_id, target, self.transcript, now,
                     )
-            self.publish("transcript.done", text=self.transcript, turn_id=self.turn_id)
+            self.publish("transcript.done", text=self.transcript, turn_id=target)
         elif kind == "response.created":
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
         elif kind == "response.text.delta":
             if not self.turn_id:
-                self._create_turn(self.transcript)
+                self._create_turn(self.transcript, audio=True)
             chunk = event.get("delta", "")
             self.text += chunk
             if self.first_text_ms is None and self.began is not None:

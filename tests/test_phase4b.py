@@ -5,6 +5,7 @@ import base64
 import json
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -358,6 +359,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
 
         self.publisher.publish = blocked_publish
         await self.speech.feed("inflight", self.robot.session_state(), "你好。")
+        await self.speech.finish("inflight")
         await asyncio.wait_for(entered.wait(), 1)
         self.assertEqual(self.speech.samples, 0)
         self.assertEqual(self.speech.inflight_end, 480)
@@ -370,6 +372,26 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
             "stopped", "inflight", stop["stream_epoch"], 480,
         )))
         self.assertEqual(self.speech.stopped_conversation_id, "inflight")
+
+    async def test_short_clauses_are_not_each_synthesized_as_a_new_voice_task(self):
+        identity = self.robot.session_state()
+        for chunk in ("你好，", "你好。", "我可以陪你聊", "天、解答问题。"):
+            await self.speech.feed("natural", identity, chunk)
+        await self.speech.finish("natural")
+        await asyncio.wait_for(self.speech.queue.join(), 2)
+        sent = [item["payload"]["input"].get("text") for socket in FakeTts.instances
+                for item in socket.sent if item["header"]["action"] == "continue-task"]
+        self.assertEqual(sent, ["你好，你好。我可以陪你聊天、解答问题。"])
+        self.assertEqual(self.speech.published_text, "".join(sent))
+
+    async def test_pcm_publisher_can_build_a_jitter_reserve_before_realtime_pacing(self):
+        identity = self.robot.session_state()
+        await self.speech._begin("reserve", identity)
+        started = time.perf_counter()
+        for _ in range(13):
+            await self.speech._publish_pcm(bytes(960), "长句", "part-1", "reserve", identity, started)
+        self.assertEqual(self.speech.samples, 13 * 480)
+        self.assertLess(time.perf_counter() - started, .16)
 
     async def test_only_aligned_pcm_boundaries_can_report_mouth(self):
         cid="mouth-turn"

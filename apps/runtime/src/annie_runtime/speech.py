@@ -9,14 +9,16 @@ from annie_adapters.tts import QwenTtsSocket, command, task_id
 
 logger = logging.getLogger(__name__)
 FRAME_BYTES = 960  # 20ms, 24kHz, S16LE, mono; not the 16kHz MIC_AUDIO format.
-SENTENCE_END = frozenset("。！？!?；;，,、\n")
+SENTENCE_END = frozenset("。！？!?；;\n")
+CLAUSE_END = frozenset("，,、")
+PCM_LEAD_SECONDS = 0.24  # publish ahead of the sample clock to absorb network jitter
 
 
 class SpeechOutput:
     """One bounded text queue and one synthesis/publisher owner per robot."""
 
     def __init__(self, robot, publisher, *, url, key, voice, socket_factory=QwenTtsSocket,
-                 first_chars=2, max_chars=30, first_wait_ms=180, event=None):
+                 first_chars=10, max_chars=48, first_wait_ms=360, event=None):
         self.robot = robot
         self.publisher = publisher
         self.url = url
@@ -156,8 +158,12 @@ class SpeechOutput:
             while self.pending:
                 cut = next((i + 1 for i, char in enumerate(self.pending) if char in SENTENCE_END
                             and i + 1 >= self.first_chars), None)
+                if cut is None and len(self.pending) >= 24:
+                    cut = next((i + 1 for i, char in enumerate(self.pending) if char in CLAUSE_END
+                                and i + 1 >= 12), None)
                 if cut is None and len(self.pending) >= self.max_chars:
-                    cut = self.max_chars
+                    cut = max((i + 1 for i, char in enumerate(self.pending[:self.max_chars])
+                               if char in CLAUSE_END and i + 1 >= 12), default=self.max_chars)
                 if cut is None:
                     break
                 segment, self.pending = self.pending[:cut], self.pending[cut:]
@@ -365,15 +371,17 @@ class SpeechOutput:
     async def _publish_pcm(self, pcm, text, segment_id, turn_id, identity, started):
         if not self._current(turn_id, identity):
             return
-        # Pace bursty provider chunks against the actual PCM sample clock.
-        # The first frame is immediate; subsequent frames cannot outrun audio time.
+        # Keep up to 240 ms ahead of the PCM sample clock. Strict 1x publication
+        # leaves no reserve for WebSocket and browser scheduling jitter.
         now = time.monotonic()
         if self.next_pcm_at is not None and self.next_pcm_at > now:
             await asyncio.sleep(self.next_pcm_at - now)
         if not self._current(turn_id, identity):
             return
         now = time.monotonic()
-        self.next_pcm_at = max(now, self.next_pcm_at or now) + len(pcm) / 2 / 24000
+        self.next_pcm_at = max(now - PCM_LEAD_SECONDS,
+                               self.next_pcm_at if self.next_pcm_at is not None else now - PCM_LEAD_SECONDS
+                               ) + len(pcm) / 2 / 24000
         self.inflight_end = self.samples + len(pcm) // 2
         async with asyncio.timeout(2):
             await self.publisher.publish(self._packet(pcm, text, segment_id=segment_id))

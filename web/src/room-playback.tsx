@@ -156,6 +156,8 @@ export function RoomPlayback({route,available}:{route:Route|undefined;available:
     if(s.stopped)return;
     if(d.stream_final){
       s.final=true;
+      setSourcePeak(Math.round(s.peak/32768*100));
+      setSourceClipped(s.clipped);
       s.node.port.postMessage({type:'final'});
       return;
     }
@@ -270,6 +272,7 @@ export function RoomPlayback({route,available}:{route:Route|undefined;available:
       <span>源峰值：{sourcePeak}%</span>
       <span>削波样本：{sourceClipped}</span>
     </div>
+    {sourceClipped>0&&<p className="inline-error" role="status">收到的 TTS 源 PCM 已出现削波样本：{sourceClipped}。降低网页音量无法恢复源音频；请先用耳机对比，排除麦克风回授，并核对原始 TTS 音频。</p>}
     <small>浏览器回执为 browser_test，不代表机器人真实扬声器已播；开启时避免扬声器与麦克风回授。</small>
   </div>;
 }

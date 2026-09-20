@@ -56,6 +56,8 @@ export function Workbench(){
   const [social,setSocial]=useState<unknown>(null);
   const [realtimeEvents,setRealtimeEvents]=useState<RealtimeEvent[]>([]);
   const [liveText,setLiveText]=useState('');
+  const [previewTranscript,setPreviewTranscript]=useState('');
+  const [finalTranscript,setFinalTranscript]=useState<{turnId:string;text:string}|null>(null);
   const [notice,setNotice]=useState('');
   const [text,setText]=useState('');
   const [pending,setPending]=useState(false);
@@ -113,7 +115,7 @@ export function Workbench(){
   },[]);
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
   useEffect(()=>{
-    setRealtimeEvents([]);setLiveText('');eventCursor.current=0;
+    setRealtimeEvents([]);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);eventCursor.current=0;
     followLatest.current=true;
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
   useEffect(()=>{
@@ -131,7 +133,17 @@ export function Workbench(){
         if(events.length){
           setRealtimeEvents(prev=>[...prev,...events].slice(-100));
           for(const item of events){
-            if(item.kind==='turn.started'||item.kind==='session.replaced')setLiveText('');
+            if(item.kind==='turn.started'||item.kind==='session.replaced'){
+              setLiveText('');setPreviewTranscript('');setFinalTranscript(null);
+            }
+            if(item.kind==='transcript.delta')setPreviewTranscript((item.stash??'')+(item.text??''));
+            if(item.kind==='transcript.done'){
+              setPreviewTranscript('');
+              if(item.text&&item.turn_id){
+                setFinalTranscript({turnId:item.turn_id,text:item.text});
+                void refreshSelected(robotId);
+              }
+            }
             if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
             if(item.kind==='session.error')setNotice('Realtime：'+(item.error??'发生错误'));
             if(item.kind==='turn.done'){setLiveText('');void refreshSelected(robotId);}
@@ -308,13 +320,15 @@ export function Workbench(){
               {!history&&<div className="message-placeholder">正在读取会话历史…</div>}
               {history?.turns.length===0&&!liveText&&<div className="message-placeholder"><strong>新对话，从这里开始。</strong><span>发送文字，或使用机器人 Room 接入的音频与小安妮交互。</span></div>}
               {history?.turns.map(turn=><div className="exchange" key={turn.turn_id}>
-                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{turn.user_text}</div></div></div>
+                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===turn.turn_id?finalTranscript.text:turn.user_text||'语音转写中…'}</div></div></div>
                 <div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
                   <span className="message-author">小安妮 <span>· {turn.cancelled?'已取消':turn.status}</span></span>
                   <div className="bubble agent-bubble">{turn.assistant_spoken_text||turn.assistant_generated_text||'尚无回复'}</div>
                   <span className="message-foot">播放证据：{turn.playback_evidence_status??'unknown'}</span>
                 </div></div>
               </div>)}
+              {previewTranscript&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 语音识别中（暂定）</span><div className="bubble me-bubble">{previewTranscript}</div></div></div>}
+              {finalTranscript&&!history?.turns.some(turn=>turn.turn_id===finalTranscript.turnId)&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 最终转写，等待会话入账</span><div className="bubble me-bubble">{finalTranscript.text}</div></div></div>}
               {liveText&&<div className="message-row agent" aria-live="polite"><span className="agent-avatar">A</span><div className="message-content"><span className="message-author">小安妮 · 生成中</span><div className="bubble agent-bubble">{liveText}</div></div></div>}
             </div>
             <div className="composer">

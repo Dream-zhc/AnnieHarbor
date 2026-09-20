@@ -102,6 +102,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 .agent-avatar{height:28px;width:28px;border-radius:9px;display:grid;place-items:center;background:#4f69d3;color:#fff;font-size:12px;font-weight:800;flex:none;margin-top:15px}
 .message-foot{color:#9da9b8;font-size:11px}
 .composer{padding:15px 22px 19px;border-top:1px solid #e9eef7;background:white}
+.voice-input{display:grid;gap:6px;margin:7px 0 12px}
+.voice-confirm{display:flex;align-items:center;gap:8px;color:#6d7c93;font-size:12px}
+.voice-confirm input{flex:none;accent-color:#4c65d4}
+.voice-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#657b95;font-size:12px}
+.voice-actions button{padding:6px 10px;font-size:12px}
+.audio-guidance{font-size:12px;color:#966228;background:#fff7eb;border-radius:8px;padding:8px 10px;overflow-wrap:anywhere}
 .composer-status{font-size:11px;color:#8796a9;display:flex;align-items:center;gap:8px;margin-bottom:9px}
 .composer form{border:1px solid #dce4f0;border-radius:14px;padding:12px 14px 10px;box-shadow:0 2px 8px #193d7520}
 .composer textarea{border:0;outline:0!important;resize:vertical;width:100%;min-height:44px;max-height:150px;display:block;color:#293e5c;background:transparent}

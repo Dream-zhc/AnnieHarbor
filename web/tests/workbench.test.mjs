@@ -114,3 +114,32 @@ test('each earlier test remains a standalone HTML page with only explicit test c
   assert.ok(script);
   assert.doesNotThrow(()=>new Function(script));
 });
+
+test('real conversation has an explicitly authorized browser microphone and no test PCM control',async()=>{
+  const workbench=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  const mic=await readFile(path.join(web,'src/microphone.tsx'),'utf8');
+  assert.match(workbench,/<RealtimeMicrophone key=\{robotId/);
+  assert.match(workbench,/route\?\.room_id\?\?''/);
+  assert.match(workbench,/route=\{realtime\?\.ready\?route:undefined\}/);
+  assert.match(workbench,/target="_blank" rel="noopener noreferrer">打开 4B 浏览器试听/);
+  assert.match(mic,/getUserMedia/);
+  assert.match(mic,/MIC_AUDIO|pcmFrame/);
+  assert.match(mic,/message\.robotId!=='reb_mic'/);
+  assert.match(mic,/window\.addEventListener\('pagehide'/);
+  assert.match(mic,/Room 发送积压超过 800ms/);
+  assert.match(mic,/取消开启/);
+  assert.match(mic,/此 Room 没有另一个麦克风/);
+  assert.doesNotMatch(mic,/测试 PCM|sendFrame|new Uint8Array\(640\)\)\)/);
+});
+
+test('standalone 4B audio monitor exposes configuration failure before accepting a playback test',async()=>{
+  const html=await readFile(path.resolve(web,'../tests/html/phase4b.html'),'utf8');
+  assert.match(html,/speech\.state==='not_configured'/);
+  assert.match(html,/TTS 未配置；没有 reb_tts PCM/);
+  assert.match(html,/id="send-test" disabled/);
+  assert.match(html,/id="start" disabled/);
+  assert.match(html,/realtime\/text/);
+  assert.match(html,/target="_blank"/);
+  assert.match(html,/source:'browser_test'/);
+  assert.doesNotMatch(html,/source:'speaker'/);
+});

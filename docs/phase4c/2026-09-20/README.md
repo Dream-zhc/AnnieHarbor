@@ -64,3 +64,11 @@
 - 机器人页面保留当期可用的 Realtime、TTS、嘴型、设备播放状态及最小 Room 信息；六通道细项与 PCM/事件 JSON 只放只读开发者诊断，Fake/注入/浏览器试听只在前序独立 HTML。
 - TTS 代码已连接但默认关闭，需 `ANNIE_TTS_ENABLED=1` + Realtime Key/Room；嘴型另需 `ANNIE_VISEME_ENABLED=1` 和 Sidecar 环境，模型输出真实 `mouth_script` 前不宣告已对齐。未取得真机播放证据时保持 unknown。
 - 本轮 `npm --prefix web run typecheck`、`npm --prefix web test`（8 passed）、`npm --prefix web run build`、`git diff --check` 通过。未进行人工浏览器布局、设备或声学验收。
+
+## 语音入口与 4B 试听可发现性修复（2026-09-20）
+
+- 用户在正式对话找不到麦克风：此前为隔离测试功能错误移除了正式的麦克风入口。现在在对话输入区恢复**真实 Room PCM 麦克风**，不包含测试帧/Fake；必须明确确认该 Room 无其他麦克风源，再主动点击开启。启动/授权中可以取消，关闭页面、切机器人或离开对话自动断开与释放音轨/AudioContext/WebSocket；Room 连接身份校验、网络积压停止，按 16kHz mono S16LE/20ms MIC_AUDIO 发送。
+- 用户找不到浏览器试听：对话侧栏显示真实 TTS 状态及原因，增加新标签页的 4B HTML 链接，避免返回正式对话时销毁监听器。独立 `phase4b.html` 先检查所选机器人的健康数据；若 TTS 为 `not_configured`，明确显示没有 reb_tts PCM 并禁用无效试听；订阅成功后可直接在测试页发送真实 Realtime 文字来闭环，不伪造 PCM/嘴型/设备已播事实。
+- 当前本机运行实例 PID 87312 的健康检查：annie-a、annie-b Realtime 为 `connected`，两者 TTS 均为 `not_configured`。本机根 `.env` 有 Key，但未启用 TTS/嘴型；ForcedAligner 的 sidecar Python 环境不存在。当前没有音频进入 reb_tts、没有声学 mouth_script 进入 reb_sam，**不能把测试无声归因于浏览器播放器本身**。
+- **未自动更改 `.env` 或重启当前 Runtime**：启用 TTS 会把真实音频送入现有 Room，设备播放、停播与 AEC 未经验收；需先确认 Room 下游扬声器/麦克风安全条件，再按 4B 流程显式开启。侧车环境准备完成且模型实际生成 mouth_script 后才能说嘴型已通。
+- 新增对应前端回归和网页诊断；类型/构建/自动化验证不代表真实麦克风、Provider、Room 实际收音、浏览器播放和声学嘴型现场通过。

@@ -2,6 +2,7 @@ import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents} from './api';
+import {RealtimeMicrophone} from './microphone';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
 type View='overview'|'chat'|'robots'|'developer';
@@ -317,6 +318,7 @@ export function Workbench(){
             </div>
             <div className="composer">
               <div className="composer-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/>{realtime?.ready?'Realtime 已连接':'Realtime 未就绪'}<span>·</span>语音输入来自所属 Room</div>
+              <RealtimeMicrophone key={robotId+'\u0000'+(route?.room_id??'')} route={realtime?.ready?route:undefined}/>
               <form onSubmit={e=>{e.preventDefault();void sendText();}}>
                 <label className="sr-only" htmlFor="message-input">输入消息</label>
                 <textarea id="message-input" value={text} maxLength={2000} rows={2} onChange={e=>setText(e.target.value)}
@@ -341,6 +343,8 @@ export function Workbench(){
               <div className="info-line"><span>设备播放</span><strong>{speech?.playback_evidence??'unknown'}</strong></div>
               <div className="info-line"><span>首音频</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
               <div className="info-line"><span>首发布</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
+              {(!speech||speech.state==='not_configured')&&<p className="audio-guidance">TTS 未启用，当前只生成文字，不会往 Room 发送音频。需先在服务端启用，再测试试听。</p>}
+              <a className="inspector-link" href="/phase-tests/phase4b.html" target="_blank" rel="noopener noreferrer">打开 4B 浏览器试听 ↗</a>
             </div>
             <div className="inspector-group"><h3>连接</h3><div className="info-line"><span>Room 麦克风</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
               <div className="info-line"><span>Session</span><strong>{session?.generation??'—'}</strong></div>

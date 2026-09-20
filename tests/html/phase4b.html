@@ -1,19 +1,175 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Phase 4B · 独立 TTS 验收</title>
-<style>body{font:16px/1.6 system-ui,sans-serif;background:#f1f4f8;color:#162238;max-width:900px;margin:24px auto;padding:0 16px}section{background:white;border:1px solid #d4dee9;padding:18px;border-radius:12px;margin:14px 0}a{color:#164bb0}li{margin:9px 0}.warn{color:#9a4200}small{color:#52657e}@media(max-width:600px){body{margin:8px auto}section{padding:12px}}</style>
-</head><body>
+<style>
+body{font:15px/1.6 system-ui,sans-serif;background:#f2f5f9;color:#172b42;max-width:920px;margin:20px auto;padding:0 15px}
+section{background:#fff;border:1px solid #d4dfeb;border-radius:12px;padding:18px;margin:13px 0}
+h1,h2{line-height:1.3}h2{font-size:19px}a{color:#165c9b}li{margin:9px 0}
+label{display:block;margin:9px 0}button,select{font:inherit;border:1px solid #cbd7e5;border-radius:8px;padding:8px 11px;background:white;color:#253e61}
+button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,select:focus-visible{outline:3px solid #7d9fee}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;background:#f4f7fb;border-radius:8px;padding:10px}
+.warn{color:#925200}small{color:#52657e}
+@media(max-width:600px){body{margin:8px auto}section{padding:12px}button{margin:4px 0}}
+</style></head><body>
 <h1>Phase 4B｜独立 TTS、PCM 与嘴型</h1>
-<p class="warn">总状态：待人工验收；禁止将模型合成成功、Room 发布或浏览器试听当作设备已播。仅真正对齐成功才显示 aligner_reporting。</p>
-<section><h2>1. 正式工作台</h2><a href="/">打开 React 工作台 →</a>
-<p>选择当前机器人与 Room，查看 Realtime/TTS/嘴型状态、首音频和首发布时延。在「独立 TTS」卡片里勾选单路播放确认，点击「开启网页测试扬声器」，网页订阅 reb_tts+reb_sam，向 reb_main 回传 <code>browser_test</code> 播放事件。关闭网页时不能冒充已停播。</p></section>
-<section><h2>2. 安全前置</h2><p>未完成设备停止/回执、麦克风 AEC 证据时，默认禁用发布。先关闭同 Room 的真实扬声器，调整浏览器音量并确认无麦克风回授；本机 .env 显式设置 ANNIE_TTS_ENABLED=1 后按原启动器重启。ForcedAligner Python 环境/模型安装且可启动后再打开 ANNIE_VISEME_ENABLED=1。不要将密钥贴到页面。</p></section>
-<section><h2>3. 真实音频</h2><ol>
-<li>A/roomv2 提交文字或说话 → 记录生成文本、TTS 首 PCM、reb_tts 已发布帧/样本，确认设备是否真正起播；缺回执写 unknown。</li>
-<li>B/roomv3 独立测试并让 A、B 同时输出；核对没有串房间、没有二次合成、没有双音轨。</li>
-<li>生成中及播放中点击「取消机器人回复」→ 区分 stop_requested、stop_published、browser_test_reported_stopped；真机版再核对 speaker_reported_stopped 及驱动实际停播样本位置，B 不受影响。</li>
-<li>断 TTS/Room、切 Chat/Persona、对齐超时与迟到事件，确认异常可见、旧 generation 不继续发布；检查独立 TTS 音色未变化。</li>
-<li>安装并验证 ForcedAligner 后，同一份 reb_tts PCM + 对应文本生成 reb_sam/mouth_script；浏览器按 played_sample_count 激活对应嘴型，错帧/迟到/取消不伪造音节边界。</li>
-</ol><p class="warn">以上均需操作和设备证据，不由 Fake 测试替代。浏览器回执只能写 browser_test，不能填机器人设备已播。扬声器团队按 docs/phase4b/2026-09-20/播放端WebSocket协议.md 实现报告事件。</p></section>
-<section><a href="/phase-tests/phase4.html">返回 Phase 4 验收入口 →</a></section>
-</body></html>
+<p class="warn">待人工验收。此页独立承担浏览器测试扬声器和播放回执，不在正式 React 工作台注入测试能力；本页 browser_test 回执绝不代表真机已播。</p>
+<section><h2>1. 浏览器测试扬声器</h2>
+<p>操作：选定 Room → 确认同 Room 没有真实扬声器/其它网页测试播放器 → 开启订阅 → 从正式对话产生回复 → 对比浏览器 PCM、嘴型与设备证据。预期：订阅 reb_tts/reb_sam，按音频采样游标显示嘴型，经 reb_main 汇报 browser_test。</p>
+<label>机器人 / Room <select id="route"></select></label>
+<label><input id="confirm" type="checkbox">已确认当前 Room 没有其他测试播放器/真实扬声器，避免麦克风回授</label>
+<button id="start">开启浏览器测试扬声器</button>
+<button id="stop" disabled>本地停止测试播放</button>
+<button id="cancel" disabled>取消所选机器人回复</button>
+<button id="disconnect" disabled>断开测试播放器</button>
+<p id="status" role="status">未连接</p>
+<pre id="result">播放证据 unknown；嘴型 —；采样游标 0</pre>
+<p>当前声学嘴型：<strong id="mouth">—</strong>（没有 ForcedAligner 实际事件则保持 —）</p>
+</section>
+<section><h2>2. 真实音频与停播流程</h2><ol>
+<li>正式工作台选同一机器人发送文字或真实音频；在本页观察同一份 reb_tts PCM，首发布与实际起播分开。</li>
+<li>A 与 B 各自 Room 并行输出；核对不串音、不生成双轨，browser_test 不冒充 speaker。</li>
+<li>播放中点取消；核对 stop 请求/Room 发布、本页本地停止与真实扬声器回执分别记录；缺硬件证据仍为 unknown。</li>
+<li>安装并验证 ForcedAligner 后才核对声学嘴型，缺失时不得伪造边界；AEC/真实设备仍待现场。</li>
+</ol>
+<p>安全前置：TTS 发布需本机 .env 显式启用 ANNIE_TTS_ENABLED=1，嘴型环境齐备后再启用 ANNIE_VISEME_ENABLED=1。不要把密钥写在网页。</p>
+<a href="/">返回正式工作台 →</a> · <a href="/phase-tests/phase4.html">Phase 4 验收 →</a>
+</section>
+<script>
+const el=id=>document.getElementById(id);
+let routes=[],receiver=null,opening=false;
+const report=(text)=>{el('status').textContent=text;};
+const selected=()=>routes.find(r=>r.robot_id===el('route').value);
+const sampleCount=(r,s)=>s.started?Math.max(s.played,Math.min(s.received,Math.floor(Math.max(0,r.audio.currentTime-s.startAt)*24000))):0;
+function receipt(r,s,kind,count){
+  if(r.main.readyState!==WebSocket.OPEN)return;
+  const data={protocol_version:1,sample_rate:24000,conversation_id:s.cid,stream_epoch:s.epoch,playback_id:s.id,source:'browser_test',seq:++s.seq,played_sample_count:count};
+  r.main.send(JSON.stringify({type:'tts.playback.'+kind,data}));
+  el('result').textContent='browser_test_reported_'+kind+' / samples='+count+' / 嘴型='+el('mouth').textContent;
+}
+function stopStream(r,reportStopped){
+  const s=r.stream;if(!s)return;
+  r.suppressed.add(s.cid+':'+s.epoch);
+  const count=sampleCount(r,s),ended=s.ended;s.ended=true;
+  for(const node of s.nodes){try{node.stop()}catch{}node.disconnect()}
+  s.nodes.clear();
+  if(reportStopped&&!ended)receipt(r,s,'stopped',count);
+  r.stream=null;el('mouth').textContent='—';
+}
+function disconnect(){
+  const r=receiver;receiver=null;
+  if(r){stopStream(r,false);clearInterval(r.timer);for(const ws of [r.tts,r.main,r.sam])ws.close();void r.audio.close()}
+  el('route').disabled=false;el('start').disabled=false;el('stop').disabled=true;
+  el('disconnect').disabled=true;el('cancel').disabled=true;report('测试播放器已断开；不推断真机停播');
+}
+function tick(r){
+  if(receiver!==r||!r.stream||r.stream.ended)return;
+  const s=r.stream;
+  if(!s.started&&s.received>0&&r.audio.currentTime>=s.startAt){s.started=true;receipt(r,s,'started',0)}
+  if(!s.started)return;
+  const count=sampleCount(r,s);
+  if(count>s.played){s.played=count;if(!s.final||count<s.received)receipt(r,s,'progress',count)}
+  const active=[...s.mouth.values()].find(m=>m.start<=count&&count<m.end);
+  el('mouth').textContent=active?.viseme??'—';
+  if(s.final&&count>=s.received&&s.nodes.size===0){
+    s.ended=true;receipt(r,s,'drained',s.received);report('浏览器测试播放结束；不代表真实机器人扬声器')
+  }
+}
+function onTts(r,p){
+  if(p.type!=='tts'||!r.ttsSubscribed||!p.data)return;
+  const d=p.data;if(d.protocol_version!==1||d.sample_rate!==24000||d.channels!==1||typeof d.conversation_id!=='string'||!Number.isSafeInteger(d.stream_epoch))return;
+  const key=d.conversation_id+':'+d.stream_epoch;
+  if(d.stop===true){
+    r.suppressed.add(key);
+    if(r.stream&&key===r.stream.cid+':'+r.stream.epoch){stopStream(r,true);report('Room stop：浏览器测试音频已截断')}
+    return;
+  }
+  if(r.suppressed.has(key))return;
+  let s=r.stream;
+  if(s&&key!==s.cid+':'+s.epoch){stopStream(r,true);s=null}
+  if(!s){
+    s={cid:d.conversation_id,epoch:d.stream_epoch,id:crypto.randomUUID?.()??('browser-'+Date.now()),seq:0,received:0,played:0,plannedAt:0,startAt:0,started:false,final:false,ended:false,nodes:new Set(),mouth:new Map()};
+    r.stream=s;
+  }
+  if(s.ended)return;
+  if(d.stream_final===true){s.final=true;return}
+  if(typeof d.audio!=='string'||!d.audio)return;
+  let bytes;try{bytes=Uint8Array.from(atob(d.audio),c=>c.charCodeAt(0))}catch{return}
+  if(bytes.length%2||d.start_sample!==s.received||d.end_sample!==s.received+bytes.length/2||s.received-s.played>72000){
+    stopStream(r,true);report('PCM 连续性或积压异常；已停止');return;
+  }
+  const n=bytes.length/2,buf=r.audio.createBuffer(1,n,24000),view=new DataView(bytes.buffer);
+  for(let i=0;i<n;i++)buf.getChannelData(0)[i]=view.getInt16(i*2,true)/32768;
+  const node=r.audio.createBufferSource();node.buffer=buf;node.connect(r.audio.destination);
+  const when=Math.max(r.audio.currentTime+.08,s.plannedAt);
+  if(s.received===0)s.startAt=when;
+  s.plannedAt=when+n/24000;s.received+=n;s.nodes.add(node);
+  node.onended=()=>{s.nodes.delete(node);node.disconnect();tick(r)};
+  node.start(when);report('reb_tts 测试音频缓冲播放中');
+}
+function connect(url,room,channel){
+  return new Promise((resolve,reject)=>{
+    const ws=new WebSocket(url),timer=setTimeout(()=>{ws.close();reject(Error(channel+' WELCOME 超时'))},4000);
+    ws.onerror=()=>{clearTimeout(timer);reject(Error(channel+' 连接失败'))};
+    ws.onmessage=e=>{
+      if(typeof e.data!=='string')return;
+      try{const p=JSON.parse(e.data);if(p.type==='WELCOME'){
+        clearTimeout(timer);
+        if(!p.ok||p.room!==room||p.robotId!==channel){ws.close();reject(Error(channel+' 身份不匹配'));return}
+        resolve(ws)
+      }}catch{}
+    };
+  });
+}
+async function start(){
+  if(opening||receiver||!selected()||!el('confirm').checked){report('先选择 Room 并确认单路播放器');return}
+  opening=true;el('start').disabled=true;
+  let audio,tts,main,sam;
+  try{
+    const route=selected();
+    audio=new AudioContext({sampleRate:24000});await audio.resume();
+    tts=await connect(route.urls.tts,route.room_id,'reb_tts');
+    main=await connect(route.urls.main,route.room_id,'reb_main');
+    sam=await connect(route.urls.sam,route.room_id,'reb_sam');
+    const r={tts,main,sam,audio,stream:null,suppressed:new Set(),ttsSubscribed:false,samSubscribed:false,timer:0};
+    receiver=r;
+    tts.onmessage=e=>{if(typeof e.data!=='string')return;try{
+      const p=JSON.parse(e.data);
+      if(p.type==='ACK'){r.ttsSubscribed=p.data?.what==='subscribed'&&p.data.subscriptions?.includes('*');report(r.ttsSubscribed?'reb_tts 已订阅，等待音频':'reb_tts 订阅失败')}
+      else onTts(r,p)
+    }catch(error){report('tts 消息异常：'+error)}};
+    sam.onmessage=e=>{if(typeof e.data!=='string')return;try{
+      const p=JSON.parse(e.data);if(p.type==='ACK'){r.samSubscribed=true;return}
+      const s=r.stream;
+      if(p.type!=='mouth_script'||!r.samSubscribed||!s||s.ended||p.conversation_id!==s.cid||!p.timing_source?.startsWith('qwen3_forced_aligner'))return;
+      if(!Number.isSafeInteger(p.start_sample)||!Number.isSafeInteger(p.end_sample)||p.end_sample<=p.start_sample||p.end_sample>s.received)return;
+      s.mouth.set(String(p.seq),{start:p.start_sample,end:p.end_sample,viseme:p.viseme??'—'});
+    }catch{}};
+    for(const ws of [tts,sam])ws.send(JSON.stringify({type:'SUBSCRIBE',data:{types:['*']}}));
+    r.timer=setInterval(()=>tick(r),50);
+    for(const ws of [tts,main,sam])ws.onclose=()=>{if(receiver===r)disconnect()};
+    el('route').disabled=true;el('stop').disabled=false;el('disconnect').disabled=false;el('cancel').disabled=false;
+    report('Room WebSocket 已连接，等待音频 / 嘴型');
+  }catch(error){for(const ws of [tts,main,sam])ws?.close();if(audio)void audio.close();report('连接失败：'+error);el('start').disabled=false}
+  finally{opening=false}
+}
+async function cancel(){
+  const r=selected();if(!r)return;
+  try{const response=await fetch('/api/robots/'+encodeURIComponent(r.robot_id)+'/cancel',{method:'POST'});
+    if(!response.ok)throw Error('HTTP '+response.status);
+    report('已发送机器人取消；等待 Room stop，不等同设备已停播');
+  }catch(error){report('取消失败：'+error)}
+}
+async function load(){
+  try{const response=await fetch('/api/phase2/rooms');if(!response.ok)throw Error('HTTP '+response.status);
+    routes=await response.json();
+    for(const route of routes){const option=document.createElement('option');option.value=route.robot_id;option.textContent=route.robot_id+' / '+route.room_id;el('route').append(option)}
+    if(!routes.length)report('尚无配置 Room');
+  }catch(error){report('读取 Room 失败：'+error)}
+}
+el('start').onclick=()=>void start();
+el('stop').onclick=()=>{if(receiver){stopStream(receiver,true);report('浏览器本地停止，未取消机器人 Realtime')}};
+el('disconnect').onclick=disconnect;
+el('cancel').onclick=()=>void cancel();
+window.addEventListener('pagehide',disconnect);
+void load();
+</script></body></html>

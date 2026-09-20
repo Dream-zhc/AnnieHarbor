@@ -1,27 +1,48 @@
-import {useCallback,useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents} from './api';
-import {RoomInput,type RoomRoute} from './pcm';
-import {RoomPlaybackTester} from './playback';
+type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
-type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;[key:string]:unknown};
+type View='overview'|'chat'|'robots'|'developer';
+type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
 type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
 type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string};
+const errorText=(value:unknown)=>value instanceof Error?value.message:String(value);
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
-const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
+const stateLabel=(value:string|undefined)=>{
+  if(!value)return '未接入';
+  const names:Record<string,string>={
+    connected:'已连接',ready:'已就绪',room_gateway_ready:'已就绪',ledger_ready:'已就绪',
+    not_connected:'未接入',not_started:'未接入',not_configured:'未配置',
+    configured:'已配置',unknown:'未确认（unknown）',idle:'空闲',
+    disconnected:'连接断开',error:'异常',failed:'失败',running:'运行中',
+    fake:'Fake（调试）',subscribed:'已订阅',loading:'加载中'
+  };
+  return names[value]??value;
+};
+const channelNames=['main','tts','mic','visualdata','vision','sam'] as const;
+
+function Stat({name,value,detail,kind}:{name:string;value:string|number;detail?:string;kind?:'good'|'warn'|'neutral'}){
+  return <div className="stat"><span className="stat-name">{name}</span><strong className={kind==='good'?'ink-good':kind==='warn'?'ink-warn':''}>{value}</strong>{detail&&<small>{detail}</small>}</div>;
+}
+function State({value,good}:{value:string|undefined;good?:boolean}){
+  return <span className={'state-pill '+(good?'state-good':!value||value==='unknown'||value.startsWith('not_')?'state-muted':'')}>{stateLabel(value)}</span>;
+}
+function Block({children,title,sub}:{children:ReactNode;title:string;sub?:string}){
+  return <section className="surface"><div className="surface-heading"><div><h2>{title}</h2>{sub&&<p>{sub}</p>}</div></div>{children}</section>;
+}
 
 export function Workbench(){
-  const workbench=useRef<HTMLDivElement>(null);
-  const [developerOpen,setDeveloperOpen]=useState(false);
-  const [fakeTurnId,setFakeTurnId]=useState('');
+  const root=useRef<HTMLDivElement>(null);
   useGSAP(()=>{
     const media=gsap.matchMedia();
     media.add('(prefers-reduced-motion: no-preference)',()=>{
-      gsap.from('.panel',{autoAlpha:0,y:12,duration:0.24,stagger:0.035,ease:'power1.out',clearProps:'all'});
+      gsap.from('.workspace',{autoAlpha:0,y:8,duration:.22,ease:'power1.out',clearProps:'all'});
     });
     return ()=>media.revert();
-  },{scope:workbench});
+  },{scope:root});
+  const [view,setView]=useState<View>('chat');
   const [health,setHealth]=useState<Health|null>(null);
   const [robotId,setRobotId]=useState('');
   const [session,setSession]=useState<Session|null>(null);
@@ -32,63 +53,67 @@ export function Workbench(){
   const [routes,setRoutes]=useState<RoomRoute[]>([]);
   const [coordinator,setCoordinator]=useState<unknown>(null);
   const [social,setSocial]=useState<unknown>(null);
-  const [message,setMessage]=useState('');
-  const [chat,setChat]=useState('');
-  const [persona,setPersona]=useState('');
-  const [revision,setRevision]=useState(1);
-  const [text,setText]=useState('');
-  const [busy,setBusy]=useState(false);
   const [realtimeEvents,setRealtimeEvents]=useState<RealtimeEvent[]>([]);
   const [liveText,setLiveText]=useState('');
+  const [notice,setNotice]=useState('');
+  const [text,setText]=useState('');
+  const [pending,setPending]=useState(false);
+  const [createOpen,setCreateOpen]=useState(false);
+  const [draftChat,setDraftChat]=useState('');
+  const [draftPersona,setDraftPersona]=useState('');
+  const [draftRevision,setDraftRevision]=useState(1);
+  const [deleteOpen,setDeleteOpen]=useState(false);
   const selection=useRef(0);
+  const displayedSession=useRef('');
   const eventCursor=useRef(0);
-  const currentRobot=health?.robots.find(robot=>robot.robot_id===robotId);
-  const realtimeState=currentRobot?.realtime;
-  const realtimeConfigured=health?.capabilities.llm!=='not_connected';
-  const selectedRoute=routes.find(route=>route.robot_id===robotId);
+  const scrollPanel=useRef<HTMLDivElement>(null);
+  const followLatest=useRef(true);
+  const selectedRobot=health?.robots.find(item=>item.robot_id===robotId);
+  const route=routes.find(item=>item.robot_id===robotId);
+  const realtime=selectedRobot?.realtime;
+  const speech=realtime?.speech_output;
 
   const refreshHealth=useCallback(async()=>{
-    try {
+    try{
       const result=await api<Health>('/health','GET',undefined,undefined,[503]);
       setHealth(result);
-      setRobotId(old=>result.robots.some(r=>r.robot_id===old)?old:result.robots[0]?.robot_id??'');
-    }catch(error){setHealth(null);setMessage('Runtime 健康检查失败：'+errorText(error));}
+      setRobotId(old=>result.robots.some(item=>item.robot_id===old)?old:result.robots[0]?.robot_id??'');
+    }catch(error){setHealth(null);setNotice('Runtime 无法连接：'+errorText(error));}
   },[]);
   useEffect(()=>{
     void refreshHealth();
-    const timer=window.setInterval(()=>{void refreshHealth();},2000);
+    const timer=window.setInterval(()=>void refreshHealth(),3000);
     return()=>window.clearInterval(timer);
   },[refreshHealth]);
 
   const refreshSelected=useCallback(async(id:string)=>{
     const ticket=++selection.current;
-    setHistory(null);setContext(null);
-    if(!id){setSession(null);return;}
+    if(!id){displayedSession.current='';setSession(null);setHistory(null);setConversations([]);return;}
     try{
       const base=robotPath(id);
-      const s=await api<Session>(base+'/session');
+      const selected=await api<Session>(base+'/session');
       if(ticket!==selection.current)return;
-      setSession(s);setChat(s.chat_id);setPersona(s.persona_id);setRevision(s.persona_revision);
-      const results=await Promise.all([
+      const identity=[selected.robot_id,selected.chat_id,selected.persona_id,selected.session_epoch,selected.generation].join('\u0000');
+      if(displayedSession.current!==identity){
+        displayedSession.current=identity;
+        setHistory(null);setContext(null);setCoordinator(null);setSocial(null);
+      }
+      setSession(selected);
+      const [list,turns,recent,inputs,rooms,coord,socialState]=await Promise.all([
         api<Conversation[]>(base+'/conversations'),
-        api<History>(base+'/conversations/'+encodeURIComponent(s.chat_id)+'?persona_id='+encodeURIComponent(s.persona_id)),
-        api<unknown>(base+'/context'),api<unknown>(base+'/inputs'),
-        api<RoomRoute[]>('/api/phase2/rooms'),api<unknown>(base+'/coordinator'),
-        api<unknown>(base+'/social-state')
+        api<History>(base+'/conversations/'+encodeURIComponent(selected.chat_id)+'?persona_id='+encodeURIComponent(selected.persona_id)),
+        api<unknown>(base+'/context'),api<unknown>(base+'/inputs'),api<RoomRoute[]>('/api/phase2/rooms'),
+        api<unknown>(base+'/coordinator'),api<unknown>(base+'/social-state')
       ]);
       if(ticket!==selection.current)return;
-      setConversations(results[0]);setHistory(results[1]);setContext(results[2]);
-      setPcm(results[3]);setRoutes(results[4]);setCoordinator(results[5]);setSocial(results[6]);
-    }catch(error){if(ticket===selection.current)setMessage('读取会话失败：'+errorText(error));}
+      setConversations(list);setHistory(turns);setContext(recent);
+      setPcm(inputs);setRoutes(rooms);setCoordinator(coord);setSocial(socialState);
+    }catch(error){if(ticket===selection.current)setNotice('当前机器人数据读取失败：'+errorText(error));}
   },[]);
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
   useEffect(()=>{
-    setRealtimeEvents([]);
-    setLiveText('');
-    eventCursor.current=0;
-  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
-  useEffect(()=>{
-    setFakeTurnId('');
+    setRealtimeEvents([]);setLiveText('');eventCursor.current=0;
+    followLatest.current=true;
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
   useEffect(()=>{
     if(!robotId||!session)return;
@@ -100,22 +125,22 @@ export function Workbench(){
         const result=await api<RealtimeEvents>(robotPath(robotId)+'/realtime/events?after='+eventCursor.current);
         if(!active)return;
         eventCursor.current=result.latest;
-        const items=result.events.filter(item=>eventBelongsToSession(item,session));
-        if(result.gap)setMessage('实时事件缓冲区发生缺口；请查看完整 Ledger。');
-        if(items.length){
-          setRealtimeEvents(old=>[...old,...items].slice(-70));
-          for(const item of items){
-            if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
+        if(result.gap)setNotice('Realtime 事件缓冲出现缺口；完整会话以 Ledger 为准。');
+        const events=result.events.filter(event=>eventBelongsToSession(event,session));
+        if(events.length){
+          setRealtimeEvents(prev=>[...prev,...events].slice(-100));
+          for(const item of events){
             if(item.kind==='turn.started'||item.kind==='session.replaced')setLiveText('');
-            if(item.kind==='session.error')setMessage('Realtime: '+item.error);
+            if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
+            if(item.kind==='session.error')setNotice('Realtime：'+(item.error??'发生错误'));
             if(item.kind==='turn.done'){setLiveText('');void refreshSelected(robotId);}
           }
         }
-      }catch(error){if(active)setMessage('实时事件读取失败：'+errorText(error));}
+      }catch(error){if(active)setNotice('Realtime 事件读取失败：'+errorText(error));}
       finally{reading=false;}
     };
     void poll();
-    const timer=window.setInterval(()=>{void poll();},250);
+    const timer=window.setInterval(()=>void poll(),250);
     return()=>{active=false;window.clearInterval(timer);};
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation,refreshSelected]);
   useEffect(()=>{
@@ -123,183 +148,272 @@ export function Workbench(){
     let active=true;
     const poll=async()=>{
       try{
-        const [inputs,rooms]=await Promise.all([api<unknown>(robotPath(robotId)+'/inputs'),api<RoomRoute[]>('/api/phase2/rooms')]);
+        const [inputs,rooms]=await Promise.all([
+          api<unknown>(robotPath(robotId)+'/inputs'),api<RoomRoute[]>('/api/phase2/rooms')
+        ]);
         if(active){setPcm(inputs);setRoutes(rooms);}
-      }catch{/* Detailed error remains in the session refresh path. */}
+      }catch(error){if(active)setNotice('Room 状态读取失败：'+errorText(error));}
     };
-    const timer=window.setInterval(()=>{void poll();},2000);
+    const timer=window.setInterval(()=>void poll(),2000);
     return()=>{active=false;window.clearInterval(timer);};
   },[robotId]);
+  useEffect(()=>{
+    if(view==='chat'&&followLatest.current&&scrollPanel.current)
+      scrollPanel.current.scrollTop=scrollPanel.current.scrollHeight;
+  },[history?.turns.length,liveText,view,robotId,session?.chat_id]);
+  useEffect(()=>{
+    if(!createOpen&&!deleteOpen)return;
+    const onEscape=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){setCreateOpen(false);setDeleteOpen(false);}
+    };
+    window.addEventListener('keydown',onEscape);
+    return()=>window.removeEventListener('keydown',onEscape);
+  },[createOpen,deleteOpen]);
 
-  async function operation(name:string,body?:unknown,method='POST'){
-    if(!robotId||busy)return;
-    const id=robotId;
-    const ticket=selection.current;
-    setBusy(true);setMessage('');
-    try{
-      const result=await api<unknown>(robotPath(id)+'/'+name,method,body);
-      if(ticket===selection.current){
-        if(name==='turns'&&result&&typeof result==='object'&&'request_id' in result&&typeof result.request_id==='string'){
-          setFakeTurnId(result.request_id);
-        }
-        setMessage('操作结果：'+pretty(result));await refreshSelected(id);await refreshHealth();
-      }
-    }catch(error){if(ticket===selection.current)setMessage(errorText(error));}
-    finally{setBusy(false);}
+  function choose(id:string){
+    if(id===robotId)return;
+    selection.current++;eventCursor.current=0;followLatest.current=true;displayedSession.current='';
+    setRobotId(id);setSession(null);setConversations([]);setHistory(null);setContext(null);
+    setPcm(null);setRoutes([]);setCoordinator(null);setSocial(null);
+    setLiveText('');setRealtimeEvents([]);setNotice('');setCreateOpen(false);setDeleteOpen(false);
   }
-  async function deleteChat(){
-    if(!session||busy)return;
-    if(!window.confirm(`仅删除 ${session.robot_id} / ${session.persona_id} / ${session.chat_id} 的历史？不可恢复。`))return;
-    await operation('conversations/'+encodeURIComponent(session.chat_id)+'?persona_id='+encodeURIComponent(session.persona_id),undefined,'DELETE');
+  async function switchSession(item:Conversation){
+    if(!robotId||pending)return;
+    const id=robotId,ticket=selection.current;
+    setPending(true);setNotice('');
+    try{
+      await api(robotPath(id)+'/session','POST',{
+        chat_id:item.chat_id,persona_id:item.persona_id,
+        persona_revision:item.persona_revision??(session?.persona_id===item.persona_id?session.persona_revision:1)
+      });
+      if(ticket===selection.current){followLatest.current=true;await refreshSelected(id);}
+    }catch(error){if(ticket===selection.current)setNotice('切换会话失败：'+errorText(error));}
+    finally{setPending(false);}
+  }
+  async function createSession(){
+    if(!robotId||pending||!draftChat.trim()||!draftPersona.trim()||!Number.isSafeInteger(draftRevision)||draftRevision<1)return;
+    const id=robotId,ticket=selection.current;
+    setPending(true);setNotice('');
+    try{
+      await api(robotPath(id)+'/session','POST',{
+        chat_id:draftChat.trim(),persona_id:draftPersona.trim(),persona_revision:draftRevision
+      });
+      if(ticket===selection.current){
+        followLatest.current=true;setCreateOpen(false);await refreshSelected(id);
+      }
+    }catch(error){if(ticket===selection.current)setNotice('创建会话失败：'+errorText(error));}
+    finally{setPending(false);}
+  }
+  async function removeSession(){
+    if(!session||pending)return;
+    const id=robotId,ticket=selection.current;
+    setPending(true);setNotice('');
+    try{
+      await api(robotPath(id)+'/conversations/'+encodeURIComponent(session.chat_id)+'?persona_id='+encodeURIComponent(session.persona_id),'DELETE');
+      if(ticket===selection.current){setDeleteOpen(false);await refreshSelected(id);}
+    }catch(error){if(ticket===selection.current)setNotice('删除会话失败：'+errorText(error));}
+    finally{setPending(false);}
+  }
+  async function sendText(){
+    if(!robotId||pending||!text.trim()||!realtime?.ready)return;
+    const id=robotId,ticket=selection.current,content=text.trim();
+    setPending(true);setNotice('');
+    try{
+      await api(robotPath(id)+'/realtime/text','POST',{text:content});
+      if(ticket===selection.current){setText('');followLatest.current=true;}
+    }catch(error){if(ticket===selection.current)setNotice('发送失败，文字已保留：'+errorText(error));}
+    finally{setPending(false);}
   }
   async function cancelCurrent(){
     if(!robotId)return;
     const id=robotId,ticket=selection.current;
     try{
-      const result=await api<unknown>(robotPath(id)+'/cancel','POST');
-      if(ticket===selection.current){setMessage('取消结果：'+pretty(result));void refreshSelected(id);}
-    }catch(error){if(ticket===selection.current)setMessage('取消失败：'+errorText(error));}
+      await api(robotPath(id)+'/cancel','POST');
+      if(ticket===selection.current){setNotice('已向当前机器人发送取消请求；设备实际停播以回执为准。');void refreshSelected(id);}
+    }catch(error){if(ticket===selection.current)setNotice('取消请求失败：'+errorText(error));}
   }
-  async function fakePlayback(partial:boolean){
-    if(!robotId||!fakeTurnId||busy)return;
-    const id=robotId,ticket=selection.current;
-    setBusy(true);
-    try{
-      const turn=await api<Turn>(robotPath(id)+'/turns/'+encodeURIComponent(fakeTurnId));
-      const generated=turn.assistant_generated_text??'';
-      const result=await api<unknown>(robotPath(id)+'/turns/'+encodeURIComponent(fakeTurnId)+'/playback','POST',
-        partial?{
-          published_text:generated,
-          spoken_text:generated.slice(0,Math.max(1,Math.floor(generated.length/2))),
-          evidence_status:'simulated_partial',playback_state:'playing',
-        }:{
-          published_text:null,spoken_text:null,evidence_status:'unknown',playback_state:'unknown',
-        });
-      if(ticket===selection.current){
-        setMessage('Fake 播放证据（不代表真机）：'+pretty(result));await refreshSelected(id);
-      }
-    }catch(error){if(ticket===selection.current)setMessage('Fake 播放测试失败：'+errorText(error));}
-    finally{setBusy(false);}
+  function openCreate(){
+    setDraftChat('');setDraftPersona(session?.persona_id??selectedRobot?.persona_id??'annie');
+    setDraftRevision(session?.persona_revision??1);setCreateOpen(true);
   }
-  const choose=(id:string)=>{
-    if(id===robotId)return;
-    selection.current++;eventCursor.current=0;setRealtimeEvents([]);setLiveText('');
-    setRobotId(id);setSession(null);setConversations([]);setHistory(null);setContext(null);
-    setPcm(null);setCoordinator(null);setSocial(null);setRoutes([]);setFakeTurnId('');setMessage('');
-  };
-  return <div className="shell" ref={workbench}>
-    <header><strong>ANNIE HARBOR <span>· Phase 4C</span></strong><span className="sub">多机器人 · 会话 · Realtime · 音频 · 诊断</span></header>
-    <section className="status" aria-live="polite">
-      <span className={health?.ready?'ok':'bad'}>{health?.ready?'Runtime 运行中':'Runtime 未连接'}</span>
-      <span>PID {health?.pid??'—'}</span><span>{health?.robots.length??0} 个机器人</span>
-      <span>目标：{robotId||'未选机器人'} / {currentRobot?.room_id??'未连接'} / {session?.chat_id??'未选会话'}</span>
-      <button onClick={()=>void refreshHealth()}>刷新</button>
-      <button className="danger" disabled={!robotId} onClick={()=>void cancelCurrent()}>取消当前机器人回复</button>
-    </section>
-    <nav className="navigation" aria-label="工作台区域">
-      <a href="#conversation">会话与对话</a><a href="#audio">音频与嘴型</a>
-      <a href="#pcm">Room / PCM</a>
-      <a href="#developer" onClick={()=>setDeveloperOpen(true)}>开发者诊断</a>
-      <a href="/phase-tests/phase4c.html">4C 验收说明</a>
-    </nav>
-    <div className="layout">
-      <aside>
-        <h2>机器人 / Room</h2>
-        {health?.robots.map(robot=><button className={robotId===robot.robot_id?'selected':''} key={robot.robot_id} onClick={()=>choose(robot.robot_id)}>
-          <b>{robot.robot_id}</b><small>{robot.room_id} · {robot.state} · {robot.realtime?.state??'未接入 Realtime'}</small>
-        </button>)}
-        <h2>会话</h2>
-        {conversations.map(item=><button key={item.chat_id+'\u0000'+item.persona_id} className={session?.chat_id===item.chat_id&&session.persona_id===item.persona_id?'selected':''}
-          disabled={busy} onClick={()=>void operation('session',{chat_id:item.chat_id,persona_id:item.persona_id,persona_revision:item.persona_revision??(session?.persona_id===item.persona_id?session.persona_revision:1)})}>
-          <b>{item.chat_id}</b><small>{item.persona_id} · revision {item.persona_revision??'未记录'} · {item.turn_count??0} 轮</small>
-        </button>)}
-        {!conversations.length&&<p>没有已保存的历史会话。可在右侧创建 Chat。</p>}
-      </aside>
-      <main>
-        <section className="panel" id="conversation">
-          <h1>{currentRobot?.robot_id??'选择机器人'} <small>{currentRobot?.room_id??''}</small></h1>
-          <p>Realtime: {realtimeState?.state??'未配置'} · 文本与独立 TTS 分路；设备报告、浏览器测试和未确认状态分开展示。</p>
-          {realtimeState?.error&&<p role="alert" className="bad">连接错误：{realtimeState.error}</p>}
-          <div className="badges">{Object.entries(health?.capabilities??{}).map(([name,state])=><span key={name}>{name}: {state}</span>)}</div>
-          <div className="fields">
-            <label>Chat<input aria-label="Chat" value={chat} onChange={e=>setChat(e.target.value)}/></label>
-            <label>Persona<input aria-label="Persona" value={persona} onChange={e=>setPersona(e.target.value)}/></label>
-            <label>Revision<input aria-label="Revision" type="number" min="1" value={revision} onChange={e=>setRevision(Number(e.target.value))}/></label>
+
+  return <div className="app-shell" ref={root}>
+    <aside className="rail" aria-label="全局导航">
+      <div className="brand-mark" aria-label="Annie Harbor">A<span>·</span></div>
+      <div className="rail-label">ANNIE / V2</div>
+      <nav className="rail-nav">
+        {([
+          ['overview','▦','总览'],['chat','◫','对话'],['robots','◇','机器人'],['developer','⌁','开发者']
+        ] as const).map(([id,mark,label])=>
+          <button key={id} className={'rail-link '+(view===id?'is-active':'')} aria-current={view===id?'page':undefined}
+            onClick={()=>setView(id)}><span aria-hidden="true" className="rail-glyph">{mark}</span><span>{label}</span></button>)}
+      </nav>
+      <div className="rail-foot"><span className={'status-dot '+(health?.ready?'dot-good':'dot-bad')}/><span>{health?.ready?'运行中':'未就绪'}</span></div>
+    </aside>
+    <div className="app-body">
+      <header className="topbar">
+        <div className="breadcrumb"><span>安妮港</span><span className="crumb-sep">/</span><strong>{view==='overview'?'运行总览':view==='chat'?'实时对话':view==='robots'?'机器人控制中心':'开发者观测'}</strong></div>
+        <div className="topbar-right"><span className="top-target">{robotId||'未选机器人'} <span>·</span> {selectedRobot?.room_id??'—'}</span>
+          <span className={'top-health '+(health?.ready?'online':'offline')}><i/>{health?.ready?'Runtime 在线':'Runtime 未就绪'}</span>
+          <button className="quiet-button" title="刷新状态" onClick={()=>void refreshHealth()}>刷新</button>
+        </div>
+      </header>
+      {notice&&<div className="notice-bar" role="status"><span>{notice}</span><button onClick={()=>setNotice('')} aria-label="关闭提示">×</button></div>}
+      <div className="workspace" key={view}>
+        {view==='overview'&&<>
+          <div className="page-heading"><div><span className="eyebrow">SYSTEM OVERVIEW</span><h1>运行总览</h1><p>来自当前 Runtime 的真实状态；未接入能力不会显示为在线。</p></div><button className="soft-button" onClick={()=>void refreshHealth()}>更新状态</button></div>
+          <div className="stats-grid">
+            <Stat name="Runtime" value={health?.ready?'运行中':'未就绪'} detail={health?.pid?'PID '+health.pid:'等待连接'} kind={health?.ready?'good':'warn'}/>
+            <Stat name="机器人实例" value={health?.robots.length??'—'} detail="各自独占 Room"/>
+            <Stat name="当前 Realtime" value={stateLabel(realtime?.state)} kind={realtime?.ready?'good':'warn'}/>
+            <Stat name="设备播放证据" value={speech?.playback_evidence??'unknown'} detail="Room 发布不代表设备已播"/>
           </div>
-          <div className="actions"><button disabled={busy||!chat.trim()||!persona.trim()||revision<1} onClick={()=>void operation('session',{chat_id:chat.trim(),persona_id:persona.trim(),persona_revision:revision})}>创建 / 切换会话</button>
-            <button className="danger" disabled={busy||!session} onClick={()=>void deleteChat()}>删除当前会话</button></div>
-          {session&&<p className="metadata">Session epoch {session.session_epoch} / generation {session.generation} / persona revision {session.persona_revision}</p>}
-        </section>
-        <section className="panel">
-          <h2>对话 · 完整历史</h2>
-          <div className="transcript" aria-label="完整历史">
-            {history?.turns.length===0&&<p>当前会话还没有历史。</p>}
-            {history?.turns.map(turn=><article className="turn" key={turn.turn_id}>
-              <div className="bubble user"><b>用户</b><p>{turn.user_text}</p></div>
-              <div className="bubble assistant"><b>助手 · {turn.status}{turn.cancelled?' / 已取消':''}</b>
-                <p>{turn.assistant_spoken_text||turn.assistant_generated_text||'未生成回复'}</p>
-                <small>生成：{turn.assistant_generated_text?'有':'无'} · 已发布文本：{turn.assistant_published_text??'无'} · 已确认播放：{turn.assistant_spoken_text??'未知'} · 证据：{turn.playback_evidence_status??'unknown'}</small>
+          <Block title="机器人运行状态" sub="选择一个机器人，进入对应会话和状态查看。">
+            <div className="robot-grid">{health?.robots.map(robot=>
+              <button className="robot-tile" key={robot.robot_id} onClick={()=>{choose(robot.robot_id);setView('chat');}}>
+                <span className="robot-avatar">{robot.robot_id.slice(0,1).toUpperCase()}</span>
+                <span><strong>{robot.robot_id}</strong><small>{robot.room_id} · {robot.state}</small></span>
+                <State value={robot.realtime?.state} good={robot.realtime?.ready}/>
+                <span className="tile-arrow">↗</span>
+              </button>)}
+              {!health?.robots.length&&<p className="empty-copy">没有可用机器人；检查 Runtime 和机器人配置。</p>}
+            </div>
+          </Block>
+          <Block title="能力状态" sub="显示后端报告的能力，不以已配置代替已运行。"><div className="cap-grid">{Object.entries(health?.capabilities??{}).map(([name,status])=>
+            <div className="cap-line" key={name}><span>{name}</span><State value={status} good={status.includes('ready')||status==='connected'}/></div>)}</div></Block>
+        </>}
+        {view==='chat'&&<div className="chat-layout">
+          <aside className="chat-sidebar">
+            <div className="sidebar-top"><div><span className="eyebrow">WORKSPACE</span><h2>会话</h2></div><button className="new-chat" onClick={openCreate} disabled={!robotId} title="新建会话">＋</button></div>
+            <label className="field-label" htmlFor="robot-choice">当前机器人</label>
+            <select id="robot-choice" value={robotId} onChange={e=>choose(e.target.value)} disabled={!health?.robots.length}>
+              {health?.robots.map(robot=><option key={robot.robot_id} value={robot.robot_id}>{robot.robot_id} · {robot.room_id}</option>)}
+            </select>
+            <div className="sidebar-divider"/><div className="sidebar-caption">历史会话 <span>{conversations.length}</span></div>
+            <div className="chat-list">{conversations.map(item=>
+              <button key={item.chat_id+'\u0000'+item.persona_id} disabled={pending} className={'chat-list-item '+(session?.chat_id===item.chat_id&&session.persona_id===item.persona_id?'selected':'')} onClick={()=>void switchSession(item)}>
+                <span className="chat-item-mark">◫</span><span className="chat-item-body"><strong>{item.chat_id}</strong><small>{item.persona_id} · {item.turn_count??0} 轮</small></span>
+              </button>)}
+              {!conversations.length&&<p className="empty-copy">还没有保存的对话，点击「＋」创建。</p>}
+            </div>
+            <div className="sidebar-bottom"><div className="mini-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/><div><strong>{stateLabel(realtime?.state)}</strong><small>Realtime · {selectedRobot?.room_id??'—'}</small></div></div></div>
+          </aside>
+          <section className="conversation" aria-label="正式对话工作台">
+            <div className="conversation-header">
+              <div><span className="eyebrow">LIVE CONVERSATION</span><h1>{session?.chat_id??'选择会话'}</h1><p>{session?session.persona_id+' · '+selectedRobot?.room_id:'等待会话连接'}</p></div>
+              <div className="conversation-tools"><button className="quiet-button" onClick={()=>void refreshSelected(robotId)} disabled={!robotId||pending}>刷新</button>
+                <button className="quiet-button danger-text" onClick={()=>setDeleteOpen(true)} disabled={!session||pending}>删除会话</button></div>
+            </div>
+            <div className="messages" ref={scrollPanel} aria-label="完整历史" onScroll={e=>{
+              const node=e.currentTarget;followLatest.current=node.scrollHeight-node.scrollTop-node.clientHeight<90;
+            }}>
+              {!history&&<div className="message-placeholder">正在读取会话历史…</div>}
+              {history?.turns.length===0&&!liveText&&<div className="message-placeholder"><strong>新对话，从这里开始。</strong><span>发送文字，或使用机器人 Room 接入的音频与小安妮交互。</span></div>}
+              {history?.turns.map(turn=><div className="exchange" key={turn.turn_id}>
+                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{turn.user_text}</div></div></div>
+                <div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
+                  <span className="message-author">小安妮 <span>· {turn.cancelled?'已取消':turn.status}</span></span>
+                  <div className="bubble agent-bubble">{turn.assistant_spoken_text||turn.assistant_generated_text||'尚无回复'}</div>
+                  <span className="message-foot">播放证据：{turn.playback_evidence_status??'unknown'}</span>
+                </div></div>
+              </div>)}
+              {liveText&&<div className="message-row agent" aria-live="polite"><span className="agent-avatar">A</span><div className="message-content"><span className="message-author">小安妮 · 生成中</span><div className="bubble agent-bubble">{liveText}</div></div></div>}
+            </div>
+            <div className="composer">
+              <div className="composer-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/>{realtime?.ready?'Realtime 已连接':'Realtime 未就绪'}<span>·</span>语音输入来自所属 Room</div>
+              <form onSubmit={e=>{e.preventDefault();void sendText();}}>
+                <label className="sr-only" htmlFor="message-input">输入消息</label>
+                <textarea id="message-input" value={text} maxLength={2000} rows={2} onChange={e=>setText(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void sendText();}}}
+                  placeholder="给小安妮发送消息…（Enter 发送，Shift + Enter 换行）" disabled={!robotId}/>
+                <div className="composer-actions"><span>文字 · 同一 Realtime 会话</span><div>
+                  <button type="button" className="stop-button" onClick={()=>void cancelCurrent()} disabled={!robotId}>停止回复</button>
+                  <button className="primary-button" type="submit" disabled={!text.trim()||pending||!realtime?.ready}>发送 ↗</button>
+                </div></div>
+              </form>
+            </div>
+          </section>
+          <aside className="inspector" aria-label="当前机器人状态">
+            <div className="inspector-title"><span className="eyebrow">CURRENT ROBOT</span><h2>实时状态</h2></div>
+            <div className="inspector-robot"><span className="robot-avatar large">{robotId.slice(0,1).toUpperCase()||'A'}</span><div><strong>{robotId||'未选择'}</strong><small>{selectedRobot?.room_id??'—'}</small></div><State value={realtime?.state} good={realtime?.ready}/></div>
+            <div className="inspector-group"><h3>会话状态</h3><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>
+              <div className="info-line"><span>Revision</span><strong>{session?.persona_revision??'—'}</strong></div>
+              <div className="info-line"><span>历史回合</span><strong>{history?.turns.length??'—'}</strong></div>
+            </div>
+            <div className="inspector-group"><h3>语音输出</h3><div className="info-line"><span>TTS</span><State value={speech?.state}/></div>
+              <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>
+              <div className="info-line"><span>设备播放</span><strong>{speech?.playback_evidence??'unknown'}</strong></div>
+              <div className="info-line"><span>首音频</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
+              <div className="info-line"><span>首发布</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
+            </div>
+            <div className="inspector-group"><h3>连接</h3><div className="info-line"><span>Room 麦克风</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
+              <div className="info-line"><span>Session</span><strong>{session?.generation??'—'}</strong></div>
+            </div>
+            {realtime?.error&&<p className="inline-error" role="alert">{realtime.error}</p>}
+            {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
+            <button className="inspector-link" onClick={()=>setView('developer')}>打开完整诊断 ↗</button>
+          </aside>
+        </div>}
+        {view==='robots'&&<>
+          <div className="page-heading"><div><span className="eyebrow">ROBOT OPERATIONS</span><h1>机器人控制中心</h1><p>查看真实 Room、语音输出与运行状态；测试音源和故障注入位于独立阶段页。</p></div></div>
+          <div className="robot-selector">{health?.robots.map(robot=><button key={robot.robot_id} className={'chip '+(robotId===robot.robot_id?'selected':'')} onClick={()=>choose(robot.robot_id)}>{robot.robot_id} <small>{robot.room_id}</small></button>)}</div>
+          <div className="stats-grid">
+            <Stat name="机器人" value={robotId||'—'} detail={selectedRobot?.room_id}/>
+            <Stat name="Realtime" value={stateLabel(realtime?.state)} kind={realtime?.ready?'good':'warn'}/>
+            <Stat name="TTS" value={stateLabel(speech?.state)}/>
+            <Stat name="设备播放" value={speech?.playback_evidence??'unknown'}/>
+          </div>
+          <Block title="Room 六通道" sub="地址来自配置；仅 mic 的连接状态有当前阶段的真实输入证据。">
+            <div className="channel-grid">{channelNames.map(channel=><div className="channel-item" key={channel}><div><strong>{channel}</strong><small>{channel==='mic'?'输入 · 16kHz PCM':channel==='tts'?'输出 · 24kHz PCM':'保留通道'}</small></div>
+              <State value={channel==='mic'?(route?.connected?'connected':'not_connected'):(route?.urls[channel]?'configured':'not_connected')} good={channel==='mic'&&route?.connected}/></div>)}</div>
+          </Block>
+          <Block title="语音与播放事实" sub="合成、发布与扬声器确认独立记录；缺设备报告时保持 unknown。">
+            <div className="stats-grid compact"><Stat name="已发布 PCM 帧" value={speech?.pcm_frames_published??'—'}/><Stat name="已播样本报告" value={speech?.played_sample_count??'—'}/><Stat name="停止帧发布" value={speech?.stop_published_ms??'—'}/><Stat name="真实停播回执" value={speech?.stop_confirmed_ms??'—'}/></div>
+            {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
+          </Block>
+          <Block title="当前输入" sub="真实数据由所属 Room 路由进入，不从正式工作台注入测试 PCM。"><div className="info-line"><span>Room</span><strong>{selectedRobot?.room_id??'—'}</strong></div><div className="info-line"><span>PCM 接收状态</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div></Block>
+        </>}
+        {view==='developer'&&<>
+          <div className="page-heading"><div><span className="eyebrow">OBSERVABILITY</span><h1>开发者观测</h1><p>同一 Runtime 的只读诊断。测试请求、Fake 控制和模拟回执放在阶段 HTML。</p></div><button className="soft-button" disabled={!robotId} onClick={()=>void refreshSelected(robotId)}>刷新诊断</button></div>
+          <div className="developer-grid">
+            <Block title="当前目标" sub="所有数据均属于左上角选中的机器人。"><div className="info-line"><span>Robot / Room</span><strong>{robotId} / {selectedRobot?.room_id??'—'}</strong></div><div className="info-line"><span>Chat / Persona</span><strong>{session?.chat_id??'—'} / {session?.persona_id??'—'}</strong></div><div className="info-line"><span>Session epoch / generation</span><strong>{session?.session_epoch??'—'} / {session?.generation??'—'}</strong></div></Block>
+            <Block title="实时与音频" sub="先看状态；必要时展开原始事件。"><div className="info-line"><span>Realtime</span><State value={realtime?.state} good={realtime?.ready}/></div><div className="info-line"><span>TTS</span><State value={speech?.state}/></div><div className="info-line"><span>播放证据</span><strong>{speech?.playback_evidence??'unknown'}</strong></div><div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div><details><summary>Realtime / Function Calling / TTS 事件</summary><pre>{pretty(realtimeEvents)}</pre></details></Block>
+            <Block title="当前有效上下文" sub="最近 20 轮与完整历史分开。"><details><summary>查看最近上下文</summary><pre>{pretty(context)}</pre></details><details><summary>查看完整 Ledger</summary><pre>{pretty(history)}</pre></details></Block>
+            <Block title="调度与社交状态"><details><summary>TurnCoordinator</summary><pre>{pretty(coordinator)}</pre></details><details><summary>SocialState</summary><pre>{pretty(social)}</pre></details></Block>
+            <Block title="Room / PCM"><details><summary>输入与通道诊断</summary><pre>{pretty({inputs:pcm,routes})}</pre></details></Block>
+            <Block title="独立阶段测试" sub="以下链接打开单独 HTML，不属于正式业务操作。">
+              <div className="test-links">
+                <a href="/phase-tests/phase1.html">Phase 1 · Fake / 多头测试 ↗</a>
+                <a href="/phase-tests/phase2.html">Phase 2 · 测试 PCM / 麦克风 ↗</a>
+                <a href="/phase-tests/phase3.html">Phase 3 · Ledger / 模拟回执 ↗</a>
+                <a href="/phase-tests/phase4.html">Phase 4 · Realtime 验收 ↗</a>
+                <a href="/phase-tests/phase4b.html">Phase 4B · 浏览器扬声器 / 嘴型 ↗</a>
+                <a href="/phase-tests/phase4c.html">Phase 4C · 工作台验收 ↗</a>
               </div>
-            </article>)}
-            {!history&&<p>正在读取历史…</p>}
+            </Block>
           </div>
-          {liveText&&<div className="bubble assistant" aria-live="polite"><b>Realtime · 正在生成</b><p>{liveText}</p></div>}
-          <details><summary>实时转写、判轮与工具事件</summary><pre>{pretty(realtimeEvents)}</pre></details>
-          <details><summary>完整 Ledger JSON</summary><pre>{pretty(history)}</pre></details>
-          <form onSubmit={event=>{event.preventDefault();if(text.trim()){void operation('realtime/text',{text:text.trim()});setText('');}}}>
-            <label>网页文本 → Realtime<input value={text} maxLength={2000} onChange={e=>setText(e.target.value)} placeholder="输入测试消息"/></label>
-            <button disabled={busy||!text.trim()||!realtimeState?.ready}>发送真实对话</button>
-          </form>
-          {!realtimeConfigured&&<p>Realtime 未配置；仅保留下方 Fake 诊断，不自动回退为伪装的真实回复。</p>}
-          <div className="actions"><button disabled={!robotId} onClick={()=>void cancelCurrent()}>取消当前回合</button>
-            <button disabled={busy} onClick={()=>void refreshSelected(robotId)}>刷新当前会话</button></div>
-          {message&&<pre className="notice" role="status">{message}</pre>}
-        </section>
-        <section className="panel"><details><summary>当前有效上下文（最多 20 轮，完整历史见上方）</summary><pre>{pretty(context)}</pre></details></section>
-        <section className="panel" id="audio"><h2>独立 TTS / PCM / 嘴型</h2>
-          <p>输出到 {currentRobot?.room_id??'未选择'} / reb_tts。模型回复与合成、Room 发布、设备已播放是不同状态；PCM 发布不代表设备已播放。</p>
-          <div className="badges">
-            <span>TTS：{realtimeState?.speech_output?.state??'未配置'}</span>
-            <span>首音频：{realtimeState?.speech_output?.first_audio_ms??'未测'} ms</span>
-            <span>首发布：{realtimeState?.speech_output?.first_publish_ms??'未测'} ms</span>
-            <span>已发布 PCM 帧：{realtimeState?.speech_output?.pcm_frames_published??0}</span>
-            <span>设备播放：{realtimeState?.speech_output?.playback_evidence??'unknown'}</span>
-            <span>嘴型：{realtimeState?.speech_output?.viseme??'not_connected'}</span>
-          </div>
-          <p>起播回执：{realtimeState?.speech_output?.started_reported_ms??'无'}；已报告播放进度：{realtimeState?.speech_output?.played_sample_count??0} 样本；停止请求：{realtimeState?.speech_output?.stop_requested_ms??'无'}；停止帧发布：{realtimeState?.speech_output?.stop_published_ms??'无'}；停止回执：{realtimeState?.speech_output?.stop_confirmed_ms??'无'}（{realtimeState?.speech_output?.last_stop_evidence??'unknown'}，CID {realtimeState?.speech_output?.stopped_conversation_id??'无'}）。</p>
-          <RoomPlaybackTester key={robotId} route={selectedRoute} onCancel={()=>void cancelCurrent()}/>
-          {realtimeState?.speech_output?.error&&<p role="alert" className="bad">TTS 错误：{realtimeState.speech_output.error}</p>}
-          <p>未安装对齐模型或无设备回执时，嘴型与已播证据保持未就绪/unknown；不以浏览器试听模拟设备播放，也不重复合成。</p>
-          <details><summary>音频、停止及嘴型事件</summary><pre>{pretty(realtimeEvents.filter(e=>e.kind.startsWith('tts.')||e.kind.startsWith('viseme.')))}</pre></details>
-          <a href="/phase-tests/phase4b.html">Phase 4B 验收步骤</a>
-        </section>
-        <section className="panel" id="pcm"><h2>PCM / Room 输入诊断</h2>
-          <p>六通道配置：{['main','tts','mic','visualdata','vision','sam'].map(channel=>
-            <span className="channel" key={channel}>{channel}：{selectedRoute?.urls[channel]?'已配置':'未配置'}</span>)}</p>
-          <p>mic 实际连接：{selectedRoute?.connected?'已连接':'未连接 / 未获证据'}，其余通道“已配置”不代表已连接。</p>
-          <p>采用 Phase 2 MIC_AUDIO BinaryFrame 封包；页面退出或切机器人时释放本页麦克风。无法自动检测另一音源，请先人工确认。</p>
-          <RoomInput key={robotId} robotId={robotId} route={selectedRoute}/>
-          <details><summary>PCM / Room 原始诊断</summary><pre>{pretty({inputs:pcm,routes})}</pre></details>
-          <a href="/phase-tests/phase2.html">进入 Phase 2 真实 Room / PCM 验收页</a>
-        </section>
-        <section className="panel" id="developer"><details open={developerOpen} onToggle={event=>setDeveloperOpen(event.currentTarget.open)}>
-          <summary>开发者诊断 · Fake 操作 / Coordinator / SocialState</summary>
-          <p>以下按钮仅操作当前机器人 Fake Runtime，不代表实际动作或真实硬件停机。</p>
-          <div className="actions"><button disabled={busy} onClick={()=>void operation('start')}>启动 Fake 机器人</button>
-            <button disabled={busy} onClick={()=>void operation('stop')}>停止 Fake 机器人</button>
-            <button disabled={busy} className="danger" onClick={()=>void operation('fail')}>注入 Fake 故障</button></div>
-          <button disabled={busy||!robotId} onClick={()=>void operation('turns',{text:'Fake debug probe'})}>发送独立 Fake 调试回合</button>
-          <p>仅针对刚刚由本页创建的 Fake 回合（{fakeTurnId||'无'}）模拟播放证据；不修改真实 Realtime 回合。</p>
-          <div className="actions">
-            <button disabled={busy||!fakeTurnId} onClick={()=>void fakePlayback(true)}>Fake 部分播放</button>
-            <button disabled={busy||!fakeTurnId} onClick={()=>void fakePlayback(false)}>Fake 恢复 unknown</button>
-            <button disabled={busy||!robotId} onClick={()=>void operation('response-requests',{
-              source:'phase4c-dev',dedupe_key:'phase4c-'+Date.now(),ttl_ms:1500,
-            })}>Fake 事件响应请求（TTL 1.5s）</button>
-          </div>
-          <h3>TurnCoordinator</h3><pre>{pretty(coordinator)}</pre><h3>SocialState</h3><pre>{pretty(social)}</pre>
-        </details></section>
-      </main>
+        </>}
+      </div>
     </div>
+    {createOpen&&<div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setCreateOpen(false);}}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <span className="eyebrow">NEW CONVERSATION</span><h2 id="create-title">创建 / 切换会话</h2><p>绑定到 {robotId} / {selectedRobot?.room_id}。切换不会删除已有历史。</p>
+        <form onSubmit={e=>{e.preventDefault();void createSession();}}>
+          <label>Chat 名称<input autoFocus value={draftChat} maxLength={128} onChange={e=>setDraftChat(e.target.value)} placeholder="例如：日常聊天"/></label>
+          <label>Persona<input list="known-personas" value={draftPersona} maxLength={128} onChange={e=>setDraftPersona(e.target.value)} />
+            <datalist id="known-personas">{[...new Set([session?.persona_id,selectedRobot?.persona_id,...conversations.map(item=>item.persona_id)].filter((value):value is string=>!!value))].map(name=><option key={name} value={name}/>)}</datalist>
+          </label>
+          <label>Persona revision<input type="number" min="1" step="1" value={draftRevision} onChange={e=>setDraftRevision(Number(e.target.value))}/></label>
+          <div className="dialog-actions"><button type="button" className="quiet-button" onClick={()=>setCreateOpen(false)}>取消</button><button className="primary-button" disabled={pending||!draftChat.trim()||!draftPersona.trim()||draftRevision<1||!Number.isSafeInteger(draftRevision)}>确认</button></div>
+        </form>
+      </div>
+    </div>}
+    {deleteOpen&&session&&<div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setDeleteOpen(false);}}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+        <span className="eyebrow danger-text">PERMANENT DELETE</span><h2 id="delete-title">删除当前会话历史？</h2>
+        <p>仅删除 <strong>{session.robot_id} / {session.persona_id} / {session.chat_id}</strong> 的已保存历史，无法撤销；其它机器人不受影响。</p>
+        <div className="dialog-actions"><button className="quiet-button" onClick={()=>setDeleteOpen(false)}>保留会话</button><button className="stop-button" disabled={pending} onClick={()=>void removeSession()}>确认删除</button></div>
+      </div>
+    </div>}
   </div>;
 }

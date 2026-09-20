@@ -30,6 +30,9 @@ class StaticWorkbenchTests(unittest.TestCase):
                 instructions = client.get("/phase-tests/phase4c.html")
                 self.assertEqual(instructions.status_code, 200)
                 self.assertIn("Phase 4C", instructions.text)
+                playback_test = client.get("/phase-tests/phase4b.html")
+                self.assertEqual(playback_test.status_code, 200)
+                self.assertIn("source:'browser_test'", playback_test.text)
                 self.assertEqual(client.get("/health").json()["robots"][0]["robot_id"], "annie-a")
 
 

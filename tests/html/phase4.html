@@ -4,22 +4,22 @@
 <style>body{font:16px/1.6 system-ui,sans-serif;background:#f1f4f8;color:#162238;max-width:880px;margin:24px auto;padding:0 16px}section{background:white;border:1px solid #d4dee9;padding:18px;border-radius:12px;margin:14px 0}a{display:inline-block;color:#164bb0;padding:8px 0}li{margin:9px 0}.warn{color:#9a4200}small{color:#52657e}@media(max-width:600px){body{margin:8px auto}section{padding:12px}}</style>
 </head><body>
 <h1>Phase 4 · 正式工作台 / Realtime</h1>
-<p>本页仅列出真实验收入口和操作步骤，产品功能全部在同一 React 工作台。</p>
+<p>正式业务对话在 React 工作台。本页仅保留 Phase 4 必需的简单 Realtime/Room 联调操作，Fake 与测试 PCM 使用各阶段独立 HTML。</p>
 <section><h2>4-工作台</h2>
 <a href="/">打开正式 React 工作台 →</a>
 <ol>
 <li>在不同机器人间切换，确认 Room、PCM 计数和健康状态分别归属正确机器人。</li>
 <li>新建及切换同名 Chat/Persona，检查旧消息仍保留，当前有效上下文最多 20 轮。</li>
 <li>取消删除、确认删除分别验证，确保未删除其他机器人或 Persona 的记录。</li>
-<li>选定 Room 并确认无第二音源，再发送一帧测试 PCM；对比目标 Room accepted 是否增长。</li>
-<li>开启麦克风、切换机器人、关闭页面；确认采集停止、不转发到新 Room。</li>
+<li>到 <a href="/phase-tests/phase2.html">Phase 2 独立测试页</a> 选定 Room、确认无第二音源，再发送一帧测试 PCM；对比 accepted 增量。</li>
+<li>在 Phase 2 测试页开启麦克风、切换机器人、关闭页面；确认采集停止、不转发到新 Room。</li>
 <li>禁用网络、缺少构建文件分别复核错误可见、失败不误杀旧 Runtime。</li>
 </ol>
-<p class="warn">自动化测试不代表桌面/窄屏浏览器或物理麦克风验收通过；正式文字区只在 Provider ready 时接受真实请求，独立 Fake 功能在开发者区。</p></section>
+<p class="warn">自动化测试不代表桌面/窄屏浏览器或物理麦克风验收通过；正式文字区只在 Provider ready 时接受真实请求，Fake 在 Phase 1/3 独立页。</p></section>
 <section><h2>4-Realtime｜需要人工验收的真实语音链路</h2>
 <a href="/">进入工作台，选机器人检查 Realtime ready →</a>
 <ol>
-<li>在 roomv2 确认无第二音源，开启浏览器麦克风，说一句短话；查看目标机器人 frames_sent、转写、smart_turn 和完整文字回复，确保 roomv3 不变。</li>
+<li>在 roomv2 确认无第二音源，在 Phase 2 独立页开启浏览器麦克风，说一句短话；在正式对话/开发者观测核对转写、smart_turn 和完整文字回复，确保 roomv3 不变。</li>
 <li>在 roomv3 重复，再分别连续说两轮，检查当前 Chat 的上文、Persona 与完整 Ledger；在工作台观察连续增量，不用 Fake 回显顶替。</li>
 <li>测试“嗯”等附和、正常新发言与手动提交冲突，观察 invalid 标识、是否重复创建 response。</li>
 <li>切 Chat/Persona、取消当前回复，检查旧 generation 的迟到文本未串入；按实际需要测试断网与自动重连。</li>

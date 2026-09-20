@@ -21,8 +21,8 @@ test('browser uses the exact speaker Room receipt fields but labels itself brows
 });
 
 test('browser playback never promotes itself to real speaker and uses actual Room URLs',async()=>{
-  const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../src');
-  const code=await readFile(path.join(root,'playback.tsx'),'utf8');
+  const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../tests/html');
+  const code=await readFile(path.join(root,'phase4b.html'),'utf8');
   assert.match(code,/route\.urls\.tts/);
   assert.match(code,/route\.urls\.main/);
   assert.match(code,/route\.urls\.sam/);

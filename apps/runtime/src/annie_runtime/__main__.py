@@ -6,6 +6,7 @@ import errno
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import sys
@@ -132,9 +133,22 @@ def resolve_log_level(value: str) -> int:
     return level
 
 
+def require_dashboard_build(root: Path) -> Path:
+    """Fail before replacing an old Runtime if the React build is missing."""
+    dashboard = root / "web/dist"
+    index = dashboard / "index.html"
+    if not index.is_file():
+        raise ValueError("React build missing: run npm --prefix web ci && npm --prefix web run build")
+    html = index.read_text(encoding="utf-8")
+    assets = re.findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
+    if not assets or any(not (dashboard / asset.lstrip("/")).is_file() for asset in assets):
+        raise ValueError("React build incomplete: run npm --prefix web run build")
+    return dashboard
+
+
 def main():
     root = Path(__file__).resolve().parents[4]
-    parser = argparse.ArgumentParser(description="Annie Harbor Phase 3 — isolated sessions with Fake brain")
+    parser = argparse.ArgumentParser(description="Annie Harbor — Phase 4 workbench and Runtime")
     parser.add_argument("--root", type=Path, default=root)
     parser.add_argument("--host")
     parser.add_argument("--port", type=int)
@@ -186,6 +200,11 @@ def main():
                 await runtime.close()
 
         raise SystemExit(asyncio.run(check()))
+    try:
+        dashboard = require_dashboard_build(root)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
     host = args.host or os.environ.get("ANNIE_HOST", config["app"]["host"])
     port = args.port if args.port is not None else int(os.environ.get("ANNIE_PORT", config["app"]["port"]))
     if not 1 <= port <= 65535:
@@ -214,7 +233,7 @@ def main():
             )
             raise SystemExit(2)
     uvicorn.run(
-        create_app(runtime, root / "web/src", root / "tests/html"),
+        create_app(runtime, dashboard, root / "tests/html"),
         host=host,
         port=port,
     )

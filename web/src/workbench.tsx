@@ -1,0 +1,169 @@
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {api,robotPath,type Health,type Session} from './api';
+import {RoomInput,type RoomRoute} from './pcm';
+
+type Conversation={chat_id:string;persona_id:string;[key:string]:unknown};
+type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
+type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string};
+const pretty=(value:unknown)=>JSON.stringify(value,null,2);
+const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
+
+export function Workbench(){
+  const [health,setHealth]=useState<Health|null>(null);
+  const [robotId,setRobotId]=useState('');
+  const [session,setSession]=useState<Session|null>(null);
+  const [conversations,setConversations]=useState<Conversation[]>([]);
+  const [history,setHistory]=useState<History|null>(null);
+  const [context,setContext]=useState<unknown>(null);
+  const [pcm,setPcm]=useState<unknown>(null);
+  const [routes,setRoutes]=useState<RoomRoute[]>([]);
+  const [coordinator,setCoordinator]=useState<unknown>(null);
+  const [social,setSocial]=useState<unknown>(null);
+  const [message,setMessage]=useState('');
+  const [chat,setChat]=useState('');
+  const [persona,setPersona]=useState('');
+  const [revision,setRevision]=useState(1);
+  const [text,setText]=useState('');
+  const [busy,setBusy]=useState(false);
+  const selection=useRef(0);
+  const currentRobot=health?.robots.find(robot=>robot.robot_id===robotId);
+
+  const refreshHealth=useCallback(async()=>{
+    try {
+      const result=await api<Health>('/health','GET',undefined,undefined,[503]);
+      setHealth(result);
+      setRobotId(old=>result.robots.some(r=>r.robot_id===old)?old:result.robots[0]?.robot_id??'');
+    }catch(error){setMessage('Runtime 健康检查失败：'+errorText(error));}
+  },[]);
+  useEffect(()=>{
+    void refreshHealth();
+    const timer=window.setInterval(()=>{void refreshHealth();},2000);
+    return()=>window.clearInterval(timer);
+  },[refreshHealth]);
+
+  const refreshSelected=useCallback(async(id:string)=>{
+    const ticket=++selection.current;
+    setHistory(null);setContext(null);
+    if(!id){setSession(null);return;}
+    try{
+      const base=robotPath(id);
+      const s=await api<Session>(base+'/session');
+      if(ticket!==selection.current)return;
+      setSession(s);setChat(s.chat_id);setPersona(s.persona_id);setRevision(s.persona_revision);
+      const results=await Promise.all([
+        api<Conversation[]>(base+'/conversations'),
+        api<History>(base+'/conversations/'+encodeURIComponent(s.chat_id)+'?persona_id='+encodeURIComponent(s.persona_id)),
+        api<unknown>(base+'/context'),api<unknown>(base+'/inputs'),
+        api<RoomRoute[]>('/api/phase2/rooms'),api<unknown>(base+'/coordinator'),
+        api<unknown>(base+'/social-state')
+      ]);
+      if(ticket!==selection.current)return;
+      setConversations(results[0]);setHistory(results[1]);setContext(results[2]);
+      setPcm(results[3]);setRoutes(results[4]);setCoordinator(results[5]);setSocial(results[6]);
+    }catch(error){if(ticket===selection.current)setMessage('读取会话失败：'+errorText(error));}
+  },[]);
+  useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
+  useEffect(()=>{
+    if(!robotId)return;
+    let active=true;
+    const poll=async()=>{
+      try{
+        const [inputs,rooms]=await Promise.all([api<unknown>(robotPath(robotId)+'/inputs'),api<RoomRoute[]>('/api/phase2/rooms')]);
+        if(active){setPcm(inputs);setRoutes(rooms);}
+      }catch{/* Detailed error remains in the session refresh path. */}
+    };
+    const timer=window.setInterval(()=>{void poll();},2000);
+    return()=>{active=false;window.clearInterval(timer);};
+  },[robotId]);
+
+  async function operation(name:string,body?:unknown,method='POST'){
+    if(!robotId||busy)return;
+    const id=robotId;
+    const ticket=selection.current;
+    setBusy(true);setMessage('');
+    try{
+      const result=await api<unknown>(robotPath(id)+'/'+name,method,body);
+      if(ticket===selection.current){setMessage('操作结果：'+pretty(result));await refreshSelected(id);await refreshHealth();}
+    }catch(error){if(ticket===selection.current)setMessage(errorText(error));}
+    finally{setBusy(false);}
+  }
+  async function deleteChat(){
+    if(!session||busy)return;
+    if(!window.confirm(`仅删除 ${session.robot_id} / ${session.persona_id} / ${session.chat_id} 的历史？不可恢复。`))return;
+    await operation('conversations/'+encodeURIComponent(session.chat_id)+'?persona_id='+encodeURIComponent(session.persona_id),undefined,'DELETE');
+  }
+  const choose=(id:string)=>{
+    selection.current++;setRobotId(id);setSession(null);setHistory(null);setContext(null);setPcm(null);setMessage('');
+  };
+  return <div className="shell">
+    <header><strong>ANNIE HARBOR <span>· Phase 4</span></strong><span className="sub">正式工作台 / Realtime 尚未接入</span></header>
+    <section className="status" aria-live="polite">
+      <span className={health?.ready?'ok':'bad'}>{health?.ready?'Runtime 运行中':'Runtime 未连接'}</span>
+      <span>PID {health?.pid??'—'}</span><span>{health?.robots.length??0} 个机器人</span>
+      <button onClick={()=>void refreshHealth()}>刷新</button>
+    </section>
+    <div className="layout">
+      <aside>
+        <h2>机器人 / Room</h2>
+        {health?.robots.map(robot=><button className={robotId===robot.robot_id?'selected':''} key={robot.robot_id} onClick={()=>choose(robot.robot_id)}>
+          <b>{robot.robot_id}</b><small>{robot.room_id} · {robot.state}</small>
+        </button>)}
+        <h2>会话</h2>
+        {conversations.map((item,index)=><button key={index} className={session?.chat_id===item.chat_id&&session.persona_id===item.persona_id?'selected':''}
+          onClick={()=>void operation('session',{chat_id:item.chat_id,persona_id:item.persona_id,persona_revision:1})}>
+          <b>{item.chat_id}</b><small>{item.persona_id}</small>
+        </button>)}
+      </aside>
+      <main>
+        <section className="panel">
+          <h1>{currentRobot?.robot_id??'选择机器人'} <small>{currentRobot?.room_id??''}</small></h1>
+          <p>当前阶段文本提交使用 Fake Brain；真实 Realtime、TTS、嘴型、真实动作均未接线，不把模拟回复标作真实能力。</p>
+          <div className="badges">{Object.entries(health?.capabilities??{}).map(([name,state])=><span key={name}>{name}: {state}</span>)}</div>
+          <div className="fields">
+            <label>Chat<input aria-label="Chat" value={chat} onChange={e=>setChat(e.target.value)}/></label>
+            <label>Persona<input aria-label="Persona" value={persona} onChange={e=>setPersona(e.target.value)}/></label>
+            <label>Revision<input aria-label="Revision" type="number" min="1" value={revision} onChange={e=>setRevision(Number(e.target.value))}/></label>
+          </div>
+          <div className="actions"><button disabled={busy||!chat.trim()||!persona.trim()||revision<1} onClick={()=>void operation('session',{chat_id:chat.trim(),persona_id:persona.trim(),persona_revision:revision})}>创建 / 切换会话</button>
+            <button className="danger" disabled={busy||!session} onClick={()=>void deleteChat()}>删除当前会话</button></div>
+          {session&&<p className="metadata">Session epoch {session.session_epoch} / generation {session.generation} / persona revision {session.persona_revision}</p>}
+        </section>
+        <section className="panel">
+          <h2>对话 · 完整历史</h2>
+          <div className="transcript" aria-label="完整历史">
+            {history?.turns.length===0&&<p>当前会话还没有历史。</p>}
+            {history?.turns.map(turn=><article className="turn" key={turn.turn_id}>
+              <div className="bubble user"><b>用户</b><p>{turn.user_text}</p></div>
+              <div className="bubble assistant"><b>助手 · {turn.status}{turn.cancelled?' / 已取消':''}</b>
+                <p>{turn.assistant_spoken_text||turn.assistant_generated_text||'未生成回复'}</p>
+                <small>Fake / 播放证据：{turn.playback_evidence_status??'unknown'}</small>
+              </div>
+            </article>)}
+            {!history&&<p>正在读取历史…</p>}
+          </div>
+          <details><summary>完整 Ledger JSON</summary><pre>{pretty(history)}</pre></details>
+          <form onSubmit={event=>{event.preventDefault();if(text.trim()){void operation('turns',{text:text.trim()});setText('');}}}>
+            <label>网页文本测试（Fake）<input value={text} maxLength={2000} onChange={e=>setText(e.target.value)} placeholder="输入测试消息"/></label>
+            <button disabled={busy||!text.trim()}>发送</button>
+          </form>
+          <div className="actions"><button disabled={busy} onClick={()=>void operation('cancel')}>取消当前回合</button>
+            <button disabled={busy} onClick={()=>void refreshSelected(robotId)}>刷新当前会话</button></div>
+          {message&&<pre className="notice" role="status">{message}</pre>}
+        </section>
+        <section className="panel"><h2>当前有效上下文（最多 20 轮）</h2><pre>{pretty(context)}</pre></section>
+        <section className="panel"><h2>PCM / Room 输入诊断</h2>
+          <p>采用 Phase 2 MIC_AUDIO BinaryFrame 封包；页面退出或切机器人时释放本页麦克风。无法自动检测另一音源，请先人工确认。</p>
+          <RoomInput key={robotId} robotId={robotId} route={routes.find(route=>route.robot_id===robotId)}/>
+          <pre>{pretty({inputs:pcm,routes})}</pre>
+          <a href="/phase-tests/phase2.html">进入 Phase 2 真实 Room / PCM 验收页</a>
+        </section>
+        <section className="panel"><h2>开发者诊断</h2>
+          <p>以下按钮仅操作当前机器人 Fake Runtime，不代表实际动作或真实硬件停机。</p>
+          <div className="actions"><button disabled={busy} onClick={()=>void operation('start')}>启动 Fake 机器人</button>
+            <button disabled={busy} onClick={()=>void operation('stop')}>停止 Fake 机器人</button>
+            <button disabled={busy} className="danger" onClick={()=>void operation('fail')}>注入 Fake 故障</button></div>
+          <h3>TurnCoordinator</h3><pre>{pretty(coordinator)}</pre><h3>SocialState</h3><pre>{pretty(social)}</pre></section>
+      </main>
+    </div>
+  </div>;
+}

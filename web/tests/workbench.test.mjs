@@ -90,7 +90,10 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/generation/);
   assert.match(source,/conversation/);
   assert.doesNotMatch(source,/RoomInput|RoomPlaybackTester|Fake debug probe|Fake 部分播放/);
-  assert.match(source,/realtime\/events\?after=/);
+  assert.match(source,/new EventSource/);
+  assert.match(source,/realtime\/stream\?after=/);
+  assert.doesNotMatch(source,/setInterval\(\(\)=>void poll\(\),250\)/);
+  assert.doesNotMatch(source,/RoomPlayback/);
   assert.match(source,/realtime\/text/);
   assert.match(source,/text\.delta/);
   assert.match(source,/transcript\.delta/);
@@ -101,7 +104,6 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/turn\.done/);
   assert.match(source,/speech_output/);
   assert.match(source,/playback_evidence/);
-  assert.match(source,/phase4b\.html/);
   assert.match(source,/phase4c\.html/);
   assert.match(source,/item\.persona_revision/);
   assert.match(source,/className="top-robot-switch"/);
@@ -118,25 +120,14 @@ test('React build is the only production page and serves local assets',async()=>
   assert.doesNotMatch(source,/\.innerHTML\s*=/);
 });
 
-test('each earlier test remains a standalone HTML page with only explicit test controls',async()=>{
+test('remaining protocol fixtures stay separate from the production conversation',async()=>{
   const htmlRoot=path.resolve(web,'../tests/html');
-  const [phase1,phase2,phase3,phase4b]=await Promise.all(
-    ['phase1.html','phase2.html','phase3.html','phase4b.html'].map(file=>readFile(path.join(htmlRoot,file),'utf8'))
+  const [phase1,phase2,phase3]=await Promise.all(
+    ['phase1.html','phase2.html','phase3.html'].map(file=>readFile(path.join(htmlRoot,file),'utf8'))
   );
   assert.match(phase1,/concurrent-all/);
   assert.match(phase2,/mic-start/);
   assert.match(phase3,/simulated_partial/);
-  assert.match(phase4b,/browser_test/);
-  assert.match(phase4b,/route\.urls\.tts/);
-  assert.match(phase4b,/route\.urls\.main/);
-  assert.match(phase4b,/route\.urls\.sam/);
-  assert.match(phase4b,/played_sample_count/);
-  assert.match(phase4b,/stream_final/);
-  assert.match(phase4b,/new AudioContext/);
-  assert.doesNotMatch(phase4b,/source:'speaker'/);
-  const script=phase4b.match(/<script>([\s\S]*?)<\/script>/)?.[1];
-  assert.ok(script);
-  assert.doesNotThrow(()=>new Function(script));
 });
 
 test('real conversation has an explicitly authorized browser microphone and no test PCM control',async()=>{
@@ -145,8 +136,7 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(workbench,/<RealtimeMicrophone key=\{robotId/);
   assert.match(workbench,/route\?\.room_id\?\?''/);
   assert.match(workbench,/route=\{realtime\?\.ready\?route:undefined\}/);
-  assert.match(workbench,/<RoomPlayback key=/);
-  assert.match(workbench,/target="_blank" rel="noopener noreferrer">独立 4B 诊断页/);
+  assert.doesNotMatch(workbench,/RoomPlayback|AudioWorklet/);
   assert.match(mic,/getUserMedia/);
   assert.match(mic,/createMicPcmPump/);
   assert.match(mic,/message\.robotId!=='reb_mic'/);
@@ -160,16 +150,4 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(mic,/取消开启/);
   assert.match(mic,/此 Room 没有另一个麦克风/);
   assert.doesNotMatch(mic,/测试 PCM|sendFrame|new Uint8Array\(640\)\)\)/);
-});
-
-test('standalone 4B audio monitor exposes configuration failure before accepting a playback test',async()=>{
-  const html=await readFile(path.resolve(web,'../tests/html/phase4b.html'),'utf8');
-  assert.match(html,/speech\.state==='not_configured'/);
-  assert.match(html,/TTS 未配置；没有 reb_tts PCM/);
-  assert.match(html,/id="send-test" disabled/);
-  assert.match(html,/id="start" disabled/);
-  assert.match(html,/realtime\/text/);
-  assert.match(html,/target="_blank"/);
-  assert.match(html,/source:'browser_test'/);
-  assert.doesNotMatch(html,/source:'speaker'/);
 });

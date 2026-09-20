@@ -23,7 +23,9 @@ class VisemeSidecars:
                 raise ValueError("ANNIE_VISEME_ROBOTS contains unknown robot IDs")
             self.robots = tuple(robot for robot in available if robot.config.robot_id in ids)
         else:
-            self.robots = available
+            # Development default: one acoustic model, even with multiple Rooms.
+            # Explicit ANNIE_VISEME_ROBOTS may opt into more when measured.
+            self.robots = available[:1]
         self.folder = root / "sidecars" / "tts_viseme"
         # Do NOT resolve the final executable symlink: uv venv/bin/python points
         # at the system interpreter, whose realpath bypasses the venv packages.

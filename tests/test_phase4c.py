@@ -27,15 +27,11 @@ class StaticWorkbenchTests(unittest.TestCase):
                 self.assertGreaterEqual(len(assets), 2)
                 for asset in assets:
                     self.assertEqual(client.get(asset).status_code, 200)
-                worklet = client.get("/pcm-playback-processor.js")
-                self.assertEqual(worklet.status_code, 200)
-                self.assertIn("registerProcessor('room-pcm-playback'", worklet.text)
+                self.assertEqual(client.get("/pcm-playback-processor.js").status_code, 404)
                 instructions = client.get("/phase-tests/phase4c.html")
                 self.assertEqual(instructions.status_code, 200)
                 self.assertIn("Phase 4C", instructions.text)
-                playback_test = client.get("/phase-tests/phase4b.html")
-                self.assertEqual(playback_test.status_code, 200)
-                self.assertIn("source:'browser_test'", playback_test.text)
+                self.assertEqual(client.get("/phase-tests/phase4b.html").status_code, 404)
                 self.assertEqual(client.get("/health").json()["robots"][0]["robot_id"], "annie-a")
 
 

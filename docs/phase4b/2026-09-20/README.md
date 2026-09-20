@@ -89,3 +89,10 @@
 - 不改变模型、音色、采样率或六通道合同；没有擅自把已经饱和的 PCM 降音量伪称去噪。本次没有在用户机器上完整复现“正在运行时”的 CPU/内存曲线：观察时 Runtime 已停止；仍需启动后实际对照资源和耳听判断是否达到稳定目标。
 - 为排除 Room/浏览器/麦克风影响，第二次 Provider-only 取样另存原生 24kHz/mono/S16LE WAV 到本机 `var/tmp/phase4-tts-noise/provider-only.wav`：62,640 样本/2.610s、peak=32767、近满幅 148。该临时文件仅用于与用户网页播放耳听对比，问题关闭后删除；可复跑 `uv run --locked python tests/manual_tts_pcm.py --save-wav`（每次产生一次实际 TTS 调用）。
 - 本轮回归 108 passed、25 subtests、2 条既有弃用 warning；前端 16 passed，类型检查与构建通过，uv lock/Ruff/diff check 通过。单侧车和无 G2PW 的真实启动资源曲线、Provider WAV 与网页声质对照仍待实测，不能宣称已消除卡顿或杂音。
+
+## Phase 4 收敛：只保留真实音频主链
+
+- 未指定 `ANNIE_VISEME_ROBOTS` 时仅启动配置中的第一台机器人嘴型侧车；本机 `.env` 已指定 `annie-a`。B 的 Realtime/TTS/Room 保留，嘴型明确为未接入，不宣称双头对齐。Windows 双头共享单模型需要单独设计、实测，不能用两个进程冒充共享。
+- 删除正式网页的自制 Room 播放器、AudioWorklet、PCM 解码/浏览器回执与独立 Phase 4B 复制试听页；React 只保留 Room 麦克风测试入口、TTS/嘴型/真实设备回执状态，不额外连接 tts/main/sam 三路 WebSocket。删除对应过时模拟播放器测试。
+- Realtime 文本事件从每 250ms HTTP 轮询改为按 robot 推送的 SSE（有界订阅队列、断线重放）；健康与 Room 状态降频至 6 秒，常规会话刷新只查必要数据，开发者诊断按打开时读取，取消与流式文字仍保持实时。
+- 真机 PCM stop、真实 speaker 回执与 generation/游标必要校验继续保留：它们在音频取消及“已说过”入上下文时有实际语义，不以删除安全边界换取不存在的 CPU 收益。真实硬件播放/AEC 尚待设备对接，不能标记 Phase 4B 完成。

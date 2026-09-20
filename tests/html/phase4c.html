@@ -17,17 +17,17 @@ summary{cursor:pointer}code{overflow-wrap:anywhere}
 <p class="status wait">总状态：待人工验收。Phase 4、4B 的麦克风、真机播放、AEC 与声学嘴型待验，不因本页出现或自动化绿灯而视为通过。</p>
 <section><h2>0. 当前对象与证据</h2>
 <p>正式入口：<a href="/">进入统一工作台 →</a>。先在顶部核对 robot / Room / Chat、Runtime 和连接状态；选取 A/roomv2 或 B/roomv3。Room 每头完整六通道，mic 一路 PCM；“已配置”不等于“已连接”。</p>
-<p>证据须分别注明 Fake / 真实后端 / 真实 Room / 浏览器试听 / 真实设备 / 人工体验，保留操作对象、浏览器版本和时间。不要把 browser_test 回执认成 speaker 回执。</p></section>
+<p>证据须分别注明 Fake / 真实后端 / 真实 Room / 真实设备 / 人工体验，保留操作对象、浏览器版本和时间。网页不产生扬声器播放回执。</p></section>
 <section><h2>1. P4C-W1/W2 · 功能和布局</h2>
 <ol>
 <li>在正式入口创建 Chat、切换已有 Chat/Persona/revision、查看完整历史与最近 20 轮；显式删除前检查机器人/Chat/Persona 三重目标。</li>
-<li>正式工作台：选机器人 → 选会话 → 开启真实 Room 麦克风/发送文字 → 听本机实时 TTS → 看嘴型 → 取消；Phase 2 HTML 仍可单独复现收音协议故障。</li>
+<li>正式工作台：选机器人 → 选会话 → 开启测试麦克风/发送文字 → 在真实机器人扬声器听 TTS → 查看真实播放证据和嘴型状态 → 取消；Phase 2 HTML 可单独复现收音协议故障。</li>
 <li>以 1440×900 和 390×844 查看导航、历史、音频、PCM 和诊断；键盘 Tab、窄屏滚动无遮挡和横向溢出。原始 JSON 默认折叠。</li>
 </ol></section>
 <section><h2>2. P4C-W3/W4 · 隔离与输出</h2>
 <ol>
 <li>A/B 同名 Chat 切换 10 次，检查旧 generation 文字不串入新会话；关闭网页不应关闭 Runtime。</li>
-<li>在正式工作台开启本机播放（确认耳机及无重复播放器），核对 reb_tts 单份 PCM、reb_sam 嘴型、欠载与 reb_main browser_test 回执；<a href="/phase-tests/phase4b.html">Phase 4B 独立 HTML</a> 仅用于专项复现，两处不要同时开启同一 Room 的播放。</li>
+<li>核对所属 Room 单份 reb_tts PCM、reb_sam 嘴型与真实 speaker 回执；网页仅展示状态，不创建第二套播放/回执流。</li>
 <li>在 Phase 2 独立 HTML 测试拒绝麦克风授权、断线、离页；停止后不继续向原 Room 发送。真实扬声器回执、AEC 和 ForcedAligner 仍待联合验收。</li>
 </ol></section>
 <section><h2>3. P4C-W5/W6/W7 · 异常、动效与性能</h2>
@@ -37,5 +37,5 @@ summary{cursor:pointer}code{overflow-wrap:anywhere}
 <li>持续收音或流式回复时切换正式工作区/取消，分别记录动效开/关的长任务、掉帧、输入延迟、取消延迟、构建体积。未实测不填写性能通过。</li>
 </ol>
 <p>自动化入口：<code>npm --prefix web run typecheck</code>、<code>npm --prefix web test</code>、<code>npm --prefix web run build</code>、<code>uv run --locked pytest -q</code>。必须另行核对统一启动后的 HTTP 资源和真实浏览器实际结果。</p></section>
-<section><h2>前序验收</h2><p><a href="/phase-tests/phase4.html">Phase 4 →</a> · <a href="/phase-tests/phase4b.html">Phase 4B →</a>。本页不复制播放/会话实现。</p></section>
+<section><h2>前序验收</h2><p><a href="/phase-tests/phase4.html">Phase 4 →</a>。Phase 4B 的 TTS/AEC/真机回执仍须独立现场复验。</p></section>
 </body></html>

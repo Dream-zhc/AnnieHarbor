@@ -72,6 +72,22 @@ class RealtimeWireTests(unittest.TestCase):
 
 
 class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_push_subscriber_is_bounded_and_released(self):
+        # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+        queue = client.subscribe()
+        self.assertEqual(queue.qsize(), 0)
+        try:
+            for i in range(140):
+                client.publish("probe", index=i)
+            self.assertEqual(queue.qsize(), 128)
+            self.assertEqual(queue.get_nowait()["index"], 12)
+            self.assertFalse(other.event_subscribers)
+        finally:
+            client.unsubscribe(queue)
+        self.assertFalse(client.event_subscribers)
+
     async def asyncSetUp(self):
         FakeSocket.instances.clear()
         self.tmp = tempfile.TemporaryDirectory(dir=ROOT / "var", prefix="phase4-realtime-")

@@ -1,12 +1,14 @@
 """Local Dashboard plus Phase 3 session, ledger, and PCM diagnostics."""
 
+import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from annie_core import InputRejectedError, RobotQueueFullError, RobotUnavailableError
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -161,6 +163,40 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         if after < 0:
             raise HTTPException(422, "after must be nonnegative")
         return runtime.realtime_events(robot_id, after)
+
+    @app.get("/api/robots/{robot_id}/realtime/stream")
+    async def realtime_stream(robot_id: str, after: int = 0):
+        require_robot(robot_id)
+        if after < 0:
+            raise HTTPException(422, "after must be nonnegative")
+        client = runtime.realtime.get(robot_id)
+        if client is None:
+            raise HTTPException(409, "Realtime not configured")
+
+        async def events():
+            queue = client.subscribe()  # subscribe before replay to avoid missed events
+            last = after
+            try:
+                initial = client.since(after)
+                yield f"data: {json.dumps(initial, ensure_ascii=False)}\n\n"
+                last = initial["latest"]
+                while True:
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=15)
+                    except asyncio.TimeoutError:
+                        yield ": keepalive\n\n"
+                        continue
+                    if item["seq"] <= last:
+                        continue
+                    batch = {"events": [item], "gap": item["seq"] > last + 1,
+                             "latest": item["seq"]}
+                    last = item["seq"]
+                    yield f"data: {json.dumps(batch, ensure_ascii=False)}\n\n"
+            finally:
+                client.unsubscribe(queue)
+
+        return StreamingResponse(events(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.post("/api/robots/{robot_id}/realtime/text")
     async def realtime_text(robot_id: str, body: TurnInput):

@@ -3,7 +3,6 @@ import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents} from './api';
 import {RealtimeMicrophone} from './microphone';
-import {RoomPlayback} from './room-playback';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
 type View='overview'|'chat'|'robots'|'developer';
@@ -85,7 +84,7 @@ export function Workbench(){
   },[]);
   useEffect(()=>{
     void refreshHealth();
-    const timer=window.setInterval(()=>void refreshHealth(),3000);
+    const timer=window.setInterval(()=>void refreshHealth(),6000);
     return()=>window.clearInterval(timer);
   },[refreshHealth]);
 
@@ -102,37 +101,47 @@ export function Workbench(){
         setHistory(null);setContext(null);setCoordinator(null);setSocial(null);
       }
       setSession(selected);
-      const [list,turns,recent,inputs,rooms,coord,socialState]=await Promise.all([
+      const [list,turns,rooms]=await Promise.all([
         api<Conversation[]>(base+'/conversations'),
         api<History>(base+'/conversations/'+encodeURIComponent(selected.chat_id)+'?persona_id='+encodeURIComponent(selected.persona_id)),
-        api<unknown>(base+'/context'),api<unknown>(base+'/inputs'),api<RoomRoute[]>('/api/phase2/rooms'),
-        api<unknown>(base+'/coordinator'),api<unknown>(base+'/social-state')
+        api<RoomRoute[]>('/api/phase2/rooms')
       ]);
       if(ticket!==selection.current)return;
-      setConversations(list);setHistory(turns);setContext(recent);
-      setPcm(inputs);setRoutes(rooms);setCoordinator(coord);setSocial(socialState);
+      setConversations(list);setHistory(turns);setRoutes(rooms);
     }catch(error){if(ticket===selection.current)setNotice('当前机器人数据读取失败：'+errorText(error));}
   },[]);
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
+  useEffect(()=>{
+    if(view!=='developer'||!robotId)return;
+    let active=true;
+    const base=robotPath(robotId);
+    void Promise.all([
+      api<unknown>(base+'/context'),api<unknown>(base+'/inputs'),
+      api<unknown>(base+'/coordinator'),api<unknown>(base+'/social-state')
+    ]).then(([recent,inputs,coord,socialState])=>{
+      if(active){setContext(recent);setPcm(inputs);setCoordinator(coord);setSocial(socialState);}
+    }).catch(error=>{if(active)setNotice('诊断读取失败：'+errorText(error));});
+    return()=>{active=false;};
+  },[view,robotId,session?.generation]);
   useEffect(()=>{
     setRealtimeEvents([]);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);eventCursor.current=0;
     followLatest.current=true;
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
   useEffect(()=>{
-    if(!robotId||!session)return;
-    let active=true,reading=false;
-    const poll=async()=>{
-      if(reading)return;
-      reading=true;
+    if(!robotId||!session||!realtime)return;
+    let active=true;
+    const source=new EventSource(robotPath(robotId)+'/realtime/stream?after='+eventCursor.current);
+    source.onmessage=message=>{
+      if(!active)return;
       try{
-        const result=await api<RealtimeEvents>(robotPath(robotId)+'/realtime/events?after='+eventCursor.current);
-        if(!active)return;
-        eventCursor.current=result.latest;
+        const result=JSON.parse(message.data) as RealtimeEvents;
+        const events=result.events.filter(event=>event.seq>eventCursor.current);
+        eventCursor.current=Math.max(eventCursor.current,result.latest);
         if(result.gap)setNotice('Realtime 事件缓冲出现缺口；完整会话以 Ledger 为准。');
-        const events=result.events.filter(event=>eventBelongsToSession(event,session));
-        if(events.length){
-          setRealtimeEvents(prev=>[...prev,...events].slice(-100));
-          for(const item of events){
+        const scoped=events.filter(event=>eventBelongsToSession(event,session));
+        if(scoped.length){
+          setRealtimeEvents(prev=>[...prev,...scoped].slice(-100));
+          for(const item of scoped){
             if(item.kind==='turn.started'||item.kind==='session.replaced'){
               setLiveText('');setPreviewTranscript('');setFinalTranscript(null);
             }
@@ -149,13 +158,11 @@ export function Workbench(){
             if(item.kind==='turn.done'){setLiveText('');void refreshSelected(robotId);}
           }
         }
-      }catch(error){if(active)setNotice('Realtime 事件读取失败：'+errorText(error));}
-      finally{reading=false;}
+      }catch(error){setNotice('Realtime 事件解析失败：'+errorText(error));}
     };
-    void poll();
-    const timer=window.setInterval(()=>void poll(),250);
-    return()=>{active=false;window.clearInterval(timer);};
-  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation,refreshSelected]);
+    source.onerror=()=>{if(active)setNotice('Realtime 实时推送中断；浏览器正在自动重连。');};
+    return()=>{active=false;source.close();};
+  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation,!!realtime,refreshSelected]);
   useEffect(()=>{
     if(!robotId)return;
     let active=true;
@@ -167,7 +174,7 @@ export function Workbench(){
         if(active){setPcm(inputs);setRoutes(rooms);}
       }catch(error){if(active)setNotice('Room 状态读取失败：'+errorText(error));}
     };
-    const timer=window.setInterval(()=>void poll(),2000);
+    const timer=window.setInterval(()=>void poll(),6000);
     return()=>{active=false;window.clearInterval(timer);};
   },[robotId]);
   useEffect(()=>{
@@ -334,8 +341,6 @@ export function Workbench(){
             <div className="composer">
               <div className="composer-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/>{realtime?.ready?'Realtime 已连接':'Realtime 未就绪'}<span>·</span>语音输入来自所属 Room</div>
               <RealtimeMicrophone key={robotId+'\u0000'+(route?.room_id??'')} route={realtime?.ready?route:undefined}/>
-              <RoomPlayback key={'playback:'+robotId+'\u0000'+(route?.room_id??'')} route={route}
-                available={!!speech&&speech.state!=='not_configured'}/>
               <form onSubmit={e=>{e.preventDefault();void sendText();}}>
                 <label className="sr-only" htmlFor="message-input">输入消息</label>
                 <textarea id="message-input" value={text} maxLength={2000} rows={2} onChange={e=>setText(e.target.value)}
@@ -361,7 +366,7 @@ export function Workbench(){
               <div className="info-line"><span>首音频</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
               <div className="info-line"><span>首发布</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
               {(!speech||speech.state==='not_configured')&&<p className="audio-guidance">TTS 未启用，当前只生成文字，不会往 Room 发送音频。需先在服务端启用，再测试试听。</p>}
-              <a className="inspector-link" href="/phase-tests/phase4b.html" target="_blank" rel="noopener noreferrer">独立 4B 诊断页 ↗</a>
+              <p className="audio-guidance">音频由所属 Room 的机器人扬声器播放；网页只查看生成、发布与真实设备回执，不开启第二套浏览器播放器。</p>
             </div>
             <div className="inspector-group"><h3>连接</h3><div className="info-line"><span>Room 麦克风</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
               <div className="info-line"><span>Session</span><strong>{session?.generation??'—'}</strong></div>
@@ -372,7 +377,7 @@ export function Workbench(){
           </aside>
         </div>}
         {view==='robots'&&<>
-          <div className="page-heading"><div><span className="eyebrow">ROBOT OPERATIONS</span><h1>机器人控制中心</h1><p>查看真实 Room、语音输出与运行状态；测试音源和故障注入位于独立阶段页。</p></div></div>
+          <div className="page-heading"><div><span className="eyebrow">ROBOT OPERATIONS</span><h1>机器人控制中心</h1><p>查看真实 Room、语音输出与运行状态。</p></div></div>
           <div className="stats-grid">
             <Stat name="Realtime" value={stateLabel(realtime?.state)} kind={realtime?.ready?'good':'warn'}/>
             <Stat name="TTS" value={stateLabel(speech?.state)}/>
@@ -400,7 +405,6 @@ export function Workbench(){
                 <a href="/phase-tests/phase2.html">Phase 2 · 测试 PCM / 麦克风 ↗</a>
                 <a href="/phase-tests/phase3.html">Phase 3 · Ledger / 模拟回执 ↗</a>
                 <a href="/phase-tests/phase4.html">Phase 4 · Realtime 验收 ↗</a>
-                <a href="/phase-tests/phase4b.html">Phase 4B · 浏览器扬声器 / 嘴型 ↗</a>
                 <a href="/phase-tests/phase4c.html">Phase 4C · 工作台验收 ↗</a>
               </div>
             </Block>

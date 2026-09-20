@@ -30,6 +30,7 @@ class RealtimeRobot:
         self.session = None
         self.sequence = 0
         self.events = deque(maxlen=512)
+        self.event_subscribers = set()
         self.response_id = None
         self.turn_id = None
         self.audio_turn_id = None  # retain the audio turn across response.done for late final ASR
@@ -64,7 +65,19 @@ class RealtimeRobot:
             **fields,
         }
         self.events.append(event)
+        for queue in tuple(self.event_subscribers):
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(event)
         return event
+
+    def subscribe(self):
+        queue = asyncio.Queue(maxsize=128)
+        self.event_subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue):
+        self.event_subscribers.discard(queue)
 
     def snapshot(self):
         return {

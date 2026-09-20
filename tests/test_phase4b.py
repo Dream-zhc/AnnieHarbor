@@ -33,7 +33,7 @@ class FakeRobot:
             "session_epoch": 1, "generation": self.generation,
         }
 
-    def _cache_context_turn(self, turn):
+    def _cache_context_turn(self, turn, *, allow_generated=True):
         self.context_cache.append(dict(turn))
 
 
@@ -92,6 +92,9 @@ class TtsContractTests(unittest.TestCase):
     def test_limited_viseme_robots_keep_other_robot_realtime_unaffected(self):
         root = Path(__file__).resolve().parents[1]
         robots = [FakeRobot("annie-a", "roomv2"), FakeRobot("annie-b", "roomv3")]
+        with patch.dict(os.environ, {"ANNIE_VISEME_ROBOTS": ""}):
+            default = VisemeSidecars(root, room_config=None, robots=robots)
+        self.assertEqual([robot.config.robot_id for robot in default.robots], ["annie-a"])
         with patch.dict(os.environ, {"ANNIE_VISEME_ROBOTS": "annie-a"}):
             launcher = VisemeSidecars(root, room_config=None, robots=robots)
         self.assertEqual([robot.config.robot_id for robot in launcher.robots], ["annie-a"])

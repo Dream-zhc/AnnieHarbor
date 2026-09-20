@@ -150,6 +150,26 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     async def turn(robot_id: str, body: TurnInput):
         return await operation(robot_id, "turns", body.text)
 
+    @app.get("/api/robots/{robot_id}/realtime")
+    async def realtime_state(robot_id: str):
+        require_robot(robot_id)
+        return runtime.realtime_state(robot_id)
+
+    @app.get("/api/robots/{robot_id}/realtime/events")
+    async def realtime_events(robot_id: str, after: int = 0):
+        require_robot(robot_id)
+        if after < 0:
+            raise HTTPException(422, "after must be nonnegative")
+        return runtime.realtime_events(robot_id, after)
+
+    @app.post("/api/robots/{robot_id}/realtime/text")
+    async def realtime_text(robot_id: str, body: TurnInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.realtime_text(robot_id, body.text)
+        except RobotUnavailableError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @app.get("/api/robots/{robot_id}/session")
     async def session(robot_id: str):
         require_robot(robot_id)

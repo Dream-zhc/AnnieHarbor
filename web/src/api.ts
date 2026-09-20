@@ -1,6 +1,12 @@
-export type Robot = {robot_id:string;room_id:string;persona_id:string;state:string;last_input?:string;last_reply?:string;error?:string;completed?:number;cancelled?:number;queue_depth?:number};
+export type Robot = {robot_id:string;room_id:string;persona_id:string;state:string;last_input?:string;last_reply?:string;error?:string;completed?:number;cancelled?:number;queue_depth?:number;realtime?:{ready:boolean;state:string;error?:string|null}};
 export type Session = {robot_id:string;room_id:string;chat_id:string;persona_id:string;persona_revision:number;session_epoch:number;generation:number};
 export type Health = {ready:boolean;status:string;pid:number;robots:Robot[];capabilities:Record<string,string>};
+export type RealtimeEvent={
+  seq:number;kind:string;robot_id:string;chat_id:string;persona_id:string;
+  session_epoch:number;generation:number;text?:string;delta?:string;status?:string;
+  error?:string;result?:unknown;name?:string;arguments?:string;first_text_ms?:number;
+};
+export type RealtimeEvents={events:RealtimeEvent[];gap:boolean;latest:number};
 export const robotPath = (id:string) => `/api/robots/${encodeURIComponent(id)}`;
 export async function api<T>(path:string, method='GET', body?:unknown, signal?:AbortSignal,acceptedStatuses:number[]=[]):Promise<T> {
   const response=await fetch(path,{method,headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal});

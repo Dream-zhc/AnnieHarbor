@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {api,robotPath,type Health,type Session} from './api';
+import {api,robotPath,type Health,type Session,type RealtimeEvent,type RealtimeEvents} from './api';
 import {RoomInput,type RoomRoute} from './pcm';
 
 type Conversation={chat_id:string;persona_id:string;[key:string]:unknown};
@@ -25,8 +25,13 @@ export function Workbench(){
   const [revision,setRevision]=useState(1);
   const [text,setText]=useState('');
   const [busy,setBusy]=useState(false);
+  const [realtimeEvents,setRealtimeEvents]=useState<RealtimeEvent[]>([]);
+  const [liveText,setLiveText]=useState('');
   const selection=useRef(0);
+  const eventCursor=useRef(0);
   const currentRobot=health?.robots.find(robot=>robot.robot_id===robotId);
+  const realtimeState=currentRobot?.realtime;
+  const realtimeConfigured=health?.capabilities.llm!=='not_connected';
 
   const refreshHealth=useCallback(async()=>{
     try {
@@ -64,6 +69,40 @@ export function Workbench(){
   },[]);
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
   useEffect(()=>{
+    setRealtimeEvents([]);
+    setLiveText('');
+  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
+  useEffect(()=>{
+    if(!robotId||!session)return;
+    let active=true,reading=false;
+    const key=[robotId,session.chat_id,session.persona_id,session.session_epoch,session.generation].join(':');
+    const poll=async()=>{
+      if(reading)return;
+      reading=true;
+      try{
+        const result=await api<RealtimeEvents>(robotPath(robotId)+'/realtime/events?after='+eventCursor.current);
+        if(!active)return;
+        eventCursor.current=result.latest;
+        const items=result.events.filter(item=>
+          [item.robot_id,item.chat_id,item.persona_id,item.session_epoch,item.generation].join(':')===key);
+        if(result.gap)setMessage('实时事件缓冲区发生缺口；请查看完整 Ledger。');
+        if(items.length){
+          setRealtimeEvents(old=>[...old,...items].slice(-70));
+          for(const item of items){
+            if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
+            if(item.kind==='turn.started'||item.kind==='session.replaced')setLiveText('');
+            if(item.kind==='session.error')setMessage('Realtime: '+item.error);
+            if(item.kind==='turn.done'){setLiveText('');void refreshSelected(robotId);}
+          }
+        }
+      }catch(error){if(active)setMessage('实时事件读取失败：'+errorText(error));}
+      finally{reading=false;}
+    };
+    void poll();
+    const timer=window.setInterval(()=>{void poll();},250);
+    return()=>{active=false;window.clearInterval(timer);};
+  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation,refreshSelected]);
+  useEffect(()=>{
     if(!robotId)return;
     let active=true;
     const poll=async()=>{
@@ -93,10 +132,11 @@ export function Workbench(){
     await operation('conversations/'+encodeURIComponent(session.chat_id)+'?persona_id='+encodeURIComponent(session.persona_id),undefined,'DELETE');
   }
   const choose=(id:string)=>{
-    selection.current++;setRobotId(id);setSession(null);setHistory(null);setContext(null);setPcm(null);setMessage('');
+    selection.current++;eventCursor.current=0;setRealtimeEvents([]);setLiveText('');
+    setRobotId(id);setSession(null);setHistory(null);setContext(null);setPcm(null);setMessage('');
   };
   return <div className="shell">
-    <header><strong>ANNIE HARBOR <span>· Phase 4</span></strong><span className="sub">正式工作台 / Realtime 尚未接入</span></header>
+    <header><strong>ANNIE HARBOR <span>· Phase 4</span></strong><span className="sub">正式工作台 / Realtime 文本模式（无 TTS）</span></header>
     <section className="status" aria-live="polite">
       <span className={health?.ready?'ok':'bad'}>{health?.ready?'Runtime 运行中':'Runtime 未连接'}</span>
       <span>PID {health?.pid??'—'}</span><span>{health?.robots.length??0} 个机器人</span>
@@ -117,7 +157,8 @@ export function Workbench(){
       <main>
         <section className="panel">
           <h1>{currentRobot?.robot_id??'选择机器人'} <small>{currentRobot?.room_id??''}</small></h1>
-          <p>当前阶段文本提交使用 Fake Brain；真实 Realtime、TTS、嘴型、真实动作均未接线，不把模拟回复标作真实能力。</p>
+          <p>Realtime: {realtimeState?.state??'未配置'} · 模型只输出文字；TTS、嘴型和真实动作未接入。Fake 仅用于单独调试。</p>
+          {realtimeState?.error&&<p role="alert" className="bad">连接错误：{realtimeState.error}</p>}
           <div className="badges">{Object.entries(health?.capabilities??{}).map(([name,state])=><span key={name}>{name}: {state}</span>)}</div>
           <div className="fields">
             <label>Chat<input aria-label="Chat" value={chat} onChange={e=>setChat(e.target.value)}/></label>
@@ -136,16 +177,19 @@ export function Workbench(){
               <div className="bubble user"><b>用户</b><p>{turn.user_text}</p></div>
               <div className="bubble assistant"><b>助手 · {turn.status}{turn.cancelled?' / 已取消':''}</b>
                 <p>{turn.assistant_spoken_text||turn.assistant_generated_text||'未生成回复'}</p>
-                <small>Fake / 播放证据：{turn.playback_evidence_status??'unknown'}</small>
+                <small>播放证据：{turn.playback_evidence_status??'unknown'}（无实际音频播放）</small>
               </div>
             </article>)}
             {!history&&<p>正在读取历史…</p>}
           </div>
+          {liveText&&<div className="bubble assistant" aria-live="polite"><b>Realtime · 正在生成</b><p>{liveText}</p></div>}
+          <details><summary>实时转写、判轮与工具事件</summary><pre>{pretty(realtimeEvents)}</pre></details>
           <details><summary>完整 Ledger JSON</summary><pre>{pretty(history)}</pre></details>
-          <form onSubmit={event=>{event.preventDefault();if(text.trim()){void operation('turns',{text:text.trim()});setText('');}}}>
-            <label>网页文本测试（Fake）<input value={text} maxLength={2000} onChange={e=>setText(e.target.value)} placeholder="输入测试消息"/></label>
-            <button disabled={busy||!text.trim()}>发送</button>
+          <form onSubmit={event=>{event.preventDefault();if(text.trim()){void operation('realtime/text',{text:text.trim()});setText('');}}}>
+            <label>网页文本 → Realtime<input value={text} maxLength={2000} onChange={e=>setText(e.target.value)} placeholder="输入测试消息"/></label>
+            <button disabled={busy||!text.trim()||!realtimeState?.ready}>发送真实对话</button>
           </form>
+          {!realtimeConfigured&&<p>Realtime 未配置；仅保留下方 Fake 诊断，不自动回退为伪装的真实回复。</p>}
           <div className="actions"><button disabled={busy} onClick={()=>void operation('cancel')}>取消当前回合</button>
             <button disabled={busy} onClick={()=>void refreshSelected(robotId)}>刷新当前会话</button></div>
           {message&&<pre className="notice" role="status">{message}</pre>}
@@ -162,6 +206,7 @@ export function Workbench(){
           <div className="actions"><button disabled={busy} onClick={()=>void operation('start')}>启动 Fake 机器人</button>
             <button disabled={busy} onClick={()=>void operation('stop')}>停止 Fake 机器人</button>
             <button disabled={busy} className="danger" onClick={()=>void operation('fail')}>注入 Fake 故障</button></div>
+          <button disabled={busy} onClick={()=>void operation('turns',{text:'Fake debug probe'})}>发送独立 Fake 调试回合</button>
           <h3>TurnCoordinator</h3><pre>{pretty(coordinator)}</pre><h3>SocialState</h3><pre>{pretty(social)}</pre></section>
       </main>
     </div>

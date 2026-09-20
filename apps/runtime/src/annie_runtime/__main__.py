@@ -179,6 +179,8 @@ def main():
         database,
         load_room_server(root / "config/rooms.toml"),
         conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
+        realtime_key=os.environ.get("DASHSCOPE_API_KEY") or None,
+        realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
     )
     try:
         runtime.preflight()

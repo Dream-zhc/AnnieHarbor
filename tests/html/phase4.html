@@ -15,8 +15,18 @@
 <li>开启麦克风、切换机器人、关闭页面；确认采集停止、不转发到新 Room。</li>
 <li>禁用网络、缺少构建文件分别复核错误可见、失败不误杀旧 Runtime。</li>
 </ol>
-<p class="warn">自动化测试不代表桌面/窄屏浏览器或物理麦克风验收通过；目前会话回复仍为 Fake。</p></section>
+<p class="warn">自动化测试不代表桌面/窄屏浏览器或物理麦克风验收通过；正式文字区只在 Provider ready 时接受真实请求，独立 Fake 功能在开发者区。</p></section>
+<section><h2>4-Realtime｜需要人工验收的真实语音链路</h2>
+<a href="/">进入工作台，选机器人检查 Realtime ready →</a>
+<ol>
+<li>在 roomv2 确认无第二音源，开启浏览器麦克风，说一句短话；查看目标机器人 frames_sent、转写、smart_turn 和完整文字回复，确保 roomv3 不变。</li>
+<li>在 roomv3 重复，再分别连续说两轮，检查当前 Chat 的上文、Persona 与完整 Ledger；在工作台观察连续增量，不用 Fake 回显顶替。</li>
+<li>测试“嗯”等附和、正常新发言与手动提交冲突，观察 invalid 标识、是否重复创建 response。</li>
+<li>切 Chat/Persona、取消当前回复，检查旧 generation 的迟到文本未串入；按实际需要测试断网与自动重连。</li>
+<li>发出一个动作请求，在工具原始记录里确认仅模拟执行、参数校验及后续文字，真实设备没有动作。</li>
+</ol>
+<p class="warn">当前无 TTS、播放回执或嘴型；请分别记录真实 Room 帧、Provider 首文本和浏览器体验，未操作的项目写待验。</p></section>
 <section><h2>独立协议回归</h2><a href="/phase-tests/phase2.html">Phase 2 · 真实 Room PCM 回环 →</a><br>
 <a href="/phase-tests/phase3.html">Phase 3 · 会话与 Ledger →</a>
-<p><small>Phase 4-Realtime 真实转写/流式文本/工具调用尚待接入与联合验收，不用 Fake 模拟通过代替。</small></p></section>
+<p><small>已验证真实网页文本流与模拟工具续推理；真实麦克风判轮和两头语音并发仍待验。不用 Fake Socket 自动化替代真实设备证据。</small></p></section>
 </body></html>

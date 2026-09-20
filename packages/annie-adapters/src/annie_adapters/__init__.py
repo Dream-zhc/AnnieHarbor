@@ -766,6 +766,14 @@ class RuntimeStore:
                 ),
             )
 
+    def set_conversation_turn_user_text(self, robot_id: str, turn_id: str, text: str, updated_ms: int):
+        """Backfill ASR final text when it arrives after response text begins."""
+        with self.connect() as db:
+            db.execute(
+                "UPDATE conversation_turns SET user_text=?, updated_ms=? WHERE robot_id=? AND turn_id=?",
+                (text, updated_ms, robot_id, turn_id),
+            )
+
     def update_playback(
         self,
         robot_id: str,

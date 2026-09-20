@@ -29,6 +29,8 @@ from annie_core import (
 )
 from annie_observability import Recorder, RuntimeEvent
 
+from annie_runtime.realtime import RealtimeRobot
+
 logger = logging.getLogger(__name__)
 
 
@@ -801,6 +803,9 @@ class HarborRuntime:
         room_server=None,
         *,
         conversation_history_turns: int = 20,
+        realtime_key: str | None = None,
+        realtime_url: str | None = None,
+        realtime_socket_factory=None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -825,6 +830,19 @@ class HarborRuntime:
         self.room_server = room_server
         self.room_connections = {}
         self.room_sources = {}
+        self.realtime = {}
+        if realtime_key:
+            from annie_adapters.realtime import DEFAULT_URL, QwenRealtimeSocket
+            from annie_adapters.realtime import realtime_url as validate_url
+
+            url = validate_url(realtime_url or DEFAULT_URL)
+            self.realtime = {
+                robot_id: RealtimeRobot(
+                    robot, url=url, key=realtime_key,
+                    socket_factory=realtime_socket_factory or QwenRealtimeSocket,
+                )
+                for robot_id, robot in self.robots.items() if robot.config.enabled
+            }
         self.started = False
         if room_server is not None:
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
@@ -1040,6 +1058,9 @@ class HarborRuntime:
             return
         try:
             self.reconnect_input_source(source_id)
+            for robot_id in self.input_bindings.get(source_id, ()):
+                if robot_id in self.realtime:
+                    asyncio.create_task(self.realtime[robot_id].restart())
         except InputRejectedError:
             logger.exception("failed to reset disconnected Room input source=%s", source_id)
 
@@ -1080,6 +1101,8 @@ class HarborRuntime:
         for robot in self.robots.values():
             await robot.initialize_session()
             await robot.start()
+        for realtime in self.realtime.values():
+            realtime.start()
         for connection in self.room_connections.values():
             connection.start()
 
@@ -1096,6 +1119,8 @@ class HarborRuntime:
     async def close(self):
         if self.started:
             self.started = False
+            for realtime in self.realtime.values():
+                await realtime.stop()
             if self.room_connections:
                 await asyncio.gather(*(connection.stop() for connection in self.room_connections.values()))
             for robot in self.robots.values():
@@ -1113,6 +1138,9 @@ class HarborRuntime:
         return await self.robots[robot_id].submit(text, fail=fail)
 
     async def cancel(self, robot_id):
+        if robot_id in self.realtime:
+            await self.realtime[robot_id].cancel()
+            await self.realtime[robot_id].restart()
         return await self.robots[robot_id].cancel()
 
     def session_state(self, robot_id: str):
@@ -1126,11 +1154,15 @@ class HarborRuntime:
         persona_id: str,
         persona_revision: int = 1,
     ):
-        return await self.robots[robot_id].switch_session(
+        previous = self.robots[robot_id].session_state()
+        result = await self.robots[robot_id].switch_session(
             chat_id=chat_id,
             persona_id=persona_id,
             persona_revision=persona_revision,
         )
+        if robot_id in self.realtime and result != previous:
+            await self.realtime[robot_id].restart()
+        return result
 
     async def list_conversations(self, robot_id: str):
         await self.ledger.flush()
@@ -1169,6 +1201,8 @@ class HarborRuntime:
         robot = self.robots[robot_id]
         if robot.chat_id == chat_id and robot.persona_id == persona_id:
             deleted = await robot.delete_current_conversation()
+            if robot_id in self.realtime:
+                await self.realtime[robot_id].restart()
         else:
             await self.ledger.flush()
             deleted = await asyncio.to_thread(
@@ -1293,13 +1327,32 @@ class HarborRuntime:
         )
 
     async def stop_robot(self, robot_id):
+        if robot_id in self.realtime:
+            await self.realtime[robot_id].stop()
         return await self.robots[robot_id].stop()
 
     async def start_robot(self, robot_id):
         if not self.started:
             raise RobotUnavailableError("runtime is closed")
         await self.robots[robot_id].start()
+        if robot_id in self.realtime:
+            self.realtime[robot_id].start()
         return self.robots[robot_id].snapshot.to_dict()
+
+    async def realtime_text(self, robot_id: str, text: str):
+        if robot_id not in self.realtime:
+            raise RobotUnavailableError("Realtime is not configured; set DASHSCOPE_API_KEY")
+        return await self.realtime[robot_id].submit_text(text)
+
+    def realtime_state(self, robot_id: str):
+        if robot_id not in self.realtime:
+            return {**self.session_state(robot_id), "ready": False, "state": "not_configured"}
+        return self.realtime[robot_id].snapshot()
+
+    def realtime_events(self, robot_id: str, after: int):
+        if robot_id not in self.realtime:
+            return {"events": [], "latest": 0, "gap": False}
+        return self.realtime[robot_id].since(after)
 
     def health(self):
         snapshots = []
@@ -1332,8 +1385,11 @@ class HarborRuntime:
             room_capability = "connecting"
         return {
             "project": "Annie Harbor",
-            "phase": 3,
-            "mode": "fake_brain_session_live_room_pcm" if room_required else "fake_brain_session_control",
+            "phase": 4 if self.realtime else 3,
+            "mode": (
+                "realtime_text_live_room_pcm" if self.realtime else
+                "fake_brain_session_live_room_pcm" if room_required else "fake_brain_session_control"
+            ),
             "pid": os.getpid(),
             "ready": ready,
             "status": "healthy"
@@ -1341,7 +1397,17 @@ class HarborRuntime:
             else "degraded"
             if ready
             else "not_ready",
-            "robots": snapshots,
+            "robots": [
+                {
+                    **item,
+                    "realtime": (
+                        self.realtime[item["robot_id"]].snapshot()
+                        if item["robot_id"] in self.realtime
+                        else {"ready": False, "state": "not_configured"}
+                    ),
+                }
+                for item in snapshots
+            ],
             "storage": {
                 "schema_version": self.store.SCHEMA_VERSION,
                 "error": self.recorder.last_error,
@@ -1360,7 +1426,11 @@ class HarborRuntime:
                 "room": room_capability,
                 "pcm_input": "room_gateway_ready" if room_ready else "gate_ready",
                 "conversation": "ledger_ready" if self.ledger.last_error is None else "ledger_failed",
-                "llm": "not_connected",
+                "llm": (
+                    "connected" if self.realtime and all(client.ready for client in self.realtime.values())
+                    else "partial" if any(client.ready for client in self.realtime.values())
+                    else "connecting" if self.realtime else "not_connected"
+                ),
                 "tts": "not_connected",
                 "memory": "not_started",
                 "viseme": "not_started",

@@ -80,3 +80,12 @@
 - 不再逢逗号即启动独立 TTS 任务；短片段先合并，强标点优先，首段等待/最大段长适当调节。代价是极短非完整语句可能多等约 180ms；不宣称提供方语速、音色可由本次代码改动完全校准。
 - 音频最终转写可纠正已有回合的部分文字，也可在模型回复结束后按原 turn_id 补写 Ledger 和有效上下文；网页显示暂定转写、最终转写，并刷新对话历史。原本缺字若来自提供方最终 ASR 自身仍需真语音证据确认。
 - 本次回归：Python 107 passed、25 subtests、2 条既有第三方弃用 warning；前端 16 passed，TypeScript/Vite 构建通过。真实网页耳听、物理扬声器、麦克风全双工、AEC、连续回合欠载与削波复测 **待人工验收**；不得写 Phase 4/4B 完成。
+
+## 2026-09-20 声音仍有杂音、启动后整机卡顿：再诊断及减负
+
+- 新截图：89,520 已播样本、欠载 0、源峰值 100%、近满幅样本 386；麦克风仍在发送。之前的 240ms 发布余量改善了欠载，不代表消除了可听失真。
+- 新增独立实测 `uv run --locked python tests/manual_tts_pcm.py`，仅发一次相同配置音色的 TTS API 调用，不经 Room、麦克风、浏览器或真机：62,640 样本/2.610s、peak=32767、近满幅样本 162。由此可确认至少部分近满幅来自 Provider 原始 PCM；近满幅不等同于全部杂音的声学根因。未收集可耳听音频，不能宣称已修复 TTS 原始音质。
+- 本机 16GB 内存，历史 sidecar 日志显示两个独立 Qwen3-ForcedAligner-0.6B 模型分别预热、G2PW 单次最长约 35s，造成明显资源争用风险。本次将可选 G2PW 改为默认不加载（保留 pypinyin+ForcedAligner；有需求可设置 `TTS_VISEME_G2PW_ENABLED=1`）。新增 `ANNIE_VISEME_ROBOTS` 可按 robot_id 限制 sidecar 数量；本机忽略版本管理的 `.env` 已限定为 `annie-a`，**annie-b 仍保留 Realtime、TTS 与 Room 能力，但暂时不运行嘴型侧车**。如需两头同时声学嘴型，须移除该限制并接受双模型内存/算力开销或另行设计模型共享，不能冒充双头嘴型已通过。
+- 不改变模型、音色、采样率或六通道合同；没有擅自把已经饱和的 PCM 降音量伪称去噪。本次没有在用户机器上完整复现“正在运行时”的 CPU/内存曲线：观察时 Runtime 已停止；仍需启动后实际对照资源和耳听判断是否达到稳定目标。
+- 为排除 Room/浏览器/麦克风影响，第二次 Provider-only 取样另存原生 24kHz/mono/S16LE WAV 到本机 `var/tmp/phase4-tts-noise/provider-only.wav`：62,640 样本/2.610s、peak=32767、近满幅 148。该临时文件仅用于与用户网页播放耳听对比，问题关闭后删除；可复跑 `uv run --locked python tests/manual_tts_pcm.py --save-wav`（每次产生一次实际 TTS 调用）。
+- 本轮回归 108 passed、25 subtests、2 条既有弃用 warning；前端 16 passed，类型检查与构建通过，uv lock/Ruff/diff check 通过。单侧车和无 G2PW 的真实启动资源曲线、Provider WAV 与网页声质对照仍待实测，不能宣称已消除卡顿或杂音。

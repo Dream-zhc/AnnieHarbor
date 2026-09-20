@@ -310,7 +310,7 @@ export function Workbench(){
           </aside>
           <section className="conversation" aria-label="正式对话工作台">
             <div className="conversation-header">
-              <div><span className="eyebrow">LIVE CONVERSATION</span><h1>{session?.chat_id??'选择会话'}</h1><p>{session?session.persona_id+' · '+selectedRobot?.room_id:'等待会话连接'}</p></div>
+              <div><span className="eyebrow">LIVE CONVERSATION</span><h1>{session?.chat_id??'选择会话'}</h1><p>{session?session.persona_id+' · '+(route?.room_id??selectedRobot?.room_id??session.room_id):'等待会话连接'}</p></div>
               <div className="conversation-tools"><button className="quiet-button" onClick={()=>void refreshSelected(robotId)} disabled={!robotId||pending}>刷新</button>
                 <button className="quiet-button danger-text" onClick={()=>setDeleteOpen(true)} disabled={!session||pending}>删除会话</button></div>
             </div>

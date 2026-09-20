@@ -3211,19 +3211,25 @@ def main() -> int:
     engine.mouth_replacement_enabled = True
     engine.drop_pending_mouth = drop_pending_mouth
     engine.drop_pending_mouth_from_seq = pacer.drop_stream_from_seq
-    worker = G2PWWorker(resolver, engine.apply_g2pw_result)
-    engine.g2pw_worker = worker
-    worker.start()
-    g2pw_warmup_timeout = max(
-        0.0,
-        float(os.getenv("TTS_VISEME_G2PW_WARMUP_TIMEOUT_SEC") or "8.0"),
-    )
-    if g2pw_warmup_timeout > 0:
-        worker.ready.wait(timeout=g2pw_warmup_timeout)
-    if not worker.ready.is_set():
-        log("G2PW_WARN", f"warmup timeout after {g2pw_warmup_timeout:.1f}s")
+    # Pypinyin already handles the real-time pronunciation path. Loading a
+    # second neural model on every robot is unnecessary for basic visemes.
+    worker = None
+    if os.getenv("TTS_VISEME_G2PW_ENABLED") == "1":
+        worker = G2PWWorker(resolver, engine.apply_g2pw_result)
+        engine.g2pw_worker = worker
+        worker.start()
+        g2pw_warmup_timeout = max(
+            0.0, float(os.getenv("TTS_VISEME_G2PW_WARMUP_TIMEOUT_SEC") or "8.0"),
+        )
+        if g2pw_warmup_timeout > 0:
+            worker.ready.wait(timeout=g2pw_warmup_timeout)
+        if not worker.ready.is_set():
+            log("G2PW_WARN", f"warmup timeout after {g2pw_warmup_timeout:.1f}s")
+        else:
+            viseme_log(f"g2pW startup ready engine={resolver.engine}")
     else:
-        viseme_log(f"g2pW startup ready engine={resolver.engine}")
+        resolver.engine = "pypinyin_only"
+        viseme_log("g2pW disabled; pypinyin handles real-time pronunciation")
     # G2PW/ONNX initialization can evict MLX's first online graph from hot
     # caches. Re-prime the exact ~500 ms / 4-char online shape before opening
     # room listeners so the first user turn pays no graph-compilation penalty.
@@ -3278,7 +3284,8 @@ def main() -> int:
     finally:
         observer.set_health("stopping")
         pacer.stop()
-        worker.stop()
+        if worker is not None:
+            worker.stop()
         sam.stop()
         tts.stop()
     return 0

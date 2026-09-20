@@ -12,7 +12,18 @@ class VisemeSidecars:
     def __init__(self, root: Path, room_config, robots, *, python: str | None = None):
         self.root = root
         self.rooms = room_config
-        self.robots = tuple(robots)
+        available = tuple(robots)
+        chosen = os.getenv("ANNIE_VISEME_ROBOTS", "").strip()
+        if chosen:
+            ids = tuple(part.strip() for part in chosen.split(",") if part.strip())
+            if len(ids) != len(set(ids)) or not ids:
+                raise ValueError("ANNIE_VISEME_ROBOTS must list unique robot IDs")
+            unknown = set(ids) - {robot.config.robot_id for robot in available}
+            if unknown:
+                raise ValueError("ANNIE_VISEME_ROBOTS contains unknown robot IDs")
+            self.robots = tuple(robot for robot in available if robot.config.robot_id in ids)
+        else:
+            self.robots = available
         self.folder = root / "sidecars" / "tts_viseme"
         # Do NOT resolve the final executable symlink: uv venv/bin/python points
         # at the system interpreter, whose realpath bypasses the venv packages.
@@ -34,7 +45,9 @@ class VisemeSidecars:
             probe = subprocess.run(
                 [str(self.python), "-c",
                  "import importlib.util,platform;"
-                 "names=['numpy','dotenv','websocket','pypinyin','g2pw',"
+                 "names=['numpy','dotenv','websocket','pypinyin']+"
+                 "(['g2pw'] if __import__('os').getenv('TTS_VISEME_G2PW_ENABLED')=='1' else [])+"
+                 "["
                  "'mlx_qwen3_asr' if platform.system()=='Darwin' "
                  "and platform.machine().lower() in ('arm64','aarch64') else 'qwen_asr'];"
                  "print(','.join(name for name in names if importlib.util.find_spec(name) is None))"],

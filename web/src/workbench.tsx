@@ -21,7 +21,6 @@ const stateLabel=(value:string|undefined)=>{
   };
   return names[value]??value;
 };
-const channelNames=['main','tts','mic','visualdata','vision','sam'] as const;
 
 function Stat({name,value,detail,kind}:{name:string;value:string|number;detail?:string;kind?:'good'|'warn'|'neutral'}){
   return <div className="stat"><span className="stat-name">{name}</span><strong className={kind==='good'?'ink-good':kind==='warn'?'ink-warn':''}>{value}</strong>{detail&&<small>{detail}</small>}</div>;
@@ -253,7 +252,12 @@ export function Workbench(){
     <div className="app-body">
       <header className="topbar">
         <div className="breadcrumb"><span>安妮港</span><span className="crumb-sep">/</span><strong>{view==='overview'?'运行总览':view==='chat'?'实时对话':view==='robots'?'机器人控制中心':'开发者观测'}</strong></div>
-        <div className="topbar-right"><span className="top-target">{robotId||'未选机器人'} <span>·</span> {selectedRobot?.room_id??'—'}</span>
+        <div className="topbar-right">{view!=='overview'&&<label className="top-robot-switch">
+          <span>机器人</span>
+          <select aria-label="当前机器人" value={robotId} onChange={event=>choose(event.target.value)} disabled={!health?.robots.length}>
+            {health?.robots.map(robot=><option key={robot.robot_id} value={robot.robot_id}>{robot.robot_id} · {robot.room_id}</option>)}
+          </select>
+        </label>}
           <span className={'top-health '+(health?.ready?'online':'offline')}><i/>{health?.ready?'Runtime 在线':'Runtime 未就绪'}</span>
           <button className="quiet-button" title="刷新状态" onClick={()=>void refreshHealth()}>刷新</button>
         </div>
@@ -262,11 +266,9 @@ export function Workbench(){
       <div className="workspace" key={view}>
         {view==='overview'&&<>
           <div className="page-heading"><div><span className="eyebrow">SYSTEM OVERVIEW</span><h1>运行总览</h1><p>来自当前 Runtime 的真实状态；未接入能力不会显示为在线。</p></div><button className="soft-button" onClick={()=>void refreshHealth()}>更新状态</button></div>
-          <div className="stats-grid">
+          <div className="stats-grid overview-stats">
             <Stat name="Runtime" value={health?.ready?'运行中':'未就绪'} detail={health?.pid?'PID '+health.pid:'等待连接'} kind={health?.ready?'good':'warn'}/>
             <Stat name="机器人实例" value={health?.robots.length??'—'} detail="各自独占 Room"/>
-            <Stat name="当前 Realtime" value={stateLabel(realtime?.state)} kind={realtime?.ready?'good':'warn'}/>
-            <Stat name="设备播放证据" value={speech?.playback_evidence??'unknown'} detail="Room 发布不代表设备已播"/>
           </div>
           <Block title="机器人运行状态" sub="选择一个机器人，进入对应会话和状态查看。">
             <div className="robot-grid">{health?.robots.map(robot=>
@@ -279,16 +281,10 @@ export function Workbench(){
               {!health?.robots.length&&<p className="empty-copy">没有可用机器人；检查 Runtime 和机器人配置。</p>}
             </div>
           </Block>
-          <Block title="能力状态" sub="显示后端报告的能力，不以已配置代替已运行。"><div className="cap-grid">{Object.entries(health?.capabilities??{}).map(([name,status])=>
-            <div className="cap-line" key={name}><span>{name}</span><State value={status} good={status.includes('ready')||status==='connected'}/></div>)}</div></Block>
         </>}
         {view==='chat'&&<div className="chat-layout">
           <aside className="chat-sidebar">
             <div className="sidebar-top"><div><span className="eyebrow">WORKSPACE</span><h2>会话</h2></div><button className="new-chat" onClick={openCreate} disabled={!robotId} title="新建会话">＋</button></div>
-            <label className="field-label" htmlFor="robot-choice">当前机器人</label>
-            <select id="robot-choice" value={robotId} onChange={e=>choose(e.target.value)} disabled={!health?.robots.length}>
-              {health?.robots.map(robot=><option key={robot.robot_id} value={robot.robot_id}>{robot.robot_id} · {robot.room_id}</option>)}
-            </select>
             <div className="sidebar-divider"/><div className="sidebar-caption">历史会话 <span>{conversations.length}</span></div>
             <div className="chat-list">{conversations.map(item=>
               <button key={item.chat_id+'\u0000'+item.persona_id} disabled={pending} className={'chat-list-item '+(session?.chat_id===item.chat_id&&session.persona_id===item.persona_id?'selected':'')} onClick={()=>void switchSession(item)}>
@@ -356,22 +352,18 @@ export function Workbench(){
         </div>}
         {view==='robots'&&<>
           <div className="page-heading"><div><span className="eyebrow">ROBOT OPERATIONS</span><h1>机器人控制中心</h1><p>查看真实 Room、语音输出与运行状态；测试音源和故障注入位于独立阶段页。</p></div></div>
-          <div className="robot-selector">{health?.robots.map(robot=><button key={robot.robot_id} className={'chip '+(robotId===robot.robot_id?'selected':'')} onClick={()=>choose(robot.robot_id)}>{robot.robot_id} <small>{robot.room_id}</small></button>)}</div>
           <div className="stats-grid">
-            <Stat name="机器人" value={robotId||'—'} detail={selectedRobot?.room_id}/>
             <Stat name="Realtime" value={stateLabel(realtime?.state)} kind={realtime?.ready?'good':'warn'}/>
             <Stat name="TTS" value={stateLabel(speech?.state)}/>
+            <Stat name="嘴型" value={stateLabel(speech?.viseme)}/>
             <Stat name="设备播放" value={speech?.playback_evidence??'unknown'}/>
           </div>
-          <Block title="Room 六通道" sub="地址来自配置；仅 mic 的连接状态有当前阶段的真实输入证据。">
-            <div className="channel-grid">{channelNames.map(channel=><div className="channel-item" key={channel}><div><strong>{channel}</strong><small>{channel==='mic'?'输入 · 16kHz PCM':channel==='tts'?'输出 · 24kHz PCM':'保留通道'}</small></div>
-              <State value={channel==='mic'?(route?.connected?'connected':'not_connected'):(route?.urls[channel]?'configured':'not_connected')} good={channel==='mic'&&route?.connected}/></div>)}</div>
-          </Block>
-          <Block title="语音与播放事实" sub="合成、发布与扬声器确认独立记录；缺设备报告时保持 unknown。">
-            <div className="stats-grid compact"><Stat name="已发布 PCM 帧" value={speech?.pcm_frames_published??'—'}/><Stat name="已播样本报告" value={speech?.played_sample_count??'—'}/><Stat name="停止帧发布" value={speech?.stop_published_ms??'—'}/><Stat name="真实停播回执" value={speech?.stop_confirmed_ms??'—'}/></div>
+          <Block title="当前 Room" sub="只展示现阶段真实接入的音频状态；其它通道留在开发者诊断。">
+            <div className="info-line"><span>Room</span><strong>{selectedRobot?.room_id??'—'}</strong></div>
+            <div className="info-line"><span>麦克风输入</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
+            <div className="info-line"><span>首音频 / 首发布</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'} / {speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
             {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
           </Block>
-          <Block title="当前输入" sub="真实数据由所属 Room 路由进入，不从正式工作台注入测试 PCM。"><div className="info-line"><span>Room</span><strong>{selectedRobot?.room_id??'—'}</strong></div><div className="info-line"><span>PCM 接收状态</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div></Block>
         </>}
         {view==='developer'&&<>
           <div className="page-heading"><div><span className="eyebrow">OBSERVABILITY</span><h1>开发者观测</h1><p>同一 Runtime 的只读诊断。测试请求、Fake 控制和模拟回执放在阶段 HTML。</p></div><button className="soft-button" disabled={!robotId} onClick={()=>void refreshSelected(robotId)}>刷新诊断</button></div>

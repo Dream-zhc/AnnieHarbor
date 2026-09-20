@@ -80,7 +80,11 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/phase4b\.html/);
   assert.match(source,/phase4c\.html/);
   assert.match(source,/item\.persona_revision/);
-  assert.match(source,/channelNames/);
+  assert.match(source,/className="top-robot-switch"/);
+  assert.match(source,/view!=='overview'/);
+  assert.equal((source.match(/<select\b/g)??[]).length,1);
+  assert.match(source,/className="stats-grid overview-stats"/);
+  assert.doesNotMatch(source,/<Block title="能力状态"|<Block title="Room 六通道"/);
   assert.match(source,/cancelCurrent/);
   assert.match(source,/prefers-reduced-motion/);
   assert.match(source,/useGSAP/);

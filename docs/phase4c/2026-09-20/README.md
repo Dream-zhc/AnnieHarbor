@@ -56,3 +56,11 @@
 - `npm --prefix web ci`、`npm --prefix web run typecheck`、`npm --prefix web test`（8 passed）、`npm --prefix web run build`：通过。Python 完整回归 101 passed / 2 条既有弃用 warning / 25 subtests，uv lock、ruff、diff check 通过。
 - 实际以独立 SQLite、关闭外置 TTS/ForcedAligner 且不使用 Provider Key 启动 Python Runtime；`/`、`/health` 和全部 `/phase-tests/phase1.html`～`phase4c.html` 真实 HTTP 均为 200。自建测试进程已结束，测试数据库已清理；未发起真实音频发布。
 - 测试 HTML 与正式工作台隔离由静态回归覆盖；Phase 4B HTML 的 JS 已语法解析并核对 Room URL、browser_test 与采样回执字段。**浏览器实际播放、桌面/窄屏截图、减少动效与性能前后对照未取得：本机 Playwright 未安装浏览器可执行文件，不能把 HTTP/构建验证记成 GUI PASS。**
+
+## 工作台第二轮精简（2026-09-20）
+
+- 总览仅保留 Runtime、机器人数量和可选机器人列表，去掉「当前 Realtime」「设备播放证据」和逐项能力统计；总览不依赖当前选中哪个机器人。
+- 对话、机器人、开发者共用顶部唯一机器人选择框；切换后复用原 robot_id 隔离、重置旧会话状态与迟到结果保护，不再各页重复选择器。
+- 机器人页面保留当期可用的 Realtime、TTS、嘴型、设备播放状态及最小 Room 信息；六通道细项与 PCM/事件 JSON 只放只读开发者诊断，Fake/注入/浏览器试听只在前序独立 HTML。
+- TTS 代码已连接但默认关闭，需 `ANNIE_TTS_ENABLED=1` + Realtime Key/Room；嘴型另需 `ANNIE_VISEME_ENABLED=1` 和 Sidecar 环境，模型输出真实 `mouth_script` 前不宣告已对齐。未取得真机播放证据时保持 unknown。
+- 本轮 `npm --prefix web run typecheck`、`npm --prefix web test`（8 passed）、`npm --prefix web run build`、`git diff --check` 通过。未进行人工浏览器布局、设备或声学验收。

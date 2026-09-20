@@ -65,5 +65,8 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/text\.delta/);
   assert.match(source,/session\.error/);
   assert.match(source,/turn\.done/);
+  assert.match(source,/speech_output/);
+  assert.match(source,/playback_evidence/);
+  assert.match(source,/phase4b\.html/);
   assert.doesNotMatch(source,/\.innerHTML\s*=/);
 });

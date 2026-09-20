@@ -166,6 +166,8 @@ def main():
         config = tomllib.load(file)
     with (root / "config/runtime_defaults.toml").open("rb") as file:
         runtime_defaults = tomllib.load(file)
+    with (root / "config/providers.toml").open("rb") as file:
+        provider_defaults = tomllib.load(file)
     logging.basicConfig(
         level=resolve_log_level(os.environ.get("ANNIE_LOG_LEVEL", config["app"].get("log_level", "INFO"))),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -181,6 +183,11 @@ def main():
         conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
         realtime_key=os.environ.get("DASHSCOPE_API_KEY") or None,
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
+        tts_voice=(
+            provider_defaults["tts"]["qwen_audio"]["voice"]
+            if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
+        ),
+        tts_url=os.environ.get("ANNIE_TTS_URL") or None,
     )
     try:
         runtime.preflight()

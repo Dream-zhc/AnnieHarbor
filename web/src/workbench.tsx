@@ -3,7 +3,7 @@ import {api,robotPath,type Health,type Session,type RealtimeEvent,type RealtimeE
 import {RoomInput,type RoomRoute} from './pcm';
 
 type Conversation={chat_id:string;persona_id:string;[key:string]:unknown};
-type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
+type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
 type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string};
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
@@ -136,7 +136,7 @@ export function Workbench(){
     setRobotId(id);setSession(null);setHistory(null);setContext(null);setPcm(null);setMessage('');
   };
   return <div className="shell">
-    <header><strong>ANNIE HARBOR <span>· Phase 4</span></strong><span className="sub">正式工作台 / Realtime 文本模式（无 TTS）</span></header>
+    <header><strong>ANNIE HARBOR <span>· Phase 4B</span></strong><span className="sub">Realtime 文本 / 独立 TTS 输出诊断</span></header>
     <section className="status" aria-live="polite">
       <span className={health?.ready?'ok':'bad'}>{health?.ready?'Runtime 运行中':'Runtime 未连接'}</span>
       <span>PID {health?.pid??'—'}</span><span>{health?.robots.length??0} 个机器人</span>
@@ -157,7 +157,7 @@ export function Workbench(){
       <main>
         <section className="panel">
           <h1>{currentRobot?.robot_id??'选择机器人'} <small>{currentRobot?.room_id??''}</small></h1>
-          <p>Realtime: {realtimeState?.state??'未配置'} · 模型只输出文字；TTS、嘴型和真实动作未接入。Fake 仅用于单独调试。</p>
+          <p>Realtime: {realtimeState?.state??'未配置'} · 文本与独立 TTS 分路。TTS 未验证设备播放；ForcedAligner/嘴型及真实动作未接入。</p>
           {realtimeState?.error&&<p role="alert" className="bad">连接错误：{realtimeState.error}</p>}
           <div className="badges">{Object.entries(health?.capabilities??{}).map(([name,state])=><span key={name}>{name}: {state}</span>)}</div>
           <div className="fields">
@@ -177,7 +177,7 @@ export function Workbench(){
               <div className="bubble user"><b>用户</b><p>{turn.user_text}</p></div>
               <div className="bubble assistant"><b>助手 · {turn.status}{turn.cancelled?' / 已取消':''}</b>
                 <p>{turn.assistant_spoken_text||turn.assistant_generated_text||'未生成回复'}</p>
-                <small>播放证据：{turn.playback_evidence_status??'unknown'}（无实际音频播放）</small>
+                <small>生成：{turn.assistant_generated_text?'有':'无'} · 已发布文本：{turn.assistant_published_text??'无'} · 已确认播放：{turn.assistant_spoken_text??'未知'} · 证据：{turn.playback_evidence_status??'unknown'}</small>
               </div>
             </article>)}
             {!history&&<p>正在读取历史…</p>}
@@ -195,6 +195,21 @@ export function Workbench(){
           {message&&<pre className="notice" role="status">{message}</pre>}
         </section>
         <section className="panel"><h2>当前有效上下文（最多 20 轮）</h2><pre>{pretty(context)}</pre></section>
+        <section className="panel"><h2>独立 TTS / PCM / 嘴型</h2>
+          <p>输出到 {currentRobot?.room_id??'未选择'} / reb_tts。模型回复与合成、Room 发布、设备已播放是不同状态；PCM 发布不代表设备已播放。</p>
+          <div className="badges">
+            <span>TTS：{realtimeState?.speech_output?.state??'未配置'}</span>
+            <span>首音频：{realtimeState?.speech_output?.first_audio_ms??'未测'} ms</span>
+            <span>首发布：{realtimeState?.speech_output?.first_publish_ms??'未测'} ms</span>
+            <span>已发布 PCM 帧：{realtimeState?.speech_output?.pcm_frames_published??0}</span>
+            <span>设备播放：{realtimeState?.speech_output?.playback_evidence??'unknown'}</span>
+            <span>嘴型：{realtimeState?.speech_output?.viseme??'not_connected'}</span>
+          </div>
+          {realtimeState?.speech_output?.error&&<p role="alert" className="bad">TTS 错误：{realtimeState.speech_output.error}</p>}
+          <p>未安装对齐模型或无设备回执时，嘴型与已播证据保持未就绪/unknown；不以浏览器试听模拟设备播放，也不重复合成。</p>
+          <details><summary>音频、停止及嘴型事件</summary><pre>{pretty(realtimeEvents.filter(e=>e.kind.startsWith('tts.')||e.kind.startsWith('viseme.')))}</pre></details>
+          <a href="/phase-tests/phase4b.html">Phase 4B 验收步骤</a>
+        </section>
         <section className="panel"><h2>PCM / Room 输入诊断</h2>
           <p>采用 Phase 2 MIC_AUDIO BinaryFrame 封包；页面退出或切机器人时释放本页麦克风。无法自动检测另一音源，请先人工确认。</p>
           <RoomInput key={robotId} robotId={robotId} route={routes.find(route=>route.robot_id===robotId)}/>

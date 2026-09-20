@@ -21,6 +21,7 @@ class RealtimeRobot:
         self.url = url
         self.key = key
         self.socket_factory = socket_factory
+        self.speech = None
         self.socket = None
         self.task = None
         self.audio_task = None
@@ -76,6 +77,7 @@ class RealtimeRobot:
             "frames_sent": self.frames_sent,
             "frames_dropped": self.frames_dropped,
             "first_text_ms": self.first_text_ms,
+            "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
         }
 
     def since(self, after):
@@ -96,6 +98,8 @@ class RealtimeRobot:
 
     async def _stop_impl(self):
         self._stopping = True
+        if self.speech:
+            await self.speech.close()
         logger.info(
             "realtime_shutdown robot=%s opening=%s ready=%s",
             self.robot.config.robot_id, self._opening, self.ready,
@@ -194,6 +198,8 @@ class RealtimeRobot:
                 self.publish("session.error", error=self.error)
             finally:
                 self.ready = False
+                if self.speech and self.speech.turn_id is not None:
+                    await self.speech.cancel("realtime_disconnected")
                 logger.info("realtime_cleanup robot=%s begin", self.robot.config.robot_id)
                 if self.audio_task is not None:
                     self.audio_task.cancel()
@@ -331,6 +337,8 @@ class RealtimeRobot:
         return {"status": "accepted", "turn_id": self.turn_id, **self.robot.session_state()}
 
     async def cancel(self):
+        if self.speech:
+            await self.speech.cancel("local_cancel")
         if self.socket and self.ready and self.response_id:
             await self.socket.send({"type": "response.cancel"})
         if self.turn_id:
@@ -381,8 +389,13 @@ class RealtimeRobot:
             if self.first_text_ms is None and self.began is not None:
                 self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
             self.publish("text.delta", turn_id=self.turn_id, delta=chunk, text=self.text)
+            if self.speech and chunk:
+                await self.speech.feed(self.turn_id, self.turn_identity, chunk)
         elif kind == "response.text.done":
-            self.text = event.get("text", self.text)
+            complete = event.get("text", self.text)
+            if self.speech and not self.text and complete and self.turn_id:
+                await self.speech.feed(self.turn_id, self.turn_identity, complete)
+            self.text = complete
             self.publish("text.done", turn_id=self.turn_id, text=self.text)
         elif kind == "response.function_call_arguments.done":
             await self._tool_call(event)
@@ -396,6 +409,11 @@ class RealtimeRobot:
                 self.publish("tool.followup")
                 return
             if self.turn_id:
+                if self.speech:
+                    if status == "completed":
+                        await self.speech.finish(self.turn_id)
+                    else:
+                        await self.speech.cancel("response_failed")
                 self._finish(status if status in {"completed", "cancelled"} else "failed",
                              cancel_source=(response.get("status_details") or {}).get("reason"))
             else:

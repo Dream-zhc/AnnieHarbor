@@ -30,6 +30,7 @@ from annie_core import (
 from annie_observability import Recorder, RuntimeEvent
 
 from annie_runtime.realtime import RealtimeRobot
+from annie_runtime.speech import SpeechOutput
 
 logger = logging.getLogger(__name__)
 
@@ -814,6 +815,10 @@ class HarborRuntime:
         realtime_key: str | None = None,
         realtime_url: str | None = None,
         realtime_socket_factory=None,
+        tts_voice: str | None = None,
+        tts_url: str | None = None,
+        tts_socket_factory=None,
+        room_tts_factory=None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -851,6 +856,22 @@ class HarborRuntime:
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }
+        if tts_voice:
+            if not realtime_key or room_server is None:
+                raise ValueError("TTS requires Realtime and a configured Room server")
+            from annie_adapters.tts import DEFAULT_URL as TTS_DEFAULT_URL
+            from annie_adapters.tts import QwenTtsSocket, RoomTtsPublisher, validate_url
+
+            url = validate_url(tts_url or TTS_DEFAULT_URL)
+            for robot_id, client in self.realtime.items():
+                publisher = (room_tts_factory or RoomTtsPublisher)(
+                    room_server, client.robot.config.room_id,
+                )
+                client.speech = SpeechOutput(
+                    client.robot, publisher, url=url, key=realtime_key,
+                    voice=tts_voice, socket_factory=tts_socket_factory or QwenTtsSocket,
+                    event=client.publish,
+                )
         self.started = False
         if room_server is not None:
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
@@ -1434,13 +1455,19 @@ class HarborRuntime:
                 "room": room_capability,
                 "pcm_input": "room_gateway_ready" if room_ready else "gate_ready",
                 "conversation": "ledger_ready" if self.ledger.last_error is None else "ledger_failed",
+                "tts": (
+                    "published_unconfirmed" if any(
+                        client.speech and client.speech.frames for client in self.realtime.values()
+                    ) else "configured_not_verified" if any(
+                        client.speech for client in self.realtime.values()
+                    ) else "not_connected"
+                ),
+                "viseme": "not_connected",
                 "llm": (
                     "connected" if self.realtime and all(client.ready for client in self.realtime.values())
                     else "partial" if any(client.ready for client in self.realtime.values())
                     else "connecting" if self.realtime else "not_connected"
                 ),
-                "tts": "not_connected",
                 "memory": "not_started",
-                "viseme": "not_started",
             },
         }

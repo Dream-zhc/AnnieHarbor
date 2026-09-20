@@ -53,3 +53,12 @@
 本轮返工验证：Python **98 passed / 2 条既有依赖 warning / 25 subtests**，前端 **6 passed**；Ruff、uv lock、TypeScript、Vite 构建、diff 检查均通过。另以 TTS/Sidecar 关闭模式在独立端口真实启动 Runtime，React `/`、`/phase-tests/phase4b.html`、`/health` 均返回 HTTP 200，两个 Room 的 MIC 输入订阅正常，SIGTERM 优雅完成。此项**没有**打开真机音频、未作浏览器 GUI 试听、未下载 ForcedAligner 模型，待验项不倒填。
 
 追加取消与发送并发边界：Room PCM 发送尚未返回时，停止帧仍预留正在发送的末尾样本，防止播放端真实收到了音频、却被不完整的停止游标拒绝；专项已回归。**最终完整回归 99 passed / 2 条既有 warning / 25 subtests，前端 6 passed，其他检查通过**。上段 98 是本次加测前的中间记录，不作为最终数。
+
+## 2026-09-20 用户明确授权开启 4B 试听
+
+- 根目录机器本地、Git 忽略的 `.env` 已显式设置 `ANNIE_TTS_ENABLED=1`、`ANNIE_VISEME_ENABLED=1`，原密钥与其他本地配置未动。通过 `sh start.sh` 按已验证 Annie Harbor PID 替换旧 Runtime；HTTP 健康确认两头 Realtime connected、独立 TTS idle，4B HTML 经 Chromium 确认「开启浏览器测试扬声器」可点击、reb_tts 真 Room 已订阅、真实文字测试按钮在订阅后可点击。
+- 新建项目内忽略的 `sidecars/tts_viseme/.venv311` 并安装原 `requirements-v3.txt`。修复 sidecar Python 的 `Path.resolve()` 跟随 uv venv/bin/python 链接跳出 venv、导致 preflight 误报依赖全缺的缺陷；专项加入虚拟环境符号链接回归。
+- 从当前机器完整的 Qwen3-ForcedAligner 缓存**读取并克隆一份独立快照**到本项目 `var/models/huggingface`；未更改/依赖旧工程代码或旧模型目录，MLX 用项目内缓存离线预热通过。Sidecar 独立使用 `37759/37760`，避开仍由旧工程拥有的 `37659`，不误杀旧进程。模型加载和 G2PW 初始化可延迟，请以 `var/logs/viseme-annie-{a,b}.log` 的 reb_tts/reb_sam subscribed 与真实 mouth_script 作为各自验收证据。
+- **未替用户提交真实语音或文字，也未把 Provider/Room 接线记成设备完整播放/声学嘴型 PASS**；监听已建立、但未收到真实 TTS 回合时的 viseme `not_connected` 和设备播放 `unknown` 均保持原语义。
+
+本轮最终接线检查：服务 PID 58248，健康为 ready，annie-a / annie-b 的 Realtime 都是 connected、TTS 都是 idle；两条 sidecar 进程 running，日志分别确认 roomv2、roomv3 的 reb_tts/reb_sam **connected + subscribed**。浏览器打开 4B HTML 并实际订阅 reb_tts 成功，测试文字按钮已解锁（**尚未点发送**）；设备回执保持 unknown，嘴型未收到实际 mouth_script 前仍为 not_connected。回归：Python **102 passed**（2 条既有 warnings、25 subtests），前端 **11 passed**，类型检查/构建/uv lock/Ruff/diff 检查通过。Sidecar G2PW 启动有 8 秒预热超时提示（后台加载）；真实 PCM/TTS 试听与时间戳嘴型仍由用户本轮操作验收。

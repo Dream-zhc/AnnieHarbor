@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -85,6 +86,16 @@ class FakeTts:
 
 
 class TtsContractTests(unittest.TestCase):
+    def test_viseme_virtualenv_python_symlink_not_resolved_to_system(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=root / "var") as temp:
+            venv_bin = Path(temp) / "sidecars" / "tts_viseme" / ".venv311" / "bin"
+            venv_bin.mkdir(parents=True)
+            (venv_bin / "python").symlink_to(sys.executable)
+            launcher = VisemeSidecars(Path(temp), room_config=None, robots=())
+            self.assertEqual(launcher.python, venv_bin / "python")
+            self.assertNotEqual(launcher.python, (venv_bin / "python").resolve())
+
     def test_opt_in_aligner_missing_environment_fails_preflight(self):
         root=Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(dir=root / "var") as temp:

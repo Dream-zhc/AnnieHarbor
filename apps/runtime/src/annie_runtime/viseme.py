@@ -14,9 +14,11 @@ class VisemeSidecars:
         self.rooms = room_config
         self.robots = tuple(robots)
         self.folder = root / "sidecars" / "tts_viseme"
+        # Do NOT resolve the final executable symlink: uv venv/bin/python points
+        # at the system interpreter, whose realpath bypasses the venv packages.
         self.python = (Path(python) if python else self.folder / ".venv311" / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python"
-        )).expanduser().resolve()
+        )).expanduser().absolute()
         self.processes = {}
         self.logs = []
 
@@ -53,8 +55,11 @@ class VisemeSidecars:
                 room = robot.config.room_id
                 log = (log_dir / f"viseme-{robot.config.robot_id}.log").open("ab")
                 self.logs.append(log)
-                env = {**os.environ, "TTS_VISEME_SINGLETON_PORT": str(37659 + index),
+                # V1 listener occupies 37659 on the development host; keep V2
+                # isolated instead of stealing or terminating the legacy job.
+                env = {**os.environ, "TTS_VISEME_SINGLETON_PORT": str(37759 + index),
                        "TTS_VISEME_OBSERVE_URL": ""}
+                env.setdefault("HF_HOME", str(self.root / "var" / "models" / "huggingface"))
                 proc = subprocess.Popen(
                     [str(self.python), "qwen_stream_room_g2pw.py",
                      "--tts-url", self.rooms.url_for(room, "tts"),

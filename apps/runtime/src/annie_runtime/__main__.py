@@ -18,6 +18,7 @@ from urllib.request import ProxyHandler, build_opener
 
 import uvicorn
 from annie_adapters import load_robots, load_room_server, resolve_database
+from annie_brain.persona import load_personas
 from annie_web import create_app
 
 from annie_runtime import HarborRuntime
@@ -181,6 +182,7 @@ def main():
         database,
         load_room_server(root / "config/rooms.toml"),
         conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
+        persona_profiles=load_personas(root / "config/personas.toml"),
         realtime_key=os.environ.get("DASHSCOPE_API_KEY") or None,
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
         tts_voice=(

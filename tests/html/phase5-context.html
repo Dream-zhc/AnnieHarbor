@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase 5 · 短期上下文与人格质量验收</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;background:#f2f5f8;color:#19263a;max-width:880px;margin:24px auto;padding:0 16px}
+section{background:white;border:1px solid #d6dfeb;border-radius:12px;padding:20px;margin:16px 0}
+a{color:#1252a7}a:focus-visible{outline:3px solid #1252a7;outline-offset:3px}
+h1{font-size:1.8rem;line-height:1.3}h2{font-size:1.3rem;margin-top:0}
+li{margin:8px 0}p{overflow-wrap:anywhere}.warn{color:#87450b}.muted{color:#53667e}
+table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:8px;border-bottom:1px solid #d6dfeb;vertical-align:top}
+@media(max-width:600px){body{margin:8px auto}section{padding:12px}table{font-size:14px}}
+</style></head><body>
+<h1>Phase 5 · 连续聊天与人格质量</h1>
+<p>目标：改口、指代、停止追问和重连时正确延续当前 Chat，不把生成但未播的语音算作机器人已经说过。</p>
+<p class="warn">总体状态：待人工验收。测试对象：在正式工作台明确选择机器人 / Room / Chat / Persona / revision；本页不代表已连接或已执行任何测试。</p>
+<section><h2>1. 对话复跑 · 在正式工作台操作</h2>
+<p><a href="/">打开正式 React 对话及开发者观测 →</a></p>
+<p>在对话页右侧使用「多轮对话复跑」逐句填入，查看同一 Chat 的真实回复；新建会话弹窗可选自然/温和/活泼表达预设。右侧「追问偏好」仅保存当前 Chat/Persona，切换时重建 Session；模型快照就绪后才算生效。</p>
+<ol>
+<li>在一个新 Chat 依次发送“我喜欢茶”“不是茶，是咖啡”“我刚说的喜欢什么？”；观察回复是否采用最后更正。</li>
+<li>说“我明天要去看电影”，随后“继续刚才”“那个呢”；只有确实缺必要信息时再澄清，不能编造承诺。</li>
+<li>先多轮聊天，再说“我不想聊了，别老问我”；观察是否停止机械追问。保留原始回复作人工评审，不靠关键词等同质量通过。</li>
+<li>长历史后查看开发者 →「重连注入上下文」，记录被裁剪的较旧轮数、实际文本、播放证据及字符预算；这个快照不包括后续 Provider 实时历史。</li>
+</ol>
+</section>
+<section><h2>2. 隔离 / 打断 / 播放证据</h2>
+<ol>
+<li>切换 Chat/Persona，再切回；重复相同指代问题。每个 Chat 只使用自己的对话，不借用另一机器人的事实。</li>
+<li>在 TTS 真实启用时取消正在播的回复，或让设备未回报完整 speaker drained；重连后核对「重连注入上下文」：用户已完成输入可保留，未确认播放的助手回复不得冒充已说过。</li>
+<li>用 browser_test 试听，不应把 browser_test drained 升格为真实设备 speaker；重连结果以实际音频回执为准。</li>
+</ol>
+<p class="warn">物理麦克风、扬声器、AEC、嘴型和首响变化沿用 Phase 4/4B 待验状态，不以自动化测试代替耳听与设备回执。</p>
+</section>
+<section><h2>3. 同模型 A/B 手工记录</h2>
+<p>两次运行需使用相同模型、输入顺序、Persona 与声学开关。匿名比较上下文正确、情绪承接、必要/无效追问、自然度、Persona 一致性和首文本/首可播段耗时；记录样本数和胜/平/负。未实测不填写通过。</p>
+<table><thead><tr><th>范围</th><th>判定与证据</th></tr></thead><tbody>
+<tr><td>改口 / 指代</td><td>待验：逐轮原文、当前 Chat、两次原始回复</td></tr>
+<tr><td>关系边界 / Persona</td><td>待验：人工量表、分歧及复核</td></tr>
+<tr><td>性能</td><td>待验：同条件样本数、P50/P95、失败率</td></tr>
+<tr><td>设备与隔离</td><td>待验：Room / speaker 回执 / 取消时间</td></tr>
+</tbody></table>
+<p class="muted">本页仅指导复跑；实际聊天、历史和重连注入快照都在唯一 React 工作台，测试用例自动化在 tests/test_phase5.py。</p>
+</section></body></html>

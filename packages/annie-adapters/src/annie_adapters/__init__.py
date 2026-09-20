@@ -886,9 +886,6 @@ class RuntimeStore:
                 WHERE robot_id=? AND chat_id=? AND persona_id=?
                   AND status='completed' AND cancelled=0 AND interrupted=0
                   AND TRIM(user_text) <> ''
-                  AND COALESCE(NULLIF(TRIM(assistant_spoken_text),''),
-                               NULLIF(TRIM(assistant_published_text),''),
-                               NULLIF(TRIM(assistant_generated_text),'')) IS NOT NULL
                 ORDER BY id DESC LIMIT ?""",
                 (robot_id, chat_id, persona_id, limit),
             ).fetchall()

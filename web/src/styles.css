@@ -139,6 +139,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 details{margin-top:11px}summary{cursor:pointer;color:#4b67a5;font-size:12px;font-weight:700}
 pre{background:#f4f6fa;border:1px solid #e2e8f1;border-radius:10px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;font-size:12px;color:#384c67}
 .test-links{display:grid;gap:8px}.test-links a{border:1px solid #e3e9f3;padding:10px 12px;border-radius:9px;text-decoration:none;font-size:13px}.test-links a:hover{background:#f4f7fc}
+.quality-setting{display:grid;gap:6px;margin-top:10px;color:#52647e;font-weight:650;font-size:12px}
+.quality-setting select{width:100%;min-width:0;border:1px solid #d8e1ee;background:#fff;color:#263d5d;border-radius:9px;padding:9px}
+.quality-note{font-size:12px;color:#677892;overflow-wrap:anywhere;margin:8px 0}
+.quality-prompt{border:1px solid #dde6f4;background:#f7f9fd;border-radius:9px;padding:10px;color:#2b4063;overflow-wrap:anywhere}
+.quality-actions{display:flex;gap:6px;flex-wrap:wrap}.quality-actions button{font-size:12px;padding:7px 9px}
+.quality-result{border-top:1px solid #e3e9f3;padding:9px 0;overflow-wrap:anywhere}.quality-result strong{font-size:12px}.quality-result p{margin:4px 0}.quality-result small{color:#677892}
 .modal-backdrop{position:fixed;inset:0;background:#121b2b91;z-index:20;display:grid;place-items:center;padding:16px}
 .dialog{max-width:455px;width:100%;background:white;border-radius:18px;box-shadow:0 20px 70px #121b2b55;padding:29px;color:#2d3c51}
 .dialog h2{margin:5px 0 8px;font-size:22px}.dialog p{color:#738296;margin:0 0 18px;overflow-wrap:anywhere}

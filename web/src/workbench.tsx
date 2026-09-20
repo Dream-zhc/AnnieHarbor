@@ -1,7 +1,7 @@
-import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
-import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents} from './api';
+import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents,type PersonaProfile} from './api';
 import {RealtimeMicrophone} from './microphone';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
@@ -9,6 +9,12 @@ type View='overview'|'chat'|'robots'|'developer';
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
 type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
 type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string};
+type SocialState=Record<string,{value:unknown;source:string;expires_at_ms:number|null}>;
+const conversationChecks=[
+  {label:'改口 · 茶与咖啡',turns:['我喜欢喝茶。','不是茶，是咖啡。','我刚才更正喜欢喝什么？']},
+  {label:'指代与承诺',turns:['我明天准备去看电影。','继续刚才的话题。','你刚才说过你答应了我什么吗？没有就直说。']},
+  {label:'停止追问',turns:['今天有点累，不想讲原因。','别老问我，我不想继续聊了。','知道了。']},
+];
 const errorText=(value:unknown)=>value instanceof Error?value.message:String(value);
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
 const stateLabel=(value:string|undefined)=>{
@@ -49,10 +55,14 @@ export function Workbench(){
   const [conversations,setConversations]=useState<Conversation[]>([]);
   const [history,setHistory]=useState<History|null>(null);
   const [context,setContext]=useState<unknown>(null);
+  const [profiles,setProfiles]=useState<PersonaProfile[]>([]);
   const [pcm,setPcm]=useState<unknown>(null);
   const [routes,setRoutes]=useState<RoomRoute[]>([]);
   const [coordinator,setCoordinator]=useState<unknown>(null);
-  const [social,setSocial]=useState<unknown>(null);
+  const [social,setSocial]=useState<SocialState>({});
+  const [settingPreference,setSettingPreference]=useState(false);
+  const [checkIndex,setCheckIndex]=useState(0);
+  const [checkStep,setCheckStep]=useState(0);
   const [realtimeEvents,setRealtimeEvents]=useState<RealtimeEvent[]>([]);
   const [liveText,setLiveText]=useState('');
   const [previewTranscript,setPreviewTranscript]=useState('');
@@ -74,6 +84,19 @@ export function Workbench(){
   const route=routes.find(item=>item.robot_id===robotId);
   const realtime=selectedRobot?.realtime;
   const speech=realtime?.speech_output;
+  const restored=realtime?.restored_context;
+  const restoredForSession=restored&&session&&restored.robot_id===session.robot_id&&restored.chat_id===session.chat_id&&restored.persona_id===session.persona_id&&restored.session_epoch===session.session_epoch&&restored.generation===session.generation?restored:null;
+  const persona=realtime?.persona_snapshot;
+  const personaForSession=persona&&session&&persona.robot_id===session.robot_id&&persona.chat_id===session.chat_id&&persona.persona_id===session.persona_id&&persona.session_epoch===session.session_epoch&&persona.generation===session.generation&&persona.provider_session_id===realtime?.provider_session_id?persona:null;
+  const savedPreference=social.question_pressure?.source==='user_setting'&&['normal','low','none'].includes(String(social.question_pressure.value))?String(social.question_pressure.value):'normal';
+  const scenarioResults=useMemo(()=>{
+    const prompts=conversationChecks[checkIndex].turns;
+    const matching=new Map<string,Turn>();
+    for(const turn of history?.turns??[]){
+      if(prompts.includes(turn.user_text.trim()))matching.set(turn.user_text.trim(),turn);
+    }
+    return prompts.map(prompt=>matching.get(prompt));
+  },[history,checkIndex]);
 
   const refreshHealth=useCallback(async()=>{
     try{
@@ -87,6 +110,7 @@ export function Workbench(){
     const timer=window.setInterval(()=>void refreshHealth(),6000);
     return()=>window.clearInterval(timer);
   },[refreshHealth]);
+  useEffect(()=>{void api<PersonaProfile[]>('/api/personas').then(setProfiles).catch(error=>setNotice('Persona 列表读取失败：'+errorText(error)));},[]);
 
   const refreshSelected=useCallback(async(id:string)=>{
     const ticket=++selection.current;
@@ -98,16 +122,17 @@ export function Workbench(){
       const identity=[selected.robot_id,selected.chat_id,selected.persona_id,selected.session_epoch,selected.generation].join('\u0000');
       if(displayedSession.current!==identity){
         displayedSession.current=identity;
-        setHistory(null);setContext(null);setCoordinator(null);setSocial(null);
+        setHistory(null);setContext(null);setCoordinator(null);setSocial({});
       }
       setSession(selected);
-      const [list,turns,rooms]=await Promise.all([
+      const [list,turns,rooms,socialState]=await Promise.all([
         api<Conversation[]>(base+'/conversations'),
         api<History>(base+'/conversations/'+encodeURIComponent(selected.chat_id)+'?persona_id='+encodeURIComponent(selected.persona_id)),
-        api<RoomRoute[]>('/api/phase2/rooms')
+        api<RoomRoute[]>('/api/phase2/rooms'),
+        api<SocialState>(base+'/social-state')
       ]);
       if(ticket!==selection.current)return;
-      setConversations(list);setHistory(turns);setRoutes(rooms);
+      setConversations(list);setHistory(turns);setRoutes(rooms);setSocial(socialState);
     }catch(error){if(ticket===selection.current)setNotice('当前机器人数据读取失败：'+errorText(error));}
   },[]);
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
@@ -117,7 +142,7 @@ export function Workbench(){
     const base=robotPath(robotId);
     void Promise.all([
       api<unknown>(base+'/context'),api<unknown>(base+'/inputs'),
-      api<unknown>(base+'/coordinator'),api<unknown>(base+'/social-state')
+      api<unknown>(base+'/coordinator'),api<SocialState>(base+'/social-state')
     ]).then(([recent,inputs,coord,socialState])=>{
       if(active){setContext(recent);setPcm(inputs);setCoordinator(coord);setSocial(socialState);}
     }).catch(error=>{if(active)setNotice('诊断读取失败：'+errorText(error));});
@@ -126,6 +151,7 @@ export function Workbench(){
   useEffect(()=>{
     setRealtimeEvents([]);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);eventCursor.current=0;
     followLatest.current=true;
+    setCheckStep(0);
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
   useEffect(()=>{
     if(!robotId||!session||!realtime)return;
@@ -194,7 +220,7 @@ export function Workbench(){
     if(id===robotId)return;
     selection.current++;eventCursor.current=0;followLatest.current=true;displayedSession.current='';
     setRobotId(id);setSession(null);setConversations([]);setHistory(null);setContext(null);
-    setPcm(null);setRoutes([]);setCoordinator(null);setSocial(null);
+    setPcm(null);setRoutes([]);setCoordinator(null);setSocial({});
     setLiveText('');setRealtimeEvents([]);setNotice('');setCreateOpen(false);setDeleteOpen(false);
   }
   async function switchSession(item:Conversation){
@@ -251,6 +277,22 @@ export function Workbench(){
       await api(robotPath(id)+'/cancel','POST');
       if(ticket===selection.current){setNotice('已向当前机器人发送取消请求；设备实际停播以回执为准。');void refreshSelected(id);}
     }catch(error){if(ticket===selection.current)setNotice('取消请求失败：'+errorText(error));}
+  }
+  async function setQuestionPressure(value:'normal'|'low'|'none'){
+    if(!session||!robotId||settingPreference||pending||!realtime?.ready)return;
+    const id=robotId,ticket=selection.current;
+    setSettingPreference(true);setNotice('');
+    try{
+      await api(robotPath(id)+'/social-state','PUT',{
+        fields:{question_pressure:value},source:'user_setting',generation:session.generation
+      });
+      if(ticket===selection.current){
+        await refreshSelected(id);
+        await refreshHealth();
+        setNotice('追问偏好已保存，Realtime 正在重建 Session；以当前 Persona 快照为准。');
+      }
+    }catch(error){if(ticket===selection.current)setNotice('偏好设置失败：'+errorText(error));}
+    finally{setSettingPreference(false);}
   }
   function openCreate(){
     setDraftChat('');setDraftPersona(session?.persona_id??selectedRobot?.persona_id??'annie');
@@ -359,6 +401,36 @@ export function Workbench(){
             <div className="inspector-group"><h3>会话状态</h3><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>
               <div className="info-line"><span>Revision</span><strong>{session?.persona_revision??'—'}</strong></div>
               <div className="info-line"><span>历史回合</span><strong>{history?.turns.length??'—'}</strong></div>
+              <div className="info-line"><span>表达风格</span><strong>{personaForSession?.configured?personaForSession.label:'未配置预设或待就绪'}</strong></div>
+              <label className="quality-setting">追问偏好
+                <select aria-label="追问偏好" value={savedPreference} disabled={!session||!realtime?.ready||!!realtime?.response_id||pending||settingPreference} onChange={event=>void setQuestionPressure(event.target.value as 'normal'|'low'|'none')}>
+                  <option value="normal">自然追问</option><option value="low">少追问</option><option value="none">不主动追问</option>
+                </select>
+              </label>
+              <p className="quality-note">仅作用于当前机器人 / Chat / Persona。切换偏好将重建 Realtime Session，不改变其他会话。</p>
+              <small>当前模型生效：{personaForSession?.question_pressure==='none'?'不主动追问':personaForSession?.question_pressure==='low'?'少追问':personaForSession?.question_pressure==='normal'?'自然追问':'等待 Session 就绪'}</small>
+            </div>
+            <div className="inspector-group"><h3>多轮对话复跑</h3>
+              <label className="quality-setting">场景
+                <select aria-label="多轮复跑场景" value={checkIndex} onChange={event=>{setCheckIndex(Number(event.target.value));setCheckStep(0);}}>
+                  {conversationChecks.map((item,index)=><option key={item.label} value={index}>{item.label}</option>)}
+                </select>
+              </label>
+              <p className="quality-note">{checkStep+1} / {conversationChecks[checkIndex].turns.length} · 逐句手动发送，真实回复留在当前 Chat 历史；切 Chat / Persona 后从第一句复跑。</p>
+              <p className="quality-prompt">{conversationChecks[checkIndex].turns[checkStep]}</p>
+              <div className="quality-actions"><button className="quiet-button" disabled={!!text.trim()||pending||!session} onClick={()=>setText(conversationChecks[checkIndex].turns[checkStep])}>填入输入框</button>
+                <button className="quiet-button" disabled={checkStep===0} onClick={()=>setCheckStep(step=>Math.max(0,step-1))}>上一句</button>
+                <button className="quiet-button" disabled={checkStep===conversationChecks[checkIndex].turns.length-1} onClick={()=>setCheckStep(step=>Math.min(conversationChecks[checkIndex].turns.length-1,step+1))}>下一句</button></div>
+              <details><summary>本 Chat 的实际回复（不自动评分）</summary>
+                {conversationChecks[checkIndex].turns.map((prompt,index)=>{
+                  const turn=scenarioResults[index];
+                  return <div className="quality-result" key={index}>
+                    <strong>{index+1}. {prompt}</strong>
+                    <p>{turn?(turn.assistant_spoken_text||turn.assistant_generated_text||'尚无完整回复'):'尚未发送本句'}</p>
+                    {turn&&<small>实际状态：{turn.status} · 播放：{turn.playback_evidence_status??'unknown'}</small>}
+                  </div>;
+                })}
+              </details>
             </div>
             <div className="inspector-group"><h3>语音输出</h3><div className="info-line"><span>TTS</span><State value={speech?.state}/></div>
               <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>
@@ -392,11 +464,19 @@ export function Workbench(){
           </Block>
         </>}
         {view==='developer'&&<>
-          <div className="page-heading"><div><span className="eyebrow">OBSERVABILITY</span><h1>开发者观测</h1><p>同一 Runtime 的只读诊断。测试请求、Fake 控制和模拟回执放在阶段 HTML。</p></div><button className="soft-button" disabled={!robotId} onClick={()=>void refreshSelected(robotId)}>刷新诊断</button></div>
+          <div className="page-heading"><div><span className="eyebrow">OBSERVABILITY</span><h1>开发者观测</h1><p>同一 Runtime 的只读诊断。</p></div><button className="soft-button" disabled={!robotId} onClick={()=>void refreshSelected(robotId)}>刷新诊断</button></div>
           <div className="developer-grid">
             <Block title="当前目标" sub="所有数据均属于左上角选中的机器人。"><div className="info-line"><span>Robot / Room</span><strong>{robotId} / {selectedRobot?.room_id??'—'}</strong></div><div className="info-line"><span>Chat / Persona</span><strong>{session?.chat_id??'—'} / {session?.persona_id??'—'}</strong></div><div className="info-line"><span>Session epoch / generation</span><strong>{session?.session_epoch??'—'} / {session?.generation??'—'}</strong></div></Block>
+            <Block title="Persona 与社交偏好" sub="当前 Provider Session 初始化时采用的表达预设和追问偏好。其他 SocialState 不自动变成模型指令。">
+              <div className="info-line"><span>当前表达预设</span><strong>{personaForSession?.configured?personaForSession.label:'未配置或待连接'}</strong></div>
+              <div className="info-line"><span>实际生效偏好</span><strong>{personaForSession?.question_pressure??'待连接'}</strong></div>
+              <details><summary>查看带来源的 SocialState</summary><pre>{pretty(social)}</pre></details>
+            </Block>
             <Block title="实时与音频" sub="先看状态；必要时展开原始事件。"><div className="info-line"><span>Realtime</span><State value={realtime?.state} good={realtime?.ready}/></div><div className="info-line"><span>TTS</span><State value={speech?.state}/></div><div className="info-line"><span>播放证据</span><strong>{speech?.playback_evidence??'unknown'}</strong></div><div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div><details><summary>Realtime / Function Calling / TTS 事件</summary><pre>{pretty(realtimeEvents)}</pre></details></Block>
-            <Block title="当前有效上下文" sub="最近 20 轮与完整历史分开。"><details><summary>查看最近上下文</summary><pre>{pretty(context)}</pre></details><details><summary>查看完整 Ledger</summary><pre>{pretty(history)}</pre></details></Block>
+            <Block title="重连注入上下文" sub="仅显示当前 Provider Session 建立时实际注入的历史；不声称涵盖随后发生的实时对话。字符预算不是精确 token 数。">
+              {restoredForSession?<><div className="info-line"><span>注入轮数 / 较旧省略</span><strong>{restoredForSession.turns.length} / {restoredForSession.omitted_older_turns}</strong></div><div className="info-line"><span>字符预算</span><strong>{restoredForSession.chars_used} / {restoredForSession.char_budget}</strong></div><details><summary>逐轮查看输入与播放证据</summary><pre>{pretty(restoredForSession.turns)}</pre></details></>:<p>当前 Session 尚无可确认的历史注入快照（未连接或正在重连）。</p>}
+              <details><summary>查看最近 Ledger 上下文（不等同于模型输入）</summary><pre>{pretty(context)}</pre></details><details><summary>查看完整 Ledger</summary><pre>{pretty(history)}</pre></details>
+            </Block>
             <Block title="调度与社交状态"><details><summary>TurnCoordinator</summary><pre>{pretty(coordinator)}</pre></details><details><summary>SocialState</summary><pre>{pretty(social)}</pre></details></Block>
             <Block title="Room / PCM"><details><summary>输入与通道诊断</summary><pre>{pretty({inputs:pcm,routes})}</pre></details></Block>
             <Block title="独立阶段测试" sub="以下链接打开单独 HTML，不属于正式业务操作。">
@@ -406,6 +486,7 @@ export function Workbench(){
                 <a href="/phase-tests/phase3.html">Phase 3 · Ledger / 模拟回执 ↗</a>
                 <a href="/phase-tests/phase4.html">Phase 4 · Realtime 验收 ↗</a>
                 <a href="/phase-tests/phase4c.html">Phase 4C · 工作台验收 ↗</a>
+                <a href="/phase-tests/phase5-context.html">Phase 5 · 短期上下文验收 ↗</a>
               </div>
             </Block>
           </div>
@@ -418,8 +499,9 @@ export function Workbench(){
         <form onSubmit={e=>{e.preventDefault();void createSession();}}>
           <label>Chat 名称<input autoFocus value={draftChat} maxLength={128} onChange={e=>setDraftChat(e.target.value)} placeholder="例如：日常聊天"/></label>
           <label>Persona<input list="known-personas" value={draftPersona} maxLength={128} onChange={e=>setDraftPersona(e.target.value)} />
-            <datalist id="known-personas">{[...new Set([session?.persona_id,selectedRobot?.persona_id,...conversations.map(item=>item.persona_id)].filter((value):value is string=>!!value))].map(name=><option key={name} value={name}/>)}</datalist>
+            <datalist id="known-personas">{profiles.map(profile=><option key={'profile:'+profile.persona_id} value={profile.persona_id} label={profile.label}/>)}{[...new Set([session?.persona_id,selectedRobot?.persona_id,...conversations.map(item=>item.persona_id)].filter((value):value is string=>!!value))].map(name=><option key={'existing:'+name} value={name}/>)}</datalist>
           </label>
+          <div className="quality-actions" aria-label="Persona 起始预设">{profiles.map(profile=><button type="button" className="quiet-button" key={profile.persona_id} onClick={()=>setDraftPersona(profile.persona_id)}>{profile.label}</button>)}</div>
           <label>Persona revision<input type="number" min="1" step="1" value={draftRevision} onChange={e=>setDraftRevision(Number(e.target.value))}/></label>
           <div className="dialog-actions"><button type="button" className="quiet-button" onClick={()=>setCreateOpen(false)}>取消</button><button className="primary-button" disabled={pending||!draftChat.trim()||!draftPersona.trim()||draftRevision<1||!Number.isSafeInteger(draftRevision)}>确认</button></div>
         </form>

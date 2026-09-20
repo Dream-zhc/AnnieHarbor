@@ -8,6 +8,8 @@ from collections import deque
 from uuid import uuid4
 
 from annie_adapters.realtime import QwenRealtimeSocket, audio_append, session_update
+from annie_brain.context import select_restorable_context
+from annie_brain.persona import session_instructions
 from annie_core import RobotUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -16,10 +18,12 @@ logger = logging.getLogger(__name__)
 class RealtimeRobot:
     """One provider Session, one current Chat/Persona, bounded events and PCM."""
 
-    def __init__(self, robot, *, url: str, key: str, socket_factory=QwenRealtimeSocket):
+    def __init__(self, robot, *, url: str, key: str, persona_profiles=None,
+                 socket_factory=QwenRealtimeSocket):
         self.robot = robot
         self.url = url
         self.key = key
+        self.persona_profiles = persona_profiles or {}
         self.socket_factory = socket_factory
         self.speech = None
         self.socket = None
@@ -45,6 +49,8 @@ class RealtimeRobot:
         self.frames_sent = 0
         self.frames_dropped = 0
         self.turn_identity = None
+        self.restored_context = None
+        self.persona_snapshot = None
         self._stopping = False
         self._opening = False
         self._open_done = asyncio.Event()
@@ -92,6 +98,8 @@ class RealtimeRobot:
             "frames_dropped": self.frames_dropped,
             "first_text_ms": self.first_text_ms,
             "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
+            "restored_context": self.restored_context,
+            "persona_snapshot": self.persona_snapshot,
         }
 
     def since(self, after):
@@ -112,6 +120,8 @@ class RealtimeRobot:
 
     async def _stop_impl(self):
         self._stopping = True
+        self.restored_context = None
+        self.persona_snapshot = None
         if self.speech:
             await self.speech.close()
         logger.info(
@@ -173,10 +183,16 @@ class RealtimeRobot:
                 if self._stopping:
                     return
                 self.publish("socket.connected")
+                social = await asyncio.to_thread(
+                    self.robot.store.load_social_state,
+                    self.robot.config.robot_id, self.robot.chat_id, self.robot.persona_id,
+                    time.time_ns() // 1_000_000,
+                )
+                instructions, persona_snapshot = session_instructions(
+                    self.robot.persona_id, self.persona_profiles, social,
+                )
                 await self.socket.send(session_update(
-                    "你是小安妮，一位陪伴型机器人。自然、简洁地用中文回应；不要描述没有发生的动作。"
-                    f"当前 Persona 标识：{self.robot.persona_id}。"
-                    "真实动作未启用；如需动作，只能使用 preview_action 模拟工具。",
+                    instructions,
                     self.robot.context_limit,
                 ))
                 # An invalid combined capability must fail visibly before audio enters the model.
@@ -194,6 +210,8 @@ class RealtimeRobot:
                         break
                 if generation != self.robot.generation:
                     continue
+                self.persona_snapshot = {**self.robot.session_state(), **persona_snapshot,
+                                         "provider_session_id": self.session}
                 await self._restore_context()
                 self.ready = True
                 self.error = None
@@ -213,6 +231,8 @@ class RealtimeRobot:
                 self.publish("session.error", error=self.error)
             finally:
                 self.ready = False
+                self.restored_context = None
+                self.persona_snapshot = None
                 if self.speech and self.speech.turn_id is not None:
                     await self.speech.cancel("realtime_disconnected")
                 logger.info("realtime_cleanup robot=%s begin", self.robot.config.robot_id)
@@ -241,22 +261,27 @@ class RealtimeRobot:
             retry = min(15, retry * 2)
 
     async def _restore_context(self):
-        for turn in self.robot.recent_context():
-            user, reply = turn.get("user_text"), turn.get("assistant_context_text") or turn.get(
-                "assistant_generated_text"
-            )
-            if not user or not reply:
-                continue
+        # This is the history injected into THIS socket, not its subsequent
+        # live dialogue (which the provider does not expose through this API).
+        self.restored_context = None
+        packet = select_restorable_context(
+            self.robot.recent_context(), speech_enabled=self.speech is not None,
+            max_turns=self.robot.context_limit,
+        )
+        for turn in packet["turns"]:
             await self.socket.send({
                 "type": "conversation.item.create",
                 "item": {"type": "message", "role": "user",
-                         "content": [{"type": "input_text", "text": user}]},
+                         "content": [{"type": "input_text", "text": turn["user_text"]}]},
             })
-            await self.socket.send({
-                "type": "conversation.item.create",
-                "item": {"type": "message", "role": "assistant",
-                         "content": [{"type": "output_text", "text": reply}]},
-            })
+            if turn["assistant_text"]:
+                await self.socket.send({
+                    "type": "conversation.item.create",
+                    "item": {"type": "message", "role": "assistant",
+                             "content": [{"type": "output_text", "text": turn["assistant_text"]}]},
+                })
+        self.restored_context = {**self.robot.session_state(), **packet,
+                                 "provider_session_id": self.session}
 
     async def _audio_pump(self, generation):
         while self.ready and generation == self.robot.generation:
@@ -321,8 +346,7 @@ class RealtimeRobot:
         if status == "completed" and turn is not None and self.turn_identity == self.robot.session_state():
             # With external speech, generated != heard. Only a speaker receipt
             # of full drain can promote this turn into conversational context.
-            if self.speech is None:
-                self.robot._cache_context_turn(turn)
+            self.robot._cache_context_turn(turn, allow_generated=self.speech is None)
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
         elif interrupted:

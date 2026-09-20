@@ -350,14 +350,18 @@ class RobotRuntime:
         while len(self.turn_cache) > max(64, self.context_limit * 4):
             self.turn_cache.pop(next(iter(self.turn_cache)))
 
-    def _cache_context_turn(self, turn: dict):
+    def _cache_context_turn(self, turn: dict, *, allow_generated: bool = True):
         context = dict(turn)
+        context["_requires_speaker"] = not allow_generated
         context["assistant_context_text"] = (
             context.get("assistant_spoken_text")
-            or context.get("assistant_published_text")
+            if not allow_generated else
+            context.get("assistant_spoken_text") or context.get("assistant_published_text")
             or context.get("assistant_generated_text")
         )
-        if not context["assistant_context_text"]:
+        if not context["assistant_context_text"] and not (
+            not allow_generated and context.get("user_text", "").strip()
+        ):
             return
         self.context_cache = [item for item in self.context_cache if item["turn_id"] != turn["turn_id"]]
         self.context_cache.append(context)
@@ -411,8 +415,8 @@ class RobotRuntime:
             item["playback_evidence_status"] = evidence_status
             item["updated_ms"] = updated_ms
             item["assistant_context_text"] = (
-                item.get("assistant_spoken_text")
-                or item.get("assistant_published_text")
+                item.get("assistant_spoken_text") if item.get("_requires_speaker")
+                else item.get("assistant_spoken_text") or item.get("assistant_published_text")
                 or item.get("assistant_generated_text")
             )
             break
@@ -813,6 +817,7 @@ class HarborRuntime:
         room_server=None,
         *,
         conversation_history_turns: int = 20,
+        persona_profiles: dict | None = None,
         realtime_key: str | None = None,
         realtime_url: str | None = None,
         realtime_socket_factory=None,
@@ -831,6 +836,7 @@ class HarborRuntime:
         self.recorder = Recorder(self.store.write_batch)
         self.ledger = ConversationLedgerWriter(self.store)
         self.conversation_history_turns = conversation_history_turns
+        self.persona_profiles = dict(persona_profiles or {})
         self.robots = {
             c.robot_id: RobotRuntime(
                 c,
@@ -857,6 +863,7 @@ class HarborRuntime:
             self.realtime = {
                 robot_id: RealtimeRobot(
                     robot, url=url, key=realtime_key,
+                    persona_profiles=self.persona_profiles,
                     socket_factory=realtime_socket_factory or QwenRealtimeSocket,
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
@@ -1376,6 +1383,14 @@ class HarborRuntime:
             raise ValueError(f"unknown social state key: {sorted(unknown)[0]}")
         if not isinstance(source, str) or not source.strip():
             raise ValueError("social state source required")
+        if source == "user_setting":
+            if set(fields) != {"question_pressure"} or fields["question_pressure"] not in {
+                "normal", "low", "none",
+            }:
+                raise ValueError("user_setting requires normal/low/none question_pressure")
+            client = self.realtime.get(robot_id)
+            if client and (client.turn_id or client.response_id or client.speech_active):
+                raise ValueError("Realtime busy; set conversation preference after current turn")
         if ttl_ms is not None and (type(ttl_ms) is not int or not 1 <= ttl_ms <= 86_400_000):
             raise ValueError("ttl_ms must be between 1 and 86400000")
         now_ms = time.time_ns() // 1_000_000
@@ -1394,6 +1409,10 @@ class HarborRuntime:
                 expires_at_ms=expires_at_ms,
                 updated_ms=now_ms,
             )
+        if source == "user_setting" and robot_id in self.realtime:
+            # User-initiated setting, not a per-turn SocialState update. Apply
+            # on a newly created Session without injecting full Persona midturn.
+            await self.realtime[robot_id].restart()
         return await self.social_state(robot_id)
 
     async def social_state(self, robot_id: str):

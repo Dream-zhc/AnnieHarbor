@@ -108,7 +108,11 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/item\.persona_revision/);
   assert.match(source,/className="top-robot-switch"/);
   assert.match(source,/view!=='overview'/);
-  assert.equal((source.match(/<select\b/g)??[]).length,1);
+  assert.equal((source.match(/className="top-robot-switch"/g)??[]).length,1);
+  assert.match(source,/api<PersonaProfile\[]>\('\/api\/personas'\)/);
+  assert.match(source,/source:'user_setting',generation:session.generation/);
+  assert.match(source,/personaForSession\?\.provider_session_id|persona.provider_session_id===realtime\?\.provider_session_id/);
+  assert.match(source,/conversationChecks\[checkIndex\]\.turns\[checkStep\]/);
   assert.match(source,/className="stats-grid overview-stats"/);
   assert.doesNotMatch(source,/<Block title="能力状态"|<Block title="Room 六通道"/);
   assert.match(source,/cancelCurrent/);

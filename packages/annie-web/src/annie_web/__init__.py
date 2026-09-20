@@ -91,6 +91,11 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     async def robots():
         return runtime.health()["robots"]
 
+    @app.get("/api/personas")
+    async def personas():
+        return [{"persona_id": key, "label": value["label"]}
+                for key, value in runtime.persona_profiles.items()]
+
     @app.get("/api/robots/{robot_id}/inputs")
     async def inputs(robot_id: str):
         require_robot(robot_id)

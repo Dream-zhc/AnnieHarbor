@@ -239,16 +239,24 @@ class RealtimeRobot:
 
     async def _audio_pump(self, generation):
         while self.ready and generation == self.robot.generation:
+            audio = self.robot.audio
+            frame, stream_epoch = await audio.next_frame()
             try:
-                frame, wait_ms = self.robot.audio.next_nowait()
-            except asyncio.QueueEmpty:
-                await asyncio.sleep(0.01)
-                continue
-            if wait_ms > self.robot.config.audio_max_age_ms:
-                self.frames_dropped += 1
-                continue
-            await self.socket.send(audio_append(frame.payload))
-            self.frames_sent += 1
+                if (
+                    not self.ready
+                    or self._stopping
+                    or generation != self.robot.generation
+                    or stream_epoch != audio.stream_epoch
+                    or frame.source_id != audio.source_id
+                    or (time.monotonic() - frame.received_at) * 1000
+                    > self.robot.config.audio_max_age_ms
+                ):
+                    self.frames_dropped += 1
+                    continue
+                await self.socket.send(audio_append(frame.payload))
+                self.frames_sent += 1
+            finally:
+                audio.queue.task_done()
 
     def _create_turn(self, user_text):
         if self.turn_id:

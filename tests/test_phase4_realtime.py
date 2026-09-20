@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from annie_adapters.realtime import MODEL, QwenRealtimeSocket, audio_append, realtime_url, session_update
 from annie_core import RobotConfig, RobotUnavailableError
 from annie_runtime import HarborRuntime
+from annie_runtime.realtime import RealtimeRobot
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,6 +44,12 @@ class FakeSocket:
 
 
 class RealtimeWireTests(unittest.TestCase):
+    def test_audio_pump_has_no_idle_sleep_or_nowait_polling(self):
+        source = inspect.getsource(RealtimeRobot._audio_pump)
+        self.assertIn("await audio.next_frame()", source)
+        self.assertNotIn("next_nowait(", source)
+        self.assertNotIn("asyncio.sleep(", source)
+
     def test_text_only_smart_turn_and_tool_are_one_session_update(self):
         payload = session_update("小安妮", 20)
         config = payload["session"]
@@ -199,3 +207,138 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.01)
         self.assertEqual(self.runtime.realtime["annie-a"].frames_sent, 1)
         self.assertEqual(self.runtime.realtime["annie-b"].frames_sent, 0)
+
+    async def test_audio_pump_waits_for_frame_without_polling(self):
+        """An idle pump waits on get(), then sends promptly when put() wakes it."""
+        client = self.runtime.realtime["annie-a"]
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        await asyncio.sleep(0)
+        self.assertFalse(client.audio_task.done())
+        self.assertEqual(client.frames_sent, 0)
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
+        await asyncio.wait_for(client.robot.audio.queue.join(), timeout=1)
+        self.assertEqual(client.frames_sent, 1)
+        self.assertEqual(client.robot.audio.queue.qsize(), 0)
+        self.assertFalse(client.audio_task.done())
+
+    async def test_audio_inflight_task_done_on_cancel(self):
+        """Cancellation during a blocked send must not strand queue.join()."""
+        client = self.runtime.realtime["annie-a"]
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        started = asyncio.Event()
+        release = asyncio.Event()
+        original_send = client.socket.send
+
+        async def blocked_send(event):
+            if event["type"] == "input_audio_buffer.append":
+                started.set()
+                await release.wait()
+            await original_send(event)
+
+        client.socket.send = blocked_send
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        join_task = asyncio.create_task(client.robot.audio.queue.join())
+        await asyncio.sleep(0)
+        self.assertFalse(join_task.done())
+        client.audio_task.cancel()
+        await asyncio.gather(client.audio_task, return_exceptions=True)
+        await asyncio.wait_for(join_task, timeout=1)
+        self.assertEqual(client.frames_sent, 0)
+
+    async def test_audio_queue_overflow_retains_newest_and_balances_join(self):
+        client = self.runtime.realtime["annie-a"]
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        started = asyncio.Event()
+        release = asyncio.Event()
+        original_send = client.socket.send
+
+        async def block_first_audio(event):
+            if event["type"] == "input_audio_buffer.append" and not started.is_set():
+                started.set()
+                await release.wait()
+            await original_send(event)
+
+        client.socket.send = block_first_audio
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        capacity = client.robot.audio.queue.maxsize
+        for i in range(capacity + 3):
+            self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes([i + 1]) * 640)
+        self.assertEqual(client.robot.audio.dropped, 3)
+        release.set()
+        await asyncio.wait_for(client.robot.audio.queue.join(), timeout=1)
+        self.assertEqual(client.frames_sent, capacity + 1)
+        sent = [event for event in client.socket.outbound
+                if event["type"] == "input_audio_buffer.append"]
+        self.assertEqual(base64.b64decode(sent[-1]["audio"]), bytes([capacity + 3]) * 640)
+
+    async def test_audio_expired_after_enqueue_is_dropped(self):
+        """Freshness is checked at send, not only when the Room frame arrived."""
+        client = self.runtime.realtime["annie-a"]
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        # Queue a frame before the pump starts to guarantee stale age at dequeue.
+        client.audio_task.cancel()
+        await asyncio.gather(client.audio_task, return_exceptions=True)
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
+        await asyncio.sleep(client.robot.config.audio_max_age_ms / 1000 + 0.02)
+        before = client.frames_dropped
+        # Restart only the pump so its first queue.get() sees the expired frame.
+        client.audio_task = asyncio.create_task(client._audio_pump(client.robot.generation))
+        await asyncio.wait_for(client.robot.audio.queue.join(), timeout=1)
+        self.assertEqual(client.frames_dropped, before + 1)
+        self.assertEqual(client.frames_sent, 0)
+
+    async def test_stream_restart_does_not_forward_old_frame(self):
+        """Same source ID does not make an old stream's frame valid again."""
+        client = self.runtime.realtime["annie-a"]
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        audio = client.robot.audio
+        client.audio_task.cancel()
+        await asyncio.gather(client.audio_task, return_exceptions=True)
+        acquired = asyncio.Event()
+        release = asyncio.Event()
+        original_get = audio.next_frame
+
+        async def delayed_get():
+            frame, stream_epoch = await original_get()
+            acquired.set()
+            await release.wait()
+            return frame, stream_epoch
+
+        audio.next_frame = delayed_get
+        client.audio_task = asyncio.create_task(client._audio_pump(client.robot.generation))
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes([1]) * 640)
+        await asyncio.wait_for(acquired.wait(), timeout=1)
+        old_epoch = audio.stream_epoch
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes([2]) * 640)
+        self.assertNotEqual(old_epoch, audio.stream_epoch)
+        release.set()
+        await asyncio.wait_for(audio.queue.join(), timeout=1)
+        self.assertEqual(client.frames_dropped, 1)
+        self.assertEqual(client.frames_sent, 1)
+        pcm_messages = [item for item in client.socket.outbound
+                        if item["type"] == "input_audio_buffer.append"]
+        self.assertEqual(len(pcm_messages), 1)
+        self.assertEqual(base64.b64decode(pcm_messages[0]["audio"]), bytes([2]) * 640)

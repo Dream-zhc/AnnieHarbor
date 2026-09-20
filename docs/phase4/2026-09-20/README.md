@@ -27,6 +27,13 @@
 
 ## 尚待落实与验收
 
+### 4-Realtime 音频泵返工
+
+- 将 `_audio_pump` 中 `next_nowait()` + `sleep(0.01)` 轮询替换为 `AudioInputGate.next_frame()` 的 `await queue.get()`；无 PCM 时阻塞等待新帧唤醒，不引入额外固定轮询等待。Phase 2 原 `next_nowait()` 接口保留。
+- `task_done()` 在发送或丢弃之后的 `finally` 执行，包含发送协程取消；原有有界队列、满队列丢最旧帧及统计保留。
+- 在发往 Provider 之前按单调时钟复核实际采样接收时间是否过期，按 `stream_epoch`、source 和 Session generation 拦截被重启/切换淘汰的帧；不改变 20ms/640B 的 Room PCM 格式。
+- Fake Socket 自动化验证覆盖空闲等待唤醒、发送期间取消与 `queue.join()`、溢出、过期及同源重启，不以此代替物理麦克风证据。**真实 Room 麦克风 → smart_turn → 转写 → 文本仍待人工联合验收；未宣布 Phase 4 PASS。**
+
 - **未验**真实 Room PCM/物理麦克风 → Provider smart_turn → 实际转写/语音文字连续两轮、附和误判、两头并发语音、网络断线/自动恢复；PCM pump 与失效/工具隔离已有 Fake Socket 单元回归，不冒充真实音频证据。
 - 4-工作台桌面/窄屏实际点击、两个 Room 的真实 PCM 与物理麦克风隔离、关闭页面后 Runtime 独立运行。
 - 当前北京默认 endpoint/本机账号已证明可调用目标型号并返回真实文字和工具结果；其他地域、正式 Persona 文本素材、固定语音/判轮质量样例、长时抖动统计及正式浏览器人工体验仍未确认。当前指令仅携带 Persona 标识及共性规则，**不得声称正式人格素材已完整注入**；现有旧 Provider 配置资产不因此覆盖。

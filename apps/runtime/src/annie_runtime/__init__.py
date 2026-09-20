@@ -196,6 +196,7 @@ class AudioInputGate:
         self.source_id = None
         self.audio_format: AudioFormat | None = None
         self.last_sequence = None
+        self.stream_epoch = 0
         self.accepted = 0
         self.dropped = 0
         self.rejected = 0
@@ -217,6 +218,7 @@ class AudioInputGate:
         if not self.config.listen_enabled:
             self._reject("listen_disabled")
         self._clear()
+        self.stream_epoch += 1
         self.source_id = source_id
         self.audio_format = audio_format
         self.last_sequence = None
@@ -225,6 +227,7 @@ class AudioInputGate:
         if self.source_id != source_id:
             return 0
         cleared = self._clear()
+        self.stream_epoch += 1
         self.source_id = None
         self.audio_format = None
         self.last_sequence = None
@@ -264,6 +267,11 @@ class AudioInputGate:
         queue_wait_ms = round((time.monotonic() - frame.enqueued_at) * 1000, 3)
         self.queue.task_done()
         return frame, queue_wait_ms
+
+    async def next_frame(self):
+        """Wake on PCM admission; the consumer calls task_done after send/drop."""
+        frame = await self.queue.get()
+        return frame, self.stream_epoch
 
     def stats(self):
         fmt = self.audio_format

@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {api,robotPath,sessionKey,eventBelongsToSession} from '../src/api.ts';
 import {pcmFrame} from '../src/pcm-format.ts';
+import {createMicPcmPump} from '../src/mic-pump.ts';
 
 const web=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
@@ -55,6 +56,25 @@ test('Room PCM format retains Phase 2 MIC_AUDIO wire contract',()=>{
   assert.equal(new TextDecoder().decode(frame.slice(2,11)),'MIC_AUDIO');
   assert.equal(frame[11],42);assert.equal(frame.at(-1),99);
   assert.throws(()=>pcmFrame(new Uint8Array(639)),/640B/);
+});
+
+test('live microphone pump emits actual 20ms Room frames across audio callbacks',()=>{
+  for(const rate of [16000,44100,48000]){
+    const pump=createMicPcmPump(),packets=[];
+    let count=0;
+    // Exercise the browser callback with silence too: no VAD gate drops packets.
+    for(let i=0;i<100;i++){
+      count=pump(new Float32Array(1024),rate,frame=>packets.push(frame));
+    }
+    const expected=Math.floor((1024*100/rate)*16000/320);
+    assert.ok(Math.abs(count-expected)<=1,`rate=${rate} count=${count} expected≈${expected}`);
+    assert.equal(packets.length,count);
+    for(const frame of packets){
+      assert.equal(frame.length,651);
+      assert.equal(new TextDecoder().decode(frame.slice(2,11)),'MIC_AUDIO');
+      assert.ok(frame.slice(11).every(sample=>sample===0));
+    }
+  }
 });
 
 test('React build is the only production page and serves local assets',async()=>{
@@ -123,10 +143,15 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(workbench,/route=\{realtime\?\.ready\?route:undefined\}/);
   assert.match(workbench,/target="_blank" rel="noopener noreferrer">打开 4B 浏览器试听/);
   assert.match(mic,/getUserMedia/);
-  assert.match(mic,/MIC_AUDIO|pcmFrame/);
+  assert.match(mic,/createMicPcmPump/);
   assert.match(mic,/message\.robotId!=='reb_mic'/);
   assert.match(mic,/window\.addEventListener\('pagehide'/);
   assert.match(mic,/Room 发送积压超过 800ms/);
+  assert.match(mic,/const captureWs=ws,captureContext=context,captureStream=stream/);
+  assert.match(mic,/captureWs\.send\(frame\)/);
+  assert.match(mic,/handedOff=true/);
+  assert.doesNotMatch(mic,/ws=undefined;stream=undefined;context=undefined/);
+  assert.match(mic,/3 秒未收到麦克风音频回调/);
   assert.match(mic,/取消开启/);
   assert.match(mic,/此 Room 没有另一个麦克风/);
   assert.doesNotMatch(mic,/测试 PCM|sendFrame|new Uint8Array\(640\)\)\)/);

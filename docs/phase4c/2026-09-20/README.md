@@ -72,3 +72,17 @@
 - 当前本机运行实例 PID 87312 的健康检查：annie-a、annie-b Realtime 为 `connected`，两者 TTS 均为 `not_configured`。本机根 `.env` 有 Key，但未启用 TTS/嘴型；ForcedAligner 的 sidecar Python 环境不存在。当前没有音频进入 reb_tts、没有声学 mouth_script 进入 reb_sam，**不能把测试无声归因于浏览器播放器本身**。
 - **未自动更改 `.env` 或重启当前 Runtime**：启用 TTS 会把真实音频送入现有 Room，设备播放、停播与 AEC 未经验收；需先确认 Room 下游扬声器/麦克风安全条件，再按 4B 流程显式开启。侧车环境准备完成且模型实际生成 mouth_script 后才能说嘴型已通。
 - 新增对应前端回归和网页诊断；类型/构建/自动化验证不代表真实麦克风、Provider、Room 实际收音、浏览器播放和声学嘴型现场通过。
+
+## 正式麦克风一直显示 0 帧的确定性缺陷（2026-09-20）
+
+- 根因：`start()` 完成连接后将局部 `ws`、`context` 设为 `undefined`，而 `processor.onaudioprocess` 依旧引用这两个局部变量；所以即使 UI 显示「正在发送」，回调进入后立即返回，绝不发送帧。前一轮静态回归只检查存在 `getUserMedia`/打包字段，**未验证实际回调产出**。
+- 修复：音频回调捕获不可变的 `captureWs`/`captureContext`/`captureStream`；用 `handedOff` 明确移交资源，仅启动失败时清理临时资源；正常停止/切换/离页仍释放。将 16k PCM 20ms 按样本跨回调打包抽成可执行的纯函数，新增在 16/44.1/48kHz 下实际输入连续静音样本并验证产生 `MIC_AUDIO` 651B 房间帧的自动化，不再仅匹配静态源码。
+- 首帧即时更新计数，其后每 25 帧刷新一次；握手完成先显示「等待首帧」，3 秒音频回调未到会停止并显示 AudioContext 与设备 track 状态，避免永远假显示「发送中 · 0 帧」。
+- 仍不得声称已在用户浏览器/实体麦克风验证：真实 Room 音频发送必须由用户在正式页点击并授权；只对测试静音在内存中执行打包，无需向现场 Room 注入任何帧。
+
+### 本次实际浏览器回归（补证据）
+
+- 除资源移交错误外，旧版也在等待麦克风授权后才创建和 resume AudioContext；现在将 `getUserMedia` 和 `AudioContext.resume` 都发起于初始点击回调。不会把「Room WebSocket 已连接」当作「音频回调正在运行」。
+- 新增 3 秒首帧超时，直接展示 AudioContext 和麦克风 track 状态。首帧立即更新计数，之后每 10 帧刷新一次；在后台不进行逐帧 React 状态更新。
+- **实际 Chromium Headless + 假麦克风（非静态断言）**：Playwright 在真实 React 页面启动并授予假麦克风，替换浏览器 WebSocket 为只记录而不发送到现场 Room 的 Mock；浏览器真实 `onaudioprocess` 触发后捕获 **12 个 651B MIC_AUDIO 包**（仅测试页模拟连接，URL 仍与目标 roomv2 匹配），UI 显示非零帧；停止与切到机器人 B 均能关闭原 WebSocket，不再收到旧房间帧；页面无 JS 异常。可选回归：`node web/tests/microphone.browser.mjs`（需本地 Runtime / Playwright Chromium）。
+- **现场物理麦克风、真实 Room 接收、ASR/smart_turn 仍待用户操作验证**；本项不改 `.env`、不动现场 PCM 音源、不可倒填完整硬件闭环 PASS。

@@ -1,18 +1,9 @@
 import {useEffect,useRef,useState} from 'react';
-import {pcmFrame} from './pcm-format';
+import {createMicPcmPump} from './mic-pump';
 
 type Route={room_id:string;mic_url:string};
 type Microphone={ws:WebSocket;stream:MediaStream;context:AudioContext;
-  source:MediaStreamAudioSourceNode;processor:ScriptProcessorNode;silent:GainNode};
-
-function pcm(samples:number[]){
-  const bytes=new Uint8Array(640),view=new DataView(bytes.buffer);
-  for(let i=0;i<320;i++){
-    const sample=Math.max(-1,Math.min(1,samples[i]));
-    view.setInt16(i*2,sample<0?sample*32768:sample*32767,true);
-  }
-  return pcmFrame(bytes);
-}
+  source:MediaStreamAudioSourceNode;processor:ScriptProcessorNode;silent:GainNode;watchdog:number};
 
 function connect(url:string,roomId:string):Promise<WebSocket>{
   return new Promise((resolve,reject)=>{
@@ -54,6 +45,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
     token.current++;
     const old=active.current;active.current=null;
     if(old){
+      window.clearTimeout(old.watchdog);
       old.processor.onaudioprocess=null;
       old.processor.disconnect();old.source.disconnect();old.silent.disconnect();
       old.stream.getTracks().forEach(track=>track.stop());
@@ -75,57 +67,68 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
     const current=++token.current,roomId=route.room_id;
     let stream:MediaStream|undefined,context:AudioContext|undefined,ws:WebSocket|undefined;
     let source:MediaStreamAudioSourceNode|undefined,processor:ScriptProcessorNode|undefined,silent:GainNode|undefined;
+    let handedOff=false;
     setWorking(true);setStatus('请求浏览器麦克风权限…');
     try{
-      // Request permission during the click gesture, before any network handshake.
-      stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1}});
-      if(current!==token.current)return;
+      // Both calls must start during the original click. Creating/resuming
+      // AudioContext after awaiting the permission dialog loses user activation
+      // in some browsers, leaving an apparently live graph with zero callbacks.
+      const permission=navigator.mediaDevices.getUserMedia({audio:{channelCount:1}});
       context=new AudioContext();
-      await context.resume();
+      const resume=context.resume();
+      stream=await permission;
+      if(current!==token.current)return;
+      await resume;
       if(current!==token.current)return;
       ws=await connect(route.mic_url,roomId);
       if(current!==token.current)return;
       source=context.createMediaStreamSource(stream);
       processor=context.createScriptProcessor(1024,1,1);
       silent=context.createGain();silent.gain.value=0;
-      let pending:number[]=[];
-      let offset=0;
+      // Keep immutable handles: the capture callback must not read locals
+      // cleared/changed by startup cleanup after it has been installed.
+      const captureWs=ws,captureContext=context,captureStream=stream;
+      const pump=createMicPcmPump();
       let sent=0;
       processor.onaudioprocess=event=>{
-        if(ws?.readyState!==WebSocket.OPEN||!context)return;
-        const input=event.inputBuffer.getChannelData(0);
-        const ratio=context.sampleRate/16000;
-        if(ratio<1){stop();setStatus('麦克风采样率低于 16kHz，已停止');return;}
-        // Carry fractional resampling phase across browser audio callbacks.
-        for(let pos=offset;pos<input.length;pos+=ratio){
-          const a=Math.floor(pos),b=Math.min(input.length,Math.max(a+1,Math.floor(pos+ratio)));
-          let total=0;for(let i=a;i<b;i++)total+=input[i];
-          pending.push(total/(b-a));
-        }
-        offset=(offset+Math.ceil((input.length-offset)/ratio)*ratio)-input.length;
-        while(pending.length>=320){
-          if(ws.bufferedAmount>640*40){
-            stop();setStatus('Room 发送积压超过 800ms，麦克风已停止');return;
+        if(active.current?.ws!==captureWs||captureWs.readyState!==WebSocket.OPEN)return;
+        try{
+          const previous=sent;
+          sent=pump(event.inputBuffer.getChannelData(0),captureContext.sampleRate,frame=>{
+            if(captureWs.bufferedAmount>640*40)throw new Error('Room 发送积压超过 800ms');
+            captureWs.send(frame);
+          });
+          // Keep frame feedback responsive without rendering React 50 times/s.
+          if(previous===0&&sent>0){
+            window.clearTimeout(active.current?.watchdog);
+            setStatus('正在发送麦克风 → '+roomId);
           }
-          ws.send(pcm(pending.splice(0,320)));
-          // Do not render React 50 times/second during realtime PCM capture.
-          if(++sent%25===0)setFrames(sent);
-        }
+          if(previous===0&&sent>0||Math.floor(previous/10)!==Math.floor(sent/10))setFrames(sent);
+        }catch(error){stop();setStatus('麦克风发送失败：'+String(error));}
       };
       source.connect(processor);processor.connect(silent);silent.connect(context.destination);
-      active.current={ws,stream,context,source,processor,silent};
-      ws.onclose=()=>{if(active.current?.ws===ws){stop();setStatus('Room 麦克风连接已断开');}};
+      const watchdog=window.setTimeout(()=>{
+        if(active.current?.ws!==captureWs||sent>0)return;
+        const state=captureContext.state,track=captureStream.getAudioTracks()[0];
+        stop();
+        setStatus('3 秒未收到麦克风音频回调：AudioContext='+state+
+          '；设备='+ (track?.readyState??'none')+'；请检查浏览器麦克风授权与音频设备');
+      },3000);
+      active.current={ws,stream,context,source,processor,silent,watchdog};
+      handedOff=true;
+      captureWs.onclose=()=>{if(active.current?.ws===captureWs){stop();setStatus('Room 麦克风连接已断开');}};
       stream.getAudioTracks().forEach(track=>{track.onended=()=>{
-        if(active.current?.stream===stream){stop();setStatus('麦克风设备已停止');}
+        if(active.current?.stream===captureStream){stop();setStatus('麦克风设备已停止');}
       };});
-      setFrames(0);setListening(true);setStatus('正在发送麦克风 → '+roomId);
-      ws=undefined;stream=undefined;context=undefined;
+      setFrames(0);setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
     }catch(error){
       if(current===token.current)setStatus('开启失败：'+String(error));
     }finally{
-      if(ws)ws.close();
-      stream?.getTracks().forEach(track=>track.stop());
-      if(context)void context.close();
+      if(!handedOff){
+        ws?.close();
+        stream?.getTracks().forEach(track=>track.stop());
+        if(context)void context.close();
+      }
       if(current===token.current)setWorking(false);
     }
   }

@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {pcmFrame} from './pcm-format';
 
-export type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:unknown};
+export type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Mic={ws:WebSocket;stream:MediaStream;context:AudioContext;source:MediaStreamAudioSourceNode;processor:ScriptProcessorNode;silent:GainNode};
 function downsample(input:Float32Array,rate:number){
   const ratio=rate/16000;

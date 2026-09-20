@@ -188,11 +188,13 @@ def main():
             if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
         ),
         tts_url=os.environ.get("ANNIE_TTS_URL") or None,
+        viseme_root=root if os.environ.get("ANNIE_VISEME_ENABLED") == "1" else None,
+        viseme_python=os.environ.get("ANNIE_VISEME_PYTHON") or None,
     )
     try:
         runtime.preflight()
     except ValueError as exc:
-        print(f"[ERROR] database preflight failed: {exc}", file=sys.stderr)
+        print(f"[ERROR] preflight failed: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
     if args.check:
 

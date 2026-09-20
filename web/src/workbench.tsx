@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {api,robotPath,type Health,type Session,type RealtimeEvent,type RealtimeEvents} from './api';
 import {RoomInput,type RoomRoute} from './pcm';
+import {RoomPlaybackTester} from './playback';
 
 type Conversation={chat_id:string;persona_id:string;[key:string]:unknown};
 type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
@@ -157,7 +158,7 @@ export function Workbench(){
       <main>
         <section className="panel">
           <h1>{currentRobot?.robot_id??'选择机器人'} <small>{currentRobot?.room_id??''}</small></h1>
-          <p>Realtime: {realtimeState?.state??'未配置'} · 文本与独立 TTS 分路。TTS 未验证设备播放；ForcedAligner/嘴型及真实动作未接入。</p>
+          <p>Realtime: {realtimeState?.state??'未配置'} · 文本与独立 TTS 分路；设备报告、浏览器测试和未确认状态分开展示。</p>
           {realtimeState?.error&&<p role="alert" className="bad">连接错误：{realtimeState.error}</p>}
           <div className="badges">{Object.entries(health?.capabilities??{}).map(([name,state])=><span key={name}>{name}: {state}</span>)}</div>
           <div className="fields">
@@ -205,6 +206,8 @@ export function Workbench(){
             <span>设备播放：{realtimeState?.speech_output?.playback_evidence??'unknown'}</span>
             <span>嘴型：{realtimeState?.speech_output?.viseme??'not_connected'}</span>
           </div>
+          <p>起播回执：{realtimeState?.speech_output?.started_reported_ms??'无'}；已报告播放进度：{realtimeState?.speech_output?.played_sample_count??0} 样本；停止请求：{realtimeState?.speech_output?.stop_requested_ms??'无'}；停止帧发布：{realtimeState?.speech_output?.stop_published_ms??'无'}；停止回执：{realtimeState?.speech_output?.stop_confirmed_ms??'无'}（{realtimeState?.speech_output?.last_stop_evidence??'unknown'}，CID {realtimeState?.speech_output?.stopped_conversation_id??'无'}）。</p>
+          <RoomPlaybackTester key={robotId} route={routes.find(route=>route.robot_id===robotId)} onCancel={()=>void operation('cancel')}/>
           {realtimeState?.speech_output?.error&&<p role="alert" className="bad">TTS 错误：{realtimeState.speech_output.error}</p>}
           <p>未安装对齐模型或无设备回执时，嘴型与已播证据保持未就绪/unknown；不以浏览器试听模拟设备播放，也不重复合成。</p>
           <details><summary>音频、停止及嘴型事件</summary><pre>{pretty(realtimeEvents.filter(e=>e.kind.startsWith('tts.')||e.kind.startsWith('viseme.')))}</pre></details>

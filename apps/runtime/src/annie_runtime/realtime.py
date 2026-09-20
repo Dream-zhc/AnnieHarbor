@@ -302,7 +302,10 @@ class RealtimeRobot:
                         assistant_planned_text=self.text or None, updated_ms=now,
                         cancelled=interrupted, interrupted=interrupted, cancel_source=cancel_source)
         if status == "completed" and turn is not None and self.turn_identity == self.robot.session_state():
-            self.robot._cache_context_turn(turn)
+            # With external speech, generated != heard. Only a speaker receipt
+            # of full drain can promote this turn into conversational context.
+            if self.speech is None:
+                self.robot._cache_context_turn(turn)
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
         elif interrupted:

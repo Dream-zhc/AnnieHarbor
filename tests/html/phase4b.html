@@ -4,16 +4,16 @@
 <style>body{font:16px/1.6 system-ui,sans-serif;background:#f1f4f8;color:#162238;max-width:900px;margin:24px auto;padding:0 16px}section{background:white;border:1px solid #d4dee9;padding:18px;border-radius:12px;margin:14px 0}a{color:#164bb0}li{margin:9px 0}.warn{color:#9a4200}small{color:#52657e}@media(max-width:600px){body{margin:8px auto}section{padding:12px}}</style>
 </head><body>
 <h1>Phase 4B｜独立 TTS、PCM 与嘴型</h1>
-<p class="warn">总状态：待人工验收；禁止将模型合成成功、Room 发布或浏览器试听当作设备已播。嘴型未安装/未运行时保持 not_connected。</p>
+<p class="warn">总状态：待人工验收；禁止将模型合成成功、Room 发布或浏览器试听当作设备已播。仅真正对齐成功才显示 aligner_reporting。</p>
 <section><h2>1. 正式工作台</h2><a href="/">打开 React 工作台 →</a>
-<p>选择当前机器人与 Room，查看 Realtime/TTS/嘴型状态、首音频和首发布时延。原始事件按机器人、Chat、Persona、generation 单独核对。</p></section>
-<section><h2>2. 安全前置</h2><p>未完成设备停止/回执、麦克风 AEC 证据时，默认禁用发布。确认设备音量安全、无同 Room 第二麦克风音源、真实停止能力后，在本机 .env 显式设置 ANNIE_TTS_ENABLED=1 并按原启动器重启。不要将密钥贴到页面。</p></section>
+<p>选择当前机器人与 Room，查看 Realtime/TTS/嘴型状态、首音频和首发布时延。在「独立 TTS」卡片里勾选单路播放确认，点击「开启网页测试扬声器」，网页订阅 reb_tts+reb_sam，向 reb_main 回传 <code>browser_test</code> 播放事件。关闭网页时不能冒充已停播。</p></section>
+<section><h2>2. 安全前置</h2><p>未完成设备停止/回执、麦克风 AEC 证据时，默认禁用发布。先关闭同 Room 的真实扬声器，调整浏览器音量并确认无麦克风回授；本机 .env 显式设置 ANNIE_TTS_ENABLED=1 后按原启动器重启。ForcedAligner Python 环境/模型安装且可启动后再打开 ANNIE_VISEME_ENABLED=1。不要将密钥贴到页面。</p></section>
 <section><h2>3. 真实音频</h2><ol>
 <li>A/roomv2 提交文字或说话 → 记录生成文本、TTS 首 PCM、reb_tts 已发布帧/样本，确认设备是否真正起播；缺回执写 unknown。</li>
 <li>B/roomv3 独立测试并让 A、B 同时输出；核对没有串房间、没有二次合成、没有双音轨。</li>
-<li>生成中及设备播放中取消 A → 记录本地取消、stop 发布和设备确认停播三个不同时间点；B 不受影响。</li>
+<li>生成中及播放中点击「取消机器人回复」→ 区分 stop_requested、stop_published、browser_test_reported_stopped；真机版再核对 speaker_reported_stopped 及驱动实际停播样本位置，B 不受影响。</li>
 <li>断 TTS/Room、切 Chat/Persona、对齐超时与迟到事件，确认异常可见、旧 generation 不继续发布；检查独立 TTS 音色未变化。</li>
-<li>安装并验证 ForcedAligner 后，同一份 reb_tts PCM + 对应文本生成嘴型；实测采样位置与播放时钟，算法失败不伪造音节边界。</li>
-</ol><p class="warn">以上均需操作和设备证据，不由 Fake 测试替代。未配置对齐依赖/AEC/设备回执时，本阶段只能作 TTS 协议/模拟 Room 的开发验证。</p></section>
+<li>安装并验证 ForcedAligner 后，同一份 reb_tts PCM + 对应文本生成 reb_sam/mouth_script；浏览器按 played_sample_count 激活对应嘴型，错帧/迟到/取消不伪造音节边界。</li>
+</ol><p class="warn">以上均需操作和设备证据，不由 Fake 测试替代。浏览器回执只能写 browser_test，不能填机器人设备已播。扬声器团队按 docs/phase4b/2026-09-20/播放端WebSocket协议.md 实现报告事件。</p></section>
 <section><a href="/phase-tests/phase4.html">返回 Phase 4 验收入口 →</a></section>
 </body></html>

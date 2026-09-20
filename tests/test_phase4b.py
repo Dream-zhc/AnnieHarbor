@@ -2,10 +2,15 @@
 
 import asyncio
 import base64
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
+from annie_adapters.playback import RoomEventListener, playback_receipt
 from annie_adapters.tts import MODEL, RoomTtsPublisher, command, validate_url
 from annie_runtime.speech import SpeechOutput
+from annie_runtime.viseme import VisemeSidecars
 
 
 class FakeRobot:
@@ -14,6 +19,7 @@ class FakeRobot:
         self.generation = 1
         self.turn_cache = {}
         self.writes = []
+        self.context_cache = []
         self.ledger = type("Ledger", (), {"enqueue": lambda _, *a, **k: self.writes.append((a, k))})()
 
     def session_state(self):
@@ -22,6 +28,17 @@ class FakeRobot:
             "chat_id": "default", "persona_id": "annie",
             "session_epoch": 1, "generation": self.generation,
         }
+
+    def _cache_context_turn(self, turn):
+        self.context_cache.append(dict(turn))
+
+
+def receipt(kind, cid, epoch, samples, *, source="browser_test", seq=1, playback_id="test-1"):
+    return {"type": "tts.playback." + kind, "data": {
+        "protocol_version": 1, "conversation_id": cid, "stream_epoch": epoch,
+        "played_sample_count": samples, "sample_rate": 24000, "seq": seq,
+        "source": source, "playback_id": playback_id,
+    }}
 
 
 class FakePublisher:
@@ -68,6 +85,23 @@ class FakeTts:
 
 
 class TtsContractTests(unittest.TestCase):
+    def test_opt_in_aligner_missing_environment_fails_preflight(self):
+        root=Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=root / "var") as temp:
+            launcher=VisemeSidecars(Path(temp),room_config=None,robots=())
+            with self.assertRaisesRegex(ValueError,"ANNIE_VISEME_ENABLED=1"):
+                launcher.preflight()
+
+    def test_receipts_require_strict_sample_cursor_and_identity(self):
+        playback_receipt(receipt("started", "cid", 1, 0))
+        for invalid in (
+            receipt("started", "cid", 0, 0),
+            receipt("started", "cid", 1, -1),
+            receipt("started", "cid", 1, 0, source="unknown"),
+            receipt("started", "cid", 1, 0, seq=0),
+        ):
+            with self.assertRaises(ValueError):
+                playback_receipt(invalid)
     def test_qwen_tts_not_realtime_protocol_and_fixed_model(self):
         started = command("run-task", "task1", voice="custom", sample_rate=24000)
         self.assertEqual(started["payload"]["model"], MODEL)
@@ -121,6 +155,58 @@ class RoomTtsContractTests(unittest.IsolatedAsyncioTestCase):
         await publisher.close()
         self.assertTrue(connection.aborted)
 
+    async def test_main_subscription_receives_speaker_events_without_guessing_room(self):
+        class FakeRoom:
+            def __init__(self):
+                self.incoming=asyncio.Queue()
+                self.sent=[]
+                self.transport=self
+                self.aborted=False
+                self.incoming.put_nowait(json.dumps({
+                    "type":"WELCOME","ok":True,"clientId":"listener",
+                    "robotId":"reb_main","room":"roomv2","size":1,
+                    "subscriptions":[],"catalog":[],
+                }))
+                self.incoming.put_nowait(json.dumps({
+                    "type":"ACK","data":{"what":"subscribed","subscriptions":["*"]},
+                }))
+
+            async def __aenter__(self):return self
+            async def __aexit__(self,*_):return None
+            async def recv(self):return await self.incoming.get()
+            async def send(self,value):self.sent.append(json.loads(value))
+            def abort(self):self.aborted=True
+            def __aiter__(self):return self
+            async def __anext__(self):return await self.recv()
+
+        room=FakeRoom()
+        def connect_test(url,**_):
+            self.assertEqual(url,"ws://example/roomv2/reb_main")
+            return room
+        config=type("Room",(),{
+            "url_for":lambda _,r,c:f"ws://example/{r}/reb_{c}",
+            "channels":{"main":"reb_main"},
+            "connect_timeout_sec":1,"reconnect_min_sec":0.1,"reconnect_max_sec":0.2,
+        })()
+        seen=[]
+        listener=RoomEventListener(config,"roomv2","main",seen.append,socket_factory=connect_test)
+        listener.start()
+        for _ in range(40):
+            if listener.connected:
+                break
+            await asyncio.sleep(0.005)
+        self.assertTrue(listener.connected)
+        self.assertEqual(room.sent,[{"type":"SUBSCRIBE","data":{"types":["*"]}}])
+        message=receipt("started","cid",1,0,source="speaker")
+        await room.incoming.put(json.dumps(message))
+        for _ in range(40):
+            if seen:
+                break
+            await asyncio.sleep(0.005)
+        self.assertEqual(seen,[message])
+        await listener.close()
+        self.assertTrue(room.aborted)
+
 
 class SpeechTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -158,6 +244,106 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.speech.snapshot()["viseme"], "not_connected")
         self.assertIsNone(self.robot.turn_cache["turn1"].get("assistant_spoken_text"))
         self.assertEqual(self.robot.turn_cache["turn1"]["assistant_published_text"], "你好。")
+        for frame in frames:
+            d = frame["data"]
+            self.assertEqual(d["playback_protocol"], "sample_cursor_v1")
+            self.assertEqual(d["protocol_version"], 1)
+            self.assertGreaterEqual(d["end_sample"], d["start_sample"])
+            self.assertEqual(d["end_sample"]-d["start_sample"],len(base64.b64decode(d["audio"]))//2)
+        self.assertTrue(self.publisher.messages[-1]["data"]["stream_final"])
+
+    async def test_browser_test_drain_does_not_claim_robot_spoke(self):
+        cid="browser-turn"
+        self.robot.turn_cache[cid]={"turn_id":cid,"status":"completed"}
+        await self.speech.feed(cid, self.robot.session_state(), "你好。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.queue.join(),2)
+        epoch=self.speech.stream_epoch
+        self.assertFalse(self.speech.on_playback_receipt(receipt("started",cid,epoch+1,0)))
+        self.assertTrue(self.speech.on_playback_receipt(receipt("started",cid,epoch,0)))
+        self.assertFalse(self.speech.on_playback_receipt(receipt("progress",cid,epoch,0)))
+        self.assertFalse(self.speech.on_playback_receipt(receipt("progress",cid,epoch,1001,seq=2)))
+        self.assertTrue(self.speech.on_playback_receipt(receipt("progress",cid,epoch,480,seq=2)))
+        self.assertFalse(self.speech.on_playback_receipt(receipt("progress",cid,epoch,400,seq=3)))
+        self.assertTrue(self.speech.on_playback_receipt(receipt("drained",cid,epoch,1000,seq=3)))
+        self.assertEqual(self.speech.playback_evidence,"browser_test_reported_drained")
+        self.assertNotIn("assistant_spoken_text",self.robot.turn_cache[cid])
+        self.assertEqual(self.robot.context_cache,[])
+        self.assertFalse(self.speech.on_playback_receipt(receipt("progress",cid,epoch,1000,seq=4)))
+
+    async def test_speaker_reported_full_drain_promotes_spoken_and_context(self):
+        cid="speaker-turn"
+        self.robot.turn_cache[cid]={"turn_id":cid,"status":"completed"}
+        await self.speech.feed(cid,self.robot.session_state(),"你好。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.queue.join(),2)
+        epoch=self.speech.stream_epoch
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("started",cid,epoch,0,source="speaker")))
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("drained",cid,epoch,1000,source="speaker",seq=2)))
+        self.assertEqual(self.robot.turn_cache[cid]["assistant_spoken_text"],"你好。")
+        self.assertEqual(len(self.robot.context_cache),1)
+        self.assertEqual(self.speech.playback_evidence,"speaker_reported_drained")
+
+    async def test_stop_ack_of_old_epoch_does_not_claim_new_turn_stopped(self):
+        await self.speech.feed("old",self.robot.session_state(),"你好。")
+        await self.speech.finish("old")
+        await asyncio.wait_for(self.speech.queue.join(),2)
+        old_epoch=self.speech.stream_epoch
+        old_total=self.speech.samples
+        self.speech.on_playback_receipt(receipt("started","old",old_epoch,0))
+        await self.speech.cancel("interrupt")
+        self.assertEqual(self.publisher.messages[-1]["data"]["stop"],True)
+        self.assertEqual(self.publisher.messages[-1]["data"]["stream_epoch"],old_epoch)
+        await self.speech.feed("new",self.robot.session_state(),"再见。")
+        self.assertEqual(self.speech.stop_confirmed_ms,None)
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("stopped","old",old_epoch,old_total,seq=2)))
+        self.assertEqual(self.speech.stopped_conversation_id,"old")
+        self.assertEqual(self.speech.playback_state,"unknown")
+        self.assertFalse(self.speech.on_playback_receipt(
+            receipt("progress","old",old_epoch,old_total,seq=3)))
+
+    async def test_cancel_during_room_send_reserves_inflight_sample_end(self):
+        """A frame may reach Room before send returns; stop must cover it."""
+        entered = asyncio.Event()
+        original = self.publisher.publish
+
+        async def blocked_publish(message):
+            if message["data"]["audio"]:
+                entered.set()
+                await asyncio.Event().wait()
+            await original(message)
+
+        self.publisher.publish = blocked_publish
+        await self.speech.feed("inflight", self.robot.session_state(), "你好。")
+        await asyncio.wait_for(entered.wait(), 1)
+        self.assertEqual(self.speech.samples, 0)
+        self.assertEqual(self.speech.inflight_end, 480)
+        await asyncio.wait_for(self.speech.cancel("interrupt"), 1)
+        stop = self.publisher.messages[-1]["data"]
+        self.assertTrue(stop["stop"])
+        self.assertEqual(stop["start_sample"], 480)
+        self.assertEqual(stop["end_sample"], 480)
+        self.assertTrue(self.speech.on_playback_receipt(receipt(
+            "stopped", "inflight", stop["stream_epoch"], 480,
+        )))
+        self.assertEqual(self.speech.stopped_conversation_id, "inflight")
+
+    async def test_only_aligned_pcm_boundaries_can_report_mouth(self):
+        cid="mouth-turn"
+        await self.speech.feed(cid,self.robot.session_state(),"你好。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.queue.join(),2)
+        good={"type":"mouth_script","conversation_id":cid,"stream_id":"actual",
+              "seq":1,"start_sample":12,"end_sample":96,"viseme":"a",
+              "timing_source":"qwen3_forced_aligner_online"}
+        self.assertFalse(self.speech.on_mouth_script({**good,"end_sample":1001}))
+        self.assertFalse(self.speech.on_mouth_script({**good,"timing_source":"estimate"}))
+        self.assertTrue(self.speech.on_mouth_script(good))
+        self.assertFalse(self.speech.on_mouth_script(good))
+        self.assertEqual(self.speech.viseme_state,"aligner_reporting")
 
     async def test_cancel_prevents_old_generation_and_marks_stop_unknown(self):
         identity = self.robot.session_state()

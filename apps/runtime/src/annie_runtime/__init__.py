@@ -31,6 +31,7 @@ from annie_observability import Recorder, RuntimeEvent
 
 from annie_runtime.realtime import RealtimeRobot
 from annie_runtime.speech import SpeechOutput
+from annie_runtime.viseme import VisemeSidecars
 
 logger = logging.getLogger(__name__)
 
@@ -819,6 +820,8 @@ class HarborRuntime:
         tts_url: str | None = None,
         tts_socket_factory=None,
         room_tts_factory=None,
+        viseme_root: Path | None = None,
+        viseme_python: str | None = None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -843,6 +846,8 @@ class HarborRuntime:
         self.room_server = room_server
         self.room_connections = {}
         self.room_sources = {}
+        self.playback_listeners = {}
+        self.viseme_sidecars = None
         self.realtime = {}
         if realtime_key:
             from annie_adapters.realtime import DEFAULT_URL, QwenRealtimeSocket
@@ -859,6 +864,7 @@ class HarborRuntime:
         if tts_voice:
             if not realtime_key or room_server is None:
                 raise ValueError("TTS requires Realtime and a configured Room server")
+            from annie_adapters.playback import RoomEventListener
             from annie_adapters.tts import DEFAULT_URL as TTS_DEFAULT_URL
             from annie_adapters.tts import QwenTtsSocket, RoomTtsPublisher, validate_url
 
@@ -872,6 +878,23 @@ class HarborRuntime:
                     voice=tts_voice, socket_factory=tts_socket_factory or QwenTtsSocket,
                     event=client.publish,
                 )
+                self.playback_listeners[robot_id] = (
+                    RoomEventListener(
+                        room_server, client.robot.config.room_id, "main",
+                        lambda message, robot_id=robot_id: self._room_playback_receipt(robot_id, message),
+                    ),
+                    RoomEventListener(
+                        room_server, client.robot.config.room_id, "sam",
+                        lambda message, robot_id=robot_id: self._room_mouth_script(robot_id, message),
+                    ),
+                )
+        if viseme_root is not None:
+            if not tts_voice or room_server is None:
+                raise ValueError("ForcedAligner requires enabled TTS and a Room server")
+            self.viseme_sidecars = VisemeSidecars(
+                viseme_root, room_server, [client.robot for client in self.realtime.values()],
+                python=viseme_python,
+            )
         self.started = False
         if room_server is not None:
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
@@ -1093,6 +1116,23 @@ class HarborRuntime:
         except InputRejectedError:
             logger.exception("failed to reset disconnected Room input source=%s", source_id)
 
+    def _room_playback_receipt(self, robot_id, message):
+        client = self.realtime.get(robot_id)
+        if client is None or client.speech is None or not str(message.get("type", "")).startswith(
+            "tts.playback."
+        ):
+            return
+        try:
+            if not client.speech.on_playback_receipt(message):
+                client.publish("tts.playback.rejected", reason="stale_or_invalid_state")
+        except ValueError as exc:
+            client.publish("tts.playback.rejected", reason=str(exc)[:120])
+
+    def _room_mouth_script(self, robot_id, message):
+        client = self.realtime.get(robot_id)
+        if client is not None and client.speech is not None:
+            client.speech.on_mouth_script(message)
+
     def room_routes(self):
         routes = []
         for robot_id, connection in self.room_connections.items():
@@ -1119,6 +1159,8 @@ class HarborRuntime:
 
     def preflight(self):
         self.store.preflight()
+        if self.viseme_sidecars is not None:
+            self.viseme_sidecars.preflight()
 
     async def start(self):
         if self.started:
@@ -1130,10 +1172,15 @@ class HarborRuntime:
         for robot in self.robots.values():
             await robot.initialize_session()
             await robot.start()
+        if self.viseme_sidecars is not None:
+            await self.viseme_sidecars.start()
         for realtime in self.realtime.values():
             realtime.start()
         for connection in self.room_connections.values():
             connection.start()
+        for connections in self.playback_listeners.values():
+            for connection in connections:
+                connection.start()
 
     async def wait_room_gateway(self, timeout: float) -> bool:
         if not self.room_connections:
@@ -1150,6 +1197,10 @@ class HarborRuntime:
             self.started = False
             for realtime in self.realtime.values():
                 await realtime.stop()
+            for connections in self.playback_listeners.values():
+                await asyncio.gather(*(connection.close() for connection in connections))
+            if self.viseme_sidecars is not None:
+                await self.viseme_sidecars.close()
             if self.room_connections:
                 await asyncio.gather(*(connection.stop() for connection in self.room_connections.values()))
             for robot in self.robots.values():
@@ -1450,6 +1501,7 @@ class HarborRuntime:
                 "ready": room_ready,
                 "connections": room_status,
             },
+            "viseme_sidecars": self.viseme_sidecars.snapshot() if self.viseme_sidecars else {},
             "capabilities": {
                 "brain": "fake",
                 "room": room_capability,
@@ -1462,7 +1514,16 @@ class HarborRuntime:
                         client.speech for client in self.realtime.values()
                     ) else "not_connected"
                 ),
-                "viseme": "not_connected",
+                "viseme": (
+                    "aligner_reporting" if any(
+                        client.speech and client.speech.viseme_events
+                        for client in self.realtime.values()
+                    ) else "sidecar_exited" if self.viseme_sidecars is not None and any(
+                        proc.poll() is not None
+                        for proc in self.viseme_sidecars.processes.values()
+                    ) else "sidecar_started_unverified" if self.viseme_sidecars is not None
+                    else "not_connected"
+                ),
                 "llm": (
                     "connected" if self.realtime and all(client.ready for client in self.realtime.values())
                     else "partial" if any(client.ready for client in self.realtime.values())

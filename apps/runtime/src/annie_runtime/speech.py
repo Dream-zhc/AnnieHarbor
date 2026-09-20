@@ -52,6 +52,7 @@ class SpeechOutput:
 
         self.stream_epoch = 0
         self.playback_id = self.playback_source = None
+        self.receipt_tracks = {}  # independent browser_test and speaker cursors
         self.played_samples = self.receipt_seq = 0
         self.playback_state = self.playback_evidence = "unknown"
         self.stop_requested_at = self.stop_published_at = self.stop_confirmed_ms = None
@@ -111,6 +112,7 @@ class SpeechOutput:
         self.next_pcm_at = None
         self.failed_turn = None
         self.playback_id = self.playback_source = None
+        self.receipt_tracks.clear()
         self.played_samples = self.receipt_seq = self.viseme_events = 0
         self.playback_state = self.playback_evidence = "unknown"
         self.stop_requested_at = self.stop_published_at = self.stop_confirmed_ms = None
@@ -408,14 +410,13 @@ class SpeechOutput:
         limit = max(self.samples, self.inflight_end) if active else self.pending_stop[2]
         if data["played_sample_count"] > limit:
             return False
-        if active and self.playback_source is not None and (
-            data["source"], data["playback_id"]
-        ) != (self.playback_source, self.playback_id):
-            return False
-        if active and data["seq"] <= self.receipt_seq:
-            return False
-        if active and data["played_sample_count"] < self.played_samples:
-            return False
+        source, playback_id = data["source"], data["playback_id"]
+        track = self.receipt_tracks.get(source) if active else None
+        if active and track is not None:
+            if track["id"] != playback_id or data["seq"] <= track["seq"]:
+                return False
+            if data["played_sample_count"] < track["played"]:
+                return False
         if stopped and not active and data["played_sample_count"] < self.pending_stop[3]:
             return False
         if stopped and not active and self.pending_stop_source[0] is not None and (
@@ -425,9 +426,12 @@ class SpeechOutput:
         kind = message["type"].removeprefix("tts.playback.")
         if kind == "started" and (not active or limit == 0):
             return False
-        if kind in {"progress", "drained"} and self.playback_state not in {"started", "progress"}:
+        state = track["state"] if track is not None else "unknown"
+        if kind in {"progress", "drained"} and state not in {"started", "progress"}:
             return False
-        if kind in {"started", "progress"} and (not active or self.playback_state in {"stopped", "drained"}):
+        if kind in {"started", "progress"} and (not active or state in {"stopped", "drained"}):
+            return False
+        if kind == "started" and track is not None:
             return False
         if kind == "drained" and (
             not active or not self.synthesized_complete or
@@ -439,14 +443,21 @@ class SpeechOutput:
         if stopped and not active and kind != "stopped":
             return False
         received_ms = time.time_ns() // 1_000_000
+        preferred = self.playback_source != "speaker" or source == "speaker"
         if active:
-            self.playback_source = data["source"]
-            self.playback_id = data["playback_id"]
-            self.receipt_seq = data["seq"]
-            self.played_samples = data["played_sample_count"]
-            self.playback_state = kind
-            self.playback_evidence = f"{data['source']}_reported_{kind}"
-        if kind == "started":
+            self.receipt_tracks[source] = {
+                "id": playback_id, "seq": data["seq"],
+                "played": data["played_sample_count"], "state": kind,
+            }
+            # The test listener cannot eclipse real speaker evidence.
+            if preferred:
+                self.playback_source = source
+                self.playback_id = playback_id
+                self.receipt_seq = data["seq"]
+                self.played_samples = data["played_sample_count"]
+                self.playback_state = kind
+                self.playback_evidence = f"{source}_reported_{kind}"
+        if kind == "started" and preferred:
             self.started_reported_ms = received_ms
         if kind == "stopped":
             self.stop_confirmed_ms = received_ms

@@ -62,3 +62,13 @@
 - **未替用户提交真实语音或文字，也未把 Provider/Room 接线记成设备完整播放/声学嘴型 PASS**；监听已建立、但未收到真实 TTS 回合时的 viseme `not_connected` 和设备播放 `unknown` 均保持原语义。
 
 本轮最终接线检查：服务 PID 58248，健康为 ready，annie-a / annie-b 的 Realtime 都是 connected、TTS 都是 idle；两条 sidecar 进程 running，日志分别确认 roomv2、roomv3 的 reb_tts/reb_sam **connected + subscribed**。浏览器打开 4B HTML 并实际订阅 reb_tts 成功，测试文字按钮已解锁（**尚未点发送**）；设备回执保持 unknown，嘴型未收到实际 mouth_script 前仍为 not_connected。回归：Python **102 passed**（2 条既有 warnings、25 subtests），前端 **11 passed**，类型检查/构建/uv lock/Ruff/diff 检查通过。Sidecar G2PW 启动有 8 秒预热超时提示（后台加载）；真实 PCM/TTS 试听与时间戳嘴型仍由用户本轮操作验收。
+
+## Phase 4 返工：连续播放、工作台整合与实体闭环验收门槛
+
+原 4B HTML 每 20 ms 新建一个 `AudioBufferSourceNode`，并以 `max(currentTime+80ms, plannedAt)` 排帧。真实 WS/TTS 抖动超过 80ms 时会产生时间空洞，可能造成用户听见的杂音、断裂；**这是已确认的播放端风险，并不证明用户那次实际杂音的唯一来源**。工作台和独立 4B HTML 现共用静态 `/pcm-playback-processor.js`：AudioWorklet 连续环形 PCM、启动前 120ms 缓冲、设备采样率插值、按实际消费样本发 `browser_test` 回执；单一真实 reb_tts 流，不合成另一轨。启动阶段直接 `AudioContext.resume`，避免浏览器用户激活失效。
+
+工作台当前对话直接集成真实 Room 音频输出、音量、本地关闭、PCM 格式/采样游标/欠载/源峰值/削波样本以及实时 mouth_script。Phase 4B 独立 HTML 保留专项故障复现，不再要求正式对话跳转。端口、模型、声学侧车、外部 Room 协议不变。真实 Room PCM 格式锁定为 **Base64(raw 24 kHz mono S16LE)、每 960B/20ms、start_sample/end_sample 连续**，与 16k MIC_AUDIO 不得混用。Source 高峰值/削波提示上游失真；零削波而 Worklet 欠载意味着发布/网络抖动；两者都不是物理扬声器已正常的证据。
+
+另一实体闭环边界：浏览器与物理扬声器同时订阅 Room 时，两个回执源需独立 seq/样本游标；之前 `browser_test` 先开始会锁定 `playback_source`，拒绝真实 speaker。现在各源分别校验，speaker 优先呈现，其真实 drained 才能写入 `assistant_spoken_text`；browser_test 永远不能替代真机回执。
+
+**本阶段不得凭自动化 PASS 宣称最终 Phase 4 PASS。** 实体验收记录至少包括：三轮连续「真实麦克风 → ASR → Realtime → TTS → 物理扬声器 + reb_sam 嘴型」，麦克风和扬声器同时开时用户插话实际截断扬声器且嘴型停止、恢复下一轮；每轮收集原始 TTS 是否削波、浏览器欠载次数、真机播放报告、嘴型事件与实际延迟。浏览器音频截图与 `browser_test_reported_drained` 只证明浏览器试听，不证明外部扬声器/硬件 AEC、被打断后的喇叭已经停播。无真实回执则持续 unknown，Phase 4 状态保留「实体闭环待验」。

@@ -12,7 +12,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;b
 @media(max-width:600px){body{margin:8px auto}section{padding:12px}button{margin:4px 0}}
 </style></head><body>
 <h1>Phase 4B｜独立 TTS、PCM 与嘴型</h1>
-<p class="warn">待人工验收。此页独立承担浏览器测试扬声器和播放回执，不在正式 React 工作台注入测试能力；本页 browser_test 回执绝不代表真机已播。</p>
+<p class="warn">待人工验收。本页为独立协议诊断；正式 React 对话现已集成真实 reb_tts 音频、嘴型和浏览器本机播放。本页与工作台不要在同一 Room 同时开启播放器；browser_test 回执绝不代表真机已播。</p>
 <section><h2>0. 当前机器人是否具备音频输出</h2>
 <p id="capability" role="status">正在检查 Runtime / TTS / 嘴型…</p>
 <button id="refresh-health">重新检查配置</button>
@@ -66,7 +66,7 @@ async function refreshHealth(){
     updateControls();
   }catch(error){el('capability').textContent='健康检查失败：'+error}
 }
-const sampleCount=(r,s)=>s.started?Math.max(s.played,Math.min(s.received,Math.floor(Math.max(0,r.audio.currentTime-s.startAt)*24000))):0;
+const sampleCount=(r,s)=>s.played; // actual AudioWorklet cursor, not a guessed AudioContext clock
 function receipt(r,s,kind,count){
   if(r.main.readyState!==WebSocket.OPEN)return;
   const data={protocol_version:1,sample_rate:24000,conversation_id:s.cid,stream_epoch:s.epoch,playback_id:s.id,source:'browser_test',seq:++s.seq,played_sample_count:count};
@@ -77,8 +77,9 @@ function stopStream(r,reportStopped){
   const s=r.stream;if(!s)return;
   r.suppressed.add(s.cid+':'+s.epoch);
   const count=sampleCount(r,s),ended=s.ended;s.ended=true;
-  for(const node of s.nodes){try{node.stop()}catch{}node.disconnect()}
-  s.nodes.clear();
+  s.node.port.onmessage=null;
+  s.node.port.postMessage({type:'stop'});
+  s.node.disconnect();
   if(reportStopped&&!ended)receipt(r,s,'stopped',count);
   r.stream=null;el('mouth').textContent='—';
 }
@@ -92,15 +93,9 @@ function disconnect(){
 function tick(r){
   if(receiver!==r||!r.stream||r.stream.ended)return;
   const s=r.stream;
-  if(!s.started&&s.received>0&&r.audio.currentTime>=s.startAt){s.started=true;receipt(r,s,'started',0)}
-  if(!s.started)return;
-  const count=sampleCount(r,s);
-  if(count>s.played){s.played=count;if(!s.final||count<s.received)receipt(r,s,'progress',count)}
+  const count=s.played;
   const active=[...s.mouth.values()].find(m=>m.start<=count&&count<m.end);
   el('mouth').textContent=active?.viseme??'—';
-  if(s.final&&count>=s.received&&s.nodes.size===0){
-    s.ended=true;receipt(r,s,'drained',s.received);report('浏览器测试播放结束；不代表真实机器人扬声器')
-  }
 }
 function onTts(r,p){
   if(p.type!=='tts'||!r.ttsSubscribed||!p.data)return;
@@ -115,25 +110,42 @@ function onTts(r,p){
   let s=r.stream;
   if(s&&key!==s.cid+':'+s.epoch){stopStream(r,true);s=null}
   if(!s){
-    s={cid:d.conversation_id,epoch:d.stream_epoch,id:crypto.randomUUID?.()??('browser-'+Date.now()),seq:0,received:0,played:0,plannedAt:0,startAt:0,started:false,final:false,ended:false,nodes:new Set(),mouth:new Map()};
+    const node=new AudioWorkletNode(r.audio,'room-pcm-playback',{outputChannelCount:[2]});
+    node.connect(r.gain);
+    s={cid:d.conversation_id,epoch:d.stream_epoch,id:crypto.randomUUID?.()??('browser-'+Date.now()),seq:0,received:0,played:0,started:false,final:false,ended:false,node,mouth:new Map()};
+    const current=s;
+    node.port.onmessage=e=>{
+      if(r.stream!==current||current.ended)return;
+      const m=e.data,currentCount=m.played??current.played;
+      if(m.type==='error'){stopStream(r,true);report('音频队列异常：'+m.reason);return}
+      if(m.type==='underrun'){report('浏览器缓冲欠载 '+m.count+' 次：网络分包或 TTS 生成间隔不均');return}
+      if(m.type==='started'&&!current.started){
+        current.started=true;receipt(r,current,'started',0);report('本机实际开始播放');
+      }
+      if(m.type==='progress'||m.type==='drained'){
+        current.played=currentCount;
+        if(m.type==='progress'&&current.started)receipt(r,current,'progress',currentCount);
+        tick(r);
+      }
+      if(m.type==='drained'){
+        current.ended=true;receipt(r,current,'drained',currentCount);
+        current.node.disconnect();report('浏览器测试播放结束；不代表真实机器人扬声器');
+      }
+    };
     r.stream=s;
   }
   if(s.ended)return;
-  if(d.stream_final===true){s.final=true;return}
+  if(d.stream_final===true){s.final=true;s.node.port.postMessage({type:'final'});return}
   if(typeof d.audio!=='string'||!d.audio)return;
   let bytes;try{bytes=Uint8Array.from(atob(d.audio),c=>c.charCodeAt(0))}catch{return}
-  if(bytes.length%2||d.start_sample!==s.received||d.end_sample!==s.received+bytes.length/2||s.received-s.played>72000){
+  if(d.format!=='pcm_s16le'||d.sample_rate!==24000||d.channels!==1||
+    bytes.length%2||d.start_sample!==s.received||d.end_sample!==s.received+bytes.length/2||s.received-s.played>48000){
     stopStream(r,true);report('PCM 连续性或积压异常；已停止');return;
   }
-  const n=bytes.length/2,buf=r.audio.createBuffer(1,n,24000),view=new DataView(bytes.buffer);
-  for(let i=0;i<n;i++)buf.getChannelData(0)[i]=view.getInt16(i*2,true)/32768;
-  const node=r.audio.createBufferSource();node.buffer=buf;node.connect(r.audio.destination);
-  const when=Math.max(r.audio.currentTime+.08,s.plannedAt);
-  if(s.received===0)s.startAt=when;
-  s.plannedAt=when+n/24000;s.received+=n;s.nodes.add(node);
+  s.received+=bytes.length/2;
   el('result').textContent='收到真实 reb_tts PCM：'+s.received+' samples / browser_test；嘴型 '+el('mouth').textContent;
-  node.onended=()=>{s.nodes.delete(node);node.disconnect();tick(r)};
-  node.start(when);report('reb_tts 测试音频缓冲播放中');
+  s.node.port.postMessage({type:'pcm',buffer:bytes.buffer},[bytes.buffer]);
+  report('reb_tts 已进入 AudioWorklet 连续播放缓冲');
 }
 function connect(url,room,channel){
   return new Promise((resolve,reject)=>{
@@ -156,11 +168,16 @@ async function start(){
   let audio,tts,main,sam;
   try{
     const route=selected();
-    audio=new AudioContext({sampleRate:24000});await audio.resume();
+    audio=new AudioContext();
+    const resumed=audio.resume();
+    await audio.audioWorklet.addModule('/pcm-playback-processor.js');
+    await resumed;
+    if(audio.state!=='running')throw Error('浏览器 AudioContext 未运行');
     tts=await connect(route.urls.tts,route.room_id,'reb_tts');
     main=await connect(route.urls.main,route.room_id,'reb_main');
     sam=await connect(route.urls.sam,route.room_id,'reb_sam');
-    const r={tts,main,sam,audio,stream:null,suppressed:new Set(),ttsSubscribed:false,samSubscribed:false,timer:0};
+    const gain=audio.createGain();gain.gain.value=.5;gain.connect(audio.destination);
+    const r={tts,main,sam,audio,gain,stream:null,suppressed:new Set(),ttsSubscribed:false,samSubscribed:false,timer:0};
     receiver=r;
     tts.onmessage=e=>{if(typeof e.data!=='string')return;try{
       const p=JSON.parse(e.data);

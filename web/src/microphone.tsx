@@ -73,7 +73,9 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
       // Both calls must start during the original click. Creating/resuming
       // AudioContext after awaiting the permission dialog loses user activation
       // in some browsers, leaving an apparently live graph with zero callbacks.
-      const permission=navigator.mediaDevices.getUserMedia({audio:{channelCount:1}});
+      const permission=navigator.mediaDevices.getUserMedia({audio:{
+        channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false,
+      }});
       context=new AudioContext();
       const resume=context.resume();
       stream=await permission;

@@ -297,6 +297,35 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.robot.context_cache),1)
         self.assertEqual(self.speech.playback_evidence,"speaker_reported_drained")
 
+    async def test_browser_monitor_never_blocks_real_speaker_receipts(self):
+        cid="parallel-output"
+        self.robot.turn_cache[cid]={"turn_id":cid,"status":"completed"}
+        await self.speech.feed(cid,self.robot.session_state(),"你好。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.queue.join(),2)
+        epoch=self.speech.stream_epoch
+        # Browser listener starts first; physical speaker begins later at its
+        # own sample cursor, independently of the browser's progress.
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("started",cid,epoch,0)))
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("progress",cid,epoch,960,seq=2)))
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("started",cid,epoch,0,source="speaker",seq=1)))
+        self.assertEqual(self.speech.playback_source,"speaker")
+        self.assertEqual(self.speech.played_samples,0)
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("progress",cid,epoch,1000,seq=3)))
+        self.assertEqual(self.speech.playback_source,"speaker")
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("drained",cid,epoch,1000,source="speaker",seq=2)))
+        self.assertEqual(self.speech.playback_evidence,"speaker_reported_drained")
+        self.assertEqual(self.robot.turn_cache[cid]["assistant_spoken_text"],"你好。")
+        self.assertFalse(self.speech.on_playback_receipt(
+            receipt("progress",cid,epoch,999,source="speaker",seq=3)))
+        self.assertFalse(self.speech.on_playback_receipt(
+            receipt("started",cid,epoch,0,source="speaker",seq=4)))
+
     async def test_stop_ack_of_old_epoch_does_not_claim_new_turn_stopped(self):
         await self.speech.feed("old",self.robot.session_state(),"你好。")
         await self.speech.finish("old")

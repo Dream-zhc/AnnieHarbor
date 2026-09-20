@@ -21,13 +21,13 @@ summary{cursor:pointer}code{overflow-wrap:anywhere}
 <section><h2>1. P4C-W1/W2 · 功能和布局</h2>
 <ol>
 <li>在正式入口创建 Chat、切换已有 Chat/Persona/revision、查看完整历史与最近 20 轮；显式删除前检查机器人/Chat/Persona 三重目标。</li>
-<li>正式工作台：选机器人 → 选会话 → 输入网页文字 → 看回复增量 → 取消 → 开发者只读诊断。物理/浏览器麦克风用 <a href="/phase-tests/phase2.html">Phase 2 独立 HTML</a> 测试。</li>
+<li>正式工作台：选机器人 → 选会话 → 开启真实 Room 麦克风/发送文字 → 听本机实时 TTS → 看嘴型 → 取消；Phase 2 HTML 仍可单独复现收音协议故障。</li>
 <li>以 1440×900 和 390×844 查看导航、历史、音频、PCM 和诊断；键盘 Tab、窄屏滚动无遮挡和横向溢出。原始 JSON 默认折叠。</li>
 </ol></section>
 <section><h2>2. P4C-W3/W4 · 隔离与输出</h2>
 <ol>
 <li>A/B 同名 Chat 切换 10 次，检查旧 generation 文字不串入新会话；关闭网页不应关闭 Runtime。</li>
-<li>在 <a href="/phase-tests/phase4b.html">Phase 4B 独立 HTML</a> 启用浏览器测试扬声器，核对 reb_tts 单份 PCM、reb_sam 嘴型与 reb_main browser_test 回执；正式工作台只显示生成/发布/真机已播或 unknown。</li>
+<li>在正式工作台开启本机播放（确认耳机及无重复播放器），核对 reb_tts 单份 PCM、reb_sam 嘴型、欠载与 reb_main browser_test 回执；<a href="/phase-tests/phase4b.html">Phase 4B 独立 HTML</a> 仅用于专项复现，两处不要同时开启同一 Room 的播放。</li>
 <li>在 Phase 2 独立 HTML 测试拒绝麦克风授权、断线、离页；停止后不继续向原 Room 发送。真实扬声器回执、AEC 和 ForcedAligner 仍待联合验收。</li>
 </ol></section>
 <section><h2>3. P4C-W5/W6/W7 · 异常、动效与性能</h2>

@@ -27,6 +27,9 @@ class StaticWorkbenchTests(unittest.TestCase):
                 self.assertGreaterEqual(len(assets), 2)
                 for asset in assets:
                     self.assertEqual(client.get(asset).status_code, 200)
+                worklet = client.get("/pcm-playback-processor.js")
+                self.assertEqual(worklet.status_code, 200)
+                self.assertIn("registerProcessor('room-pcm-playback'", worklet.text)
                 instructions = client.get("/phase-tests/phase4c.html")
                 self.assertEqual(instructions.status_code, 200)
                 self.assertIn("Phase 4C", instructions.text)

@@ -141,7 +141,8 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(workbench,/<RealtimeMicrophone key=\{robotId/);
   assert.match(workbench,/route\?\.room_id\?\?''/);
   assert.match(workbench,/route=\{realtime\?\.ready\?route:undefined\}/);
-  assert.match(workbench,/target="_blank" rel="noopener noreferrer">打开 4B 浏览器试听/);
+  assert.match(workbench,/<RoomPlayback key=/);
+  assert.match(workbench,/target="_blank" rel="noopener noreferrer">独立 4B 诊断页/);
   assert.match(mic,/getUserMedia/);
   assert.match(mic,/createMicPcmPump/);
   assert.match(mic,/message\.robotId!=='reb_mic'/);

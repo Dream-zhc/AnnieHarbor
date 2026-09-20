@@ -107,6 +107,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 .voice-confirm input{flex:none;accent-color:#4c65d4}
 .voice-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#657b95;font-size:12px}
 .voice-actions button{padding:6px 10px;font-size:12px}
+.room-playback{display:grid;gap:7px;border-top:1px solid #edf0f6;padding-top:10px}
+.room-playback h4{font-size:12px;margin:0;color:#415875}
+.room-playback small,.playback-state{font-size:11px;color:#74869e;margin:0}
+.playback-volume{display:flex;align-items:center;gap:7px}
+.playback-volume input{width:105px;accent-color:#4c65d4}
+.playback-metrics{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:#647994}
+.playback-metrics span{border-radius:6px;background:#f2f5fa;padding:3px 6px}
 .audio-guidance{font-size:12px;color:#966228;background:#fff7eb;border-radius:8px;padding:8px 10px;overflow-wrap:anywhere}
 .composer-status{font-size:11px;color:#8796a9;display:flex;align-items:center;gap:8px;margin-bottom:9px}
 .composer form{border:1px solid #dce4f0;border-radius:14px;padding:12px 14px 10px;box-shadow:0 2px 8px #193d7520}

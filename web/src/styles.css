@@ -1,1 +1,58 @@
-:root{font:15px/1.5 system-ui,-apple-system,sans-serif;color:#e9edf3;background:#10141d}*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer;background:#29354b;color:inherit;border:1px solid #45566e;border-radius:8px;padding:8px 12px}button:disabled{opacity:.45;cursor:not-allowed}button:hover:not(:disabled){border-color:#8eafd5}a{color:#92c4ff}.shell{max-width:1500px;margin:auto;padding:20px}header,.status,.actions,.badges,.fields{display:flex;align-items:center;gap:12px;flex-wrap:wrap}header{justify-content:space-between;padding:10px 0 20px}header strong{font-size:22px}header span,.sub,small,.metadata{color:#aabbd0}.status,.panel,aside{border:1px solid #344154;background:#192231;border-radius:12px;padding:16px}.status{margin-bottom:16px}.ok{color:#69dfae}.bad,.danger{color:#ff9ca7}.layout{display:grid;grid-template-columns:245px minmax(0,1fr);gap:18px}aside{align-self:start;display:grid;gap:8px}aside button{text-align:left;display:grid;gap:2px}.selected{background:#345072;border-color:#84b7eb}main{min-width:0;display:grid;gap:16px}h1,h2,h3{margin:0 0 12px}h1{font-size:25px}h1 small{font-size:14px}h2{font-size:18px}h3{font-size:15px;margin-top:15px}p{color:#b7c7d8}.badges span{border:1px solid #45556b;border-radius:24px;padding:3px 9px;color:#bbcbdd}.fields{margin:15px 0}.fields label{flex:1;min-width:130px}label{display:grid;gap:5px}input{background:#0d1725;color:inherit;border:1px solid #4c617c;border-radius:7px;padding:10px;min-width:0;width:100%}form{display:flex;align-items:end;gap:8px;margin:12px 0}form label{flex:1}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;background:#0d1725;border:1px solid #32445c;padding:12px;border-radius:8px;color:#c4d7eb}.notice{border-color:#a26c6c}.transcript{max-height:440px;overflow:auto;padding:6px}.turn{display:grid;gap:10px;margin:12px 0}.bubble{padding:10px 14px;border-radius:12px;max-width:90%}.bubble p{white-space:pre-wrap;overflow-wrap:anywhere;margin:5px 0}.bubble.user{justify-self:end;background:#304765}.bubble.assistant{justify-self:start;background:#263548}.mic{padding:12px 0}.mic label{display:flex;align-items:center}.mic input[type=checkbox]{width:18px;flex:none}details{margin:10px 0}@media(max-width:800px){.shell{padding:10px}.layout{grid-template-columns:1fr}aside{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}aside h2{grid-column:1/-1}header{align-items:start}.fields label{min-width:100%}}
+:root { font: 15px/1.5 system-ui,-apple-system,sans-serif; color:#172b42; background:#f2f5f9 }
+* { box-sizing:border-box }
+body { margin:0 }
+button,input { font:inherit }
+button { cursor:pointer; background:#fff; color:#193b5f; border:1px solid #bccbdc; border-radius:8px; padding:8px 12px }
+button:disabled { opacity:.5; cursor:not-allowed }
+button:hover:not(:disabled) { border-color:#397dbb; background:#edf5fd }
+button:focus-visible,input:focus-visible,a:focus-visible,summary:focus-visible { outline:3px solid #337dbf; outline-offset:3px }
+a { color:#165c9b }
+.shell { max-width:1520px; margin:auto; padding:16px 20px 48px }
+header,.status,.actions,.badges,.fields,.navigation { display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+header { justify-content:space-between; padding:5px 0 15px }
+header strong { font-size:23px; letter-spacing:.02em }
+header span,.sub,small,.metadata { color:#526982 }
+.status,.panel,aside { min-width:0; border:1px solid #d4dfeb; background:#fff; border-radius:12px; padding:16px; box-shadow:0 2px 12px #182f4a08 }
+.status { margin-bottom:10px }
+.status button.danger { margin-left:auto }
+.navigation { margin-bottom:16px; gap:6px; overflow-wrap:anywhere }
+.navigation a { background:#e4edf7; border:1px solid #ccdbeb; border-radius:8px; padding:8px 12px; text-decoration:none; font-weight:600 }
+.navigation a:hover { background:#d4e7f9 }
+.ok { color:#116b4c }
+.bad,.danger { color:#a02739 }
+.layout { display:grid; grid-template-columns:245px minmax(0,1fr); gap:18px }
+aside { align-self:start; display:grid; gap:8px; position:sticky; top:12px }
+aside button { text-align:left; display:grid; gap:2px; overflow-wrap:anywhere }
+.selected,button.selected:hover:not(:disabled) { background:#dcecfb; border-color:#4b91cd }
+main { min-width:0; display:grid; align-content:start; gap:16px }
+.panel { scroll-margin-top:16px }
+h1,h2,h3 { margin:0 0 12px }
+h1 { font-size:25px }
+h1 small { font-size:14px }
+h2 { font-size:18px }
+h3 { font-size:15px; margin-top:15px }
+p { color:#435c75 }
+.badges span,.channel { display:inline-block; border:1px solid #cbd8e6; background:#f2f7fb; border-radius:22px; padding:3px 9px; color:#34536f; margin:2px }
+.fields { margin:15px 0 }
+.fields label { flex:1; min-width:130px }
+label { display:grid; gap:5px }
+input { background:#fff; color:inherit; border:1px solid #aebed0; border-radius:7px; padding:10px; min-width:0; width:100% }
+form { display:flex; align-items:end; gap:8px; margin:12px 0 }
+form label { flex:1; min-width:0 }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:340px; overflow:auto; background:#f4f7fa; border:1px solid #d7e1ec; padding:12px; border-radius:8px; color:#304b67 }
+.notice { border-color:#cd8190 }
+.transcript { max-height:480px; overflow:auto; padding:6px }
+.turn { display:grid; gap:10px; margin:12px 0 }
+.bubble { padding:10px 14px; border-radius:12px; max-width:92%; min-width:0 }
+.bubble p { white-space:pre-wrap; overflow-wrap:anywhere; margin:5px 0 }
+.bubble.user { justify-self:end; background:#e4effa }
+.bubble.assistant { justify-self:start; background:#f0f3f7 }
+.mic { padding:12px 0 }
+.mic label { display:flex; align-items:center }
+.mic input[type=checkbox] { width:18px; flex:none }
+details { margin:10px 0 }
+summary { cursor:pointer; font-weight:600; color:#235b8f }
+details[open]>summary { margin-bottom:12px }
+@media(max-width:800px) { .shell{padding:10px} .layout{grid-template-columns:minmax(0,1fr)} aside{position:static;grid-template-columns:repeat(auto-fit,minmax(min(145px,100%),1fr))} aside h2,aside p{grid-column:1/-1} header{align-items:start} .fields label{min-width:100%} }
+@media(max-width:430px) { .panel,aside,.status{padding:12px} header strong{font-size:20px} form{flex-wrap:wrap} form label,form button{flex-basis:100%} .status button.danger{margin-left:0} .bubble{max-width:100%} }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important} }

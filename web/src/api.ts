@@ -17,3 +17,9 @@ export async function api<T>(path:string, method='GET', body?:unknown, signal?:A
   return data as T;
 }
 export const sessionKey = (s:Session) => `${s.robot_id}\u0000${s.chat_id}\u0000${s.persona_id}\u0000${s.session_epoch}\u0000${s.generation}`;
+export const eventBelongsToSession = (
+  event:RealtimeEvent,
+  session:Pick<Session,'robot_id'|'chat_id'|'persona_id'|'session_epoch'|'generation'>
+) => event.robot_id===session.robot_id&&event.chat_id===session.chat_id&&
+  event.persona_id===session.persona_id&&event.session_epoch===session.session_epoch&&
+  event.generation===session.generation;

@@ -855,9 +855,13 @@ class RuntimeStore:
     def list_conversations(self, robot_id: str):
         with self.connect() as db:
             rows = db.execute(
-                """SELECT chat_id,persona_id,COUNT(*),MAX(updated_ms)
-                FROM conversation_turns WHERE robot_id=?
-                GROUP BY chat_id,persona_id ORDER BY MAX(updated_ms) DESC""",
+                """SELECT t.chat_id,t.persona_id,COUNT(*),MAX(t.updated_ms),
+                (SELECT latest.persona_revision FROM conversation_turns AS latest
+                 WHERE latest.robot_id=t.robot_id
+                   AND latest.chat_id=t.chat_id AND latest.persona_id=t.persona_id
+                 ORDER BY latest.id DESC LIMIT 1)
+                FROM conversation_turns AS t WHERE t.robot_id=?
+                GROUP BY t.chat_id,t.persona_id ORDER BY MAX(t.updated_ms) DESC""",
                 (robot_id,),
             ).fetchall()
         return [
@@ -866,8 +870,9 @@ class RuntimeStore:
                 "persona_id": persona_id,
                 "turn_count": turn_count,
                 "updated_ms": updated_ms,
+                "persona_revision": persona_revision,
             }
-            for chat_id, persona_id, turn_count, updated_ms in rows
+            for chat_id, persona_id, turn_count, updated_ms, persona_revision in rows
         ]
 
     def recent_conversation_context(self, robot_id: str, chat_id: str, persona_id: str, limit: int):

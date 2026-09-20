@@ -4,7 +4,7 @@ import {readFile,access} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import http from 'node:http';
-import {api,robotPath,sessionKey} from '../src/api.ts';
+import {api,robotPath,sessionKey,eventBelongsToSession} from '../src/api.ts';
 import {pcmFrame} from '../src/pcm-format.ts';
 
 const web=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -15,6 +15,16 @@ test('robot and session routing preserves all isolation dimensions',()=>{
   assert.notEqual(sessionKey(a),sessionKey({...a,robot_id:'b'}));
   assert.notEqual(sessionKey(a),sessionKey({...a,generation:6}));
   assert.notEqual(sessionKey(a),sessionKey({...a,chat_id:'other'}));
+});
+
+test('Realtime stream is visible only within matching robot, chat, persona, epoch and generation',()=>{
+  const event={robot_id:'annie-a',chat_id:'same',persona_id:'calm',session_epoch:7,generation:9};
+  assert.equal(eventBelongsToSession(event,event),true);
+  for(const [key,value] of Object.entries({
+    robot_id:'annie-b',chat_id:'other',persona_id:'lively',session_epoch:8,generation:10,
+  })){
+    assert.equal(eventBelongsToSession({...event,[key]:value},event),false,key);
+  }
 });
 
 test('same-origin API sends exact scoped payload and shows server errors',async()=>{
@@ -68,5 +78,11 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/speech_output/);
   assert.match(source,/playback_evidence/);
   assert.match(source,/phase4b\.html/);
+  assert.match(source,/phase4c\.html/);
+  assert.match(source,/item\.persona_revision/);
+  assert.match(source,/selectedRoute\?\.urls\[channel\]/);
+  assert.match(source,/cancelCurrent/);
+  assert.match(source,/prefers-reduced-motion/);
+  assert.match(source,/useGSAP/);
   assert.doesNotMatch(source,/\.innerHTML\s*=/);
 });

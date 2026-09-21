@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from annie_brain.context import EXCERPT, MAX_UNHEARD_USER_TURNS, select_restorab
 from annie_brain.persona import load_personas, session_instructions
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
+from annie_runtime.realtime import IDLE_SESSION_GAP_SECONDS
 from annie_web import create_app
 from fastapi.testclient import TestClient
 
@@ -35,7 +37,10 @@ class FakeSocket:
         self.outbound.append(event)
 
     async def recv(self):
-        return await self.inbound.get()
+        event = await self.inbound.get()
+        if isinstance(event, BaseException):
+            raise event
+        return event
 
     async def close(self):
         self.closed = True
@@ -58,6 +63,8 @@ class ContextSelectionTests(unittest.TestCase):
             self.assertIn("当前用户输入是本轮唯一待回应的问题", text)
             self.assertIn("历史只用于理解指代和更正", text)
             self.assertIn("不要描述没有发生的动作", text)
+            self.assertIn("一次性要求在当轮执行后即结束", text)
+            self.assertIn("用户再次开口或换话题时", text)
         self.assertNotIn("温和", session_instructions("unknown", PROFILES, {})[0])
         self.assertFalse(session_instructions("unknown", PROFILES, {})[1]["configured"])
         text, snapshot = session_instructions("annie", PROFILES, {
@@ -186,6 +193,79 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.01)
         self.assertEqual(a.snapshot()["restored_context"]["turns"], [])
         self.assertNotIn("我喜欢茶", str(a.socket.outbound))
+
+    async def test_one_hour_old_command_is_labelled_history_without_changing_ledger(self):
+        a = self.runtime.realtime["annie-a"]
+        old_ms = time.time_ns() // 1_000_000 - 61 * 60_000
+        a.robot.context_cache.append(row(
+            "old-command", "退下吧，退下吧。", "好嘞，这就退下。",
+            created_ms=old_ms, assistant_context_text="好嘞，这就退下。",
+        ))
+        before = len(a.socket.outbound)
+        await a._restore_context()
+        outgoing = a.socket.outbound[before:]
+        self.assertEqual(outgoing[0]["item"]["role"], "user")
+        labelled = outgoing[0]["item"]["content"][0]["text"]
+        self.assertIn("约1小时前", labelled)
+        self.assertIn("非当前指令", labelled)
+        self.assertTrue(labelled.endswith("退下吧，退下吧。"))
+        self.assertEqual(a.robot.context_cache[-1]["user_text"], "退下吧，退下吧。")
+        self.assertEqual(a.restored_context["turns"][-1]["user_text"], "退下吧，退下吧。")
+        self.assertEqual(a.restored_context["turns"][-1]["provider_user_text"], labelled)
+        self.assertLessEqual(a.restored_context["chars_used"], a.restore_char_budget)
+        self.assertEqual(self.runtime.realtime["annie-b"].restored_context["turns"], [])
+
+    async def test_idle_session_rotates_before_next_topic_without_extra_llm(self):
+        a = self.runtime.realtime["annie-a"]
+        b = self.runtime.realtime["annie-b"]
+        a.robot.context_cache.append(row(
+            "old-command", "退下吧，退下吧。", "这就退下。",
+            created_ms=time.time_ns() // 1_000_000 - 60 * 60_000,
+            assistant_context_text="这就退下。",
+        ))
+        old_socket = a.socket
+        a._last_conversation_activity_t -= IDLE_SESSION_GAP_SECONDS + 1
+        self.assertTrue(a._idle_recycle_due())
+        self.assertFalse(b._idle_recycle_due())
+        # Exercise the real recv timeout → close → new WS Session path.
+        await old_socket.inbound.put(asyncio.TimeoutError())
+        for _ in range(100):
+            if a.socket is not old_socket and a.ready and a.restored_context:
+                break
+            await asyncio.sleep(.01)
+        self.assertIsNot(a.socket, old_socket)
+        self.assertTrue(old_socket.closed)
+        self.assertTrue(a.ready)
+        self.assertEqual(b.socket.closed, False)
+        self.assertIn("非当前指令", a.socket.outbound[1]["item"]["content"][0]["text"])
+        self.assertTrue(any(e["kind"] == "session.idle_recycle" for e in a.events))
+        self.assertFalse(a._idle_recycle_due())
+        a._last_conversation_activity_t -= IDLE_SESSION_GAP_SECONDS + 1
+        self.assertFalse(a._idle_recycle_due())  # once per idle period, not every 15 min
+        await self.runtime.realtime_text("annie-a", "我喜欢喝茶")
+        self.assertEqual(a.socket.outbound[-2]["item"]["content"][0]["text"], "我喜欢喝茶")
+        self.assertEqual(a.socket.outbound[-1]["type"], "response.create")
+        self.assertFalse(a._idle_recycle_due())
+
+    async def test_busy_playback_does_not_recycle_old_session(self):
+        a = self.runtime.realtime["annie-a"]
+        a._last_conversation_activity_t -= IDLE_SESSION_GAP_SECONDS + 1
+        a._create_turn("新消息")
+        self.assertFalse(a._idle_recycle_due())
+        a._finish("completed")
+        self.assertFalse(a._idle_recycle_due())
+        a._last_conversation_activity_t -= IDLE_SESSION_GAP_SECONDS + 1
+        worker = asyncio.Future()
+        a.speech = type("ActiveSpeaker", (), {"turn_id": "playing", "worker": worker,
+                                             "control_state": "unknown"})()
+        try:
+            self.assertFalse(a._idle_recycle_due())
+            worker.set_result(None)
+            self.assertTrue(a._idle_recycle_due())  # SpeechOutput retains the last turn_id
+            a.speech.control_state = "held_confirmed"
+            self.assertFalse(a._idle_recycle_due())
+        finally:
+            a.speech = None
 
     async def test_restore_with_tts_does_not_inject_unheard_reply(self):
         a = self.runtime.realtime["annie-a"]

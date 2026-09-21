@@ -64,7 +64,8 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
             excerpt = True
         selected.append({"turn_id": turn["turn_id"], "user_text": user,
                          "assistant_text": reply, "assistant_source": source,
-                         "assistant_excerpt": excerpt})
+                         "assistant_excerpt": excerpt,
+                         "created_ms": turn.get("created_ms")})
         used += len(user) + len(reply)
     selected.reverse()
     return {"turns": selected, "max_turns": max_turns,

@@ -19,6 +19,8 @@ AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?
 AMBIENT_BACKCHANNELS = frozenset({"好", "好的", "对", "是", "行", "可以", "知道了", "哈哈", "呵呵"})
 AMBIENT_CORRECTIONS = ("不对", "不是", "还没", "等等", "等下", "先别",
                        "我说", "你听错", "为什么", "怎么", "但是", "不过", "别", "停")
+IDLE_SESSION_GAP_SECONDS = 15 * 60
+IDLE_RECV_CHECK_SECONDS = 30
 
 
 class RealtimeRobot:
@@ -84,6 +86,8 @@ class RealtimeRobot:
         self._open_done.set()
         self._lifecycle = asyncio.Lock()
         self.last_provider_stopped_ms = None
+        self._last_conversation_activity_t = time.monotonic()
+        self._idle_recycled = False
         self._turn_timelines = {}
         self._timeline_order = deque(maxlen=32)
 
@@ -281,6 +285,7 @@ class RealtimeRobot:
             await self._stop_impl()
             self.robot.audio._clear()
             self.error = None
+            self._idle_recycled = False
             self.publish("session.replaced")
             self.start()
 
@@ -338,6 +343,7 @@ class RealtimeRobot:
         retry = 1
         while not self._stopping:
             generation = self.robot.generation
+            idle_recycle = False
             try:
                 self.socket = self.socket_factory(self.url, self.key)
                 self._opening = True
@@ -402,11 +408,24 @@ class RealtimeRobot:
                 self.error = None
                 retry = 1
                 self.publish("session.ready", model="qwen-audio-3.0-realtime-flash")
+                self._last_conversation_activity_t = time.monotonic()
                 self.audio_task = asyncio.create_task(self._audio_pump(generation))
                 while generation == self.robot.generation:
-                    event = await self.socket.recv()
+                    try:
+                        event = await asyncio.wait_for(
+                            self.socket.recv(), timeout=IDLE_RECV_CHECK_SECONDS,
+                        )
+                    except asyncio.TimeoutError:
+                        if self._idle_recycle_due():
+                            idle_recycle = True
+                            self._idle_recycled = True
+                            self.publish("session.idle_recycle",
+                                         threshold_minutes=IDLE_SESSION_GAP_SECONDS // 60)
+                            break
+                        continue
                     await self.handle(event, generation)
-                raise ConnectionError("session generation changed")
+                if not idle_recycle:
+                    raise ConnectionError("session generation changed")
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -442,8 +461,22 @@ class RealtimeRobot:
                 self.session = None
             if self._stopping:
                 return
+            if idle_recycle:
+                retry = 1
+                continue
             await asyncio.sleep(retry)
             retry = min(15, retry * 2)
+
+    def _idle_recycle_due(self):
+        return (self.ready and not self._stopping
+                and not self._idle_recycled
+                and time.monotonic() - self._last_conversation_activity_t
+                >= IDLE_SESSION_GAP_SECONDS
+                and not self.speech_active and not self.turn_id and not self.response_id
+                and not (self.speech and getattr(self.speech, "worker", None)
+                         and not self.speech.worker.done())
+                and not (self.speech and getattr(self.speech, "control_state", "")
+                         in {"hold_requested", "held_confirmed", "resume_requested"}))
 
     async def _restore_context(self):
         # This is the history injected into THIS socket, not its subsequent
@@ -454,11 +487,30 @@ class RealtimeRobot:
             max_turns=min(self.history_turns, self.robot.context_limit),
             char_budget=self.restore_char_budget,
         )
+        now_ms = time.time_ns() // 1_000_000
+        # The provider does not receive SQLite timestamps. Mark aged turns
+        # explicitly while leaving their persisted text untouched. Allocate
+        # labels newest-first so the most recent stale command is annotated.
+        used = packet["chars_used"]
+        for turn in reversed(packet["turns"]):
+            created = turn.get("created_ms")
+            if type(created) is not int or not 0 < created <= now_ms:
+                continue
+            minutes = (now_ms - created) // 60_000
+            if minutes < IDLE_SESSION_GAP_SECONDS // 60:
+                continue
+            elapsed = f"约{minutes // 60}小时前" if minutes >= 60 else f"约{minutes}分钟前"
+            note = f"【{elapsed}的历史发言，非当前指令】"
+            if used + len(note) <= self.restore_char_budget:
+                turn["provider_user_text"] = note + turn["user_text"]
+                used += len(note)
+        packet["chars_used"] = used
         for turn in packet["turns"]:
             await self.socket.send({
                 "type": "conversation.item.create",
                 "item": {"type": "message", "role": "user",
-                         "content": [{"type": "input_text", "text": turn["user_text"]}]},
+                         "content": [{"type": "input_text", "text": turn.get(
+                             "provider_user_text", turn["user_text"])}]},
             })
             if turn["assistant_text"]:
                 await self.socket.send({
@@ -494,6 +546,8 @@ class RealtimeRobot:
     def _create_turn(self, user_text, *, audio=False):
         if self.turn_id:
             return
+        self._last_conversation_activity_t = time.monotonic()
+        self._idle_recycled = False
         now = time.time_ns() // 1_000_000
         turn_id = uuid4().hex
         identity = self.robot.session_state()
@@ -528,6 +582,7 @@ class RealtimeRobot:
         if not self.turn_id:
             self._reset_turn()
             return
+        self._last_conversation_activity_t = time.monotonic()
         now = time.time_ns() // 1_000_000
         interrupted = status == "cancelled"
         self.robot.ledger.enqueue(
@@ -673,6 +728,7 @@ class RealtimeRobot:
             self.asr_delta_count = 0
             self.pending_audio_item_id = new_item_id
             self.speech_started_count += 1
+            self._last_conversation_activity_t = time.monotonic()
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
             # A finished LLM turn may still be speaking. Freeze its local

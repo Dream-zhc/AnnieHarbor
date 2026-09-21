@@ -37,7 +37,11 @@ def session_update(instructions: str, history_turns: int = 20) -> dict:
             "type": "function",
             "function": {
                 "name": "preview_action",
-                "description": "Preview an action in the developer console without moving the real robot.",
+                "description": (
+                    "ONLY when the user explicitly asks to preview a physical robot action. "
+                    "Never call for conversational text, replying to corrections, choosing "
+                    "items, describing a feeling, or narrating speech. Does not move hardware."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {"description": {"type": "string", "description": "Action to preview"}},

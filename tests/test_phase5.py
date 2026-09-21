@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 
+from annie_adapters.realtime import session_update
 from annie_brain.context import EXCERPT, MAX_UNHEARD_USER_TURNS, select_restorable_context
 from annie_brain.persona import load_personas, session_instructions
 from annie_core import RobotConfig
@@ -53,6 +54,23 @@ def row(turn_id, user, reply, **overrides):
 
 
 class ContextSelectionTests(unittest.TestCase):
+    def test_styles_do_not_contain_fixed_dialogue_or_promote_non_user_settings(self):
+        for style_id, profile in PROFILES.items():
+            self.assertNotIn("用户：", profile["style"], style_id)
+            self.assertNotIn("小安妮：", profile["style"], style_id)
+            text, snapshot = session_instructions("annie", PROFILES, {
+                "persona_style": {"source": "user_setting", "value": style_id},
+            })
+            self.assertEqual(snapshot["style_id"], style_id)
+            self.assertIn("只生成文字，不调用任何工具", text)
+            self.assertIn("不写舞台旁白", text)
+        self.assertEqual(session_instructions("annie", PROFILES, {
+            "persona_style": {"source": "sensor", "value": "annie-lively"},
+        })[1]["style_id"], "annie")
+        preview = session_update("人格测试")["session"]["tools"][0]["function"]
+        self.assertIn("user explicitly asks", preview["description"])
+        self.assertIn("Never call for conversational text", preview["description"])
+
     def test_three_presets_share_identity_and_do_not_invent_user_facts(self):
         self.assertEqual(set(PROFILES), {"annie", "annie-calm", "annie-lively"})
         instructions = [session_instructions(name, PROFILES, {})[0] for name in PROFILES]
@@ -410,7 +428,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(a.socket, previous_socket)
         self.assertEqual(self.runtime.session_state("annie-a"), original)
         self.assertEqual(a.persona_snapshot["label"], "活泼俏皮")
-        self.assertIn("奶茶也算茶的亲戚", a.socket.outbound[0]["session"]["instructions"])
+        self.assertIn("不写角色舞台动作", a.socket.outbound[0]["session"]["instructions"])
         self.assertEqual(b.persona_snapshot["style_id"], "annie")
         current = await self.runtime.load_conversation(
             "annie-a", original["chat_id"], original["persona_id"])

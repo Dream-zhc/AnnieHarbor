@@ -64,6 +64,10 @@ IDLE_MIN_MS = int(os.getenv("TTS_VISEME_IDLE_MIN_MS") or "240")
 # committed boundary so valley/peak context remains available; final flush is
 # still allowed to inspect the complete original PCM once.
 ONLINE_ANALYSIS_LOOKBACK_MS = 600
+ONLINE_MAX_UNRESOLVED_MS = max(
+    1000, int(os.getenv("TTS_VISEME_MAX_UNRESOLVED_MS") or "3600")
+)
+TRACE_TTS_PCM = os.getenv("TTS_VISEME_TRACE_PCM") == "1"
 # Room send follows the syllable sample clock, not compute bursts.
 # The first ready event goes out immediately; later events keep their
 # at_sample gaps. A small lead releases each slot slightly early.
@@ -1529,6 +1533,7 @@ class SegmentState:
     first_pcm_wall: Optional[float] = None
     emitted: bool = False
     mouth_seq_start: Optional[int] = None
+    online_backlog_warned: bool = False
     aligner: OnlineAligner = field(default_factory=OnlineAligner)
 
     @property
@@ -2134,6 +2139,26 @@ class VisemeEngine:
             return
         epoch = conv.mouth_epoch
         text = segment.authoritative_text
+        # A single duplex task can last tens of seconds. If the aligner has
+        # stopped resolving characters, the old 120ms loop repeatedly ran MLX
+        # over the entire growing tail (observed 13.7s / 3.86s per pass).
+        # Keep the original PCM and text for a single final pass instead of
+        # monopolizing the machine with speculative, unproductive rescans.
+        if not flush:
+            sr = max(1, int(segment.sample_rate or SAMPLE_RATE))
+            resolved = max(
+                0, segment.aligner.last_end_sample - segment.start_sample
+            )
+            pending_ms = (segment.total_samples - resolved) * 1000 / sr
+            if pending_ms > ONLINE_MAX_UNRESOLVED_MS:
+                if not segment.online_backlog_warned:
+                    segment.online_backlog_warned = True
+                    log("ALIGN_BACKLOG",
+                        f"conv={conv.conversation_id[:8]} "
+                        f"turn={segment.turn_id[:8]} unresolved={pending_ms:.0f}ms "
+                        f"limit={ONLINE_MAX_UNRESOLVED_MS}ms; online alignment paused, "
+                        "preserving PCM for final alignment")
+                return
         pcm = segment.pcm
         if not pcm or not any(is_han(ch) for ch in text):
             if flush:
@@ -2600,12 +2625,13 @@ class VisemeEngine:
                     conv.last_tts_text = active.text_prefix + active.authoritative_text
                     pending.append((conv, active, True))
 
-        print(
-            f"[TTS_RX] conv={(cid or 'unknown')[:8]} turn={(turn_id or '-')[:8]} "
-            f"seq={seq} bytes={len(pcm)} sr={sample_rate} samples={samples} "
-            f"text_chars={len(text)} final={final}",
-            flush=True,
-        )
+        if TRACE_TTS_PCM:
+            print(
+                f"[TTS_RX] conv={(cid or 'unknown')[:8]} turn={(turn_id or '-')[:8]} "
+                f"seq={seq} bytes={len(pcm)} sr={sample_rate} samples={samples} "
+                f"text_chars={len(text)} final={final}",
+                flush=True,
+            )
         for conv_state, segment, should_flush in pending:
             self._emit_segment(conv_state, segment, flush=should_flush)
         if final:

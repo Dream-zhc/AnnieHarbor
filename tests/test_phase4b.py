@@ -530,6 +530,24 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.speech.samples, 13 * 480)
         self.assertLess(time.perf_counter() - started, .16)
 
+    async def test_pcm_room_keeps_50hz_while_sse_progress_is_bounded(self):
+        identity = self.robot.session_state()
+        self.speech.turn_id = "performance"
+        self.speech.identity = identity
+        self.speech.started_at = time.perf_counter()
+        for _ in range(51):
+            # Eliminate clock pacing only in the fake publisher fixture.
+            self.speech.next_pcm_at = None
+            await self.speech._publish_pcm(
+                bytes(960), "你好", "performance-1", "performance",
+                identity, self.speech.started_at,
+            )
+        audio = [msg for msg in self.publisher.messages if msg["data"]["audio"]]
+        progress = [data for kind, data in self.events if kind == "tts.pcm_published"]
+        self.assertEqual(len(audio), 51)
+        self.assertEqual([data["frames"] for data in progress], [1, 25, 50])
+        self.assertEqual(audio[-1]["data"]["end_sample"], 51 * 480)
+
     async def test_only_aligned_pcm_boundaries_can_report_mouth(self):
         cid="mouth-turn"
         await self.speech.feed(cid,self.robot.session_state(),"你好。")

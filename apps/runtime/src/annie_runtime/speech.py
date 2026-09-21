@@ -480,7 +480,12 @@ class SpeechOutput:
             turn = self.robot.turn_cache.get(turn_id)
             if turn is not None:
                 turn["assistant_published_text"] = self.published_text
-        self._emit("tts.pcm_published", segment_id=segment_id, bytes=len(pcm), samples=self.samples)
+        # The Room still receives every 20 ms PCM frame. Broadcasting each
+        # frame into SSE makes React re-render the entire cockpit at 50 Hz
+        # during speech; progress is diagnostic, not a realtime audio clock.
+        if self.frames == 1 or self.frames % 25 == 0:
+            self._emit("tts.pcm_published", segment_id=segment_id,
+                       bytes=len(pcm), samples=self.samples, frames=self.frames)
 
     def on_playback_receipt(self, message):
         """Reported playback cursor; caller validates wire shape and Room ownership."""

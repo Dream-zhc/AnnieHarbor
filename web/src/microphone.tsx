@@ -1,9 +1,9 @@
 import {useEffect,useRef,useState} from 'react';
-import {createMicPcmPump} from './mic-pump';
+import {pcmFrame} from './pcm-format';
 
 type Route={room_id:string;mic_url:string};
 type Microphone={ws:WebSocket;stream:MediaStream;context:AudioContext;
-  source:MediaStreamAudioSourceNode;processor:ScriptProcessorNode;silent:GainNode;watchdog:number};
+  source:MediaStreamAudioSourceNode;processor:AudioWorkletNode;silent:GainNode;watchdog:number};
 
 function connect(url:string,roomId:string):Promise<WebSocket>{
   return new Promise((resolve,reject)=>{
@@ -48,7 +48,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
     const old=active.current;active.current=null;
     if(old){
       window.clearTimeout(old.watchdog);
-      old.processor.onaudioprocess=null;
+      old.processor.port.onmessage=null;
       old.processor.disconnect();old.source.disconnect();old.silent.disconnect();
       old.stream.getTracks().forEach(track=>track.stop());
       old.ws.onclose=null;old.ws.close();void old.context.close();
@@ -68,7 +68,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
     }
     const current=++token.current,roomId=route.room_id;
     let stream:MediaStream|undefined,context:AudioContext|undefined,ws:WebSocket|undefined;
-    let source:MediaStreamAudioSourceNode|undefined,processor:ScriptProcessorNode|undefined,silent:GainNode|undefined;
+    let source:MediaStreamAudioSourceNode|undefined,processor:AudioWorkletNode|undefined,silent:GainNode|undefined;
     let handedOff=false;
     setWorking(true);setStatus('请求浏览器麦克风权限…');
     try{
@@ -84,38 +84,33 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
       if(current!==token.current)return;
       await resume;
       if(current!==token.current)return;
+      await context.audioWorklet.addModule('/room-capture-worklet.js');
+      if(current!==token.current)return;
       ws=await connect(route.mic_url,roomId);
       if(current!==token.current)return;
       source=context.createMediaStreamSource(stream);
-      processor=context.createScriptProcessor(1024,1,1);
+      processor=new AudioWorkletNode(context,'room-capture',{outputChannelCount:[1]});
       silent=context.createGain();silent.gain.value=0;
       // Keep immutable handles: the capture callback must not read locals
       // cleared/changed by startup cleanup after it has been installed.
       const captureWs=ws,captureContext=context,captureStream=stream;
-      const pump=createMicPcmPump();
       let sent=0;
-      let sumSquares=0,signalSamples=0,signalCallbacks=0;
-      processor.onaudioprocess=event=>{
+      processor.port.onmessage=event=>{
         if(active.current?.ws!==captureWs||captureWs.readyState!==WebSocket.OPEN)return;
         try{
-          const input=event.inputBuffer.getChannelData(0);
-          for(let i=0;i<input.length;i+=16){sumSquares+=input[i]*input[i];signalSamples++;}
-          if(++signalCallbacks>=10){
-            // Display amplitude only; never retain or transmit microphone samples.
-            setLevel(Math.round(Math.sqrt(sumSquares/Math.max(1,signalSamples))*1000)/10);
-            sumSquares=signalSamples=signalCallbacks=0;
+          if(event.data.type==='level'){
+            setLevel(event.data.value);return;
           }
-          const previous=sent;
-          sent=pump(input,captureContext.sampleRate,frame=>{
-            if(captureWs.bufferedAmount>640*40)throw new Error('Room 发送积压超过 800ms');
-            captureWs.send(frame);
-          });
+          if(event.data.type!=='audio')return;
+          if(captureWs.bufferedAmount>651*40)throw new Error('Room 发送积压超过 800ms');
+          captureWs.send(pcmFrame(new Uint8Array(event.data.buffer)));
+          const previous=sent++;
           // Keep frame feedback responsive without rendering React 50 times/s.
-          if(previous===0&&sent>0){
+          if(previous===0){
             window.clearTimeout(active.current?.watchdog);
             setStatus('正在发送麦克风 → '+roomId);
           }
-          if(previous===0&&sent>0||Math.floor(previous/10)!==Math.floor(sent/10))setFrames(sent);
+          if(previous===0||Math.floor(previous/10)!==Math.floor(sent/10))setFrames(sent);
         }catch(error){stop();setStatus('麦克风发送失败：'+String(error));}
       };
       source.connect(processor);processor.connect(silent);silent.connect(context.destination);

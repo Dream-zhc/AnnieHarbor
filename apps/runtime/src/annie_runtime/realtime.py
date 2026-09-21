@@ -47,6 +47,7 @@ class RealtimeRobot:
         self.audio_turn_id = None  # retain the audio turn across response.done for late final ASR
         self.audio_item_turns = {}
         self.pending_audio_item_id = None
+        self.superseded_audio_items = {}
         self.transcript = ""
         self.text = ""
         self.speech_active = False
@@ -71,6 +72,7 @@ class RealtimeRobot:
         self._candidate_confirmed = False
         self.turn_identity = None
         self.restored_context = None
+        self.last_llm_input = None
         self.persona_snapshot = None
         self.social_state = {}
         self._stopping = False
@@ -209,6 +211,7 @@ class RealtimeRobot:
             "first_text_ms": self.first_text_ms,
             "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
             "restored_context": self.restored_context,
+            "last_llm_input": self.last_llm_input,
             "persona_snapshot": self.persona_snapshot,
             "cascade_llm": self.external_llm.model if self.external_llm else None,
             "llm_state": "streaming" if self.llm_task and not self.llm_task.done() else "idle",
@@ -240,8 +243,10 @@ class RealtimeRobot:
     async def _stop_impl(self):
         self._stopping = True
         self.restored_context = None
+        self.last_llm_input = None
         self.persona_snapshot = None
         self.audio_item_turns.clear()
+        self.superseded_audio_items.clear()
         self._turn_timelines.clear()
         self._timeline_order.clear()
         self.pending_audio_item_id = None
@@ -293,6 +298,26 @@ class RealtimeRobot:
         self.call_count = 0
         self.followup_needed = False
         self.turn_identity = None
+
+    def _obsolete_audio_item(self, item_id):
+        if not item_id:
+            return
+        self.superseded_audio_items[item_id] = True
+        if len(self.superseded_audio_items) > 128:
+            self.superseded_audio_items.pop(next(iter(self.superseded_audio_items)))
+
+    def _stale_audio_event(self, kind, item_id):
+        if not item_id:
+            return False  # Some provider events omit the ID; never invent one.
+        stale = (item_id in self.superseded_audio_items or
+                 kind != "conversation.item.input_audio_transcription.completed" and
+                 item_id in self.audio_item_turns or
+                 self.pending_audio_item_id is not None and
+                 item_id != self.pending_audio_item_id)
+        if stale:
+            self.publish("transcript.stale", item_id=item_id, event_kind=kind,
+                         pending_item_id=self.pending_audio_item_id)
+        return stale
 
     async def _interrupt_active_turn(self, reason):
         task = self.llm_task
@@ -347,15 +372,22 @@ class RealtimeRobot:
         self.llm_error = None
         if self.error and self.error.startswith("cascade_llm:"):
             self.error = None
+        messages = self._history_messages(user_text)
+        self.last_llm_input = {
+            **self.turn_identity, "turn_id": self.turn_id,
+            "user_text": user_text,
+            "messages": [message.copy() for message in messages],
+        }
+        self.publish("llm.context_selected", turn_id=self.turn_id,
+                     user_text=user_text, history_messages=len(messages) - 2)
         self.llm_task = asyncio.create_task(
-            self._run_external_llm(self.turn_id, dict(self.turn_identity), user_text),
+            self._run_external_llm(self.turn_id, dict(self.turn_identity), messages),
             name=f"cascade-llm:{self.robot.config.robot_id}",
         )
 
-    async def _run_external_llm(self, turn_id, identity, user_text):
+    async def _run_external_llm(self, turn_id, identity, messages):
         parts = []
         tool_results = []
-        messages = self._history_messages(user_text)
         self.publish("llm.request_started", turn_id=turn_id)
         try:
             async for item in self.external_llm.stream(messages, tools=True):
@@ -400,14 +432,20 @@ class RealtimeRobot:
                         await self.speech.feed(turn_id, identity, item.text)
             if not parts:
                 raise RuntimeError("LLM returned no answer text")
+            if self.turn_id != turn_id or self.turn_identity != identity:
+                return
             self.text = "".join(parts).strip() or self.text
             self.publish("text.done", turn_id=turn_id, text=self.text)
             if self.speech:
                 await self.speech.finish(turn_id)
+            if self.turn_id != turn_id or self.turn_identity != identity:
+                return
             self._finish("completed")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            if self.turn_id != turn_id or self.turn_identity != identity:
+                return
             self.error = f"cascade_llm: {type(exc).__name__}: {str(exc)[:140]}"
             self.llm_error = self.error
             logger.warning("cascade_llm robot=%s failed: %s", self.robot.config.robot_id, self.error)
@@ -469,7 +507,9 @@ class RealtimeRobot:
                 if generation != self.robot.generation:
                     continue
                 self.audio_item_turns.clear()
+                self.superseded_audio_items.clear()
                 self.pending_audio_item_id = None
+                self.last_llm_input = None
                 self.session_frames_sent = self.speech_started_count = 0
                 self.transcripts_completed = self.invalid_turns = 0
                 self.last_provider_speech_ms = self.last_provider_transcript_ms = None
@@ -724,11 +764,20 @@ class RealtimeRobot:
             raise RuntimeError(self._provider_error(event))
         if kind == "input_audio_buffer.speech_started":
             self._last_activity_t = time.monotonic()
+            new_item_id = event.get("item_id")
+            if new_item_id and (new_item_id in self.audio_item_turns or
+                                new_item_id in self.superseded_audio_items):
+                self.publish("transcript.stale", item_id=new_item_id,
+                             event_kind=kind, pending_item_id=self.pending_audio_item_id)
+                return
+            if (self.pending_audio_item_id and new_item_id and
+                self.pending_audio_item_id != new_item_id):
+                self._obsolete_audio_item(self.pending_audio_item_id)
             self.speech_active = True
             self._candidate_confirmed = False
             self.last_asr_first_delta_ms = None
             self.asr_delta_count = 0
-            self.pending_audio_item_id = event.get("item_id")
+            self.pending_audio_item_id = new_item_id
             self.speech_started_count += 1
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
@@ -739,6 +788,8 @@ class RealtimeRobot:
                              source="smart_turn")
                 self.speech.request_playback_control("hold", reason="speech_started")
         elif kind == "input_audio_buffer.speech_stopped":
+            if self._stale_audio_event(kind, event.get("item_id")):
+                return
             invalid = event.get("reason") == "turn_invalid"
             if invalid:
                 self.speech_active = False
@@ -753,6 +804,8 @@ class RealtimeRobot:
                              reason="turn_invalid")
                 self.speech.request_playback_control("resume", reason="turn_invalid")
         elif kind == "conversation.item.ambient_audio_transcription.completed":
+            if self._stale_audio_event(kind, event.get("item_id")):
+                return
             final_text = str(event.get("transcript", "")).strip()
             item_id = event.get("item_id")
             if (self.external_llm and final_text and
@@ -767,6 +820,7 @@ class RealtimeRobot:
                 self._create_turn(final_text, audio=True)
                 if item_id:
                     self.audio_item_turns[item_id] = self.turn_id
+                self.pending_audio_item_id = None
                 self.publish("transcript.done", text=final_text, turn_id=self.turn_id)
                 await self._start_external_turn(final_text)
                 return
@@ -781,11 +835,16 @@ class RealtimeRobot:
                              reason="ambient_audio")
                 self.speech.request_playback_control("resume", reason="ambient_audio")
             self.speech_active = False
+            self.pending_audio_item_id = None
             self.publish("transcript.ambient", text=final_text)
         elif kind == "conversation.item.ambient_audio_transcription.delta":
+            if self._stale_audio_event(kind, event.get("item_id")):
+                return
             self.publish("transcript.ambient_delta", text=event.get("text", ""),
                          stash=event.get("stash", ""), item_id=event.get("item_id"))
         elif kind == "conversation.item.input_audio_transcription.delta":
+            if self._stale_audio_event(kind, event.get("item_id")):
+                return
             if self.last_asr_first_delta_ms is None:
                 self.last_asr_first_delta_ms = time.time_ns() // 1_000_000
                 self.publish("transcript.first_delta",
@@ -809,6 +868,8 @@ class RealtimeRobot:
                 await self._interrupt_active_turn("stable_asr_prefix")
                 self.speech_active = True  # next ASR final still owns the microphone turn
         elif kind == "conversation.item.input_audio_transcription.completed":
+            if self._stale_audio_event(kind, event.get("item_id")):
+                return
             self._last_activity_t = time.monotonic()
             self.transcripts_completed += 1
             self.last_provider_transcript_ms = time.time_ns() // 1_000_000

@@ -269,6 +269,59 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len([e for e in client.events if
                               e["kind"] == "playback.interrupt_confirmed"]), 1)
 
+    async def test_late_previous_asr_never_steals_latest_spoken_turn(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+        llm = FakeExternalLlm([FakeLlmDelta("text", "回答本轮咖啡。")])
+        client.external_llm = llm
+        generation = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "old-tea"}, generation)
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "new-coffee"}, generation)
+        for kind, fields in (
+            ("input_audio_buffer.speech_stopped", {"reason": "turn_invalid"}),
+            ("conversation.item.input_audio_transcription.delta", {"text": "茶", "stash": ""}),
+            ("conversation.item.ambient_audio_transcription.completed", {"transcript": "嗯"}),
+            ("conversation.item.input_audio_transcription.completed", {"transcript": "喝茶"}),
+        ):
+            await client.handle({"type": kind, "item_id": "old-tea", **fields}, generation)
+        self.assertTrue(client.speech_active)
+        self.assertIsNone(client.turn_id)
+        self.assertFalse(llm.messages)
+        self.assertEqual(len([e for e in client.events if e["kind"] == "transcript.stale"]), 4)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "new-coffee", "transcript": "不是茶，是咖啡"},
+                            generation)
+        await asyncio.wait_for(client.llm_task, 1)
+        self.assertEqual(llm.messages[0][0][-1],
+                         {"role": "user", "content": "不是茶，是咖啡"})
+        self.assertEqual(client.last_llm_input["user_text"], "不是茶，是咖啡")
+        self.assertFalse(any(e.get("text") == "喝茶" and e["kind"] == "transcript.done"
+                             for e in client.events))
+        self.assertFalse(any(e["kind"] == "transcript.stale" for e in other.events))
+
+    async def test_llm_context_is_frozen_at_turn_admission_not_task_scheduling(self):
+        client = self.runtime.realtime["annie-a"]
+        llm = FakeExternalLlm([FakeLlmDelta("text", "咖啡，收到。")])
+        client.external_llm = llm
+        await client.submit_text("不是茶，是咖啡")
+        turn_id = client.turn_id
+        self.assertEqual(client.last_llm_input["turn_id"], turn_id)
+        assert client.last_llm_input["messages"][-1]["content"] == "不是茶，是咖啡"
+        # Context can change while a task waits to run; it must not alter the
+        # already admitted turn's actual request.
+        client.robot.context_cache.append({
+            "turn_id": "late-unrelated", "user_text": "给我讲昨天的故事",
+            "status": "completed", "assistant_generated_text": "故事",
+            "assistant_context_text": "故事",
+        })
+        await asyncio.wait_for(client.llm_task, 1)
+        self.assertEqual(llm.messages[0][0], client.last_llm_input["messages"])
+        self.assertNotIn("给我讲昨天的故事", str(llm.messages[0][0]))
+        self.assertEqual(client.robot.turn_cache[turn_id]["assistant_generated_text"],
+                         "咖啡，收到。")
+
     async def test_push_subscriber_is_bounded_and_released(self):
         # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.
         client = self.runtime.realtime["annie-a"]

@@ -55,6 +55,8 @@ class ContextSelectionTests(unittest.TestCase):
         for text in instructions:
             self.assertIn("你是小安妮", text)
             self.assertIn("最新明确更正", text)
+            self.assertIn("当前用户输入是本轮唯一待回应的问题", text)
+            self.assertIn("历史只用于理解指代和更正", text)
             self.assertIn("不要描述没有发生的动作", text)
         self.assertNotIn("温和", session_instructions("unknown", PROFILES, {})[0])
         self.assertFalse(session_instructions("unknown", PROFILES, {})[1]["configured"])

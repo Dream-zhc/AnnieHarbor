@@ -43,6 +43,9 @@ class RealtimeRobot:
         self.events = deque(maxlen=512)
         self.event_subscribers = set()
         self.response_id = None
+        self._cancelled_response_ids = set()
+        self._response_output_ids = {}
+        self._unheard_output_ids = {}
         self.turn_id = None
         self.audio_turn_id = None  # retain the audio turn across response.done for late final ASR
         self.audio_item_turns = {}
@@ -138,6 +141,8 @@ class RealtimeRobot:
         return result
 
     def publish(self, kind, **fields):
+        if kind == "tts.playback.drained" and fields.get("source") == "speaker":
+            self._unheard_output_ids.pop(fields.get("turn_id"), None)
         self.sequence += 1
         identity = (
             self.turn_identity if self.turn_identity and kind in {"turn.done", "text.delta", "text.done"}
@@ -248,6 +253,9 @@ class RealtimeRobot:
         self.persona_snapshot = None
         self.audio_item_turns.clear()
         self.superseded_audio_items.clear()
+        self._cancelled_response_ids.clear()
+        self._response_output_ids.clear()
+        self._unheard_output_ids.clear()
         self._turn_timelines.clear()
         self._timeline_order.clear()
         self.pending_audio_item_id = None
@@ -517,6 +525,9 @@ class RealtimeRobot:
                     continue
                 self.audio_item_turns.clear()
                 self.superseded_audio_items.clear()
+                self._cancelled_response_ids.clear()
+                self._response_output_ids.clear()
+                self._unheard_output_ids.clear()
                 self.pending_audio_item_id = None
                 self.last_llm_input = None
                 self.session_frames_sent = self.speech_started_count = 0
@@ -758,18 +769,39 @@ class RealtimeRobot:
         return {"status": "accepted", "turn_id": self.turn_id, **self.robot.session_state()}
 
     async def cancel(self):
+        # Mark ownership before any await: a late response.done must not
+        # complete the next turn while the speaker is stopping.
+        cancelled_response = self.response_id
+        completed_unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
+                             if self.speech and self.speech.turn_id else set())
+        if cancelled_response:
+            self._cancelled_response_ids.add(cancelled_response)
+            if len(self._cancelled_response_ids) > 128:
+                self._cancelled_response_ids.pop()
+            self.response_id = None
+        if self.socket and self.ready and cancelled_response:
+            await self.socket.send({"type": "response.cancel"})
         if self.llm_task and not self.llm_task.done():
             self.llm_task.cancel()
             await asyncio.gather(self.llm_task, return_exceptions=True)
             self.llm_task = None
         if self.speech:
             await self.speech.cancel("local_cancel")
-        if self.socket and self.ready and self.response_id:
-            await self.socket.send({"type": "response.cancel"})
+        if self.socket and self.ready and completed_unheard:
+            await self._delete_unheard_items(completed_unheard)
         if self.turn_id:
             self._finish("cancelled", cancel_source="local")
         self.publish("turn.cancel_requested")
         return self.snapshot()
+
+    async def _delete_unheard_items(self, item_ids):
+        # Qwen supports item deletion, not playback-cursor text truncation.
+        # An item with unknown partial playback is wholly excluded rather than
+        # falsely claiming that its generated tail was spoken.
+        for item_id in sorted(item_ids):
+            await self.socket.send({"type": "conversation.item.delete", "item_id": item_id})
+        self.publish("context.unheard_delete_requested", count=len(item_ids),
+                     provider_confirmed=False)
 
     async def handle(self, event, generation):
         if generation != self.robot.generation:
@@ -777,6 +809,33 @@ class RealtimeRobot:
         kind = event.get("type")
         if kind == "error":
             raise RuntimeError(self._provider_error(event))
+        if kind == "response.done" and not self.external_llm:
+            response = event.get("response") or {}
+            response_id = response.get("id")
+            items = self._response_output_ids.pop(response_id, set()) if response_id else set()
+            items.update(item["id"] for item in (response.get("output") or [])
+                         if isinstance(item, dict) and item.get("id") and
+                         item.get("type") == "message" and item.get("role") == "assistant")
+            if response.get("status") == "cancelled":
+                if items:
+                    await self._delete_unheard_items(items)
+                elif self.turn_id or response_id in self._cancelled_response_ids:
+                    self.publish("context.unheard_unverified", response_id=response_id)
+            elif (response.get("status") == "completed" and items and self.speech
+                  and self.turn_id and response_id not in self._cancelled_response_ids):
+                self._unheard_output_ids[self.turn_id] = items
+                if len(self._unheard_output_ids) > 32:
+                    self._unheard_output_ids.pop(next(iter(self._unheard_output_ids)))
+        if kind in {"response.created", "response.text.delta", "response.text.done",
+                    "response.function_call_arguments.done", "response.done"}:
+            response_id = (event.get("response") or {}).get("id") if kind in {
+                "response.created", "response.done"
+            } else event.get("response_id")
+            if response_id and (response_id in self._cancelled_response_ids or
+                                kind != "response.created" and self.response_id and
+                                response_id != self.response_id):
+                self.publish("response.stale", response_id=response_id, event_kind=kind)
+                return
         if kind == "input_audio_buffer.speech_started":
             self._last_activity_t = time.monotonic()
             new_item_id = event.get("item_id")
@@ -939,6 +998,14 @@ class RealtimeRobot:
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
         elif kind == "response.output_item.added":
+            if not self.external_llm:
+                item = event.get("item") or {}
+                response_id = event.get("response_id") or self.response_id
+                if (response_id and item.get("id") and item.get("type") == "message"
+                        and item.get("role") == "assistant"):
+                    self._response_output_ids.setdefault(response_id, set()).add(item["id"])
+                    if len(self._response_output_ids) > 32:
+                        self._response_output_ids.pop(next(iter(self._response_output_ids)))
             if self.external_llm and self._keepalive_pending:
                 item = event.get("item") or {}
                 if item.get("role") == "assistant" and item.get("id"):

@@ -190,8 +190,11 @@ class SpeechOutput:
         try:
             await asyncio.sleep(self.first_wait_ms / 1000)
             if self._current(turn_id, identity) and self.pending and (
-                len(self.pending) >= self.first_chars or self.pending[-1] in SENTENCE_END
+                len(self.pending.strip()) >= 2 or self.pending[-1] in SENTENCE_END
             ):
+                # The timeout is an upper bound for a short, stalled phrase,
+                # not another minimum-length gate. Otherwise "你好" can sit
+                # unspoken until a later LLM delta or response.done.
                 self._drain_pending(force=True)
         except asyncio.CancelledError:
             raise

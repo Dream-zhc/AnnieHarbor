@@ -106,6 +106,85 @@ class RealtimeWireTests(unittest.TestCase):
 
 
 class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_response_events_cannot_finish_or_replace_next_turn(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.submit_text("旧问题")
+        old_turn = client.turn_id
+        await client.handle({"type": "response.created", "response": {"id": "old-response"}}, gen)
+        await client.cancel()
+        self.assertEqual(client.robot.turn_cache[old_turn]["status"], "cancelled")
+        self.assertIn({"type": "response.cancel"}, client.socket.outbound)
+        await client.submit_text("新问题")
+        new_turn = client.turn_id
+        await client.handle({"type": "response.created", "response": {"id": "new-response"}}, gen)
+        for event in (
+            {"type": "response.text.delta", "response_id": "old-response", "delta": "旧回答"},
+            {"type": "response.text.done", "response_id": "old-response", "text": "旧回答"},
+            {"type": "response.done", "response": {"id": "old-response", "status": "cancelled"}},
+        ):
+            await client.handle(event, gen)
+        self.assertEqual(client.turn_id, new_turn)
+        self.assertEqual(client.response_id, "new-response")
+        self.assertEqual(client.text, "")
+        self.assertEqual(client.robot.turn_cache[new_turn]["status"], "running")
+        self.assertEqual(len([e for e in client.events if e["kind"] == "response.stale"]), 3)
+        await client.handle({"type": "response.text.delta", "response_id": "new-response",
+                             "delta": "本轮回答"}, gen)
+        await client.handle({"type": "response.done", "response": {
+            "id": "new-response", "status": "completed"}}, gen)
+        self.assertEqual(client.robot.turn_cache[new_turn]["assistant_generated_text"], "本轮回答")
+
+    async def test_provider_cancel_deletes_generated_assistant_item_from_server_history(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.submit_text("当前问题")
+        await client.handle({"type": "response.created", "response": {"id": "resp-one"}}, gen)
+        await client.handle({"type": "response.output_item.added", "response_id": "resp-one",
+                             "item": {"id": "assistant-one", "type": "message",
+                                      "role": "assistant"}}, gen)
+        await client.handle({"type": "response.done", "response": {
+            "id": "resp-one", "status": "cancelled", "status_details": {
+                "reason": "turn_detected"}}}, gen)
+        self.assertIn({"type": "conversation.item.delete", "item_id": "assistant-one"},
+                      client.socket.outbound)
+        self.assertEqual(client.robot.snapshot.cancelled, 1)
+        self.assertFalse(any(e["kind"] == "context.unheard_unverified" for e in client.events))
+
+    async def test_cancel_after_response_done_deletes_unheard_item_but_not_drained_item(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+
+        class Speaker:
+            turn_id = None
+
+            async def finish(self, turn_id):
+                self.turn_id = turn_id
+
+            async def cancel(self, _reason):
+                self.turn_id = None
+
+            async def close(self):
+                pass
+
+            def snapshot(self):
+                return {}
+
+        client.speech = Speaker()
+        for label, drained in (("unheard", False), ("drained", True)):
+            await client.submit_text(label)
+            turn_id = client.turn_id
+            await client.handle({"type": "response.created", "response": {"id": label}}, gen)
+            await client.handle({"type": "response.done", "response": {
+                "id": label, "status": "completed", "output": [{
+                    "id": label + "-item", "role": "assistant", "type": "message"}]}}, gen)
+            if drained:
+                client.publish("tts.playback.drained", turn_id=turn_id, source="speaker")
+            await client.cancel()
+        deleted = [e["item_id"] for e in client.socket.outbound
+                   if e["type"] == "conversation.item.delete"]
+        self.assertEqual(deleted, ["unheard-item"])
+
     async def test_timeline_stage_contract_and_speaker_only_percentiles(self):
         client = self.runtime.realtime["annie-a"]
         turn_id = "timed-turn"

@@ -252,6 +252,18 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.speech.close)
 
+    async def test_short_stalled_first_phrase_reaches_tts_without_response_done(self):
+        identity = self.robot.session_state()
+        await self.speech.feed("short-turn", identity, "你好")
+        for _ in range(100):
+            if self.speech.submitted_text:
+                break
+            await asyncio.sleep(0.005)
+        self.assertEqual(self.speech.submitted_text, "你好")
+        await self.speech.finish("short-turn")
+        await asyncio.wait_for(self.speech.worker, 1)
+        self.assertIsNone(self.speech.error)
+
     async def test_fast_long_reply_survives_slow_tts_without_blocking_realtime(self):
         """Formerly 8 queued segments -> queue_full/timeout -> Room STOP."""
         identity = self.robot.session_state()

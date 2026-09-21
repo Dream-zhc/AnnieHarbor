@@ -68,6 +68,7 @@ class RealtimeRobot:
         self.last_provider_transcript_ms = None
         self.last_asr_first_delta_ms = None
         self.asr_delta_count = 0
+        self._candidate_confirmed = False
         self.turn_identity = None
         self.restored_context = None
         self.persona_snapshot = None
@@ -474,6 +475,7 @@ class RealtimeRobot:
                 self.last_provider_speech_ms = self.last_provider_transcript_ms = None
                 self.last_asr_first_delta_ms = None
                 self.asr_delta_count = 0
+                self._candidate_confirmed = False
                 self.persona_snapshot = {**self.robot.session_state(), **persona_snapshot,
                                          "provider_session_id": self.session}
                 await self._restore_context()
@@ -723,6 +725,7 @@ class RealtimeRobot:
         if kind == "input_audio_buffer.speech_started":
             self._last_activity_t = time.monotonic()
             self.speech_active = True
+            self._candidate_confirmed = False
             self.last_asr_first_delta_ms = None
             self.asr_delta_count = 0
             self.pending_audio_item_id = event.get("item_id")
@@ -744,7 +747,8 @@ class RealtimeRobot:
             else:
                 self.last_provider_stopped_ms = time.time_ns() // 1_000_000
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
-            if invalid and self.external_llm and self.speech and self.speech.turn_id:
+            if (invalid and not self._candidate_confirmed and self.external_llm
+                and self.speech and self.speech.turn_id):
                 self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
                              reason="turn_invalid")
                 self.speech.request_playback_control("resume", reason="turn_invalid")
@@ -766,6 +770,17 @@ class RealtimeRobot:
                 self.publish("transcript.done", text=final_text, turn_id=self.turn_id)
                 await self._start_external_turn(final_text)
                 return
+            # Demo: an ambient-only outcome rejects a speculative hold. Qwen
+            # need not emit turn_invalid first; without this the TTS player can
+            # remain silently HELD while the microphone keeps hearing it.
+            if (self.external_llm and self.speech and self.speech.turn_id and
+                getattr(self.speech, "control_state", "") in {
+                    "hold_requested", "held_confirmed",
+                }):
+                self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
+                             reason="ambient_audio")
+                self.speech.request_playback_control("resume", reason="ambient_audio")
+            self.speech_active = False
             self.publish("transcript.ambient", text=final_text)
         elif kind == "conversation.item.ambient_audio_transcription.delta":
             self.publish("transcript.ambient_delta", text=event.get("text", ""),
@@ -779,6 +794,20 @@ class RealtimeRobot:
             self.asr_delta_count += 1
             self.publish("transcript.delta", text=event.get("text", ""),
                          stash=event.get("stash", ""), item_id=event.get("item_id"))
+            stable = str(event.get("text") or "").strip()
+            # Demo v1.7 confirms an interruption from the stable text only,
+            # never speculative stash or local microphone energy.
+            meaningful = len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", stable)) >= 3
+            if (meaningful and not AMBIENT_FILLER.fullmatch(stable)
+                and not self._candidate_confirmed and self.external_llm and self.speech
+                and self.speech.turn_id and getattr(self.speech, "control_state", "") in {
+                    "hold_requested", "held_confirmed",
+                }):
+                self._candidate_confirmed = True
+                self.publish("playback.interrupt_confirmed",
+                             turn_id=self.speech.turn_id, reason="stable_asr_prefix")
+                await self._interrupt_active_turn("stable_asr_prefix")
+                self.speech_active = True  # next ASR final still owns the microphone turn
         elif kind == "conversation.item.input_audio_transcription.completed":
             self._last_activity_t = time.monotonic()
             self.transcripts_completed += 1

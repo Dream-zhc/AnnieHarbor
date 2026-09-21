@@ -98,3 +98,26 @@ test('mic enhancement changes the actual Room PCM and clamps live gain updates',
   boosted.port.onmessage({data:{type:'gain',value:0}});
   assert.equal(boosted.targetGain,1);
 });
+
+test('Demo-style mic noise/SNR uses measured PCM rather than a fixed fake floor',()=>{
+  const p=processor('room-capture-worklet.js',48000,{gain:1});
+  function feed(amplitude){
+    for(let i=0;i<32;i++){
+      p.process([[Float32Array.from({length:128},(_,j)=>
+        amplitude*Math.sin((j+i*128)*2*Math.PI*440/48000))]],
+      [[new Float32Array(128)]]);
+    }
+    return p.messages.filter(item=>item.type==='level').at(-1);
+  }
+  const quiet=feed(.005);
+  assert.ok(quiet.noiseFloor<-42&&quiet.noiseFloor>-52);
+  const spoken=feed(.2);
+  assert.ok(spoken.snr>25,'louder speech must be distinguishable from quiet input');
+  assert.ok(Math.abs(spoken.noiseFloor-quiet.noiseFloor)<1,
+    'speaking must not teach the floor that the speaker is background noise');
+  p.port.onmessage({data:{type:'gain',value:2}});
+  assert.equal(p.noiseFloor,null,'gain changes invalidate the old floor');
+  const after=feed(.005);
+  assert.ok(after.noiseFloor>quiet.noiseFloor,
+    'the floor must be recomputed for the actually amplified microphone PCM');
+});

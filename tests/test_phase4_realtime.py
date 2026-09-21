@@ -188,6 +188,87 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resume["turn_id"], hold["turn_id"])
         self.assertFalse(any(event["kind"].startswith("playback.") for event in other.events))
 
+    async def test_ambient_only_outcome_resumes_held_audio_without_new_reply(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+
+        class Speaking:
+            turn_id = "voice-turn"
+            control_state = "held_confirmed"
+
+            def __init__(self):
+                self.commands = []
+
+            def request_playback_control(self, kind, *, reason):
+                self.commands.append((kind, reason))
+
+            async def cancel(self, _reason):
+                pass
+
+            async def close(self):
+                pass
+
+        speaker = Speaking()
+        client.speech = speaker
+        client.external_llm = FakeExternalLlm()
+        generation = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started"}, generation)
+        await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
+                             "transcript": "嗯"}, generation)
+        self.assertIn(("resume", "ambient_audio"), speaker.commands)
+        self.assertEqual(client.events[-2]["kind"], "playback.resume_requested")
+        self.assertEqual(client.events[-1]["kind"], "transcript.ambient")
+        self.assertFalse(client.speech_active)
+        self.assertFalse(client.robot.turn_cache)
+        self.assertFalse(any(event["kind"].startswith("playback.") for event in other.events))
+
+    async def test_demo_stable_asr_prefix_confirms_hold_before_final_without_losing_turn(self):
+        client = self.runtime.realtime["annie-a"]
+        generation = client.robot.generation
+        client.external_llm = FakeExternalLlm()
+
+        class Speaking:
+            turn_id = "old-voice"
+            control_state = "held_confirmed"
+
+            def __init__(self):
+                self.cancelled = []
+
+            def request_playback_control(self, kind, *, reason):
+                pass
+
+            async def cancel(self, reason):
+                self.cancelled.append(reason)
+                self.turn_id = None
+                self.control_state = "unknown"
+
+            async def close(self):
+                pass
+
+        speaker = Speaking()
+        client.speech = speaker
+        client._create_turn("旧轮次")
+        client.llm_task = None
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "new-speech"}, generation)
+        await client.handle({"type": "conversation.item.input_audio_transcription.delta",
+                             "text": "我", "stash": "想说话"}, generation)
+        self.assertEqual(speaker.cancelled, [])
+        await client.handle({"type": "conversation.item.input_audio_transcription.delta",
+                             "text": "我想说", "stash": "话"}, generation)
+        self.assertEqual(speaker.cancelled, ["stable_asr_prefix"])
+        self.assertTrue(client.speech_active)
+        self.assertIsNone(client.turn_id)
+        await client.handle({"type": "input_audio_buffer.speech_stopped",
+                             "reason": "turn_invalid"}, generation)
+        self.assertFalse(any(e["kind"] == "playback.resume_requested"
+                             for e in client.events))
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "new-speech", "transcript": "我想说话"}, generation)
+        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "我想说话")
+        self.assertEqual(len([e for e in client.events if
+                              e["kind"] == "playback.interrupt_confirmed"]), 1)
+
     async def test_push_subscriber_is_bounded_and_released(self):
         # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.
         client = self.runtime.realtime["annie-a"]

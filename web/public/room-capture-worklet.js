@@ -4,11 +4,13 @@ class RoomCaptureProcessor extends AudioWorkletProcessor {
   constructor(options){
     super();this.sourceCount=0;this.nextPosition=0;this.last=0;this.hasLast=false;
     this.pending=[];this.levelSum=0;this.levelCount=0;this.levelBlocks=0;
+    this.noiseFloor=null;
     this.gain=this.targetGain=Math.max(1,Math.min(4,options?.processorOptions?.gain??1));
     this.clipped=0;
     this.port.onmessage=event=>{
       if(event.data?.type==='gain'&&Number.isFinite(event.data.value)){
         this.targetGain=Math.max(1,Math.min(4,event.data.value));
+        this.noiseFloor=null; // old floor is not comparable after a gain change
       }
     };
   }
@@ -28,8 +30,16 @@ class RoomCaptureProcessor extends AudioWorkletProcessor {
       if(i%16===0){this.levelSum+=amplified[i]*amplified[i];this.levelCount++;}
     }
     if(++this.levelBlocks>=32){
-      this.port.postMessage({type:'level',value:Math.round(
-        Math.sqrt(this.levelSum/Math.max(1,this.levelCount))*1000)/10,
+      const rms=Math.sqrt(this.levelSum/Math.max(1,this.levelCount));
+      const dbfs=20*Math.log10(Math.max(rms,1e-7));
+      // Demo v1.7: estimate the acoustic floor only from quiet frames;
+      // local dBFS/SNR are observational, never used to decide a turn.
+      if(this.noiseFloor===null)this.noiseFloor=dbfs;
+      else if(dbfs<this.noiseFloor+8){
+        this.noiseFloor=this.noiseFloor*.985+dbfs*.015;
+      }
+      this.port.postMessage({type:'level',value:Math.round(rms*1000)/10,
+        dbfs,noiseFloor:this.noiseFloor,snr:dbfs-this.noiseFloor,
         clipped:this.clipped});
       this.levelBlocks=0;this.levelSum=0;this.levelCount=0;this.clipped=0;
     }

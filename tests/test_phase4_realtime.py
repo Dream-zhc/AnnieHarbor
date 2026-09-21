@@ -265,6 +265,72 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.socket.outbound), before)
         self.assertIsNone(client.turn_id)
 
+    async def test_demo_asr_incremental_ambient_and_final_precede_slow_stop(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+        generation = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "heard-a"}, generation)
+        await client.handle({
+            "type": "conversation.item.input_audio_transcription.delta",
+            "item_id": "heard-a", "text": "我想", "stash": "喝茶",
+        }, generation)
+        preview = client.events[-1]
+        self.assertEqual(preview["kind"], "transcript.delta")
+        self.assertEqual(preview["text"]+preview["stash"], "我想喝茶")
+        self.assertEqual(preview["item_id"], "heard-a")
+        self.assertEqual(client.asr_delta_count, 1)
+        self.assertTrue(any(e["kind"] == "transcript.first_delta" for e in client.events))
+        await client.handle({
+            "type": "conversation.item.ambient_audio_transcription.delta",
+            "text": "嗯", "stash": "嗯",
+        }, generation)
+        self.assertEqual(client.events[-1]["kind"], "transcript.ambient_delta")
+
+        client.external_llm = FakeExternalLlm()
+        client.turn_id = "old-voice"  # an older LLM/TTS response is still active
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def slow_cancel(_reason):
+            entered.set()
+            await release.wait()
+            client.turn_id = None
+
+        client._interrupt_active_turn = slow_cancel
+        final = asyncio.create_task(client.handle({
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "heard-a", "transcript": "我想喝茶。",
+        }, generation))
+        await asyncio.wait_for(entered.wait(), 1)
+        self.assertFalse(final.done())
+        self.assertEqual(client.events[-1]["kind"], "transcript.final_preview")
+        self.assertEqual(client.events[-1]["text"], "我想喝茶。")
+        self.assertFalse(any(e["kind"] == "transcript.final_preview" for e in other.events))
+        release.set()
+        await asyncio.wait_for(final, 1)
+        kinds = [e["kind"] for e in client.events]
+        self.assertLess(kinds.index("transcript.final_preview"),
+                        kinds.index("transcript.done"))
+
+    async def test_demo_meaningful_ambient_promotes_without_replying_to_fillers(self):
+        client = self.runtime.realtime["annie-a"]
+        client.external_llm = FakeExternalLlm()
+        generation = client.robot.generation
+        await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
+                             "item_id": "filler", "transcript": "嗯。"}, generation)
+        self.assertIsNone(client.turn_id)
+        self.assertEqual(client.events[-1]["kind"], "transcript.ambient")
+        await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
+                             "item_id": "correction", "transcript": "不是这个。"}, generation)
+        self.assertTrue(any(e["kind"] == "transcript.ambient_promoted" for e in client.events))
+        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "不是这个。")
+        original_turn = client.turn_id
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "correction", "transcript": "不是这个。"}, generation)
+        self.assertEqual(client.turn_id, original_turn)
+        self.assertEqual(len([e for e in client.events if
+                              e["kind"] == "transcript.ambient_promoted"]), 1)
+
     async def test_final_asr_backfills_turn_started_before_transcription(self):
         client = self.runtime.realtime["annie-a"]
         generation = client.robot.generation

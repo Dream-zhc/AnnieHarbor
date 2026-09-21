@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 from collections import deque
 from uuid import uuid4
@@ -14,6 +15,10 @@ from annie_brain.persona import session_instructions
 from annie_core import RobotUnavailableError
 
 logger = logging.getLogger(__name__)
+AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
+AMBIENT_BACKCHANNELS = frozenset({"好", "好的", "对", "是", "行", "可以", "知道了", "哈哈", "呵呵"})
+AMBIENT_CORRECTIONS = ("不对", "不是", "还没", "等等", "等下", "先别",
+                       "我说", "你听错", "为什么", "怎么", "但是", "不过", "别", "停")
 
 
 class RealtimeRobot:
@@ -61,6 +66,8 @@ class RealtimeRobot:
         self.invalid_turns = 0
         self.last_provider_speech_ms = None
         self.last_provider_transcript_ms = None
+        self.last_asr_first_delta_ms = None
+        self.asr_delta_count = 0
         self.turn_identity = None
         self.restored_context = None
         self.persona_snapshot = None
@@ -97,6 +104,21 @@ class RealtimeRobot:
             a, b = times.get(start), times.get(end)
             durations[name] = max(0, b - a) if a is not None and b is not None else None
         return {"turn_id": turn_id, "times": times, "durations": durations}
+
+    def _promote_ambient(self, transcript):
+        """Demo's conservative semantic fallback; local energy never starts a user turn."""
+        cleaned = transcript.strip(" ，。！？!?…~～")
+        if (not cleaned or AMBIENT_FILLER.fullmatch(cleaned) or
+            len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", cleaned)) < 2):
+            return False
+        compact = cleaned.replace(" ", "")
+        if compact in AMBIENT_BACKCHANNELS:
+            return False
+        speaking = bool(self.turn_id or
+                        (self.speech and self.speech.worker and
+                         not self.speech.worker.done()))
+        return not speaking or len(compact) >= 4 or any(
+            marker in compact for marker in AMBIENT_CORRECTIONS)
 
     def _timeline_percentiles(self):
         fields = ("endpoint_to_speaker_start_ms", "llm_request_to_first_text_ms")
@@ -181,6 +203,8 @@ class RealtimeRobot:
             "invalid_turns": self.invalid_turns,
             "last_provider_speech_ms": self.last_provider_speech_ms,
             "last_provider_transcript_ms": self.last_provider_transcript_ms,
+            "last_asr_first_delta_ms": self.last_asr_first_delta_ms,
+            "asr_delta_count": self.asr_delta_count,
             "first_text_ms": self.first_text_ms,
             "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
             "restored_context": self.restored_context,
@@ -448,6 +472,8 @@ class RealtimeRobot:
                 self.session_frames_sent = self.speech_started_count = 0
                 self.transcripts_completed = self.invalid_turns = 0
                 self.last_provider_speech_ms = self.last_provider_transcript_ms = None
+                self.last_asr_first_delta_ms = None
+                self.asr_delta_count = 0
                 self.persona_snapshot = {**self.robot.session_state(), **persona_snapshot,
                                          "provider_session_id": self.session}
                 await self._restore_context()
@@ -697,6 +723,8 @@ class RealtimeRobot:
         if kind == "input_audio_buffer.speech_started":
             self._last_activity_t = time.monotonic()
             self.speech_active = True
+            self.last_asr_first_delta_ms = None
+            self.asr_delta_count = 0
             self.pending_audio_item_id = event.get("item_id")
             self.speech_started_count += 1
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
@@ -721,9 +749,36 @@ class RealtimeRobot:
                              reason="turn_invalid")
                 self.speech.request_playback_control("resume", reason="turn_invalid")
         elif kind == "conversation.item.ambient_audio_transcription.completed":
-            self.publish("transcript.ambient", text=event.get("transcript", ""))
+            final_text = str(event.get("transcript", "")).strip()
+            item_id = event.get("item_id")
+            if (self.external_llm and final_text and
+                (not item_id or item_id not in self.audio_item_turns) and
+                self._promote_ambient(final_text)):
+                self.publish("transcript.ambient_promoted", text=final_text, item_id=item_id)
+                self.publish("transcript.final_preview", text=final_text, item_id=item_id)
+                self.speech_active = False
+                if self.turn_id:
+                    await self._interrupt_active_turn("meaningful_ambient")
+                self.transcript = final_text
+                self._create_turn(final_text, audio=True)
+                if item_id:
+                    self.audio_item_turns[item_id] = self.turn_id
+                self.publish("transcript.done", text=final_text, turn_id=self.turn_id)
+                await self._start_external_turn(final_text)
+                return
+            self.publish("transcript.ambient", text=final_text)
+        elif kind == "conversation.item.ambient_audio_transcription.delta":
+            self.publish("transcript.ambient_delta", text=event.get("text", ""),
+                         stash=event.get("stash", ""), item_id=event.get("item_id"))
         elif kind == "conversation.item.input_audio_transcription.delta":
-            self.publish("transcript.delta", text=event.get("text", ""), stash=event.get("stash", ""))
+            if self.last_asr_first_delta_ms is None:
+                self.last_asr_first_delta_ms = time.time_ns() // 1_000_000
+                self.publish("transcript.first_delta",
+                             after_speech_ms=(self.last_asr_first_delta_ms-self.last_provider_speech_ms)
+                             if self.last_provider_speech_ms else None)
+            self.asr_delta_count += 1
+            self.publish("transcript.delta", text=event.get("text", ""),
+                         stash=event.get("stash", ""), item_id=event.get("item_id"))
         elif kind == "conversation.item.input_audio_transcription.completed":
             self._last_activity_t = time.monotonic()
             self.transcripts_completed += 1
@@ -736,6 +791,9 @@ class RealtimeRobot:
                 self.publish("transcript.duplicate", item_id=item_id)
                 return
             if self.external_llm and final_text:
+                # The demo shows ASR final before waiting for old TTS stop / LLM
+                # cancellation; UI must not inherit the stop round-trip latency.
+                self.publish("transcript.final_preview", text=final_text, item_id=item_id)
                 self.speech_active = False
                 self.pending_audio_item_id = None
                 if self.turn_id:

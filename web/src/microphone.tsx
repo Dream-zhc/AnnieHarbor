@@ -41,7 +41,12 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
   const [status,setStatus]=useState('未开启');
   const [frames,setFrames]=useState(0);
   const [level,setLevel]=useState(0);
+  const [gain,setGain]=useState(1.75);
+  const [clipped,setClipped]=useState(false);
   const [device,setDevice]=useState('');
+  useEffect(()=>{
+    active.current?.processor.port.postMessage({type:'gain',value:gain});
+  },[gain]);
 
   function stop(update=true){
     token.current++;
@@ -90,7 +95,9 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
       ws=await connect(route.mic_url,roomId);
       if(current!==token.current)return;
       source=context.createMediaStreamSource(stream);
-      processor=new AudioWorkletNode(context,'room-capture',{outputChannelCount:[1]});
+      processor=new AudioWorkletNode(context,'room-capture',{
+        outputChannelCount:[1],processorOptions:{gain},
+      });
       silent=context.createGain();silent.gain.value=0;
       // Keep immutable handles: the capture callback must not read locals
       // cleared/changed by startup cleanup after it has been installed.
@@ -100,7 +107,8 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
         if(active.current?.ws!==captureWs||captureWs.readyState!==WebSocket.OPEN)return;
         try{
           if(event.data.type==='level'){
-            setLevel(event.data.value);onLevel?.(event.data.value);return;
+            setLevel(event.data.value);setClipped(event.data.clipped>0);
+            onLevel?.(event.data.value);return;
           }
           if(event.data.type!=='audio')return;
           if(captureWs.bufferedAmount>651*40)throw new Error('Room 发送积压超过 800ms');
@@ -128,7 +136,8 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
       stream.getAudioTracks().forEach(track=>{track.onended=()=>{
         if(active.current?.stream===captureStream){stop();setStatus('麦克风设备已停止');}
       };});
-      setFrames(0);setLevel(0);onLevel?.(0);setDevice(stream.getAudioTracks()[0]?.label??'');
+      setFrames(0);setLevel(0);setClipped(false);onLevel?.(0);
+      setDevice(stream.getAudioTracks()[0]?.label??'');
       setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
     }catch(error){
       if(current===token.current)setStatus('开启失败：'+String(error));
@@ -142,6 +151,11 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
     }
   }
   return <div className="voice-input">
+    <label className="mic-gain-control">麦克风增强 <strong>{gain.toFixed(2)}×</strong>
+      <input type="range" aria-label="麦克风增强" min="1" max="4" step="0.25"
+        value={gain} onChange={event=>setGain(Number(event.target.value))}/>
+    </label>
+    <small className="mic-gain-hint">默认轻度增强；说话时可逐步调高，出现削波或噪声放大请调低。不改变云端 smart_turn 门限。</small>
     <label className="voice-confirm"><input type="checkbox" checked={confirmed} disabled={listening||working}
       onChange={event=>setConfirmed(event.target.checked)}/>
       <span>此 Room 没有另一个麦克风或机器人音源正在发送 PCM</span></label>
@@ -153,6 +167,7 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
       <span role="status">{status}{listening?' · 已发 '+frames+' 帧':''}</span>
     </div>
     {listening&&<small className="mic-signal">输入设备：{device||'浏览器未提供名称'} · 本地电平 {level.toFixed(1)}%
+      {clipped?'（检测到削波，请降低增强）':''}
       {frames>50&&level<0.2?'（接近静音；请检查输入设备/权限）':''}。发送帧数不代表识别到人声。</small>}
   </div>;
 }

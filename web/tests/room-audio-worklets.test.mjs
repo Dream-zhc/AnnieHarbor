@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 
-function processor(file,rate=48000){
+function processor(file,rate=48000,options={}){
   const processors=new Map();
   class AudioWorkletProcessor{
     constructor(){this.messages=[];this.port={postMessage:value=>this.messages.push(value)};}
@@ -12,7 +12,7 @@ function processor(file,rate=48000){
     AudioWorkletProcessor,sampleRate:rate,Float32Array,Int16Array,Math,
     registerProcessor:(name,ctor)=>processors.set(name,ctor),
   });
-  return new (processors.values().next().value)();
+  return new (processors.values().next().value)({processorOptions:options});
 }
 const send=(p,message)=>p.port.onmessage({data:message});
 function process(p){const output=new Float32Array(128);p.process([],[ [output] ]);return output;}
@@ -75,3 +75,26 @@ for(const rate of [44100,48000]){
     assert.equal(capture(128).length,16000);
   });
 }
+
+test('mic enhancement changes the actual Room PCM and clamps live gain updates',()=>{
+  const wave=Float32Array.from({length:4800},(_,i)=>.08*Math.sin(i*2*Math.PI*220/48000));
+  const raw=processor('room-capture-worklet.js',48000,{gain:1});
+  const boosted=processor('room-capture-worklet.js',48000,{gain:2});
+  for(let i=0;i<wave.length;i+=128){
+    raw.process([[wave.subarray(i,i+128)]],[[new Float32Array(128)]]);
+    boosted.process([[wave.subarray(i,i+128)]],[[new Float32Array(128)]]);
+  }
+  const rawAudio=raw.messages.filter(item=>item.type==='audio');
+  const boostedAudio=boosted.messages.filter(item=>item.type==='audio');
+  assert.equal(rawAudio.length,5);
+  assert.equal(boostedAudio.length,5);
+  assert.equal(boostedAudio[0].buffer.byteLength,640);
+  const peak=items=>Math.max(...items.flatMap(item=>Array.from(
+    new Int16Array(item.buffer),sample=>Math.abs(sample))));
+  assert.ok(peak(boostedAudio)>peak(rawAudio)*1.95);
+  assert.ok(peak(boostedAudio)<peak(rawAudio)*2.05);
+  boosted.port.onmessage({data:{type:'gain',value:100}});
+  assert.equal(boosted.targetGain,4);
+  boosted.port.onmessage({data:{type:'gain',value:0}});
+  assert.equal(boosted.targetGain,1);
+});

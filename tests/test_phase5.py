@@ -310,9 +310,12 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
             before = len(a.socket.outbound)
             await a._restore_context()
             messages = a.socket.outbound[before:]
-            self.assertEqual(len(messages), 1)
-            self.assertEqual(messages[0]["item"]["role"], "user")
+            # This is a past completed utterance, not another pending user
+            # request. No unsaid assistant reply and no fresh user item.
+            self.assertEqual(messages, [])
             self.assertEqual(a.restored_context["turns"][0]["assistant_text"], "")
+            self.assertEqual(a.restored_context["turns"][0]["provider_delivery"],
+                             "instructions_history_only")
         finally:
             a.speech = None
 

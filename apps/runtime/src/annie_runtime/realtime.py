@@ -10,7 +10,11 @@ from collections import deque
 from uuid import uuid4
 
 from annie_adapters.realtime import QwenRealtimeSocket, audio_append, session_update
-from annie_brain.context import INTERRUPTED_USER_SOURCES, select_restorable_context
+from annie_brain.context import (
+    INTERRUPTED_USER_SOURCES,
+    historical_user_evidence,
+    select_restorable_context,
+)
 from annie_brain.persona import session_instructions
 from annie_core import RobotUnavailableError
 
@@ -365,6 +369,15 @@ class RealtimeRobot:
                 instructions, persona_snapshot = session_instructions(
                     self.robot.persona_id, self.persona_profiles, social,
                 )
+                restore = select_restorable_context(
+                    self.robot.recent_context(), speech_enabled=self.speech is not None,
+                    max_turns=min(self.history_turns, self.robot.context_limit),
+                    char_budget=self.restore_char_budget,
+                )
+                # Unheard user turns belong to *past evidence*, not the
+                # provider's unanswered user-message queue. Include the
+                # bounded evidence in initial instructions, before ready.
+                instructions += historical_user_evidence(restore)
                 self.history_turns_confirmed = None
                 await self.socket.send(session_update(
                     instructions,
@@ -403,7 +416,7 @@ class RealtimeRobot:
                 self._candidate_confirmed = False
                 self.persona_snapshot = {**self.robot.session_state(), **persona_snapshot,
                                          "provider_session_id": self.session}
-                await self._restore_context()
+                await self._restore_context(restore)
                 self.ready = True
                 self.error = None
                 retry = 1
@@ -478,15 +491,16 @@ class RealtimeRobot:
                 and not (self.speech and getattr(self.speech, "control_state", "")
                          in {"hold_requested", "held_confirmed", "resume_requested"}))
 
-    async def _restore_context(self):
+    async def _restore_context(self, packet=None):
         # This is the history injected into THIS socket, not its subsequent
         # live dialogue (which the provider does not expose through this API).
         self.restored_context = None
-        packet = select_restorable_context(
-            self.robot.recent_context(), speech_enabled=self.speech is not None,
-            max_turns=min(self.history_turns, self.robot.context_limit),
-            char_budget=self.restore_char_budget,
-        )
+        if packet is None:
+            packet = select_restorable_context(
+                self.robot.recent_context(), speech_enabled=self.speech is not None,
+                max_turns=min(self.history_turns, self.robot.context_limit),
+                char_budget=self.restore_char_budget,
+            )
         now_ms = time.time_ns() // 1_000_000
         # The provider does not receive SQLite timestamps. Mark aged turns
         # explicitly while leaving their persisted text untouched. Allocate
@@ -506,18 +520,28 @@ class RealtimeRobot:
                 used += len(note)
         packet["chars_used"] = used
         for turn in packet["turns"]:
+            if not turn["assistant_text"]:
+                turn["provider_delivery"] = "instructions_history_only"
+                continue
+            turn["provider_delivery"] = "conversation_pair"
             await self.socket.send({
                 "type": "conversation.item.create",
                 "item": {"type": "message", "role": "user",
                          "content": [{"type": "input_text", "text": turn.get(
                              "provider_user_text", turn["user_text"])}]},
             })
-            if turn["assistant_text"]:
-                await self.socket.send({
-                    "type": "conversation.item.create",
-                    "item": {"type": "message", "role": "assistant",
-                             "content": [{"type": "output_text", "text": turn["assistant_text"]}]},
-                })
+            await self.socket.send({
+                "type": "conversation.item.create",
+                "item": {"type": "message", "role": "assistant",
+                         "content": [{"type": "output_text", "text": turn["assistant_text"]}]},
+            })
+        self.publish(
+            "context.restored", provider_session_id=self.session,
+            paired_turn_ids=[turn["turn_id"] for turn in packet["turns"]
+                             if turn["provider_delivery"] == "conversation_pair"],
+            evidence_turn_ids=[turn["turn_id"] for turn in packet["turns"]
+                               if turn["provider_delivery"] == "instructions_history_only"],
+        )
         self.restored_context = {**self.robot.session_state(), **packet,
                                  "provider_session_id": self.session}
 

@@ -4,6 +4,7 @@ This is not long-term memory and never makes an additional model call.
 """
 
 CONTEXT_CHAR_BUDGET = 12_000  # conservative character proxy, NOT provider tokens
+MAX_UNHEARD_USER_TURNS = 3  # avoid restoring a fabricated 20-user-message monologue
 EXCERPT = "……（历史回复节选）"
 
 
@@ -18,6 +19,7 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
         raise ValueError("context bounds must be positive")
     selected = []
     used = 0
+    consecutive_unheard = 0
     valid = [r for r in rows if r.get("status") == "completed"
              and not r.get("cancelled") and not r.get("interrupted")
              and isinstance(r.get("user_text"), str) and r["user_text"].strip()]
@@ -33,6 +35,10 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
             source = "text_only" if reply else "user_only"
         if not isinstance(reply, str):
             reply = ""
+        if speech_enabled:
+            consecutive_unheard = 0 if reply else consecutive_unheard + 1
+            if consecutive_unheard > MAX_UNHEARD_USER_TURNS:
+                break  # old unanswered prompts are not a credible ongoing dialogue
         if len(user) > char_budget - used:
             break  # never slice off negation/correction; keep chronological suffix
         remaining = char_budget - used - len(user)

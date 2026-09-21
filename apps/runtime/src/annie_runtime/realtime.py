@@ -48,6 +48,12 @@ class RealtimeRobot:
         self.began = None
         self.frames_sent = 0
         self.frames_dropped = 0
+        self.session_frames_sent = 0
+        self.speech_started_count = 0
+        self.transcripts_completed = 0
+        self.invalid_turns = 0
+        self.last_provider_speech_ms = None
+        self.last_provider_transcript_ms = None
         self.turn_identity = None
         self.restored_context = None
         self.persona_snapshot = None
@@ -96,6 +102,12 @@ class RealtimeRobot:
             "speech_active": self.speech_active,
             "frames_sent": self.frames_sent,
             "frames_dropped": self.frames_dropped,
+            "session_frames_sent": self.session_frames_sent,
+            "speech_started_count": self.speech_started_count,
+            "transcripts_completed": self.transcripts_completed,
+            "invalid_turns": self.invalid_turns,
+            "last_provider_speech_ms": self.last_provider_speech_ms,
+            "last_provider_transcript_ms": self.last_provider_transcript_ms,
             "first_text_ms": self.first_text_ms,
             "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
             "restored_context": self.restored_context,
@@ -210,6 +222,9 @@ class RealtimeRobot:
                         break
                 if generation != self.robot.generation:
                     continue
+                self.session_frames_sent = self.speech_started_count = 0
+                self.transcripts_completed = self.invalid_turns = 0
+                self.last_provider_speech_ms = self.last_provider_transcript_ms = None
                 self.persona_snapshot = {**self.robot.session_state(), **persona_snapshot,
                                          "provider_session_id": self.session}
                 await self._restore_context()
@@ -301,6 +316,7 @@ class RealtimeRobot:
                     continue
                 await self.socket.send(audio_append(frame.payload))
                 self.frames_sent += 1
+                self.session_frames_sent += 1
             finally:
                 audio.queue.task_done()
 
@@ -400,17 +416,22 @@ class RealtimeRobot:
         if kind == "input_audio_buffer.speech_started":
             self.speech_active = True
             self.audio_turn_id = None
+            self.speech_started_count += 1
+            self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
         elif kind == "input_audio_buffer.speech_stopped":
             invalid = event.get("reason") == "turn_invalid"
             if invalid:
                 self.speech_active = False
+                self.invalid_turns += 1
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
         elif kind == "conversation.item.ambient_audio_transcription.completed":
             self.publish("transcript.ambient", text=event.get("transcript", ""))
         elif kind == "conversation.item.input_audio_transcription.delta":
             self.publish("transcript.delta", text=event.get("text", ""), stash=event.get("stash", ""))
         elif kind == "conversation.item.input_audio_transcription.completed":
+            self.transcripts_completed += 1
+            self.last_provider_transcript_ms = time.time_ns() // 1_000_000
             self.transcript = event.get("transcript", "")
             if self.transcript.strip() and not self.turn_id:
                 # A final transcript can arrive after response.done; update its

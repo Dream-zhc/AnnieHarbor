@@ -428,6 +428,7 @@ export function Workbench(){
             <div className="inspector-robot"><span className="robot-avatar large">{robotId.slice(0,1).toUpperCase()||'A'}</span><div><strong>{robotId||'未选择'}</strong><small>{selectedRobot?.room_id??'—'}</small></div><State value={realtime?.state} good={realtime?.ready}/></div>
             <section className="inspector-group voice-summary" aria-label="语音输出状态"><h3>语音输出</h3>
               <div className="info-line"><span>TTS 合成</span><State value={speech?.state}/></div>
+              {speech?.last_stop_reason&&<div className="info-line"><span>最近停播原因</span><strong>{speech.last_stop_reason}</strong></div>}
               <div className="info-line"><span>已发布 PCM</span><strong>{speech?.pcm_frames_published??0} 帧</strong></div>
               <div className="info-line"><span>设备播放回执</span><strong>{speech?.playback_evidence==='unknown'?'尚未确认':speech?.playback_evidence??'尚未确认'}</strong></div>
               <RoomDebugSpeaker key={robotId+'\u0000'+(route?.room_id??'')}
@@ -477,6 +478,11 @@ export function Workbench(){
               </details>
             </details>
             <details className="inspector-group inspector-panel"><summary>连接详情</summary><div className="info-line"><span>Room 麦克风</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
+              <div className="info-line"><span>本次 Realtime 已发送</span><strong>{realtime?.session_frames_sent??0} 帧</strong></div>
+              <div className="info-line"><span>模型检测语音开始</span><strong>{realtime?.speech_started_count??0} 次</strong></div>
+              <div className="info-line"><span>模型完成转写</span><strong>{realtime?.transcripts_completed??0} 次</strong></div>
+              <div className="info-line"><span>判为无效轮次</span><strong>{realtime?.invalid_turns??0} 次</strong></div>
+              {(realtime?.session_frames_sent??0)>100&&!(realtime?.speech_started_count)&&<p className="audio-guidance">PCM 已送给模型，但本次 Session 尚无语音开始事件。先看麦克风本地电平；有效电平仍不触发时，再查 Room 内容/Provider 的 smart_turn。帧数不代表语音已被理解。</p>}
               <div className="info-line"><span>Session</span><strong>{session?.generation??'—'}</strong></div>
             </details>
             {realtime?.error&&<p className="inline-error" role="alert">{realtime.error}</p>}

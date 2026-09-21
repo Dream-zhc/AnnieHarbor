@@ -46,3 +46,12 @@
 - 正式后端继续只把 TTS 输出发布到 Room `reb_tts`；网页没有 Provider Key，不向 Room 重发 TTS PCM、不建第二个 TTS 服务，也**不向 `reb_main` 伪报 browser_test/speaker 回执**。网页能听见≠实体扬声器实际播放；原 `speaker_reported_*` 证据继续单列。请使用耳机，避免与本页 Room 麦克风或外部扬声器形成回声。
 - 本机对真实 `roomv2/reb_tts` 做**只读连接/订阅检查**，收到 `WELCOME roomv2/reb_tts` 及 `ACK subscriptions=['TTS','*']`，随后退出；未向现场发布测试音频、未调用模型。Chromium + 假 Room 配合假 AudioContext 验证 960B PCM 调度、重复 seq 去重、Room stop、开关关闭及切机器人释放；另用**原生 Chromium AudioContext** 检查播放节点实际调度到 `onended`。仍不能把无真实扬声器/声学测量的浏览器测试记为耳听、AEC 或真机验收。
 - 回归：`npm --prefix web run typecheck`、`npm --prefix web test`（11 passed）、`npm --prefix web run build`、Ruff/diff check 通过；可选真实 Chromium 复跑 `node web/tests/room-debug-speaker.browser.mjs`，需本地 Runtime，但 mock 拦截 reb_tts 不会向现场发布帧。
+
+## 2026-09-21 实际对话/全双工排障（未作现场自动干扰）
+
+- **真实历史与重连快照：** `annie-a / phase3-chat1` 的 Provider Session 恢复了 20 个仅 user 输入，assistant 全部是 `user_only_no_speaker_drain`，其中有 `Fake debug probe` 和多段过期问候/眨眼/摄像头问题。随后用户让机器人「你选一个呗」，它却回到那些旧主题；这证明重连提供了误导性的单向对话，不证明 Provider 的其他内部因素不存在。现在最多恢复连续 3 个未确认听见的 user-only 轮；已确认扬声器播完的助手回复仍按原协议保留，不把网页试听当成实体扬声器。旧 Ledger 不删除；需安全重建 Session 才会采用新恢复边界。
+- **TTS stop 的确定原因：** Realtime 事件存在 `tts_queue_full`、`tts_queue_timeout`，对应 stop 发布给 reb_tts；最新一次模型文本完成但外置 TTS 只播发 65 帧（约 1.3s PCM）后因超时主动停播；网页「收到 Room 停播指令」不属于播放器伪报。原实现 8 段队列满即 cancel，`finish()` 等 1s 仍满也 cancel，且让主 Realtime 读事件协程等待。新实现保留 8 段有界队列，把尚未入队的原文合并在 `pending`，合成消费者空出位置再分段，尾段/stream_final 必须到最后才发布；`finish()` 不堵模型事件读循环，显式取消仍按原 Room STOP 协议生效。新增缓慢 Fake TTS+长文本压力回归验证全文不丢、不会意外 STOP，不等同于真实听感验收。
+- **麦克风仍待定位：** 当前健康里 Room 累计接收 12,166 帧，Runtime 累计向 Provider 发送 12,156 帧，随后当前 Session 有 `response_idle_timeout`（180 秒未生成回复）；原计数是累计值，不足以证明这些帧在同一次 Provider Session 发出，更不能证明 PCM 有效声音、ASR 触发或是否被 smart_turn 判为无效。新增网页本地输入设备/电平（不保存原始音频），Runtime 当前 Session 的送帧/`speech_started`/完成转写/无效轮次计数与右侧诊断。该数据要等新 Runtime 与再次实际说话才能判定缺口，**没有擅自改 VAD、Provider 模型、Room PCM 协议或向真实 Room 注入测试音频**。
+- **回复风格：** Session 共性提示改为优先响应最新句、用户让选就明确选、闲聊简短、不反复自介/问候/套菜单、不把未接线硬件推断为没有实体。只在新 Session 生效，不能以提示修改替代多轮真人 A/B。
+- **旧进程保留：** 用户当时浏览器麦克风已在传输，未重启 8780 的 Runtime，未打断现场 Room；Python 新逻辑必须在用户停止麦克风后安全重启才生效。前端 build 已完成，刷新网页可先观察本地电平，但前后端新诊断需重启后联动。
+- 回归：Python 121 passed / 25 subtests / 2 条既有第三方警告；前端 12 passed（新增 16k/48k 非零波形编码断言）、TS/build/Ruff/uv lock/diff check 通过；Chromium 假麦克风/假 Room + 原生 WebAudio 自动化通过。尚无真人说话 ASR 成功、现场持续 TTS 整句播完、AEC 全双工与三人格语义验收证据。

@@ -45,6 +45,7 @@ class SpeechOutput:
         self.first_publish_ms = None
         self.error = None
         self.cancelled = False
+        self.last_stop_reason = None
         self.finished = False
         self.published_text = ""
         self.last_published_segment = None
@@ -88,6 +89,7 @@ class SpeechOutput:
             "stopped_conversation_id": self.stopped_conversation_id,
             "last_stop_evidence": self.last_stop_evidence,
             "error": self.error,
+            "last_stop_reason": self.last_stop_reason,
         }
 
     def _emit(self, kind, **data):
@@ -103,6 +105,7 @@ class SpeechOutput:
         self.turn_id = turn_id
         self.identity = dict(identity)
         self.cancelled = False
+        self.last_stop_reason = None
         self.finished = False
         self.pending = ""
         self.segment = self.seq = self.samples = self.frames = 0
@@ -133,19 +136,32 @@ class SpeechOutput:
 
     def _enqueue(self, segment):
         if not segment.strip():
-            return
-        try:
-            self.queue.put_nowait(segment)
-        except asyncio.QueueFull as exc:
-            self.error = "TTS text queue full; stopped rather than silently omitting text"
-            self._emit("tts.error", error=self.error)
-            raise RuntimeError(self.error) from exc
+            return True
+        if self.queue.full():
+            return False  # retain the text in pending, never silently drop it
+        self.queue.put_nowait(segment)
+        self._emit("tts.segment_queued", chars=len(segment))
+        return True
 
-    def _flush(self):
-        if self.pending.strip():
-            segment, self.pending = self.pending, ""
-            self._enqueue(segment)
-            self._emit("tts.segment_queued", chars=len(segment))
+    def _drain_pending(self, *, force=False):
+        """Nonblocking coalescing: slow TTS must not stall Realtime reception."""
+        while self.pending and not self.queue.full():
+            head = self.pending[:self.max_chars]
+            cut = next((i + 1 for i, char in enumerate(head)
+                        if char in SENTENCE_END and i + 1 >= self.first_chars), None)
+            if cut is None and len(self.pending) >= 24:
+                cut = next((i + 1 for i, char in enumerate(head)
+                            if char in CLAUSE_END and i + 1 >= 12), None)
+            if cut is None and len(self.pending) >= self.max_chars:
+                cut = self.max_chars
+            if cut is None and force:
+                cut = len(self.pending)
+            if cut is None:
+                return
+            segment = self.pending[:cut]
+            if not self._enqueue(segment):
+                return
+            self.pending = self.pending[cut:]
 
     async def feed(self, turn_id, identity, delta):
         if not delta or turn_id == self.failed_turn:
@@ -153,26 +169,8 @@ class SpeechOutput:
         await self._begin(turn_id, identity)
         if self.finished or not self._current(turn_id, identity):
             return
-        try:
-            self.pending += delta
-            while self.pending:
-                cut = next((i + 1 for i, char in enumerate(self.pending) if char in SENTENCE_END
-                            and i + 1 >= self.first_chars), None)
-                if cut is None and len(self.pending) >= 24:
-                    cut = next((i + 1 for i, char in enumerate(self.pending) if char in CLAUSE_END
-                                and i + 1 >= 12), None)
-                if cut is None and len(self.pending) >= self.max_chars:
-                    cut = max((i + 1 for i, char in enumerate(self.pending[:self.max_chars])
-                               if char in CLAUSE_END and i + 1 >= 12), default=self.max_chars)
-                if cut is None:
-                    break
-                segment, self.pending = self.pending[:cut], self.pending[cut:]
-                self._enqueue(segment)
-                self._emit("tts.segment_queued", chars=len(segment))
-        except RuntimeError:
-            self.failed_turn = turn_id
-            await self.cancel("tts_queue_full")
-            return
+        self.pending += delta
+        self._drain_pending()
         if self.pending and not self.flush_timer:
             self.flush_timer = asyncio.create_task(self._first_flush(turn_id, identity))
 
@@ -180,7 +178,7 @@ class SpeechOutput:
         try:
             await asyncio.sleep(self.first_wait_ms / 1000)
             if self._current(turn_id, identity) and len(self.pending) >= self.first_chars:
-                self._flush()
+                self._drain_pending(force=True)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -196,19 +194,13 @@ class SpeechOutput:
         if self.flush_timer:
             self.flush_timer.cancel()
             self.flush_timer = None
-        self._flush()
-        if self.worker and not self.worker.done():
-            try:
-                self.queue.put_nowait(None)
-            except asyncio.QueueFull:
-                try:
-                    await asyncio.wait_for(self.queue.put(None), timeout=1)
-                except asyncio.TimeoutError:
-                    await self.cancel("tts_queue_timeout")
+        self._drain_pending(force=True)
 
     async def cancel(self, reason="cancel"):
         was_active = self.turn_id is not None
         self.cancelled = True
+        if was_active:
+            self.last_stop_reason = reason
         if was_active:
             self.stop_requested_at = time.time_ns() // 1_000_000
             self.playback_state = "stop_requested"
@@ -281,16 +273,18 @@ class SpeechOutput:
             while True:
                 text = await self.queue.get()
                 try:
-                    if text is None:
+                    if not self._current(turn_id, identity):
+                        return
+                    if text is not None:
+                        self.segment += 1
+                        await self._synthesize(text, f"{turn_id}-{self.segment}", turn_id, identity)
+                    self._drain_pending(force=self.finished)
+                    if self.finished and not self.pending and self.queue.empty():
                         if self._current(turn_id, identity):
                             await self.publisher.publish(self._packet(b"", "", final=True,
                                                                       stream_final=True))
                         self.synthesized_complete = True
                         return
-                    if not self._current(turn_id, identity):
-                        return
-                    self.segment += 1
-                    await self._synthesize(text, f"{turn_id}-{self.segment}", turn_id, identity)
                 finally:
                     self.queue.task_done()
         except asyncio.CancelledError:

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from annie_brain.context import EXCERPT, select_restorable_context
+from annie_brain.context import EXCERPT, MAX_UNHEARD_USER_TURNS, select_restorable_context
 from annie_brain.persona import load_personas, session_instructions
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
@@ -86,6 +86,13 @@ class ContextSelectionTests(unittest.TestCase):
         history[0]["playback_evidence_status"] = "speaker_reported_drained"
         packet = select_restorable_context(history, speech_enabled=True)
         self.assertEqual(packet["turns"][0]["assistant_text"], "已经说过的承诺")
+
+    def test_unheard_history_does_not_restore_twenty_unanswered_old_topics(self):
+        turns = [row(str(i), f"旧问句{i}", "模型生成了却没有扬声器回执") for i in range(20)]
+        packet = select_restorable_context(turns, speech_enabled=True)
+        self.assertEqual([t["user_text"] for t in packet["turns"]],
+                         [f"旧问句{i}" for i in range(20 - MAX_UNHEARD_USER_TURNS, 20)])
+        self.assertEqual(packet["omitted_older_turns"], 20 - MAX_UNHEARD_USER_TURNS)
 
     def test_cancelled_and_interrupted_are_not_resurrected(self):
         packet = select_restorable_context([

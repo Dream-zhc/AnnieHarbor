@@ -77,6 +77,21 @@ test('live microphone pump emits actual 20ms Room frames across audio callbacks'
   }
 });
 
+test('microphone PCM pump retains nonzero signal at 16k and 48k',()=>{
+  for(const rate of [16000,48000]){
+    const pump=createMicPcmPump(),packets=[];
+    for(let i=0;i<12;i++){
+      const wave=Float32Array.from({length:1024},(_,j)=>
+        0.3*Math.sin(2*Math.PI*440*(i*1024+j)/rate));
+      pump(wave,rate,frame=>packets.push(frame));
+    }
+    assert.ok(packets.length>0);
+    const view=new DataView(packets[0].buffer,packets[0].byteOffset+11,640);
+    assert.ok(Array.from({length:320},(_,i)=>Math.abs(view.getInt16(i*2,true)))
+      .some(value=>value>1000),`rate=${rate}: microphone waveform unexpectedly silent`);
+  }
+});
+
 test('React build is the only production page and serves local assets',async()=>{
   const html=await readFile(path.join(web,'dist/index.html'),'utf8');
   assert.match(html,/<div id="root"><\/div>/);
@@ -108,6 +123,9 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/session\.error/);
   assert.match(source,/turn\.done/);
   assert.match(source,/speech_output/);
+  assert.match(source,/session_frames_sent/);
+  assert.match(source,/speech_started_count/);
+  assert.match(source,/last_stop_reason/);
   assert.match(source,/playback_evidence/);
   assert.match(source,/phase4c\.html/);
   assert.match(source,/item\.persona_revision/);

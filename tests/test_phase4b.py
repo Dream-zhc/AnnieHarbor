@@ -252,6 +252,32 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.speech.close)
 
+    async def test_fast_long_reply_survives_slow_tts_without_blocking_realtime(self):
+        """Formerly 8 queued segments -> queue_full/timeout -> Room STOP."""
+        identity = self.robot.session_state()
+        text = "你好，" * 120
+        segments = []
+
+        async def slow_synthesize(segment, *_args):
+            await asyncio.sleep(0.005)
+            segments.append(segment)
+
+        self.speech._synthesize = slow_synthesize
+        self.speech.max_chars = 20
+        began = time.perf_counter()
+        await self.speech.feed("long-turn", identity, text)
+        await self.speech.finish("long-turn")
+        self.assertLess(time.perf_counter() - began, 0.2)
+        self.assertLessEqual(self.speech.queue.qsize(), 8)
+        self.assertTrue(self.speech.pending)
+        await asyncio.wait_for(self.speech.worker, 3)
+        self.assertEqual("".join(segments), text)
+        self.assertFalse(self.speech.cancelled)
+        self.assertIsNone(self.speech.error)
+        self.assertIsNone(self.speech.snapshot()["last_stop_reason"])
+        self.assertTrue(self.publisher.messages[-1]["data"]["stream_final"])
+        self.assertFalse(any(packet["data"].get("stop") for packet in self.publisher.messages))
+
     async def test_one_actual_pcm_shared_with_room_no_second_synthesis_and_no_false_playback(self):
         identity = self.robot.session_state()
         self.robot.turn_cache["turn1"] = {"turn_id": "turn1"}
@@ -353,6 +379,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         old_total=self.speech.samples
         self.speech.on_playback_receipt(receipt("started","old",old_epoch,0))
         await self.speech.cancel("interrupt")
+        self.assertEqual(self.speech.snapshot()["last_stop_reason"], "interrupt")
         self.assertEqual(self.publisher.messages[-1]["data"]["stop"],True)
         self.assertEqual(self.publisher.messages[-1]["data"]["stream_epoch"],old_epoch)
         await self.speech.feed("new",self.robot.session_state(),"再见。")

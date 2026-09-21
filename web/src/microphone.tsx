@@ -40,6 +40,8 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
   const [listening,setListening]=useState(false);
   const [status,setStatus]=useState('未开启');
   const [frames,setFrames]=useState(0);
+  const [level,setLevel]=useState(0);
+  const [device,setDevice]=useState('');
 
   function stop(update=true){
     token.current++;
@@ -92,11 +94,19 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
       const captureWs=ws,captureContext=context,captureStream=stream;
       const pump=createMicPcmPump();
       let sent=0;
+      let sumSquares=0,signalSamples=0,signalCallbacks=0;
       processor.onaudioprocess=event=>{
         if(active.current?.ws!==captureWs||captureWs.readyState!==WebSocket.OPEN)return;
         try{
+          const input=event.inputBuffer.getChannelData(0);
+          for(let i=0;i<input.length;i+=16){sumSquares+=input[i]*input[i];signalSamples++;}
+          if(++signalCallbacks>=10){
+            // Display amplitude only; never retain or transmit microphone samples.
+            setLevel(Math.round(Math.sqrt(sumSquares/Math.max(1,signalSamples))*1000)/10);
+            sumSquares=signalSamples=signalCallbacks=0;
+          }
           const previous=sent;
-          sent=pump(event.inputBuffer.getChannelData(0),captureContext.sampleRate,frame=>{
+          sent=pump(input,captureContext.sampleRate,frame=>{
             if(captureWs.bufferedAmount>640*40)throw new Error('Room 发送积压超过 800ms');
             captureWs.send(frame);
           });
@@ -122,7 +132,8 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
       stream.getAudioTracks().forEach(track=>{track.onended=()=>{
         if(active.current?.stream===captureStream){stop();setStatus('麦克风设备已停止');}
       };});
-      setFrames(0);setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
+      setFrames(0);setLevel(0);setDevice(stream.getAudioTracks()[0]?.label??'');
+      setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
     }catch(error){
       if(current===token.current)setStatus('开启失败：'+String(error));
     }finally{
@@ -145,5 +156,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
         {listening?'停止麦克风':working?'取消开启':'开启麦克风'}</button>
       <span role="status">{status}{listening?' · 已发 '+frames+' 帧':''}</span>
     </div>
+    {listening&&<small className="mic-signal">输入设备：{device||'浏览器未提供名称'} · 本地电平 {level.toFixed(1)}%
+      {frames>50&&level<0.2?'（接近静音；请检查输入设备/权限）':''}。发送帧数不代表识别到人声。</small>}
   </div>;
 }

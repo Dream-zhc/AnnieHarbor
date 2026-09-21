@@ -143,6 +143,9 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await client.handle({"type": "input_audio_buffer.speech_stopped", "reason": "turn_invalid"}, generation)
         await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
                              "transcript": "嗯"}, generation)
+        self.assertEqual(client.snapshot()["speech_started_count"], 1)
+        self.assertEqual(client.snapshot()["invalid_turns"], 1)
+        self.assertEqual(client.snapshot()["transcripts_completed"], 0)
         self.assertEqual(len(client.socket.outbound), before)
         self.assertIsNone(client.turn_id)
 
@@ -153,6 +156,8 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "")
         await client.handle({"type": "conversation.item.input_audio_transcription.completed",
                              "transcript": "我想聊天"}, generation)
+        self.assertEqual(client.snapshot()["transcripts_completed"], 1)
+        self.assertIsNotNone(client.snapshot()["last_provider_transcript_ms"])
         await client.handle({"type": "response.done", "response": {"status": "completed"}}, generation)
         stored = await self.runtime.load_conversation("annie-a", "default", "annie")
         self.assertEqual(stored["turns"][0]["user_text"], "我想聊天")

@@ -6,7 +6,6 @@ import {RealtimeMicrophone} from './microphone';
 import {RoomDebugSpeaker} from './room-debug-speaker';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
-type View='overview'|'chat'|'robots'|'developer';
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
 type Turn={turn_id:string;user_text:string;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string};
 type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string};
@@ -39,9 +38,6 @@ const stateLabel=(value:string|undefined)=>{
   return names[value]??value;
 };
 
-function Stat({name,value,detail,kind}:{name:string;value:string|number;detail?:string;kind?:'good'|'warn'|'neutral'}){
-  return <div className="stat"><span className="stat-name">{name}</span><strong className={kind==='good'?'ink-good':kind==='warn'?'ink-warn':''}>{value}</strong>{detail&&<small>{detail}</small>}</div>;
-}
 function State({value,good}:{value:string|undefined;good?:boolean}){
   return <span className={'state-pill '+(good?'state-good':!value||value==='unknown'||value.startsWith('not_')?'state-muted':'')}>{stateLabel(value)}</span>;
 }
@@ -58,7 +54,10 @@ export function Workbench(){
     });
     return ()=>media.revert();
   },{scope:root});
-  const [view,setView]=useState<View>('chat');
+  const [developerOpen,setDeveloperOpen]=useState(false);
+  const [historyOpen,setHistoryOpen]=useState(false);
+  const [micLevel,setMicLevel]=useState<number|null>(null);
+  const [browserBuffer,setBrowserBuffer]=useState<number|null>(null);
   const [health,setHealth]=useState<Health|null>(null);
   const [robotId,setRobotId]=useState('');
   const [session,setSession]=useState<Session|null>(null);
@@ -156,7 +155,7 @@ export function Workbench(){
   },[]);
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
   useEffect(()=>{
-    if(view!=='developer'||!robotId)return;
+    if(!developerOpen||!robotId)return;
     let active=true;
     const base=robotPath(robotId);
     void Promise.all([
@@ -166,7 +165,7 @@ export function Workbench(){
       if(active){setContext(recent);setPcm(inputs);setCoordinator(coord);setSocial(socialState);}
     }).catch(error=>{if(active)setNotice('诊断读取失败：'+errorText(error));});
     return()=>{active=false;};
-  },[view,robotId,session?.generation]);
+  },[developerOpen,robotId,session?.generation]);
   useEffect(()=>{
     setRealtimeEvents([]);setLiveTurn(null);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);setAmbient([]);setLastFirstText(null);eventCursor.current=0;
     followLatest.current=true;
@@ -236,23 +235,24 @@ export function Workbench(){
     return()=>{active=false;window.clearInterval(timer);};
   },[robotId]);
   useEffect(()=>{
-    if(view==='chat'&&followLatest.current&&scrollPanel.current)
+    if(followLatest.current&&scrollPanel.current)
       scrollPanel.current.scrollTop=scrollPanel.current.scrollHeight;
-  },[history?.turns.length,liveText,view,robotId,session?.chat_id]);
+  },[history?.turns.length,liveText,robotId,session?.chat_id]);
   useEffect(()=>{
-    if(!createOpen&&!deleteOpen)return;
+    if(!createOpen&&!deleteOpen&&!developerOpen)return;
     const onEscape=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'){setCreateOpen(false);setDeleteOpen(false);}
+      if(event.key==='Escape'){setCreateOpen(false);setDeleteOpen(false);setDeveloperOpen(false);}
     };
     window.addEventListener('keydown',onEscape);
     return()=>window.removeEventListener('keydown',onEscape);
-  },[createOpen,deleteOpen]);
+  },[createOpen,deleteOpen,developerOpen]);
 
   function choose(id:string){
     if(id===robotId)return;
     selection.current++;eventCursor.current=0;followLatest.current=true;displayedSession.current='';
     setRobotId(id);setSession(null);setConversations([]);setHistory(null);setContext(null);
     setPcm(null);setRoutes([]);setCoordinator(null);setSocial({});
+    setMicLevel(null);setBrowserBuffer(null);
     setLiveText('');setRealtimeEvents([]);setNotice('');setCreateOpen(false);setDeleteOpen(false);
   }
   async function switchSession(item:Conversation){
@@ -330,70 +330,55 @@ export function Workbench(){
     setDraftChat('');setDraftPersona(session?.persona_id??selectedRobot?.persona_id??'annie');
     setDraftRevision(session?.persona_revision??1);setCreateOpen(true);
   }
+  const voiceMode=!realtime?.ready?'未连接':
+    ['speaking','streaming','running'].includes(speech?.state??'')?'说话':
+    previewTranscript?'倾听':liveTurn||liveText?'思考':'空闲';
+  const micDbfs=micLevel===null?'未开启':micLevel<=0?'-∞ dBFS':
+    (20*Math.log10(micLevel/100)).toFixed(1)+' dBFS';
 
-  return <div className="app-shell" ref={root}>
-    <aside className="rail" aria-label="全局导航">
-      <div className="brand-mark" aria-label="Annie Harbor">A<span>·</span></div>
-      <div className="rail-label">ANNIE / V2</div>
-      <nav className="rail-nav">
-        {([
-          ['overview','▦','总览'],['chat','◫','对话'],['robots','◇','机器人'],['developer','⌁','开发者']
-        ] as const).map(([id,mark,label])=>
-          <button key={id} className={'rail-link '+(view===id?'is-active':'')} aria-current={view===id?'page':undefined}
-            onClick={()=>setView(id)}><span aria-hidden="true" className="rail-glyph">{mark}</span><span>{label}</span></button>)}
-      </nav>
-      <div className="rail-foot"><span className={'status-dot '+(health?.ready?'dot-good':'dot-bad')}/><span>{health?.ready?'运行中':'未就绪'}</span></div>
-    </aside>
-    <div className="app-body">
-      <header className="topbar">
-        <div className="breadcrumb"><span>安妮港</span><span className="crumb-sep">/</span><strong>{view==='overview'?'运行总览':view==='chat'?'实时对话':view==='robots'?'机器人控制中心':'开发者观测'}</strong></div>
-        <div className="topbar-right">{view!=='overview'&&<label className="top-robot-switch">
-          <span>机器人</span>
-          <select aria-label="当前机器人" value={robotId} onChange={event=>choose(event.target.value)} disabled={!health?.robots.length}>
-            {health?.robots.map(robot=><option key={robot.robot_id} value={robot.robot_id}>{robot.robot_id} · {robot.room_id}</option>)}
-          </select>
-        </label>}
-          <span className={'top-health '+(health?.ready?'online':'offline')}><i/>{health?.ready?'Runtime 在线':'Runtime 未就绪'}</span>
-          <button className="quiet-button" title="刷新状态" onClick={()=>void refreshHealth()}>刷新</button>
-        </div>
-      </header>
-      {notice&&<div className="notice-bar" role="status"><span>{notice}</span><button onClick={()=>setNotice('')} aria-label="关闭提示">×</button></div>}
-      <div className="workspace" key={view}>
-        {view==='overview'&&<>
-          <div className="page-heading"><div><span className="eyebrow">SYSTEM OVERVIEW</span><h1>运行总览</h1><p>来自当前 Runtime 的真实状态；未接入能力不会显示为在线。</p></div><button className="soft-button" onClick={()=>void refreshHealth()}>更新状态</button></div>
-          <div className="stats-grid overview-stats">
-            <Stat name="Runtime" value={health?.ready?'运行中':'未就绪'} detail={health?.pid?'PID '+health.pid:'等待连接'} kind={health?.ready?'good':'warn'}/>
-            <Stat name="机器人实例" value={health?.robots.length??'—'} detail="各自独占 Room"/>
-          </div>
-          <Block title="机器人运行状态" sub="选择一个机器人，进入对应会话和状态查看。">
-            <div className="robot-grid">{health?.robots.map(robot=>
-              <button className="robot-tile" key={robot.robot_id} onClick={()=>{choose(robot.robot_id);setView('chat');}}>
-                <span className="robot-avatar">{robot.robot_id.slice(0,1).toUpperCase()}</span>
-                <span><strong>{robot.robot_id}</strong><small>{robot.room_id} · {robot.state}</small></span>
-                <State value={robot.realtime?.state} good={robot.realtime?.ready}/>
-                <span className="tile-arrow">↗</span>
-              </button>)}
-              {!health?.robots.length&&<p className="empty-copy">没有可用机器人；检查 Runtime 和机器人配置。</p>}
-            </div>
-          </Block>
-        </>}
-        {view==='chat'&&<div className="chat-layout">
+  return <div className="app-shell cockpit-shell" ref={root}>
+    <header className="topbar cockpit-topbar">
+      <div className="cockpit-brand"><span className="brand-mark" aria-hidden="true">A<span>·</span></span><div><strong>小安妮</strong><small>实时对讲</small></div></div>
+      <div className="top-robot-switch" role="group" aria-label="切换机器人">
+        {health?.robots.map(robot=><button key={robot.robot_id} type="button"
+          className={'robot-pill '+(robotId===robot.robot_id?'selected':'')}
+          aria-pressed={robotId===robot.robot_id} onClick={()=>choose(robot.robot_id)}>
+          {robot.robot_id}</button>)}
+        {!health?.robots.length&&<span className="empty-copy">无可用机器人</span>}
+      </div>
+      <div className="topbar-right">
+        <span className={'top-health '+(health?.ready?'online':'offline')}><i/>{health?.ready?'在线':'未就绪'}</span>
+        <button className="quiet-button developer-trigger" type="button" onClick={()=>setDeveloperOpen(true)}
+          aria-haspopup="dialog" aria-expanded={developerOpen}>开发者</button>
+      </div>
+    </header>
+    {notice&&<div className="notice-bar" role="status"><span>{notice}</span><button onClick={()=>setNotice('')} aria-label="关闭提示">×</button></div>}
+    <main className="workspace cockpit-workspace">
+      <div className={'chat-layout cockpit-layout '+(historyOpen?'history-open':'history-closed')}>
+        <div className="cockpit-stage">
           <aside className="chat-sidebar">
-            <div className="sidebar-top"><div><span className="eyebrow">WORKSPACE</span><h2>会话</h2></div><button className="new-chat" onClick={openCreate} disabled={!robotId} title="新建会话">＋</button></div>
-            <div className="sidebar-divider"/><div className="sidebar-caption">历史会话 <span>{conversations.length}</span></div>
+            <div className="sidebar-top">
+              {historyOpen&&<h2>历史会话</h2>}
+              <button type="button" className="history-toggle" onClick={()=>setHistoryOpen(open=>!open)}
+                aria-label={historyOpen?'收起历史会话':'展开历史会话'} aria-expanded={historyOpen}
+                title={historyOpen?'收起历史':'展开历史'}>{historyOpen?'‹':'☰'}</button>
+            </div>
+            {historyOpen&&<><button className="new-chat" onClick={openCreate} disabled={!robotId}>＋ 新建会话</button>
             <div className="chat-list">{conversations.map(item=>
               <button key={item.chat_id+'\u0000'+item.persona_id} disabled={pending} className={'chat-list-item '+(session?.chat_id===item.chat_id&&session.persona_id===item.persona_id?'selected':'')} onClick={()=>void switchSession(item)}>
                 <span className="chat-item-mark">◫</span><span className="chat-item-body"><strong>{item.chat_id}</strong><small>{item.persona_id} · {item.turn_count??0} 轮</small></span>
               </button>)}
               {!conversations.length&&<p className="empty-copy">还没有保存的对话，点击「＋」创建。</p>}
-            </div>
-            <div className="sidebar-bottom"><div className="mini-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/><div><strong>{stateLabel(realtime?.state)}</strong><small>Realtime · {selectedRobot?.room_id??'—'}</small></div></div></div>
+            </div></>}
           </aside>
           <section className="conversation" aria-label="正式对话工作台">
             <div className="conversation-header">
-              <div><span className="eyebrow">LIVE CONVERSATION</span><h1>{session?.chat_id??'选择会话'}</h1><p>{session?session.persona_id+' · '+(route?.room_id??selectedRobot?.room_id??session.room_id):'等待会话连接'}</p></div>
-              <div className="conversation-tools"><button className="quiet-button" onClick={()=>void refreshSelected(robotId)} disabled={!robotId||pending}>刷新</button>
-                <button className="quiet-button danger-text" onClick={()=>setDeleteOpen(true)} disabled={!session||pending}>删除会话</button></div>
+              <div><span className="eyebrow">对话</span><h1>{session?.chat_id??'选择会话'}</h1><p>{session?session.persona_id+' · '+(route?.room_id??selectedRobot?.room_id??session.room_id):'等待会话连接'}</p></div>
+              <div className="conversation-tools">
+                {!historyOpen&&<button className="quiet-button" onClick={openCreate} disabled={!robotId}>＋ 新会话</button>}
+                <button className="quiet-button" onClick={()=>setHistoryOpen(true)} disabled={!robotId}>历史</button>
+                <button className="quiet-button danger-text" onClick={()=>setDeleteOpen(true)} disabled={!session||pending}>删除</button>
+              </div>
             </div>
             <div className="messages" ref={scrollPanel} aria-label="完整历史" onScroll={e=>{
               const node=e.currentTarget;followLatest.current=node.scrollHeight-node.scrollTop-node.clientHeight<90;
@@ -405,7 +390,8 @@ export function Workbench(){
                 const reply=streaming?(liveText||turn.assistant_generated_text):
                   (turn.assistant_spoken_text||turn.assistant_generated_text);
                 const user=turn.user_text||(
-                  finalTranscript?.turnId===turn.turn_id?finalTranscript.text:liveTurn?.turnId===turn.turn_id?liveTurn.userText:''
+                  finalTranscript?.turnId===turn.turn_id?finalTranscript.text:
+                    liveTurn?.turnId===turn.turn_id?previewTranscript||liveTurn.userText:''
                 );
                 return <div className="exchange" key={turn.turn_id}>
                   <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{user||'语音转写中…'}</div></div></div>
@@ -417,7 +403,7 @@ export function Workbench(){
                 </div>;
               })}
               {liveTurn&&!history?.turns.some(turn=>turn.turn_id===liveTurn.turnId)&&<div className="exchange" aria-live="polite">
-                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===liveTurn.turnId?finalTranscript.text:liveTurn.userText||previewTranscript||'语音转写中…'}</div></div></div>
+                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===liveTurn.turnId?finalTranscript.text:previewTranscript||liveTurn.userText||'语音转写中…'}</div></div></div>
                 {liveText&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content"><span className="message-author">小安妮</span><div className="bubble agent-bubble">{liveText}</div><span className="message-foot">实时回复，等待入账</span></div></div>}
               </div>}
               {previewTranscript&&!liveTurn&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 语音转写中</span><div className="bubble me-bubble">{previewTranscript}</div></div></div>}
@@ -425,57 +411,79 @@ export function Workbench(){
             </div>
             <div className="composer">
               <div className="composer-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/>{realtime?.ready?'Realtime 已连接':'Realtime 未就绪'}<span>·</span>语音输入来自所属 Room</div>
-              <RealtimeMicrophone key={robotId+'\u0000'+(route?.room_id??'')} route={realtime?.ready?route:undefined}/>
+              <RealtimeMicrophone key={robotId+'\u0000'+(route?.room_id??'')} route={realtime?.ready?route:undefined} onLevel={setMicLevel}/>
               <form onSubmit={e=>{e.preventDefault();void sendText();}}>
                 <label className="sr-only" htmlFor="message-input">输入消息</label>
                 <textarea id="message-input" value={text} maxLength={2000} rows={2} onChange={e=>setText(e.target.value)}
                   onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void sendText();}}}
                   placeholder="给小安妮发送消息…（Enter 发送，Shift + Enter 换行）" disabled={!robotId}/>
-                <div className="composer-actions"><span>文字 · 当前 Chat / Persona</span><div>
-                  <button type="button" className="stop-button" onClick={()=>void cancelCurrent()} disabled={!robotId}>停止回复</button>
+                <div className="composer-actions"><span>Enter 发送 · Shift + Enter 换行</span><div>
+                  <button type="button" className="stop-button interrupt-button" onClick={()=>void cancelCurrent()} disabled={!robotId}>■ 立即打断</button>
                   <button className="primary-button" type="submit" disabled={!text.trim()||pending||!realtime?.ready}>发送 ↗</button>
                 </div></div>
               </form>
             </div>
           </section>
-          <aside className="inspector" aria-label="当前机器人状态">
-            <div className="inspector-title"><span className="eyebrow">CURRENT ROBOT</span><h2>实时状态</h2></div>
-            <div className="inspector-robot"><span className="robot-avatar large">{robotId.slice(0,1).toUpperCase()||'A'}</span><div><strong>{robotId||'未选择'}</strong><small>{selectedRobot?.room_id??'—'}</small></div><State value={realtime?.state} good={realtime?.ready}/></div>
-            <section className="inspector-group voice-summary" aria-label="全双工链路">
-              <h3>当前语音链路</h3>
-              <div className="info-line"><span>听觉 / ASR</span><strong>Qwen-Audio smart_turn</strong></div>
-              <div className="info-line"><span>最终回答模型</span><strong>{realtime?.cascade_llm??'Realtime（未启用外置 LLM）'}</strong></div>
-              <div className="info-line"><span>LLM 状态</span><State value={realtime?.llm_state??'not_configured'}/></div>
-              <div className="info-line"><span>当前 Session 有效转写</span><strong>{realtime?.transcripts_completed??0} 次</strong></div>
-              <div className="info-line"><span>当前 Session 无效轮次</span><strong>{realtime?.invalid_turns??0} 次</strong></div>
-              {previewTranscript&&<p className="quality-prompt">ASR 暂定：{previewTranscript}</p>}
-              {finalTranscript?.text&&<p className="quality-prompt">ASR 最终：{finalTranscript.text}</p>}
-              {ambient.length>0&&<p className="quality-prompt">smart_turn 忽略的输入：{ambient.join(' / ')}</p>}
-              <small>顺序：Room 麦克风 → 听觉/ASR → 最终回答模型 → TTS → Room。网页调试扬声器可逆 Hold/Resume；真实设备必须自行实现同一状态闭环。</small>
+          </div>
+          <aside className="inspector cockpit-hud" aria-label="声学与延迟仪表盘">
+            <section className="hud-group hud-duplex" aria-label="全双工状态">
+              <span className="eyebrow">全双工状态</span>
+              <div className="duplex-mode" role="status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/>{voiceMode}</div>
+              <p>{realtime?.ready?'Room '+(selectedRobot?.room_id??'—')+' · '+stateLabel(realtime?.state):'等待 Realtime 连接'}</p>
+              {realtime?.error&&<p className="inline-error" role="alert">{realtime.error}</p>}
               {realtime?.llm_error&&<p className="inline-error" role="alert">{realtime.llm_error}</p>}
             </section>
-            <section className="inspector-group voice-summary" aria-label="语音输出状态"><h3>语音输出</h3>
-              <div className="info-line"><span>TTS 合成</span><State value={speech?.state}/></div>
-              <div className="info-line"><span>首字（本轮起点）</span><strong>{lastFirstText==null?'未测':lastFirstText+' ms'}</strong></div>
-              <div className="info-line"><span>首 PCM（当前 TTS 段）</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
-              <div className="info-line"><span>首 Room 发布（本轮 TTS 起点）</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
-              <small>三项起点不同，不可相加；尚无浏览器真实起播与设备起播全链路数据。</small>
-              {speech?.last_stop_reason&&<div className="info-line"><span>最近停播原因</span><strong>{speech.last_stop_reason}</strong></div>}
-              <div className="info-line"><span>已发布 PCM</span><strong>{speech?.pcm_frames_published??0} 帧</strong></div>
-              <div className="info-line"><span>设备播放回执</span><strong>{speech?.playback_evidence==='unknown'?'尚未确认':speech?.playback_evidence??'尚未确认'}</strong></div>
+            <section className="hud-group" aria-label="声学电平与播放缓冲">
+              <h2>声学与缓冲</h2>
+              <div className="hud-reading"><span>浏览器 Mic</span><strong>{micDbfs}</strong></div>
+              <div className="mic-meter" role="meter" aria-label="浏览器麦克风电平"
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={micLevel??0}>
+                <span style={{width:(micLevel??0)+'%'}}/></div>
+              <div className="hud-reading"><span>网页试听缓冲</span><strong>{browserBuffer===null?'未开启':browserBuffer+' ms'}</strong></div>
+              <small>电平仅来自已授权的浏览器麦克风；未提供机器人端电平时不代填。</small>
+            </section>
+            <section className="hud-group" aria-label="延迟瀑布图">
+              <h2>时延阶段</h2>
+              <div className="latency-waterfall">
+                <div><span>ASR 耗时</span><strong>未测</strong></div>
+                <div><span>LLM 首字</span><strong>{lastFirstText==null?'未测':lastFirstText+' ms'}</strong></div>
+                <div><span>TTS 首音频</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
+                <div><span>Room 首发布</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
+              </div>
+              <small>当前各阶段计时起点不同，不能求和为端到端延迟；未测项不绘制假柱。</small>
+            </section>
+            <section className="hud-group" aria-label="设备回执与耳机监听">
+              <h2>设备回执与试听</h2>
+              <div className="hud-reading"><span>合成</span><State value={speech?.state}/></div>
+              <div className="hud-reading"><span>真机播放</span><strong>{speech?.playback_evidence==='unknown'?'未确认':speech?.playback_evidence??'未确认'}</strong></div>
+              <div className="hud-reading"><span>嘴型</span><State value={speech?.viseme}/></div>
+              {speech?.last_stop_reason&&<div className="hud-reading"><span>最近停播</span><strong>{speech.last_stop_reason}</strong></div>}
               <RoomDebugSpeaker key={robotId+'\u0000'+(route?.room_id??'')}
                 url={route?.urls?.tts} roomId={route?.room_id}
-                command={playbackCommand}
+                command={playbackCommand} onBuffer={setBrowserBuffer}
                 available={!!speech&&speech.state!=='not_configured'}/>
-              <p className="audio-guidance">{speech?.state==='not_configured'
-                ?'当前机器人 TTS 未启用；需要服务端配置后才会发布声音。'
-                :'TTS 只发布到所属 Room。网页调试扬声器默认关闭；本地试听不代表实体扬声器已播放。'}</p>
+              <small>网页监听不是实体扬声器回执；请使用耳机避免回声。</small>
               {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
-              <details><summary>音频与嘴型详情</summary>
-                <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>
-              </details>
             </section>
-            <details className="inspector-group inspector-panel"><summary>Persona 与追问偏好 <span>{personaForSession?.label??session?.persona_id??'—'}</span></summary><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>
+          </aside>
+      </div>
+    </main>
+    {developerOpen&&<div className="developer-backdrop" role="presentation"
+      onMouseDown={event=>{if(event.target===event.currentTarget)setDeveloperOpen(false);}}>
+      <aside className="developer-drawer" role="dialog" aria-modal="true" aria-labelledby="developer-title">
+        <div className="drawer-head"><div><span className="eyebrow">仅供开发调试</span><h2 id="developer-title">开发者诊断</h2></div>
+          <button className="quiet-button" type="button" onClick={()=>setDeveloperOpen(false)} aria-label="关闭开发者诊断">关闭 ✕</button></div>
+        <div className="drawer-content">
+          <section className="inspector-group"><h3>当前语音链路</h3>
+            <div className="info-line"><span>听觉 / ASR</span><strong>Qwen-Audio smart_turn</strong></div>
+            <div className="info-line"><span>最终回答模型</span><strong>{realtime?.cascade_llm??'Realtime'}</strong></div>
+            <div className="info-line"><span>LLM 状态</span><State value={realtime?.llm_state??'not_configured'}/></div>
+            {previewTranscript&&<p>ASR 暂定：{previewTranscript}</p>}
+            {finalTranscript?.text&&<p>ASR 最终：{finalTranscript.text}</p>}
+            {ambient.length>0&&<p>smart_turn 忽略的输入：{ambient.join(' / ')}</p>}
+            <small>网页调试扬声器可逆 Hold/Resume；真实设备需单独报告播放状态。</small>
+          </section>
+          <details className="inspector-group inspector-panel"><summary>Persona 与追问偏好 <span>{personaForSession?.label??session?.persona_id??'—'}</span></summary><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>
               <div className="info-line"><span>Revision</span><strong>{session?.persona_revision??'—'}</strong></div>
               <div className="info-line"><span>历史回合</span><strong>{history?.turns.length??'—'}</strong></div>
               <div className="info-line"><span>表达风格</span><strong>{personaForSession?.configured?personaForSession.label:'未配置预设或待就绪'}</strong></div>
@@ -517,28 +525,6 @@ export function Workbench(){
               {(realtime?.session_frames_sent??0)>100&&!(realtime?.speech_started_count)&&<p className="audio-guidance">PCM 已送给模型，但本次 Session 尚无语音开始事件。先看麦克风本地电平；有效电平仍不触发时，再查 Room 内容/Provider 的 smart_turn。帧数不代表语音已被理解。</p>}
               <div className="info-line"><span>Session</span><strong>{session?.generation??'—'}</strong></div>
             </details>
-            {realtime?.error&&<p className="inline-error" role="alert">{realtime.error}</p>}
-            {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
-            <button className="inspector-link" onClick={()=>setView('developer')}>打开完整诊断 ↗</button>
-          </aside>
-        </div>}
-        {view==='robots'&&<>
-          <div className="page-heading"><div><span className="eyebrow">ROBOT OPERATIONS</span><h1>机器人控制中心</h1><p>查看真实 Room、语音输出与运行状态。</p></div></div>
-          <div className="stats-grid">
-            <Stat name="Realtime" value={stateLabel(realtime?.state)} kind={realtime?.ready?'good':'warn'}/>
-            <Stat name="TTS" value={stateLabel(speech?.state)}/>
-            <Stat name="嘴型" value={stateLabel(speech?.viseme)}/>
-            <Stat name="设备播放" value={speech?.playback_evidence??'unknown'}/>
-          </div>
-          <Block title="当前 Room" sub="只展示现阶段真实接入的音频状态；其它通道留在开发者诊断。">
-            <div className="info-line"><span>Room</span><strong>{selectedRobot?.room_id??'—'}</strong></div>
-            <div className="info-line"><span>麦克风输入</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
-            <div className="info-line"><span>首音频 / 首发布</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'} / {speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
-            {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
-          </Block>
-        </>}
-        {view==='developer'&&<>
-          <div className="page-heading"><div><span className="eyebrow">OBSERVABILITY</span><h1>开发者观测</h1><p>同一 Runtime 的只读诊断。</p></div><button className="soft-button" disabled={!robotId} onClick={()=>void refreshSelected(robotId)}>刷新诊断</button></div>
           <div className="developer-grid">
             <Block title="当前目标" sub="所有数据均属于左上角选中的机器人。"><div className="info-line"><span>Robot / Room</span><strong>{robotId} / {selectedRobot?.room_id??'—'}</strong></div><div className="info-line"><span>Chat / Persona</span><strong>{session?.chat_id??'—'} / {session?.persona_id??'—'}</strong></div><div className="info-line"><span>Session epoch / generation</span><strong>{session?.session_epoch??'—'} / {session?.generation??'—'}</strong></div></Block>
             <Block title="Persona 与社交偏好" sub="当前 Provider Session 初始化时采用的表达预设和追问偏好。其他 SocialState 不自动变成模型指令。">
@@ -564,9 +550,9 @@ export function Workbench(){
               </div>
             </Block>
           </div>
-        </>}
-      </div>
-    </div>
+        </div>
+      </aside>
+    </div>}
     {createOpen&&<div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setCreateOpen(false);}}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-title">
         <span className="eyebrow">NEW CONVERSATION</span><h2 id="create-title">创建 / 切换会话</h2><p>绑定到 {robotId} / {selectedRobot?.room_id}。切换不会删除已有历史。</p>

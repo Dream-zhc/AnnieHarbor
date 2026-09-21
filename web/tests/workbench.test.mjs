@@ -114,6 +114,7 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/transcript\.delta/);
   assert.match(source,/transcript\.done/);
   assert.match(source,/finalTranscript\?\.turnId===turn\.turn_id/);
+  assert.match(source,/liveTurn\?\.turnId===turn\.turn_id\?previewTranscript\|\|liveTurn\.userText/);
   assert.match(source,/语音转写中/);
   assert.match(source,/liveTurn\?\.turnId===turn\.turn_id/);
   assert.match(source,/playbackLabel\(turn,speech\?\.state==='not_configured'\)/);
@@ -139,13 +140,20 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/phase4c\.html/);
   assert.match(source,/item\.persona_revision/);
   assert.match(source,/className="top-robot-switch"/);
-  assert.match(source,/view!=='overview'/);
+  assert.match(source,/aria-label="切换机器人"/);
   assert.equal((source.match(/className="top-robot-switch"/g)??[]).length,1);
+  assert.doesNotMatch(source,/type View=|'overview','chat','robots','developer'/);
+  assert.match(source,/className="developer-drawer"/);
+  assert.match(source,/historyOpen\?'history-open':'history-closed'/);
+  assert.match(source,/aria-label="延迟瀑布图"/);
+  assert.match(source,/onLevel=\{setMicLevel\}/);
+  assert.match(source,/onBuffer=\{setBrowserBuffer\}/);
   assert.match(source,/api<PersonaProfile\[]>\('\/api\/personas'\)/);
   assert.match(source,/source:'user_setting',generation:session.generation/);
   assert.match(source,/personaForSession\?\.provider_session_id|persona.provider_session_id===realtime\?\.provider_session_id/);
   assert.match(source,/conversationChecks\[checkIndex\]\.turns\[checkStep\]/);
-  assert.match(source,/className="stats-grid overview-stats"/);
+  assert.match(await readFile(path.join(web,'src/styles.css'),'utf8'),
+    /grid-template-columns:minmax\(0,65fr\) minmax\(300px,35fr\)/);
   assert.doesNotMatch(source,/<Block title="能力状态"|<Block title="Room 六通道"/);
   assert.match(source,/cancelCurrent/);
   assert.match(source,/prefers-reduced-motion/);

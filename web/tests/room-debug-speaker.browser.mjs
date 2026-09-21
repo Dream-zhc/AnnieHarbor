@@ -61,7 +61,7 @@ try{
   assert.equal(await page.evaluate(()=>window.__ttsSockets[0].closed),true);
   await page.getByRole('button',{name:'开启网页调试扬声器'}).click();
   await page.getByText(/已订阅 roomv2 \/ reb_tts，等待新语音/).waitFor();
-  await page.getByLabel('当前机器人',{exact:true}).selectOption('annie-b');
+  await page.getByRole('button',{name:'annie-b'}).click();
   await page.getByRole('button',{name:'开启网页调试扬声器'}).waitFor();
   assert.equal(await page.evaluate(()=>window.__ttsSockets.at(-1).closed),true);
   assert.deepEqual(errors,[]);

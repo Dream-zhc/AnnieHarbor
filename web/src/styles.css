@@ -216,3 +216,100 @@ pre{background:#f4f6fa;border:1px solid #e2e8f1;border-radius:10px;padding:12px;
  .surface{padding:15px}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* 单屏对讲座舱：仅主要对话与真实声学状态常驻。 */
+.cockpit-shell{display:block;min-height:100dvh;background:#f3f5f8}
+.cockpit-topbar{min-height:70px;padding:11px 24px;gap:20px}
+.cockpit-brand{display:flex;align-items:center;gap:11px;min-width:134px}
+.cockpit-brand .brand-mark{width:36px;height:36px;font-size:18px;border-radius:11px;flex:none}
+.cockpit-brand>div{display:grid;line-height:1.2;gap:3px}
+.cockpit-brand strong{font-size:15px;white-space:nowrap}
+.cockpit-brand small{font-size:11px;color:#8090a5}
+.cockpit-topbar .top-robot-switch{gap:5px;margin:auto;justify-content:center;flex-wrap:wrap}
+.robot-pill{border:1px solid #e0e6ef;border-radius:999px;background:#f6f8fc;color:#65748c;padding:8px 15px;max-width:220px;overflow-wrap:anywhere;font-weight:700;font-size:12px}
+.robot-pill:hover{border-color:#b1c4ee}
+.robot-pill.selected{background:#3e5fb8;border-color:#3e5fb8;color:#fff}
+.cockpit-topbar .topbar-right{flex-wrap:nowrap}
+.cockpit-workspace{max-width:none;margin:0;padding:16px 20px;height:calc(100dvh - 70px);min-height:520px}
+.cockpit-layout{height:100%;max-height:none;min-height:0;display:grid;grid-template-columns:minmax(0,65fr) minmax(300px,35fr);gap:12px;background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible}
+.cockpit-stage{display:grid;grid-template-columns:46px minmax(0,1fr);min-height:0;min-width:0;overflow:hidden;border:1px solid #e1e7f0;border-radius:16px;background:#fff}
+.history-open .cockpit-stage{grid-template-columns:190px minmax(0,1fr)}
+.cockpit-stage .chat-sidebar{padding:15px 7px;overflow:hidden}
+.cockpit-stage .sidebar-top{margin:0;gap:6px;flex-direction:column;align-items:stretch}
+.cockpit-stage .sidebar-top h2{font-size:14px;white-space:nowrap;margin:0 4px 7px}
+.history-toggle{border:0;border-radius:9px;background:transparent;color:#667995;font-size:19px;min-height:32px;display:grid;place-items:center}
+.history-toggle:hover{background:#e9f0fc}
+.history-open .sidebar-top{flex-direction:row;align-items:center;justify-content:space-between}
+.history-open .sidebar-top h2{margin:0}
+.history-open .chat-sidebar{padding:17px 11px}
+.history-open .new-chat{width:100%;height:35px;margin:10px 0 13px;font-size:12px}
+.history-open .chat-list-item{padding:10px 8px}
+.cockpit-stage .conversation-header{min-height:72px;padding:13px 22px}
+.cockpit-stage .conversation-header h1{font-size:19px}
+.cockpit-stage .conversation{min-height:0}
+.cockpit-stage .messages{padding:25px clamp(18px,5%,52px)}
+.cockpit-stage .bubble{font-size:15px;line-height:1.7}
+.cockpit-stage .exchange{border-bottom:0;margin-bottom:23px}
+.cockpit-stage .composer{padding:12px 20px 17px}
+.cockpit-stage .voice-input{margin:7px 0}
+.cockpit-stage .voice-confirm{font-size:11px}
+.cockpit-stage .composer form{box-shadow:none}
+.interrupt-button{font-size:13px!important;padding:10px 18px!important;background:#b64c54;color:#fff;border-color:#b64c54}
+.interrupt-button:hover:not(:disabled){background:#9e3943}
+.cockpit-hud{border:1px solid #e1e7f0;border-radius:16px;background:#fff;padding:7px 22px;overflow-y:auto;min-height:0}
+.hud-group{padding:19px 0;border-bottom:1px solid #e8edf4}
+.hud-group:last-child{border-bottom:0}
+.hud-group h2{font-size:14px;margin:0 0 13px;color:#27374d}
+.hud-group small,.hud-group p{display:block;font-size:11px;line-height:1.6;color:#7a899c;margin:8px 0 0}
+.hud-duplex{padding:23px 0}
+.duplex-mode{display:flex;align-items:center;gap:11px;font-size:30px;font-weight:780;letter-spacing:-.05em;color:#263e68;background:#edf3fd;border:1px solid #d7e3f8;border-radius:100px;width:fit-content;padding:7px 20px;margin:9px 0 3px}
+.duplex-mode .status-dot{width:11px;height:11px}
+.hud-reading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;font-size:12px}
+.hud-reading>span{color:#74839a}
+.hud-reading strong{font-size:14px;text-align:right;overflow-wrap:anywhere}
+.mic-meter{height:7px;border-radius:50px;background:#e5ebf3;overflow:hidden;margin:3px 0 10px}
+.mic-meter span{height:100%;display:block;background:#6a8ac8;transition:width .12s linear}
+.latency-waterfall{border-left:2px solid #dbe4f4;margin-left:6px;padding:2px 0 2px 15px}
+.latency-waterfall>div{position:relative;display:flex;justify-content:space-between;gap:10px;margin:0;padding:9px 0;border-bottom:1px solid #f0f2f7;font-size:12px}
+.latency-waterfall>div:last-child{border:0}
+.latency-waterfall>div::before{content:'';position:absolute;left:-20px;top:15px;width:8px;height:8px;border-radius:50%;background:#7792ca}
+.latency-waterfall span{color:#78869a}
+.latency-waterfall strong{color:#2d4166}
+.cockpit-hud .room-debug-speaker{background:#f5f8fe;border-color:#e0e8f5;margin-top:12px}
+.developer-backdrop{position:fixed;inset:0;z-index:15;background:#17243b80;display:flex;justify-content:flex-end}
+.developer-drawer{width:min(710px,100%);height:100dvh;background:#f7f9fc;display:flex;flex-direction:column;box-shadow:-10px 0 45px #14243930}
+.drawer-head{padding:20px 23px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dfe6f0;background:#fff}
+.drawer-head h2{margin:2px 0;font-size:20px}
+.drawer-content{padding:18px 23px;overflow-y:auto;min-height:0}
+.drawer-content>.inspector-group{margin:0 0 14px}
+.drawer-content .developer-grid{grid-template-columns:minmax(0,1fr);gap:12px}
+.drawer-content .surface{margin-bottom:0}
+@media(max-width:1100px){
+ .cockpit-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(540px,1fr) auto;overflow:visible;height:auto}
+ .cockpit-workspace{height:auto;min-height:0}
+ .cockpit-stage{height:calc(100dvh - 95px);min-height:540px}
+ .cockpit-hud{display:block;grid-column:auto;overflow:visible;border-left:1px solid #e1e7f0}
+ .cockpit-stage .chat-list{display:grid;max-height:none;overflow-y:auto}
+ .cockpit-topbar{padding:10px 16px}
+}
+@media(max-width:650px){
+ .cockpit-topbar{flex-wrap:wrap;gap:9px}
+ .cockpit-brand{min-width:0}
+ .cockpit-topbar .top-robot-switch{order:3;width:100%;margin:0;justify-content:flex-start}
+ .cockpit-topbar .topbar-right{margin-left:auto}
+ .robot-pill{padding:6px 11px}
+ .cockpit-workspace{padding:8px}
+ .cockpit-stage{height:calc(100dvh - 164px);min-height:450px}
+ .history-open .cockpit-stage{grid-template-columns:138px minmax(0,1fr)}
+ .cockpit-stage .chat-sidebar{display:flex;flex-direction:column;border-bottom:0;border-right:1px solid #e9eef6}
+ .cockpit-stage .chat-list{display:grid;max-height:none;overflow-y:auto}
+ .cockpit-stage .chat-list-item{min-width:0}
+ .cockpit-stage .conversation{height:auto;min-height:0}
+ .cockpit-stage .conversation-header{padding:10px;flex-wrap:wrap}
+ .cockpit-stage .conversation-tools{gap:3px}
+ .cockpit-stage .conversation-tools button{padding:5px}
+ .cockpit-stage .composer{padding:9px}
+ .cockpit-stage .messages{padding:14px 9px}
+ .cockpit-hud{padding:3px 14px}
+ .drawer-content{padding:12px}
+}

@@ -32,7 +32,7 @@ function connect(url:string,roomId:string):Promise<WebSocket>{
 }
 
 /** Actual Room speech input. No test-frame injection or fake ASR path. */
-export function RealtimeMicrophone({route}:{route:Route|undefined}){
+export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLevel?:(level:number|null)=>void}){
   const active=useRef<Microphone|null>(null);
   const token=useRef(0);
   const [confirmed,setConfirmed]=useState(false);
@@ -53,6 +53,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
       old.stream.getTracks().forEach(track=>track.stop());
       old.ws.onclose=null;old.ws.close();void old.context.close();
     }
+    onLevel?.(null);
     if(update){setWorking(false);setListening(false);setStatus('已停止浏览器麦克风');}
   }
   useEffect(()=>{
@@ -99,7 +100,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
         if(active.current?.ws!==captureWs||captureWs.readyState!==WebSocket.OPEN)return;
         try{
           if(event.data.type==='level'){
-            setLevel(event.data.value);return;
+            setLevel(event.data.value);onLevel?.(event.data.value);return;
           }
           if(event.data.type!=='audio')return;
           if(captureWs.bufferedAmount>651*40)throw new Error('Room 发送积压超过 800ms');
@@ -127,7 +128,7 @@ export function RealtimeMicrophone({route}:{route:Route|undefined}){
       stream.getAudioTracks().forEach(track=>{track.onended=()=>{
         if(active.current?.stream===captureStream){stop();setStatus('麦克风设备已停止');}
       };});
-      setFrames(0);setLevel(0);setDevice(stream.getAudioTracks()[0]?.label??'');
+      setFrames(0);setLevel(0);onLevel?.(0);setDevice(stream.getAudioTracks()[0]?.label??'');
       setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
     }catch(error){
       if(current===token.current)setStatus('开启失败：'+String(error));

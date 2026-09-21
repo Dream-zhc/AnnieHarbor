@@ -8,8 +8,9 @@ type Speaker={
 };
 
 /** Opt-in local audition of the existing Room stream. No Provider call or playback receipt. */
-export function RoomDebugSpeaker({url,roomId,available,command}:{url?:string;roomId?:string;
-  available:boolean;command?:{seq:number;kind:'hold'|'resume';turnId:string}}){
+export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:string;roomId?:string;
+  available:boolean;command?:{seq:number;kind:'hold'|'resume';turnId:string};
+  onBuffer?:(bufferMs:number|null)=>void}){
   const active=useRef<Speaker|null>(null);
   const [status,setStatus]=useState('未开启');
   const [frames,setFrames]=useState(0);
@@ -28,6 +29,7 @@ export function RoomDebugSpeaker({url,roomId,available,command}:{url?:string;roo
       if(s.ws){s.ws.onmessage=s.ws.onerror=s.ws.onclose=null;s.ws.close();}
       clearAudio(s);s.node?.disconnect();s.gain?.disconnect();void s.context.close();
     }
+    onBuffer?.(null);
     if(update){setStarted(false);setStatus('已关闭，网页不再接收或播放 Room TTS');}
   }
   useEffect(()=>{
@@ -73,7 +75,7 @@ export function RoomDebugSpeaker({url,roomId,available,command}:{url?:string;roo
       clearAudio(s);s.stream=key;s.seq=0;s.endSample=packet.startSample;s.final=false;s.held=false;
       s.gain?.gain.setValueAtTime(1,s.context.currentTime);
       s.node?.port.postMessage({type:'generation',stream:key});
-      setBufferMs(0);setUnderruns(0);
+      setBufferMs(0);onBuffer?.(0);setUnderruns(0);
     }
     if(packet.seq<=s.seq)return;
     if(s.seq&&packet.startSample!==s.endSample){
@@ -95,6 +97,7 @@ export function RoomDebugSpeaker({url,roomId,available,command}:{url?:string;roo
     let s:Speaker|null=null;
     try{
       // AudioContext starts inside the click gesture, before any await.
+      onBuffer?.(0);
       const context=new AudioContext();
       s={context,ws:null,node:null,gain:null,timer:null,stream:'',stopped:'',seq:0,
         endSample:0,frames:0,final:false,held:false};
@@ -111,9 +114,9 @@ export function RoomDebugSpeaker({url,roomId,available,command}:{url?:string;roo
         if(active.current!==current||event.data.stream!==current.stream)return;
         const message=event.data;
         if(message.type==='buffer'){
-          setBufferMs(Math.round(message.bufferMs));setUnderruns(message.underruns);
+          setBufferMs(Math.round(message.bufferMs));onBuffer?.(Math.round(message.bufferMs));setUnderruns(message.underruns);
         }else if(message.type==='ended'){
-          setBufferMs(0);setStatus('本轮网页试听结束（非真机播放回执）');
+          setBufferMs(0);onBuffer?.(0);setStatus('本轮网页试听结束（非真机播放回执）');
         }else if(message.type==='underflow'){
           setUnderruns(message.count);setStatus('播放断粮，正在重新预缓冲');
         }else if(message.type==='overflow'){

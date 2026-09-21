@@ -380,6 +380,17 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                              {"role": "user", "content": f"第{index}个问题"})
             self.assertEqual(messages[index*2 + 2],
                              {"role": "assistant", "content": f"第{index}个回答"})
+        for index in range(8, 20):
+            client.robot.context_cache.append({
+                "turn_id": f"history-{index}", "status": "completed",
+                "user_text": f"第{index}个问题",
+                "assistant_generated_text": f"第{index}个回答",
+            })
+        messages = client._history_messages("现在的问题")
+        self.assertEqual(len(messages), 42)
+        self.assertEqual(messages[1]["content"], "第0个问题")
+        self.assertEqual(messages[-2]["content"], "第19个回答")
+        self.assertEqual(messages[-1]["content"], "现在的问题")
 
     async def test_push_subscriber_is_bounded_and_released(self):
         # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.

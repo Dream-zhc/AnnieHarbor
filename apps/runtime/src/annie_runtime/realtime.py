@@ -339,7 +339,7 @@ class RealtimeRobot:
         messages = [{"role": "system", "content": instructions}]
         packet = select_restorable_context(
             self.robot.recent_context(), speech_enabled=self.speech is not None,
-            max_turns=min(8, self.robot.context_limit),
+            max_turns=min(20, self.robot.context_limit),
         )
         for item in packet["turns"]:
             user = item["user_text"]

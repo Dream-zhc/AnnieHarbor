@@ -820,6 +820,7 @@ class HarborRuntime:
         persona_profiles: dict | None = None,
         realtime_key: str | None = None,
         realtime_url: str | None = None,
+        external_llm=None,
         realtime_socket_factory=None,
         tts_voice: str | None = None,
         tts_url: str | None = None,
@@ -854,6 +855,7 @@ class HarborRuntime:
         self.room_sources = {}
         self.playback_listeners = {}
         self.viseme_sidecars = None
+        self.external_llm = external_llm
         self.realtime = {}
         if realtime_key:
             from annie_adapters.realtime import DEFAULT_URL, QwenRealtimeSocket
@@ -864,6 +866,7 @@ class HarborRuntime:
                 robot_id: RealtimeRobot(
                     robot, url=url, key=realtime_key,
                     persona_profiles=self.persona_profiles,
+                    external_llm=external_llm,
                     socket_factory=realtime_socket_factory or QwenRealtimeSocket,
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
@@ -1218,6 +1221,8 @@ class HarborRuntime:
             except Exception as exc:
                 ledger_error = exc
             await self.recorder.close()
+            if self.external_llm is not None:
+                await self.external_llm.close()
             if ledger_error is not None:
                 raise ledger_error
 

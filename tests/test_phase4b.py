@@ -278,6 +278,17 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.publisher.messages[-1]["data"]["stream_final"])
         self.assertFalse(any(packet["data"].get("stop") for packet in self.publisher.messages))
 
+    async def test_finish_after_queue_drained_still_publishes_stream_final(self):
+        identity = self.robot.session_state()
+        await self.speech.feed("late-finish", identity, "你好你好你好你好你好。")
+        await asyncio.wait_for(self.speech.queue.join(), 1)
+        await asyncio.sleep(0.03)
+        self.assertFalse(self.speech.finished)
+        await self.speech.finish("late-finish")
+        await asyncio.wait_for(self.speech.worker, 1)
+        self.assertTrue(self.speech.synthesized_complete)
+        self.assertTrue(any(packet["data"].get("stream_final") for packet in self.publisher.messages))
+
     async def test_one_actual_pcm_shared_with_room_no_second_synthesis_and_no_false_playback(self):
         identity = self.robot.session_state()
         self.robot.turn_cache["turn1"] = {"turn_id": "turn1"}

@@ -22,29 +22,31 @@ def realtime_url(base_url: str, model: str = MODEL) -> str:
     return urlunparse(parsed._replace(query=urlencode({"model": model})))
 
 
-def session_update(instructions: str, history_turns: int = 20) -> dict:
+def session_update(instructions: str, history_turns: int = 20, *, sensor_only: bool = False) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
+    session = {
+        "modalities": ["text", "audio"] if sensor_only else ["text"],
+        "input_audio_format": "pcm",
+        "turn_detection": {"type": "smart_turn"},
+        "max_history_turns": history_turns,
+        "instructions": instructions,
+    }
+    if not sensor_only:
+        session["tools"] = [{
+            "type": "function",
+            "function": {
+                "name": "preview_action",
+                "description": "Preview an action in the developer console without moving the real robot.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"description": {"type": "string", "description": "Action to preview"}},
+                    "required": ["description"],
+                },
+            },
+        }]
     return {
         "type": "session.update",
-        "session": {
-            "modalities": ["text"],
-            "input_audio_format": "pcm",
-            "turn_detection": {"type": "smart_turn"},
-            "max_history_turns": history_turns,
-            "instructions": instructions,
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "preview_action",
-                    "description": "Preview an action in the developer console without moving the real robot.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {"description": {"type": "string", "description": "Action to preview"}},
-                        "required": ["description"],
-                    },
-                },
-            }],
-        },
+        "session": session,
     }
 
 

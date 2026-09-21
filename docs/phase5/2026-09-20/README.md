@@ -55,3 +55,11 @@
 - **回复风格：** Session 共性提示改为优先响应最新句、用户让选就明确选、闲聊简短、不反复自介/问候/套菜单、不把未接线硬件推断为没有实体。只在新 Session 生效，不能以提示修改替代多轮真人 A/B。
 - **旧进程保留：** 用户当时浏览器麦克风已在传输，未重启 8780 的 Runtime，未打断现场 Room；Python 新逻辑必须在用户停止麦克风后安全重启才生效。前端 build 已完成，刷新网页可先观察本地电平，但前后端新诊断需重启后联动。
 - 回归：Python 121 passed / 25 subtests / 2 条既有第三方警告；前端 12 passed（新增 16k/48k 非零波形编码断言）、TS/build/Ruff/uv lock/diff check 通过；Chromium 假麦克风/假 Room + 原生 WebAudio 自动化通过。尚无真人说话 ASR 成功、现场持续 TTS 整句播完、AEC 全双工与三人格语义验收证据。
+
+## 2026-09-21 Demo 迁移第一刀：Qwen 听觉 + 外置流式 LLM
+
+- 按 `sidecars/qwen_smart_duplex_demo_v1_7_qwen_primary` 的主链路，将 Realtime 角色改成可选的**听觉/ASR/smart_turn 协处理器**：配置外置 LLM 时，Provider Session 使用 `["text", "audio"]` 模态和极短 sensor prompt，不再让 Realtime 直接生成最终回答；最终文字由 DashScope OpenAI-compatible Chat Completions 流式模型输出，再送原有外置 TTS 与 Room 协议。默认 `ANNIE_CASCADE_LLM_ENABLED=1`，模型默认 `ANNIE_CASCADE_LLM_MODEL=qwen3.7-flash`，可用 `ANNIE_LLM_BASE_URL` 覆盖；未配置 `DASHSCOPE_API_KEY` 时不会启用外置 LLM。
+- 新增 `ExternalChatLLM` 适配器，保持连接池，支持 OpenAI-style streaming text 与 `tools`/`tool_calls`；当前只接入既有 `preview_action` 工具，运行时本地校验并发布 `tool.result`，不执行真实设备动作。此实现以运行时实测为准：网页/日志会显示 `cascade_llm`；如模型不返回 tool call，只会走纯文本，不把能力写死为已验证。
+- 文本输入路径不再向 Realtime 发送 `response.create`；音频路径在 ASR final 后启动外置 LLM，忽略 Realtime sensor 可能吐出的 `.` 或其他内部文本，避免双回答。语音打断方面，ASR 增量会发布 `playback.hold_requested` 诊断事件；有效 final 会取消旧 TTS 并启动新回答。完整的 Demo 式“暂停保留音频 → 无效恢复 → 有效清空”还未迁入实体/Room 播放端，下一步应移植可靠播放器状态机。
+- 修复一个前次 TTS 背压补丁遗漏：当 TTS 队列已被消费完、`finish()` 才到达时，worker 可能睡在 `queue.get()`，不会发布 `stream_final`；现在 finish 会唤醒 worker 并发布尾包。新增回归覆盖「finish 晚于队列清空」场景。
+- 回归：Python 125 passed / 25 subtests / 2 条既有警告；前端 12 passed，TS/build、Ruff、uv lock、diff check 通过。未重启现场 8780 Runtime，未向真实 Room 注入测试音频；真实全双工、语义质量、tool call 能力和连续播放仍需现场复测。

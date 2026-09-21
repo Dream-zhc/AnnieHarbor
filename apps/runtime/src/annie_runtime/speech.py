@@ -195,6 +195,11 @@ class SpeechOutput:
             self.flush_timer.cancel()
             self.flush_timer = None
         self._drain_pending(force=True)
+        if self.worker and not self.worker.done() and self.queue.empty():
+            try:
+                self.queue.put_nowait("")
+            except asyncio.QueueFull:
+                pass
 
     async def cancel(self, reason="cancel"):
         was_active = self.turn_id is not None
@@ -285,6 +290,8 @@ class SpeechOutput:
                                                                       stream_final=True))
                         self.synthesized_complete = True
                         return
+                    if not self.finished:
+                        asyncio.create_task(self._wakeup_when_finished(turn_id, identity))
                 finally:
                     self.queue.task_done()
         except asyncio.CancelledError:
@@ -302,6 +309,14 @@ class SpeechOutput:
             while not self.queue.empty():
                 self.queue.get_nowait()
                 self.queue.task_done()
+
+    async def _wakeup_when_finished(self, turn_id, identity):
+        await asyncio.sleep(0)
+        if self._current(turn_id, identity) and self.finished and self.queue.empty():
+            try:
+                self.queue.put_nowait("")
+            except asyncio.QueueFull:
+                pass
 
     async def _synthesize(self, text, segment_id, turn_id, identity):
         socket = self.socket_factory(self.url, self.key)

@@ -24,20 +24,46 @@ class FakeSocket:
         self.inbound = asyncio.Queue()
         self.closed = False
         self.__class__.instances.append(self)
+        self.id = len(self.__class__.instances)
 
     async def open(self):
-        await self.inbound.put({
-            "type": "session.updated",
-            "session": {"id": f"session-{len(self.instances)}",
-                        "modalities": ["text"], "turn_detection": {"type": "smart_turn"}},
-        })
         return self
 
     async def send(self, event):
         self.outbound.append(event)
+        if event.get("type") == "session.update":
+            await self.inbound.put({
+                "type": "session.updated",
+                "session": {"id": f"session-{self.id}", **event["session"]},
+            })
 
     async def recv(self):
         return await self.inbound.get()
+
+    async def close(self):
+        self.closed = True
+
+
+class FakeLlmDelta:
+    def __init__(self, type_, text="", tool_call=None):
+        self.type = type_
+        self.text = text
+        self.tool_call = tool_call
+
+
+class FakeExternalLlm:
+    model = "fake-qwen3.7-flash"
+
+    def __init__(self, chunks=None):
+        self.chunks = chunks or [FakeLlmDelta("text", "选绿茶。")]
+        self.messages = []
+        self.closed = False
+
+    async def stream(self, messages, *, tools=True):
+        self.messages.append((messages, tools))
+        for chunk in self.chunks:
+            await asyncio.sleep(0)
+            yield chunk
 
     async def close(self):
         self.closed = True
@@ -62,6 +88,14 @@ class RealtimeWireTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(audio_append(frame)["audio"]), frame)
         with self.assertRaises(ValueError):
             audio_append(b"bad")
+
+    def test_sensor_only_session_uses_demo_modalities_without_realtime_tools(self):
+        payload = session_update("sensor", 6, sensor_only=True)
+        config = payload["session"]
+        self.assertEqual(config["modalities"], ["text", "audio"])
+        self.assertEqual(config["turn_detection"], {"type": "smart_turn"})
+        self.assertEqual(config["max_history_turns"], 6)
+        self.assertNotIn("tools", config)
 
     def test_url_does_not_change_model_or_accept_insecure_transport(self):
         self.assertIn("model=" + MODEL, realtime_url("wss://dashscope.aliyuncs.com/api-ws/v1/realtime"))
@@ -236,6 +270,73 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.ledger.flush()
         self.assertEqual((await self.runtime.load_conversation("annie-a", "default", "annie"))[
             "turns"][0]["assistant_generated_text"], "模拟完成")
+
+    async def test_external_llm_text_path_skips_realtime_response_generation(self):
+        llm = FakeExternalLlm([
+            FakeLlmDelta("text", "我选"),
+            FakeLlmDelta("tool_call", tool_call={
+                "id": "call-1", "name": "preview_action", "arguments": '{"description":"点头"}',
+            }),
+            FakeLlmDelta("text", "绿茶。"),
+        ])
+        runtime = HarborRuntime(
+            [RobotConfig("annie-x", room_id="room-x", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "cascade.db",
+            realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+            external_llm=llm,
+        )
+        await runtime.start()
+        self.addAsyncCleanup(runtime.close)
+        for _ in range(100):
+            if runtime.realtime["annie-x"].ready:
+                break
+            await asyncio.sleep(0.01)
+        client = runtime.realtime["annie-x"]
+        self.assertEqual(client.socket.outbound[0]["session"]["modalities"], ["text", "audio"])
+        await runtime.realtime_text("annie-x", "你选一个")
+        for _ in range(100):
+            if client.turn_id is None:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.ledger.flush()
+        stored = await runtime.load_conversation("annie-x", "default", "annie")
+        self.assertEqual(stored["turns"][0]["assistant_generated_text"], "我选绿茶。")
+        self.assertFalse(any(msg.get("type") == "response.create" for msg in client.socket.outbound))
+        self.assertTrue(any(e["kind"] == "tool.result" and e["result"]["status"] == "simulated"
+                            for e in client.events))
+        self.assertTrue(llm.messages[0][1])
+
+    async def test_external_llm_audio_final_drives_answer_and_ignores_provider_dot(self):
+        llm = FakeExternalLlm([FakeLlmDelta("text", "收到语音。")])
+        runtime = HarborRuntime(
+            [RobotConfig("annie-y", room_id="room-y", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "cascade-audio.db",
+            realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+            external_llm=llm,
+        )
+        await runtime.start()
+        self.addAsyncCleanup(runtime.close)
+        for _ in range(100):
+            if runtime.realtime["annie-y"].ready:
+                break
+            await asyncio.sleep(0.01)
+        client = runtime.realtime["annie-y"]
+        gen = client.robot.generation
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "transcript": "你好呀"}, gen)
+        await client.handle({"type": "response.text.delta", "delta": "。"}, gen)
+        await client.handle({"type": "response.done", "response": {"status": "completed"}}, gen)
+        for _ in range(100):
+            if client.turn_id is None:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.ledger.flush()
+        stored = await runtime.load_conversation("annie-y", "default", "annie")
+        self.assertEqual(stored["turns"][0]["user_text"], "你好呀")
+        self.assertEqual(stored["turns"][0]["assistant_generated_text"], "收到语音。")
+        self.assertEqual(client.snapshot()["provider_text_ignored"], 1)
 
     async def test_audio_gate_drains_to_own_realtime_socket(self):
         source = "room:roomv2:reb_mic"

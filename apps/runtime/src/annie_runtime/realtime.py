@@ -1,4 +1,4 @@
-"""Per-robot Qwen-Audio Realtime Session; no extra ASR/LLM or audio publisher."""
+"""Per-robot duplex Session: Qwen-Audio hears, optional external LLM answers."""
 
 import asyncio
 import json
@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 class RealtimeRobot:
     """One provider Session, one current Chat/Persona, bounded events and PCM."""
 
-    def __init__(self, robot, *, url: str, key: str, persona_profiles=None,
+    def __init__(self, robot, *, url: str, key: str, persona_profiles=None, external_llm=None,
                  socket_factory=QwenRealtimeSocket):
         self.robot = robot
         self.url = url
         self.key = key
         self.persona_profiles = persona_profiles or {}
+        self.external_llm = external_llm
         self.socket_factory = socket_factory
         self.speech = None
         self.socket = None
@@ -44,6 +45,8 @@ class RealtimeRobot:
         self.calls = set()
         self.call_count = 0
         self.followup_needed = False
+        self.llm_task = None
+        self.provider_text_ignored = 0
         self.first_text_ms = None
         self.began = None
         self.frames_sent = 0
@@ -112,6 +115,8 @@ class RealtimeRobot:
             "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
             "restored_context": self.restored_context,
             "persona_snapshot": self.persona_snapshot,
+            "cascade_llm": self.external_llm.model if self.external_llm else None,
+            "provider_text_ignored": self.provider_text_ignored,
         }
 
     def since(self, after):
@@ -136,6 +141,10 @@ class RealtimeRobot:
         self.persona_snapshot = None
         if self.speech:
             await self.speech.close()
+        if self.llm_task and not self.llm_task.done():
+            self.llm_task.cancel()
+            await asyncio.gather(self.llm_task, return_exceptions=True)
+        self.llm_task = None
         logger.info(
             "realtime_shutdown robot=%s opening=%s ready=%s",
             self.robot.config.robot_id, self._opening, self.ready,
@@ -179,6 +188,80 @@ class RealtimeRobot:
         self.followup_needed = False
         self.turn_identity = None
 
+    def _history_messages(self, user_text):
+        instructions, _snapshot = session_instructions(
+            self.robot.persona_id, self.persona_profiles, {},
+        )
+        messages = [{"role": "system", "content": instructions}]
+        for item in self.robot.recent_context():
+            user = (item.get("user_text") or "").strip()
+            reply = (item.get("assistant_context_text") or "").strip()
+            if user:
+                messages.append({"role": "user", "content": user})
+            if reply:
+                messages.append({"role": "assistant", "content": reply})
+        messages.append({"role": "user", "content": user_text})
+        return messages[-18:]
+
+    @staticmethod
+    def _parse_preview_action(call):
+        if not isinstance(call, dict) or call.get("name") != "preview_action":
+            return {"status": "rejected", "reason": "unsupported tool", "real_device_executed": False}
+        try:
+            args = json.loads(call.get("arguments") or "{}")
+            desc = args["description"]
+            if not isinstance(desc, str) or not 1 <= len(desc.strip()) <= 100:
+                raise ValueError("description must be 1..100 characters")
+            return {"status": "simulated", "description": desc.strip(), "real_device_executed": False}
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return {"status": "rejected", "reason": str(exc), "real_device_executed": False}
+
+    async def _start_external_turn(self, user_text):
+        if not self.external_llm or not self.turn_id:
+            return
+        if self.llm_task and not self.llm_task.done():
+            self.llm_task.cancel()
+            await asyncio.gather(self.llm_task, return_exceptions=True)
+        self.llm_task = asyncio.create_task(
+            self._run_external_llm(self.turn_id, dict(self.turn_identity), user_text),
+            name=f"cascade-llm:{self.robot.config.robot_id}",
+        )
+
+    async def _run_external_llm(self, turn_id, identity, user_text):
+        parts = []
+        try:
+            async for item in self.external_llm.stream(self._history_messages(user_text), tools=True):
+                if self.turn_id != turn_id or self.turn_identity != identity:
+                    return
+                if item.type == "text" and item.text:
+                    parts.append(item.text)
+                    self.text += item.text
+                    if self.first_text_ms is None and self.began is not None:
+                        self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
+                    self.publish("text.delta", turn_id=turn_id, delta=item.text, text=self.text)
+                    if self.speech:
+                        await self.speech.feed(turn_id, identity, item.text)
+                elif item.type == "tool_call":
+                    result = self._parse_preview_action(item.tool_call)
+                    self.publish("tool.result", call_id=(item.tool_call or {}).get("id"),
+                                 name=(item.tool_call or {}).get("name"),
+                                 arguments=(item.tool_call or {}).get("arguments"),
+                                 result=result, valid=result.get("status") == "simulated")
+            self.text = "".join(parts).strip() or self.text
+            self.publish("text.done", turn_id=turn_id, text=self.text)
+            if self.speech:
+                await self.speech.finish(turn_id)
+            self._finish("completed")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.error = f"cascade_llm: {type(exc).__name__}: {str(exc)[:140]}"
+            logger.warning("cascade_llm robot=%s failed: %s", self.robot.config.robot_id, self.error)
+            if self.speech:
+                await self.speech.cancel("cascade_llm_error")
+            self.publish("llm.error", error=self.error)
+            self._finish("failed", cancel_source="cascade_llm_error")
+
     async def _run(self):
         retry = 1
         while not self._stopping:
@@ -203,9 +286,16 @@ class RealtimeRobot:
                 instructions, persona_snapshot = session_instructions(
                     self.robot.persona_id, self.persona_profiles, social,
                 )
+                if self.external_llm:
+                    instructions = (
+                        "你只作为实时听觉、ASR 与 smart_turn 协处理器。"
+                        "不要正式回答用户；如必须产生输出，只输出一个句号。"
+                        "最终回复由外部流式 LLM 与独立 TTS 完成。"
+                    )
                 await self.socket.send(session_update(
                     instructions,
                     self.robot.context_limit,
+                    sensor_only=bool(self.external_llm),
                 ))
                 # An invalid combined capability must fail visibly before audio enters the model.
                 while True:
@@ -214,10 +304,11 @@ class RealtimeRobot:
                         raise RuntimeError(self._provider_error(event))
                     if event.get("type") == "session.updated":
                         config = event.get("session") or {}
-                        if config.get("modalities") != ["text"] or (
+                        expected_modalities = ["text", "audio"] if self.external_llm else ["text"]
+                        if config.get("modalities") != expected_modalities or (
                             (config.get("turn_detection") or {}).get("type") != "smart_turn"
                         ):
-                            raise RuntimeError("Provider did not confirm text-only smart_turn")
+                            raise RuntimeError("Provider did not confirm requested smart_turn session")
                         self.session = config.get("id")
                         break
                 if generation != self.robot.generation:
@@ -385,6 +476,9 @@ class RealtimeRobot:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
         self.audio_turn_id = None
         self._create_turn(text)
+        if self.external_llm:
+            await self._start_external_turn(text)
+            return {"status": "accepted", "turn_id": self.turn_id, **self.robot.session_state()}
         try:
             await self.socket.send({
                 "type": "conversation.item.create",
@@ -398,6 +492,10 @@ class RealtimeRobot:
         return {"status": "accepted", "turn_id": self.turn_id, **self.robot.session_state()}
 
     async def cancel(self):
+        if self.llm_task and not self.llm_task.done():
+            self.llm_task.cancel()
+            await asyncio.gather(self.llm_task, return_exceptions=True)
+            self.llm_task = None
         if self.speech:
             await self.speech.cancel("local_cancel")
         if self.socket and self.ready and self.response_id:
@@ -429,6 +527,8 @@ class RealtimeRobot:
             self.publish("transcript.ambient", text=event.get("transcript", ""))
         elif kind == "conversation.item.input_audio_transcription.delta":
             self.publish("transcript.delta", text=event.get("text", ""), stash=event.get("stash", ""))
+            if self.external_llm and (self.turn_id or self.response_id) and event.get("text"):
+                self.publish("playback.hold_requested", source="smart_turn")
         elif kind == "conversation.item.input_audio_transcription.completed":
             self.transcripts_completed += 1
             self.last_provider_transcript_ms = time.time_ns() // 1_000_000
@@ -452,10 +552,17 @@ class RealtimeRobot:
                         self.robot.config.robot_id, target, self.transcript, now,
                     )
             self.publish("transcript.done", text=self.transcript, turn_id=target)
+            if self.external_llm and self.transcript.strip() and target:
+                if self.speech and self.speech.turn_id and self.speech.turn_id != target:
+                    await self.speech.cancel("valid_smart_turn")
+                await self._start_external_turn(self.transcript.strip())
         elif kind == "response.created":
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
         elif kind == "response.text.delta":
+            if self.external_llm:
+                self.provider_text_ignored += 1
+                return
             if not self.turn_id:
                 self._create_turn(self.transcript, audio=True)
             chunk = event.get("delta", "")
@@ -466,6 +573,8 @@ class RealtimeRobot:
             if self.speech and chunk:
                 await self.speech.feed(self.turn_id, self.turn_identity, chunk)
         elif kind == "response.text.done":
+            if self.external_llm:
+                return
             complete = event.get("text", self.text)
             if self.speech and not self.text and complete and self.turn_id:
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)
@@ -477,6 +586,8 @@ class RealtimeRobot:
             response = event.get("response") or {}
             status = response.get("status", "failed")
             self.response_id = None
+            if self.external_llm:
+                return
             if self.followup_needed and status == "completed":
                 self.followup_needed = False
                 await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})

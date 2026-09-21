@@ -44,31 +44,6 @@ class FakeSocket:
         self.closed = True
 
 
-class FakeLlmDelta:
-    def __init__(self, type_, text="", tool_call=None):
-        self.type = type_
-        self.text = text
-        self.tool_call = tool_call
-
-
-class FakeExternalLlm:
-    model = "fake-qwen3.7-flash"
-
-    def __init__(self, chunks=None):
-        self.chunks = chunks or [FakeLlmDelta("text", "选绿茶。")]
-        self.messages = []
-        self.closed = False
-
-    async def stream(self, messages, *, tools=True):
-        self.messages.append((messages, tools))
-        for chunk in self.chunks:
-            await asyncio.sleep(0)
-            yield chunk
-
-    async def close(self):
-        self.closed = True
-
-
 class RealtimeWireTests(unittest.TestCase):
     def test_audio_pump_has_no_idle_sleep_or_nowait_polling(self):
         source = inspect.getsource(RealtimeRobot._audio_pump)
@@ -88,14 +63,9 @@ class RealtimeWireTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(audio_append(frame)["audio"]), frame)
         with self.assertRaises(ValueError):
             audio_append(b"bad")
-
-    def test_sensor_only_session_uses_demo_modalities_without_realtime_tools(self):
-        payload = session_update("sensor", 6, sensor_only=True)
-        config = payload["session"]
-        self.assertEqual(config["modalities"], ["text", "audio"])
-        self.assertEqual(config["turn_detection"], {"type": "smart_turn"})
-        self.assertEqual(config["max_history_turns"], 6)
-        self.assertNotIn("tools", config)
+        for invalid in (0, 51, True, 8.5, "8"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                session_update("小安妮", invalid)
 
     def test_url_does_not_change_model_or_accept_insecure_transport(self):
         self.assertIn("model=" + MODEL, realtime_url("wss://dashscope.aliyuncs.com/api-ws/v1/realtime"))
@@ -187,7 +157,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_smart_turn_interrupts_completed_reply_still_playing(self):
         client = self.runtime.realtime["annie-a"]
-        client.external_llm = FakeExternalLlm([FakeLlmDelta("text", "新问题回复。")])
         gen = client.robot.generation
 
         class Speaker:
@@ -218,7 +187,76 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn({"type": "conversation.item.delete", "item_id": "unheard-item"},
                       client.socket.outbound)
         self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "不是茶，是咖啡")
-        await asyncio.wait_for(client.llm_task, 1)
+
+    async def test_native_startup_has_no_cascade_or_idle_keepalive(self):
+        client = self.runtime.realtime["annie-a"]
+        self.assertFalse(hasattr(client, "external_llm"))
+        self.assertFalse(hasattr(client, "_idle_keepalive"))
+        self.assertEqual(client.socket.outbound[0]["session"]["modalities"], ["text"])
+        self.assertEqual(client.socket.outbound[0]["session"]["tools"][0]["function"]["name"],
+                         "preview_action")
+        self.assertFalse(any(packet["type"] == "response.create" for packet in client.socket.outbound))
+
+    async def test_native_asr_new_candidate_does_not_rewrite_previous_completed_turn(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "first-audio"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "first-audio", "transcript": "我要喝茶"}, gen)
+        first_turn = client.turn_id
+        await client.handle({"type": "response.text.delta", "delta": "好的。"}, gen)
+        await client.handle({"type": "response.done", "response": {"status": "completed"}}, gen)
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "second-audio"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "second-audio", "transcript": "不是茶，是咖啡"}, gen)
+        self.assertNotEqual(first_turn, client.turn_id)
+        self.assertEqual(client.robot.turn_cache[first_turn]["user_text"], "我要喝茶")
+        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "不是茶，是咖啡")
+        self.assertEqual(len(client.robot.turn_cache), 2)
+
+    async def test_native_audio_response_does_not_create_second_llm_request(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "transcript": "帮我聊天"}, gen)
+        await client.handle({"type": "response.text.delta", "delta": "当然可以。"}, gen)
+        await client.handle({"type": "response.done", "response": {"status": "completed"}}, gen)
+        self.assertEqual(len(client.robot.turn_cache), 1)
+        self.assertEqual(next(iter(client.robot.turn_cache.values()))["assistant_generated_text"],
+                         "当然可以。")
+        self.assertFalse(any(event["type"] == "response.create"
+                             for event in client.socket.outbound))
+
+    async def test_native_asr_final_does_not_cancel_its_own_early_response(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "native-early"}, gen)
+        # Realtime text may arrive before the final ASR item; this is the new
+        # turn, not old speech to cancel when transcription finally arrives.
+        client._create_turn("", audio=True)
+        turn_id = client.turn_id
+
+        class Speaker:
+            def __init__(self):
+                self.turn_id = turn_id
+                self.cancelled = False
+
+            async def cancel(self, reason):
+                self.cancelled = reason
+
+            async def close(self):
+                pass
+
+        speaker = Speaker()
+        client.speech = speaker
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "native-early", "transcript": "本轮的新问题"}, gen)
+        self.assertEqual(client.turn_id, turn_id)
+        self.assertEqual(client.robot.turn_cache[turn_id]["user_text"], "本轮的新问题")
+        self.assertFalse(speaker.cancelled)
 
     async def test_timeline_stage_contract_and_speaker_only_percentiles(self):
         client = self.runtime.realtime["annie-a"]
@@ -247,32 +285,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats["p50_ms"], stats["p95_ms"])
         self.assertGreater(stats["p50_ms"], 0)
 
-    async def test_sensor_idle_heartbeat_does_not_generate_business_turn(self):
-        client = self.runtime.realtime["annie-a"]
-        other = self.runtime.realtime["annie-b"]
-        generation = client.robot.generation
-        client._last_activity_t -= 121
-        self.assertFalse(await client._maybe_keepalive(generation))
-        llm = FakeExternalLlm()
-        client.external_llm = llm
-        self.assertTrue(await client._maybe_keepalive(generation))
-        self.assertEqual(client.socket.outbound[-1], {"type": "response.create"})
-        self.assertFalse(await client._maybe_keepalive(generation))
-        await client.handle({"type": "response.created",
-                             "response": {"id": "heartbeat"}}, generation)
-        await client.handle({"type": "response.output_item.added",
-                             "item": {"id": "heartbeat-item", "role": "assistant"}}, generation)
-        await client.handle({"type": "response.done",
-                             "response": {"status": "completed"}}, generation)
-        self.assertEqual(client.socket.outbound[-1], {
-            "type": "conversation.item.delete", "item_id": "heartbeat-item",
-        })
-        self.assertEqual(client.keepalive_count, 1)
-        self.assertFalse(client._keepalive_pending)
-        self.assertFalse(llm.messages)
-        self.assertFalse(client.robot.turn_cache)
-        self.assertEqual(other.keepalive_count, 0)
-
     async def test_speculative_hold_is_reversible_and_keeps_robot_scope(self):
         client = self.runtime.realtime["annie-a"]
         other = self.runtime.realtime["annie-b"]
@@ -286,7 +298,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             def request_playback_control(self, kind, *, reason):
                 return True
 
-        client.external_llm = FakeExternalLlm()
         client.speech = Speaking()
         generation = client.robot.generation
         await client.handle({"type": "input_audio_buffer.speech_started",
@@ -324,7 +335,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         speaker = Speaking()
         client.speech = speaker
-        client.external_llm = FakeExternalLlm()
         generation = client.robot.generation
         await client.handle({"type": "input_audio_buffer.speech_started"}, generation)
         await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
@@ -339,7 +349,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_demo_stable_asr_prefix_confirms_hold_before_final_without_losing_turn(self):
         client = self.runtime.realtime["annie-a"]
         generation = client.robot.generation
-        client.external_llm = FakeExternalLlm()
 
         class Speaking:
             turn_id = "old-voice"
@@ -383,38 +392,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len([e for e in client.events if
                               e["kind"] == "playback.interrupt_confirmed"]), 1)
 
-    async def test_late_previous_asr_never_steals_latest_spoken_turn(self):
-        client = self.runtime.realtime["annie-a"]
-        other = self.runtime.realtime["annie-b"]
-        llm = FakeExternalLlm([FakeLlmDelta("text", "回答本轮咖啡。")])
-        client.external_llm = llm
-        generation = client.robot.generation
-        await client.handle({"type": "input_audio_buffer.speech_started",
-                             "item_id": "old-tea"}, generation)
-        await client.handle({"type": "input_audio_buffer.speech_started",
-                             "item_id": "new-coffee"}, generation)
-        for kind, fields in (
-            ("input_audio_buffer.speech_stopped", {"reason": "turn_invalid"}),
-            ("conversation.item.input_audio_transcription.delta", {"text": "茶", "stash": ""}),
-            ("conversation.item.ambient_audio_transcription.completed", {"transcript": "嗯"}),
-            ("conversation.item.input_audio_transcription.completed", {"transcript": "喝茶"}),
-        ):
-            await client.handle({"type": kind, "item_id": "old-tea", **fields}, generation)
-        self.assertTrue(client.speech_active)
-        self.assertIsNone(client.turn_id)
-        self.assertFalse(llm.messages)
-        self.assertEqual(len([e for e in client.events if e["kind"] == "transcript.stale"]), 4)
-        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
-                             "item_id": "new-coffee", "transcript": "不是茶，是咖啡"},
-                            generation)
-        await asyncio.wait_for(client.llm_task, 1)
-        self.assertEqual(llm.messages[0][0][-1],
-                         {"role": "user", "content": "不是茶，是咖啡"})
-        self.assertEqual(client.last_llm_input["user_text"], "不是茶，是咖啡")
-        self.assertFalse(any(e.get("text") == "喝茶" and e["kind"] == "transcript.done"
-                             for e in client.events))
-        self.assertFalse(any(e["kind"] == "transcript.stale" for e in other.events))
-
     async def test_duplicate_speech_start_does_not_rehold_or_reset_asr(self):
         client = self.runtime.realtime["annie-a"]
         gen = client.robot.generation
@@ -438,73 +415,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                              "item_id": "old", "transcript": "上轮问题"}, gen)
         self.assertEqual(client.events[-1]["kind"], "transcript.stale")
         self.assertIsNone(client.turn_id)
-
-    async def test_llm_context_is_frozen_at_turn_admission_not_task_scheduling(self):
-        client = self.runtime.realtime["annie-a"]
-        llm = FakeExternalLlm([FakeLlmDelta("text", "咖啡，收到。")])
-        client.external_llm = llm
-        await client.submit_text("不是茶，是咖啡")
-        turn_id = client.turn_id
-        self.assertEqual(client.last_llm_input["turn_id"], turn_id)
-        assert client.last_llm_input["messages"][-1]["content"] == "不是茶，是咖啡"
-        # Context can change while a task waits to run; it must not alter the
-        # already admitted turn's actual request.
-        client.robot.context_cache.append({
-            "turn_id": "late-unrelated", "user_text": "给我讲昨天的故事",
-            "status": "completed", "assistant_generated_text": "故事",
-            "assistant_context_text": "故事",
-        })
-        await asyncio.wait_for(client.llm_task, 1)
-        self.assertEqual(llm.messages[0][0], client.last_llm_input["messages"])
-        self.assertNotIn("给我讲昨天的故事", str(llm.messages[0][0]))
-        self.assertEqual(client.robot.turn_cache[turn_id]["assistant_generated_text"],
-                         "咖啡，收到。")
-
-    async def test_old_llm_finish_cannot_clear_next_microphone_candidate(self):
-        client = self.runtime.realtime["annie-a"]
-        client.external_llm = FakeExternalLlm()
-        client._create_turn("旧问题")
-        client.text = "旧答复"
-        await client.handle({"type": "input_audio_buffer.speech_started",
-                             "item_id": "next-user"}, client.robot.generation)
-        self.assertTrue(client.speech_active)
-        client._finish("completed")
-        self.assertTrue(client.speech_active)
-        self.assertEqual(client.pending_audio_item_id, "next-user")
-        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
-                             "item_id": "next-user", "transcript": "新的问题"},
-                            client.robot.generation)
-        await asyncio.wait_for(client.llm_task, 1)
-        self.assertEqual(client.last_llm_input["user_text"], "新的问题")
-
-    async def test_history_prunes_complete_turns_not_individual_messages(self):
-        client = self.runtime.realtime["annie-a"]
-        for index in range(8):
-            client.robot.context_cache.append({
-                "turn_id": f"history-{index}", "status": "completed",
-                "user_text": f"第{index}个问题",
-                "assistant_generated_text": f"第{index}个回答",
-            })
-        messages = client._history_messages("现在的问题")
-        self.assertEqual(len(messages), 18)
-        self.assertEqual(messages[0]["role"], "system")
-        self.assertEqual(messages[-1], {"role": "user", "content": "现在的问题"})
-        for index in range(8):
-            self.assertEqual(messages[index*2 + 1],
-                             {"role": "user", "content": f"第{index}个问题"})
-            self.assertEqual(messages[index*2 + 2],
-                             {"role": "assistant", "content": f"第{index}个回答"})
-        for index in range(8, 20):
-            client.robot.context_cache.append({
-                "turn_id": f"history-{index}", "status": "completed",
-                "user_text": f"第{index}个问题",
-                "assistant_generated_text": f"第{index}个回答",
-            })
-        messages = client._history_messages("现在的问题")
-        self.assertEqual(len(messages), 42)
-        self.assertEqual(messages[1]["content"], "第0个问题")
-        self.assertEqual(messages[-2]["content"], "第19个回答")
-        self.assertEqual(messages[-1]["content"], "现在的问题")
 
     async def test_push_subscriber_is_bounded_and_released(self):
         # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.
@@ -583,56 +493,8 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.socket.outbound), before)
         self.assertIsNone(client.turn_id)
 
-    async def test_demo_asr_incremental_ambient_and_final_precede_slow_stop(self):
-        client = self.runtime.realtime["annie-a"]
-        other = self.runtime.realtime["annie-b"]
-        generation = client.robot.generation
-        await client.handle({"type": "input_audio_buffer.speech_started",
-                             "item_id": "heard-a"}, generation)
-        await client.handle({
-            "type": "conversation.item.input_audio_transcription.delta",
-            "item_id": "heard-a", "text": "我想", "stash": "喝茶",
-        }, generation)
-        preview = client.events[-1]
-        self.assertEqual(preview["kind"], "transcript.delta")
-        self.assertEqual(preview["text"]+preview["stash"], "我想喝茶")
-        self.assertEqual(preview["item_id"], "heard-a")
-        self.assertEqual(client.asr_delta_count, 1)
-        self.assertTrue(any(e["kind"] == "transcript.first_delta" for e in client.events))
-        await client.handle({
-            "type": "conversation.item.ambient_audio_transcription.delta",
-            "text": "嗯", "stash": "嗯",
-        }, generation)
-        self.assertEqual(client.events[-1]["kind"], "transcript.ambient_delta")
-
-        client.external_llm = FakeExternalLlm()
-        client.turn_id = "old-voice"  # an older LLM/TTS response is still active
-        entered, release = asyncio.Event(), asyncio.Event()
-
-        async def slow_cancel(_reason):
-            entered.set()
-            await release.wait()
-            client.turn_id = None
-
-        client._interrupt_active_turn = slow_cancel
-        final = asyncio.create_task(client.handle({
-            "type": "conversation.item.input_audio_transcription.completed",
-            "item_id": "heard-a", "transcript": "我想喝茶。",
-        }, generation))
-        await asyncio.wait_for(entered.wait(), 1)
-        self.assertFalse(final.done())
-        self.assertEqual(client.events[-1]["kind"], "transcript.final_preview")
-        self.assertEqual(client.events[-1]["text"], "我想喝茶。")
-        self.assertFalse(any(e["kind"] == "transcript.final_preview" for e in other.events))
-        release.set()
-        await asyncio.wait_for(final, 1)
-        kinds = [e["kind"] for e in client.events]
-        self.assertLess(kinds.index("transcript.final_preview"),
-                        kinds.index("transcript.done"))
-
     async def test_demo_meaningful_ambient_promotes_without_replying_to_fillers(self):
         client = self.runtime.realtime["annie-a"]
-        client.external_llm = FakeExternalLlm()
         generation = client.robot.generation
         await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
                              "item_id": "filler", "transcript": "嗯。"}, generation)
@@ -736,203 +598,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.ledger.flush()
         self.assertEqual((await self.runtime.load_conversation("annie-a", "default", "annie"))[
             "turns"][0]["assistant_generated_text"], "模拟完成")
-
-    async def test_external_llm_text_path_skips_realtime_response_generation(self):
-        llm = FakeExternalLlm([
-            FakeLlmDelta("text", "我选"),
-            FakeLlmDelta("tool_call", tool_call={
-                "id": "call-1", "name": "preview_action", "arguments": '{"description":"点头"}',
-            }),
-            FakeLlmDelta("text", "绿茶。"),
-        ])
-        runtime = HarborRuntime(
-            [RobotConfig("annie-x", room_id="room-x", fake_delay_ms=0, listen_enabled=True)],
-            Path(self.tmp.name) / "cascade.db",
-            realtime_key="fake-test-key",
-            realtime_socket_factory=FakeSocket,
-            external_llm=llm,
-        )
-        await runtime.start()
-        self.addAsyncCleanup(runtime.close)
-        for _ in range(100):
-            if runtime.realtime["annie-x"].ready:
-                break
-            await asyncio.sleep(0.01)
-        client = runtime.realtime["annie-x"]
-        self.assertEqual(client.socket.outbound[0]["session"]["modalities"], ["text", "audio"])
-        await runtime.realtime_text("annie-x", "你选一个")
-        for _ in range(100):
-            if client.turn_id is None:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.ledger.flush()
-        stored = await runtime.load_conversation("annie-x", "default", "annie")
-        self.assertEqual(stored["turns"][0]["assistant_generated_text"], "我选绿茶。")
-        self.assertFalse(any(msg.get("type") == "response.create" for msg in client.socket.outbound))
-        self.assertTrue(any(e["kind"] == "tool.result" and e["result"]["status"] == "simulated"
-                            for e in client.events))
-        self.assertTrue(llm.messages[0][1])
-
-    async def test_external_llm_audio_final_drives_answer_and_ignores_provider_dot(self):
-        llm = FakeExternalLlm([FakeLlmDelta("text", "收到语音。")])
-        runtime = HarborRuntime(
-            [RobotConfig("annie-y", room_id="room-y", fake_delay_ms=0, listen_enabled=True)],
-            Path(self.tmp.name) / "cascade-audio.db",
-            realtime_key="fake-test-key",
-            realtime_socket_factory=FakeSocket,
-            external_llm=llm,
-        )
-        await runtime.start()
-        self.addAsyncCleanup(runtime.close)
-        for _ in range(100):
-            if runtime.realtime["annie-y"].ready:
-                break
-            await asyncio.sleep(0.01)
-        client = runtime.realtime["annie-y"]
-        gen = client.robot.generation
-        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
-                             "transcript": "你好呀"}, gen)
-        await client.handle({"type": "response.text.delta", "delta": "。"}, gen)
-        await client.handle({"type": "response.done", "response": {"status": "completed"}}, gen)
-        for _ in range(100):
-            if client.turn_id is None:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.ledger.flush()
-        stored = await runtime.load_conversation("annie-y", "default", "annie")
-        self.assertEqual(stored["turns"][0]["user_text"], "你好呀")
-        self.assertEqual(stored["turns"][0]["assistant_generated_text"], "收到语音。")
-        self.assertEqual(client.snapshot()["provider_text_ignored"], 1)
-
-    async def test_external_llm_duplicate_final_does_not_launch_two_answers(self):
-        llm = FakeExternalLlm([FakeLlmDelta("text", "只回复一次。")])
-        runtime = HarborRuntime(
-            [RobotConfig("annie-one", room_id="room-one", fake_delay_ms=0, listen_enabled=True)],
-            Path(self.tmp.name) / "duplicate-final.db", realtime_key="fake-test-key",
-            realtime_socket_factory=FakeSocket, external_llm=llm,
-        )
-        await runtime.start()
-        self.addAsyncCleanup(runtime.close)
-        client = runtime.realtime["annie-one"]
-        for _ in range(100):
-            if client.ready:
-                break
-            await asyncio.sleep(0.01)
-        final = {"type": "conversation.item.input_audio_transcription.completed",
-                 "item_id": "asr-001", "transcript": "你好"}
-        await client.handle(final, client.robot.generation)
-        await client.handle(final, client.robot.generation)
-        for _ in range(100):
-            if client.turn_id is None:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.ledger.flush()
-        turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
-        self.assertEqual(len(turns), 1)
-        self.assertEqual(turns[0]["assistant_generated_text"], "只回复一次。")
-        self.assertEqual(len(llm.messages), 1)
-        self.assertTrue(any(e["kind"] == "transcript.duplicate" for e in client.events))
-
-    async def test_external_llm_tool_only_response_requires_text_followup(self):
-        class ToolOnlyLlm(FakeExternalLlm):
-            async def stream(self, messages, *, tools=True):
-                self.messages.append((messages, tools))
-                if tools:
-                    yield FakeLlmDelta("tool_call", tool_call={
-                        "id": "call-01", "name": "preview_action",
-                        "arguments": '{"description":"点头"}',
-                    })
-                else:
-                    self.assert_tool_messages(messages)
-                    yield FakeLlmDelta("text", "只是模拟点头，没有执行真机动作。")
-
-            @staticmethod
-            def assert_tool_messages(messages):
-                assert messages[-1]["role"] == "tool"
-                assert '"real_device_executed": false' in messages[-1]["content"]
-
-        llm = ToolOnlyLlm()
-        runtime = HarborRuntime(
-            [RobotConfig("annie-one", room_id="room-one", fake_delay_ms=0, listen_enabled=True)],
-            Path(self.tmp.name) / "tool-only.db", realtime_key="fake-test-key",
-            realtime_socket_factory=FakeSocket, external_llm=llm,
-        )
-        await runtime.start()
-        self.addAsyncCleanup(runtime.close)
-        client = runtime.realtime["annie-one"]
-        for _ in range(100):
-            if client.ready:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.realtime_text("annie-one", "请模拟点头")
-        for _ in range(100):
-            if client.turn_id is None:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.ledger.flush()
-        turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
-        self.assertEqual(turns[0]["assistant_generated_text"], "只是模拟点头，没有执行真机动作。")
-        self.assertEqual([tools for _messages, tools in llm.messages], [True, False])
-        self.assertEqual(client.last_llm_input["messages"][-1],
-                         {"role": "user", "content": "请模拟点头"})
-        self.assertEqual(client.last_llm_input["tool_followup_messages"][-1]["role"],
-                         "tool")
-        self.assertEqual(client.last_llm_input["tool_followup_messages"],
-                         llm.messages[-1][0])
-
-    async def test_external_llm_valid_barge_cancels_old_generation(self):
-        class SlowLlm(FakeExternalLlm):
-            def __init__(self):
-                super().__init__()
-                self.started = asyncio.Event()
-                self.release = asyncio.Event()
-
-            async def stream(self, messages, *, tools=True):
-                self.messages.append((messages, tools))
-                if messages[-1]["content"] == "旧问题":
-                    self.started.set()
-                    await self.release.wait()
-                    yield FakeLlmDelta("text", "不应出现")
-                else:
-                    yield FakeLlmDelta("text", "新回复。")
-
-        llm = SlowLlm()
-        runtime = HarborRuntime(
-            [RobotConfig("annie-one", room_id="room-one", fake_delay_ms=0, listen_enabled=True)],
-            Path(self.tmp.name) / "barge.db", realtime_key="fake-test-key",
-            realtime_socket_factory=FakeSocket, external_llm=llm,
-        )
-        await runtime.start()
-        self.addAsyncCleanup(runtime.close)
-        client = runtime.realtime["annie-one"]
-        for _ in range(100):
-            if client.ready:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.realtime_text("annie-one", "旧问题")
-        await asyncio.wait_for(llm.started.wait(), 1)
-        gen = client.robot.generation
-        await client.handle({"type": "input_audio_buffer.speech_started", "item_id": "voice-new"}, gen)
-        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
-                             "item_id": "voice-new", "transcript": "新问题"}, gen)
-        llm.release.set()
-        for _ in range(100):
-            if client.turn_id is None:
-                break
-            await asyncio.sleep(0.01)
-        await runtime.ledger.flush()
-        turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
-        self.assertEqual([t["status"] for t in turns], ["cancelled", "completed"])
-        self.assertEqual(turns[-1]["user_text"], "新问题")
-        self.assertEqual(turns[-1]["assistant_generated_text"], "新回复。")
-        self.assertFalse(any(e.get("text") == "不应出现" for e in client.events))
-
-    async def test_llm_history_keeps_persona_system_and_prefers_bounded_spoken_history(self):
-        client = self.runtime.realtime["annie-a"]
-        messages = client._history_messages("你选哪个？")
-        self.assertEqual(messages[0]["role"], "system")
-        self.assertEqual(messages[-1], {"role": "user", "content": "你选哪个？"})
-        self.assertIn("小安妮", messages[0]["content"])
 
     async def test_audio_gate_drains_to_own_realtime_socket(self):
         source = "room:roomv2:reb_mic"

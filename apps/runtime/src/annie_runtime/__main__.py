@@ -18,7 +18,6 @@ from urllib.request import ProxyHandler, build_opener
 
 import uvicorn
 from annie_adapters import load_robots, load_room_server, resolve_database
-from annie_adapters.llm import ExternalChatLLM
 from annie_brain.persona import load_personas
 from annie_web import create_app
 
@@ -178,28 +177,22 @@ def main():
         root,
         args.database or os.environ.get("ANNIE_DATABASE") or config["storage"]["database"],
     )
-    external_llm = None
-    cascade_model = os.environ.get("ANNIE_CASCADE_LLM_MODEL", "qwen3.7-flash").strip()
-    if os.environ.get("ANNIE_CASCADE_LLM_ENABLED", "1") == "1" and os.environ.get("DASHSCOPE_API_KEY"):
-        workspace = os.environ.get("ALIYUN_WORKSPACE_ID", "").strip()
-        default_base = (
-            f"https://{workspace}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
-            if workspace else "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
-        external_llm = ExternalChatLLM(
-            api_key=os.environ["DASHSCOPE_API_KEY"],
-            model=cascade_model,
-            base_url=os.environ.get("ANNIE_LLM_BASE_URL", default_base),
-        )
     runtime = HarborRuntime(
         load_robots(root / "config/robots.toml"),
         database,
         load_room_server(root / "config/rooms.toml"),
         conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
+        realtime_history_turns=int(os.environ.get(
+            "ANNIE_REALTIME_HISTORY_TURNS",
+            runtime_defaults["conversation"].get("realtime_history_turns", 8),
+        )),
+        realtime_restore_char_budget=int(os.environ.get(
+            "ANNIE_REALTIME_RESTORE_CHAR_BUDGET",
+            runtime_defaults["conversation"].get("realtime_restore_char_budget", 3000),
+        )),
         persona_profiles=load_personas(root / "config/personas.toml"),
         realtime_key=os.environ.get("DASHSCOPE_API_KEY") or None,
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
-        external_llm=external_llm,
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]
             if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None

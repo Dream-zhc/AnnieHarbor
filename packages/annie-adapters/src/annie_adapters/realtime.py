@@ -22,17 +22,18 @@ def realtime_url(base_url: str, model: str = MODEL) -> str:
     return urlunparse(parsed._replace(query=urlencode({"model": model})))
 
 
-def session_update(instructions: str, history_turns: int = 20, *, sensor_only: bool = False) -> dict:
+def session_update(instructions: str, history_turns: int = 20) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
+    if type(history_turns) is not int or not 1 <= history_turns <= 50:
+        raise ValueError("Realtime history_turns must be an integer between 1 and 50")
     session = {
-        "modalities": ["text", "audio"] if sensor_only else ["text"],
+        "modalities": ["text"],
         "input_audio_format": "pcm",
         "turn_detection": {"type": "smart_turn"},
         "max_history_turns": history_turns,
         "instructions": instructions,
     }
-    if not sensor_only:
-        session["tools"] = [{
+    session["tools"] = [{
             "type": "function",
             "function": {
                 "name": "preview_action",

@@ -817,10 +817,11 @@ class HarborRuntime:
         room_server=None,
         *,
         conversation_history_turns: int = 20,
+        realtime_history_turns: int = 8,
+        realtime_restore_char_budget: int = 3000,
         persona_profiles: dict | None = None,
         realtime_key: str | None = None,
         realtime_url: str | None = None,
-        external_llm=None,
         realtime_socket_factory=None,
         tts_voice: str | None = None,
         tts_url: str | None = None,
@@ -833,6 +834,11 @@ class HarborRuntime:
             raise ValueError("at least one config and unique robot_id values required")
         if type(conversation_history_turns) is not int or not 1 <= conversation_history_turns <= 100:
             raise ValueError("conversation_history_turns must be an integer between 1 and 100")
+        if type(realtime_history_turns) is not int or not 1 <= realtime_history_turns <= 50:
+            raise ValueError("realtime_history_turns must be an integer between 1 and 50")
+        if (type(realtime_restore_char_budget) is not int or
+                not 1 <= realtime_restore_char_budget <= 12000):
+            raise ValueError("realtime_restore_char_budget must be an integer between 1 and 12000")
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
         self.ledger = ConversationLedgerWriter(self.store)
@@ -855,7 +861,6 @@ class HarborRuntime:
         self.room_sources = {}
         self.playback_listeners = {}
         self.viseme_sidecars = None
-        self.external_llm = external_llm
         self.realtime = {}
         if realtime_key:
             from annie_adapters.realtime import DEFAULT_URL, QwenRealtimeSocket
@@ -865,8 +870,9 @@ class HarborRuntime:
             self.realtime = {
                 robot_id: RealtimeRobot(
                     robot, url=url, key=realtime_key,
+                    history_turns=realtime_history_turns,
+                    restore_char_budget=realtime_restore_char_budget,
                     persona_profiles=self.persona_profiles,
-                    external_llm=external_llm,
                     socket_factory=realtime_socket_factory or QwenRealtimeSocket,
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
@@ -1221,8 +1227,6 @@ class HarborRuntime:
             except Exception as exc:
                 ledger_error = exc
             await self.recorder.close()
-            if self.external_llm is not None:
-                await self.external_llm.close()
             if ledger_error is not None:
                 raise ledger_error
 

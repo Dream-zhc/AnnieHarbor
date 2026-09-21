@@ -19,6 +19,11 @@ provider = "qwen_audio"
 
 [conversation]
 history_turns = 20
+# Realtime cloud inference window, separate from SQLite / local history.
+# Provider default is 20; ordinary voice dialogue starts smaller (5–10 per Alibaba).
+realtime_history_turns = 8
+# Startup-only history injection uses characters, NOT an exact token limit.
+realtime_restore_char_budget = 3000
 turn_cooldown_ms = 1500
 sensor_rearm_gap_ms = 3000
 

@@ -208,6 +208,51 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
         finally:
             a.speech = None
 
+    async def test_realtime_cloud_window_is_separate_from_saved_twenty_turns(self):
+        a = self.runtime.realtime["annie-a"]
+        self.assertEqual(a.history_turns, 8)
+        self.assertEqual(a.restore_char_budget, 3000)
+        self.assertEqual(a.socket.outbound[0]["session"]["max_history_turns"], 8)
+        for index in range(20):
+            a.robot.context_cache.append(row(
+                str(index), f"问题{index}", f"回答{index}",
+                assistant_context_text=f"回答{index}",
+            ))
+        a.robot.context_cache = a.robot.context_cache[-20:]
+        before = len(a.socket.outbound)
+        await a._restore_context()
+        restored = a.restored_context
+        self.assertEqual(len(restored["turns"]), 8)
+        self.assertEqual(restored["turns"][0]["user_text"], "问题12")
+        self.assertEqual(restored["turns"][-1]["user_text"], "问题19")
+        self.assertEqual(restored["max_turns"], 8)
+        self.assertEqual(restored["char_budget"], 3000)
+        self.assertLessEqual(restored["chars_used"], 3000)
+        self.assertEqual(len(a.socket.outbound) - before, 16)
+        # A new turn must not trigger another history injection.
+        await self.runtime.realtime_text("annie-a", "当前问题")
+        self.assertEqual(len(a.socket.outbound) - before, 18)
+        self.assertEqual(a.snapshot()["provider_history_turns"], 8)
+        self.assertIsNone(a.snapshot()["provider_history_turns_confirmed"])
+        self.assertEqual(a.snapshot()["restore_char_budget"], 3000)
+        self.assertEqual(self.runtime.realtime["annie-b"].restored_context["turns"], [])
+
+    async def test_startup_history_char_budget_is_not_a_token_count(self):
+        a = self.runtime.realtime["annie-a"]
+        a.robot.context_cache = [row(
+            str(index), f"问题{index}"+"中"*850, "无声回复",
+            assistant_context_text="无声回复",
+        ) for index in range(8)]
+        a.speech = object()  # Selection only: no TTS task.
+        try:
+            await a._restore_context()
+            self.assertLessEqual(a.restored_context["chars_used"], 3000)
+            self.assertEqual(a.restored_context["unit"], "characters_not_provider_tokens")
+            self.assertLess(len(a.restored_context["turns"]), 8)
+            self.assertTrue(a.restored_context["turns"][-1]["user_text"].startswith("问题7"))
+        finally:
+            a.speech = None
+
     async def test_confirmed_interruption_survives_sqlite_reload_as_user_only(self):
         a = self.runtime.realtime["annie-a"]
         a.speech = object()

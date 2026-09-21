@@ -65,7 +65,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 .info-line{border-bottom:1px solid #edf0f5;padding:11px 0;font-size:13px}
 .info-line>span:first-child{color:#8190a4}.info-line strong{text-align:right;font-weight:650;overflow-wrap:anywhere;min-width:0}
 .info-line:last-child{border-bottom:0}
-.chat-layout{display:grid;grid-template-columns:228px minmax(0,1fr) 256px;gap:0;min-height:calc(100vh - 136px);height:calc(100vh - 136px);max-height:1050px;overflow:hidden;border:1px solid #e2e8f1;background:white;border-radius:18px;box-shadow:0 5px 26px #172d540c}
+.chat-layout{display:grid;grid-template-columns:216px minmax(0,1fr) 284px;gap:0;min-height:520px;height:calc(100dvh - 170px);max-height:1050px;overflow:hidden;border:1px solid #e2e8f1;background:white;border-radius:18px;box-shadow:0 5px 26px #172d540c}
 .chat-sidebar{display:flex;flex-direction:column;min-width:0;background:#f9fbff;border-right:1px solid #e9eef6;padding:24px 13px 15px}
 .sidebar-top{display:flex;align-items:center;justify-content:space-between;margin:0 4px 24px}
 .sidebar-top h2,.inspector-title h2{margin:2px 0 0;font-size:19px;letter-spacing:-.03em}
@@ -88,15 +88,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 .conversation-header p{font-size:12px;color:#8b9aab;margin:0}
 .conversation-tools{display:flex;flex-wrap:wrap;gap:5px}
 .conversation-tools button{font-size:12px;padding:7px 9px}
-.messages{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:26px min(5%,42px);background:linear-gradient(180deg,#fff 65%,#fcfdff)}
+.messages{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;padding:22px clamp(14px,3%,36px);background:linear-gradient(180deg,#fff 65%,#fcfdff)}
 .message-placeholder{min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;color:#9ba8b8}
 .message-placeholder strong{font-size:18px;color:#43556e}.message-placeholder span{font-size:13px;max-width:320px}
-.exchange{margin-bottom:20px}
-.message-row{display:flex;align-items:flex-start;gap:10px;margin:0 0 16px}.message-row.me{justify-content:flex-end}
-.message-content{display:flex;flex-direction:column;gap:6px;min-width:0;max-width:88%}
+.exchange{margin:0 0 26px;padding:0 0 16px;border-bottom:1px solid #f1f3f8}
+.message-row{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px}.message-row.me{justify-content:flex-end}
+.message-content{display:flex;flex-direction:column;gap:5px;min-width:0;max-width:min(88%,740px)}
+.message-row.me .message-content{max-width:min(75%,550px)}
 .message-author{font-size:11px;font-weight:750;color:#55657a}.message-author span{color:#9ca6b7;font-weight:500}
 .me .message-author{text-align:right}
-.bubble{border-radius:14px;padding:12px 16px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75;font-size:14px}
+.bubble{border-radius:14px;padding:11px 15px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:14px}
 .me-bubble{background:#e8efff;border:1px solid #dbe6fc;color:#2e4165;border-top-right-radius:3px}
 .agent-bubble{background:#f3f5f9;color:#2f3c50;border-top-left-radius:3px}
 .agent-avatar{height:28px;width:28px;border-radius:9px;display:grid;place-items:center;background:#4f69d3;color:#fff;font-size:12px;font-weight:800;flex:none;margin-top:15px}
@@ -122,10 +123,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 .composer-actions,.composer-actions>div{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .composer-actions>span{font-size:11px;color:#a0acbc}
 .composer-actions button{padding:8px 12px;font-size:12px}
-.inspector{padding:27px 18px;background:#fcfdff;border-left:1px solid #e9eef6;overflow-y:auto;min-width:0}
+.inspector{padding:20px 14px;background:#f7f9fd;border-left:1px solid #e9eef6;overflow-y:auto;min-width:0}
 .inspector-title{margin-bottom:21px}.inspector-robot{display:flex;align-items:center;gap:10px;padding:14px 0 22px;border-bottom:1px solid #e9edf5;flex-wrap:wrap}
 .inspector-robot>div{min-width:0;display:grid;gap:2px}.inspector-robot strong{overflow-wrap:anywhere}.inspector-robot small{color:#8796a8}
-.inspector-group{padding:17px 0 14px;border-bottom:1px solid #ebeff6}.inspector-group h3{margin:0 0 8px;font-size:12px;letter-spacing:.04em;color:#667995}
+.inspector-group{padding:14px 12px;margin:12px 0;background:white;border:1px solid #e1e8f3;border-radius:12px}.inspector-group h3{margin:0 0 8px;font-size:14px;color:#334c70}
+.voice-summary{border-color:#cad9f4;background:#fff}
+.inspector-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#334c70;font-size:13px;font-weight:750;list-style:none}
+.inspector-panel>summary::-webkit-details-marker{display:none}
+.inspector-panel>summary::after{content:'⌄';color:#7189af;font-size:18px;line-height:1}
+.inspector-panel[open]>summary::after{content:'⌃'}
+.inspector-panel>summary span{color:#7e8ea5;font-weight:500;font-size:11px;margin-left:auto}
+.inspector-panel[open]>summary{padding-bottom:12px;border-bottom:1px solid #edf1f7}
 .inspector-group .info-line{font-size:12px;padding:8px 0}
 .inspector-link{border:0;background:transparent;padding:16px 0;color:#4c65c8;font-weight:750;text-align:left}
 .inline-error{color:#b14a50;background:#fff2f3;border:1px solid #f6d7d8;padding:11px 13px;border-radius:10px;overflow-wrap:anywhere}
@@ -157,7 +165,7 @@ pre{background:#f4f6fa;border:1px solid #e2e8f1;border-radius:10px;padding:12px;
  .topbar{padding:12px 22px}
 }
 @media(max-width:1060px){
- .chat-layout{grid-template-columns:215px minmax(0,1fr);height:calc(100vh - 122px);max-height:none}
+ .chat-layout{grid-template-columns:215px minmax(0,1fr);height:auto;max-height:none}
  .inspector{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;overflow:visible;border-top:1px solid #e9eef6;border-left:0}
  .inspector-title,.inspector-robot{grid-column:1/-1}.inspector-group{border-bottom:0}.inspector-link{grid-column:1/-1}
  .chat-layout{overflow:visible}.conversation{min-height:560px}

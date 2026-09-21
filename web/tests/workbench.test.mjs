@@ -99,7 +99,11 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/transcript\.delta/);
   assert.match(source,/transcript\.done/);
   assert.match(source,/finalTranscript\?\.turnId===turn\.turn_id/);
-  assert.match(source,/语音识别中（暂定）/);
+  assert.match(source,/语音转写中/);
+  assert.match(source,/liveTurn\?\.turnId===turn\.turn_id/);
+  assert.match(source,/playbackLabel\(turn,speech\?\.state==='not_configured'\)/);
+  assert.match(source,/网页声音/);
+  assert.match(source,/inspector-panel/);
   assert.match(source,/session\.error/);
   assert.match(source,/turn\.done/);
   assert.match(source,/speech_output/);

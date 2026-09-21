@@ -17,6 +17,14 @@ const conversationChecks=[
 ];
 const errorText=(value:unknown)=>value instanceof Error?value.message:String(value);
 const pretty=(value:unknown)=>JSON.stringify(value,null,2);
+const playbackLabel=(turn:Turn,ttsNotConfigured:boolean)=>{
+  if(turn.cancelled||turn.status==='cancelled')return '已取消';
+  if(turn.status==='failed'||turn.status==='discarded')return '回复未完成';
+  if(turn.playback_evidence_status==='speaker_reported_drained')return '扬声器回执：已播完';
+  if(turn.assistant_spoken_text)return '有播放片段，未确认播完';
+  if(turn.assistant_generated_text)return ttsNotConfigured?'文字回复（当前未启用 TTS）':'文本已生成，播放无回执';
+  return turn.status==='running'?'回复中':'暂无回复';
+};
 const stateLabel=(value:string|undefined)=>{
   if(!value)return '未接入';
   const names:Record<string,string>={
@@ -24,6 +32,7 @@ const stateLabel=(value:string|undefined)=>{
     not_connected:'未接入',not_started:'未接入',not_configured:'未配置',
     configured:'已配置',unknown:'未确认（unknown）',idle:'空闲',
     disconnected:'连接断开',error:'异常',failed:'失败',running:'运行中',
+    cancelled:'已取消',completed:'已完成',
     fake:'Fake（调试）',subscribed:'已订阅',loading:'加载中'
   };
   return names[value]??value;
@@ -64,6 +73,7 @@ export function Workbench(){
   const [checkIndex,setCheckIndex]=useState(0);
   const [checkStep,setCheckStep]=useState(0);
   const [realtimeEvents,setRealtimeEvents]=useState<RealtimeEvent[]>([]);
+  const [liveTurn,setLiveTurn]=useState<{turnId:string;userText:string}|null>(null);
   const [liveText,setLiveText]=useState('');
   const [previewTranscript,setPreviewTranscript]=useState('');
   const [finalTranscript,setFinalTranscript]=useState<{turnId:string;text:string}|null>(null);
@@ -149,7 +159,7 @@ export function Workbench(){
     return()=>{active=false;};
   },[view,robotId,session?.generation]);
   useEffect(()=>{
-    setRealtimeEvents([]);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);eventCursor.current=0;
+    setRealtimeEvents([]);setLiveTurn(null);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);eventCursor.current=0;
     followLatest.current=true;
     setCheckStep(0);
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
@@ -170,6 +180,8 @@ export function Workbench(){
           for(const item of scoped){
             if(item.kind==='turn.started'||item.kind==='session.replaced'){
               setLiveText('');setPreviewTranscript('');setFinalTranscript(null);
+              setLiveTurn(item.kind==='turn.started'&&item.turn_id
+                ?{turnId:item.turn_id,userText:item.user_text??''}:null);
             }
             if(item.kind==='transcript.delta')setPreviewTranscript((item.stash??'')+(item.text??''));
             if(item.kind==='transcript.done'){
@@ -181,7 +193,11 @@ export function Workbench(){
             }
             if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
             if(item.kind==='session.error')setNotice('Realtime：'+(item.error??'发生错误'));
-            if(item.kind==='turn.done'){setLiveText('');void refreshSelected(robotId);}
+            if(item.kind==='turn.done'){
+              // Retain the final event until the Ledger read contains this turn.
+              // Clearing immediately creates a disappearing/duplicate reply.
+              setLiveText(item.text??'');void refreshSelected(robotId);
+            }
           }
         }
       }catch(error){setNotice('Realtime 事件解析失败：'+errorText(error));}
@@ -368,17 +384,28 @@ export function Workbench(){
             }}>
               {!history&&<div className="message-placeholder">正在读取会话历史…</div>}
               {history?.turns.length===0&&!liveText&&<div className="message-placeholder"><strong>新对话，从这里开始。</strong><span>发送文字，或使用机器人 Room 接入的音频与小安妮交互。</span></div>}
-              {history?.turns.map(turn=><div className="exchange" key={turn.turn_id}>
-                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===turn.turn_id?finalTranscript.text:turn.user_text||'语音转写中…'}</div></div></div>
-                <div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
-                  <span className="message-author">小安妮 <span>· {turn.cancelled?'已取消':turn.status}</span></span>
-                  <div className="bubble agent-bubble">{turn.assistant_spoken_text||turn.assistant_generated_text||'尚无回复'}</div>
-                  <span className="message-foot">播放证据：{turn.playback_evidence_status??'unknown'}</span>
-                </div></div>
-              </div>)}
-              {previewTranscript&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 语音识别中（暂定）</span><div className="bubble me-bubble">{previewTranscript}</div></div></div>}
-              {finalTranscript&&!history?.turns.some(turn=>turn.turn_id===finalTranscript.turnId)&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 最终转写，等待会话入账</span><div className="bubble me-bubble">{finalTranscript.text}</div></div></div>}
-              {liveText&&<div className="message-row agent" aria-live="polite"><span className="agent-avatar">A</span><div className="message-content"><span className="message-author">小安妮 · 生成中</span><div className="bubble agent-bubble">{liveText}</div></div></div>}
+              {history?.turns.map(turn=>{
+                const streaming=liveTurn?.turnId===turn.turn_id&&turn.status==='running';
+                const reply=streaming?(liveText||turn.assistant_generated_text):
+                  (turn.assistant_spoken_text||turn.assistant_generated_text);
+                const user=turn.user_text||(
+                  finalTranscript?.turnId===turn.turn_id?finalTranscript.text:liveTurn?.turnId===turn.turn_id?liveTurn.userText:''
+                );
+                return <div className="exchange" key={turn.turn_id}>
+                  <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{user||'语音转写中…'}</div></div></div>
+                  {(reply||turn.status!=='running')&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
+                    <span className="message-author">小安妮</span>
+                    {reply&&<div className="bubble agent-bubble">{reply}</div>}
+                    <span className="message-foot">{streaming?'正在生成':playbackLabel(turn,speech?.state==='not_configured')}</span>
+                  </div></div>}
+                </div>;
+              })}
+              {liveTurn&&!history?.turns.some(turn=>turn.turn_id===liveTurn.turnId)&&<div className="exchange" aria-live="polite">
+                <div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===liveTurn.turnId?finalTranscript.text:liveTurn.userText||previewTranscript||'语音转写中…'}</div></div></div>
+                {liveText&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content"><span className="message-author">小安妮</span><div className="bubble agent-bubble">{liveText}</div><span className="message-foot">实时回复，等待入账</span></div></div>}
+              </div>}
+              {previewTranscript&&!liveTurn&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 语音转写中</span><div className="bubble me-bubble">{previewTranscript}</div></div></div>}
+              {finalTranscript&&!liveTurn&&!history?.turns.some(turn=>turn.turn_id===finalTranscript.turnId)&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · 最终转写</span><div className="bubble me-bubble">{finalTranscript.text}</div></div></div>}
             </div>
             <div className="composer">
               <div className="composer-status"><span className={'status-dot '+(realtime?.ready?'dot-good':'dot-warn')}/>{realtime?.ready?'Realtime 已连接':'Realtime 未就绪'}<span>·</span>语音输入来自所属 Room</div>
@@ -398,7 +425,21 @@ export function Workbench(){
           <aside className="inspector" aria-label="当前机器人状态">
             <div className="inspector-title"><span className="eyebrow">CURRENT ROBOT</span><h2>实时状态</h2></div>
             <div className="inspector-robot"><span className="robot-avatar large">{robotId.slice(0,1).toUpperCase()||'A'}</span><div><strong>{robotId||'未选择'}</strong><small>{selectedRobot?.room_id??'—'}</small></div><State value={realtime?.state} good={realtime?.ready}/></div>
-            <div className="inspector-group"><h3>会话状态</h3><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>
+            <section className="inspector-group voice-summary" aria-label="语音输出状态"><h3>语音输出</h3>
+              <div className="info-line"><span>TTS 合成</span><State value={speech?.state}/></div>
+              <div className="info-line"><span>已发布 PCM</span><strong>{speech?.pcm_frames_published??0} 帧</strong></div>
+              <div className="info-line"><span>设备播放回执</span><strong>{speech?.playback_evidence==='unknown'?'尚未确认':speech?.playback_evidence??'尚未确认'}</strong></div>
+              <div className="info-line"><span>网页声音</span><strong>未接入试听</strong></div>
+              <p className="audio-guidance">{speech?.state==='not_configured'
+                ?'当前机器人 TTS 未启用；需要服务端配置后才会发布声音。'
+                :'声音发布到所属 Room，不会自动从此网页扬声器播放。PCM 已发布不等于设备已播；没有扬声器回执时保持未确认。'}</p>
+              {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
+              <details><summary>音频与嘴型详情</summary>
+                <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>
+                <div className="info-line"><span>首音频 / 首发布</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'} / {speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
+              </details>
+            </section>
+            <details className="inspector-group inspector-panel"><summary>Persona 与追问偏好 <span>{personaForSession?.label??session?.persona_id??'—'}</span></summary><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>
               <div className="info-line"><span>Revision</span><strong>{session?.persona_revision??'—'}</strong></div>
               <div className="info-line"><span>历史回合</span><strong>{history?.turns.length??'—'}</strong></div>
               <div className="info-line"><span>表达风格</span><strong>{personaForSession?.configured?personaForSession.label:'未配置预设或待就绪'}</strong></div>
@@ -409,8 +450,8 @@ export function Workbench(){
               </label>
               <p className="quality-note">仅作用于当前机器人 / Chat / Persona。切换偏好将重建 Realtime Session，不改变其他会话。</p>
               <small>当前模型生效：{personaForSession?.question_pressure==='none'?'不主动追问':personaForSession?.question_pressure==='low'?'少追问':personaForSession?.question_pressure==='normal'?'自然追问':'等待 Session 就绪'}</small>
-            </div>
-            <div className="inspector-group"><h3>多轮对话复跑</h3>
+            </details>
+            <details className="inspector-group inspector-panel"><summary>多轮对话复跑 <span>3 组</span></summary>
               <label className="quality-setting">场景
                 <select aria-label="多轮复跑场景" value={checkIndex} onChange={event=>{setCheckIndex(Number(event.target.value));setCheckStep(0);}}>
                   {conversationChecks.map((item,index)=><option key={item.label} value={index}>{item.label}</option>)}
@@ -431,18 +472,10 @@ export function Workbench(){
                   </div>;
                 })}
               </details>
-            </div>
-            <div className="inspector-group"><h3>语音输出</h3><div className="info-line"><span>TTS</span><State value={speech?.state}/></div>
-              <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>
-              <div className="info-line"><span>设备播放</span><strong>{speech?.playback_evidence??'unknown'}</strong></div>
-              <div className="info-line"><span>首音频</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
-              <div className="info-line"><span>首发布</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
-              {(!speech||speech.state==='not_configured')&&<p className="audio-guidance">TTS 未启用，当前只生成文字，不会往 Room 发送音频。需先在服务端启用，再测试试听。</p>}
-              <p className="audio-guidance">音频由所属 Room 的机器人扬声器播放；网页只查看生成、发布与真实设备回执，不开启第二套浏览器播放器。</p>
-            </div>
-            <div className="inspector-group"><h3>连接</h3><div className="info-line"><span>Room 麦克风</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
+            </details>
+            <details className="inspector-group inspector-panel"><summary>连接详情</summary><div className="info-line"><span>Room 麦克风</span><State value={route?.connected?'connected':'not_connected'} good={route?.connected}/></div>
               <div className="info-line"><span>Session</span><strong>{session?.generation??'—'}</strong></div>
-            </div>
+            </details>
             {realtime?.error&&<p className="inline-error" role="alert">{realtime.error}</p>}
             {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
             <button className="inspector-link" onClick={()=>setView('developer')}>打开完整诊断 ↗</button>

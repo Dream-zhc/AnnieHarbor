@@ -32,6 +32,9 @@ const stateLabel=(value:string|undefined)=>{
     not_connected:'未接入',not_started:'未接入',not_configured:'未配置',
     configured:'已配置',unknown:'未确认（unknown）',idle:'空闲',
     disconnected:'连接断开',error:'异常',failed:'失败',running:'运行中',
+    hold_requested:'已请求暂停，等待设备回执',held_confirmed:'设备已报告暂停',
+    resume_requested:'已请求恢复，等待设备回执',resumed_confirmed:'设备已报告恢复',
+    control_error:'控制命令发送失败',
     cancelled:'已取消',completed:'已完成',
     fake:'Fake（调试）',subscribed:'已订阅',loading:'加载中'
   };
@@ -96,6 +99,10 @@ export function Workbench(){
   const route=routes.find(item=>item.robot_id===robotId);
   const realtime=selectedRobot?.realtime;
   const speech=realtime?.speech_output;
+  const timeline=realtime?.last_turn_timeline;
+  const durations=timeline?.durations;
+  const percentiles=realtime?.latency_percentiles?.endpoint_to_speaker_start_ms;
+  const milliseconds=(value:number|null|undefined)=>value==null?'未测':value+' ms';
   const playbackEvent=[...realtimeEvents].reverse().find(item=>
     (item.kind==='playback.hold_requested'||item.kind==='playback.resume_requested')&&item.turn_id);
   const playbackCommand=playbackEvent?.turn_id?{
@@ -445,17 +452,23 @@ export function Workbench(){
             <section className="hud-group" aria-label="延迟瀑布图">
               <h2>时延阶段</h2>
               <div className="latency-waterfall">
-                <div><span>ASR 耗时</span><strong>未测</strong></div>
-                <div><span>LLM 首字</span><strong>{lastFirstText==null?'未测':lastFirstText+' ms'}</strong></div>
-                <div><span>TTS 首音频</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
-                <div><span>Room 首发布</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
+                <div><span>起声 → ASR 最终</span><strong>{milliseconds(durations?.speech_to_asr_final_ms)}</strong></div>
+                <div><span>停声 → ASR 最终</span><strong>{milliseconds(durations?.endpoint_to_asr_final_ms)}</strong></div>
+                <div><span>LLM 请求 → 首字</span><strong>{milliseconds(durations?.llm_request_to_first_text_ms)}</strong></div>
+                <div><span>TTS 文本提交 → 首 PCM</span><strong>{milliseconds(durations?.tts_submit_to_pcm_ms)}</strong></div>
+                <div><span>Room 发布 → 真机起播回执</span><strong>{milliseconds(durations?.room_to_speaker_start_ms)}</strong></div>
+                <div><span>停声 → 真机起播回执</span><strong>{milliseconds(durations?.endpoint_to_speaker_start_ms)}</strong></div>
               </div>
-              <small>当前各阶段计时起点不同，不能求和为端到端延迟；未测项不绘制假柱。</small>
+              <small>同一 turn_id 的服务端观测时间；起播回执含设备上报往返延迟，不等于 DAC 实际起播时间。</small>
+              <div className="hud-reading"><span>停声→真机回执 P50 / P95</span>
+                <strong>{percentiles?.samples?milliseconds(percentiles.p50_ms)+' / '+milliseconds(percentiles.p95_ms):'未测'}</strong></div>
+              <small>本会话有真机起播回执的样本：{percentiles?.samples??0} 轮；样本不足时不代表稳定分位数。</small>
             </section>
             <section className="hud-group" aria-label="设备回执与耳机监听">
               <h2>设备回执与试听</h2>
               <div className="hud-reading"><span>合成</span><State value={speech?.state}/></div>
               <div className="hud-reading"><span>真机播放</span><strong>{speech?.playback_evidence==='unknown'?'未确认':speech?.playback_evidence??'未确认'}</strong></div>
+              <div className="hud-reading"><span>真机打断控制</span><strong>{stateLabel(speech?.playback_control_state)}</strong></div>
               <div className="hud-reading"><span>嘴型</span><State value={speech?.viseme}/></div>
               {speech?.last_stop_reason&&<div className="hud-reading"><span>最近停播</span><strong>{speech.last_stop_reason}</strong></div>}
               <RoomDebugSpeaker key={robotId+'\u0000'+(route?.room_id??'')}

@@ -27,7 +27,10 @@ def load_personas(path: Path) -> dict[str, dict[str, str]]:
 
 
 def session_instructions(persona_id: str, profiles: dict, social: dict) -> tuple[str, dict]:
-    profile = profiles.get(persona_id)
+    selection = social.get("persona_style", {})
+    override = selection.get("value") if selection.get("source") == "user_setting" else None
+    style_id = override if isinstance(override, str) and override in profiles else persona_id
+    profile = profiles.get(style_id)
     question = social.get("question_pressure", {})
     pressure = question.get("value") if question.get("source") == "user_setting" else None
     if not isinstance(pressure, str) or pressure not in QUESTION_PRESSURE:
@@ -49,15 +52,24 @@ def session_instructions(persona_id: str, profiles: dict, social: dict) -> tuple
         "用户只是陈述事实、喜好或近况时，先自然承接说到的具体内容；"
         "不要无故自我介绍、强调自己没有身体/感官，也不要突然改成故事菜单或连串反问。"
         "遇到失落、烦躁先承接具体感受，不机械分析或连环追问；说不想聊时停止推动话题。"
+        "普通陪伴不是客服任务：可以贡献一句具体观察、轻松联想或不同意见，"
+        "不必每轮都提供建议、总结、提问或催用户继续聊。幽默根据用户语气适度使用，"
+        "先回应最新事实；对方严肃或难过时不强行逗笑。"
         f"当前Persona标识：{persona_id}。"
     )
     if profile:
-        instructions += f"仅在表达方式上遵循当前人格：{profile['style']}"
+        instructions += (
+            f"当前表达风格：{profile['label']}（{style_id}）。"
+            "以下风格示例只是虚构的语气参照，不是当前用户的事实、历史对话或待回应问题；"
+            "优先回答本轮真实输入，不要照抄示例。"
+            f"仅在表达方式上遵循当前人格：{profile['style']}"
+        )
     if pressure == "low":
         instructions += "用户明确偏好少追问：可以自然收尾，只有完成当前任务必需时才问一个关键问题。"
     elif pressure == "none":
         instructions += "用户明确要求不主动追问：不要用问句续话；仅缺少任务必需信息时简短请求澄清。"
     instructions += "真实动作未启用；如需动作，只能使用preview_action模拟工具。"
-    return instructions, {"persona_id": persona_id, "configured": bool(profile),
+    return instructions, {"persona_id": persona_id, "style_id": style_id,
+                          "configured": bool(profile),
                           "label": profile["label"] if profile else None,
                           "question_pressure": pressure}

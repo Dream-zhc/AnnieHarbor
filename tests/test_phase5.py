@@ -354,7 +354,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_persona_switch_and_user_preference_rebuild_are_scoped(self):
         a, b = self.runtime.realtime["annie-a"], self.runtime.realtime["annie-b"]
-        self.assertEqual(a.persona_snapshot["label"], "自然")
+        self.assertEqual(a.persona_snapshot["label"], "自然陪伴")
         session = self.runtime.session_state("annie-a")
         await self.runtime.update_social_state(
             "annie-a", {"question_pressure": "none"},
@@ -374,15 +374,71 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
             if a.ready and a.persona_snapshot and a.persona_snapshot["chat_id"] == "gentle-chat":
                 break
             await asyncio.sleep(0.01)
-        self.assertEqual(a.persona_snapshot["label"], "温和")
+        self.assertEqual(a.persona_snapshot["label"], "温柔知心")
         self.assertEqual(a.persona_snapshot["persona_revision"], 2)
         self.assertEqual(a.persona_snapshot["question_pressure"], "normal")
         self.assertEqual(await self.runtime.social_state("annie-a"), {})
-        self.assertEqual(b.persona_snapshot["label"], "自然")
+        self.assertEqual(b.persona_snapshot["label"], "自然陪伴")
         with self.assertRaisesRegex(ValueError, "user_setting requires"):
             await self.runtime.update_social_state(
                 "annie-a", {"question_pressure": "invalid"},
                 source="user_setting", generation=self.runtime.session_state("annie-a")["generation"],
+            )
+
+    async def test_current_chat_style_switch_keeps_history_and_rebuilds_provider(self):
+        a, b = self.runtime.realtime["annie-a"], self.runtime.realtime["annie-b"]
+        original = self.runtime.session_state("annie-a")
+        previous_socket = a.socket
+        await self.runtime.realtime_text("annie-a", "今天喜欢喝茶")
+        await a.handle({"type": "response.text.delta", "delta": "茶很有意思"}, a.robot.generation)
+        await a.handle({"type": "response.done", "response": {"status": "completed"}}, a.robot.generation)
+        await self.runtime.ledger.flush()
+        earlier = await self.runtime.load_conversation(
+            "annie-a", original["chat_id"], original["persona_id"])
+        self.assertEqual(len(earlier["turns"]), 1)
+
+        # The style is a chat-scoped setting, not a destructive persona_id migration.
+        await self.runtime.update_social_state(
+            "annie-a", {"persona_style": "annie-lively"},
+            source="user_setting", generation=original["generation"],
+        )
+        for _ in range(100):
+            if a.ready and a.persona_snapshot and a.persona_snapshot["style_id"] == "annie-lively":
+                break
+            await asyncio.sleep(.01)
+        self.assertTrue(a.ready)
+        self.assertIsNot(a.socket, previous_socket)
+        self.assertEqual(self.runtime.session_state("annie-a"), original)
+        self.assertEqual(a.persona_snapshot["label"], "活泼俏皮")
+        self.assertIn("奶茶也算茶的亲戚", a.socket.outbound[0]["session"]["instructions"])
+        self.assertEqual(b.persona_snapshot["style_id"], "annie")
+        current = await self.runtime.load_conversation(
+            "annie-a", original["chat_id"], original["persona_id"])
+        self.assertEqual(current["turns"], earlier["turns"])
+        self.assertEqual(a.restored_context["turns"][0]["user_text"], "今天喜欢喝茶")
+        self.assertEqual((await self.runtime.social_state("annie-a"))[
+            "persona_style"]["value"], "annie-lively")
+
+        await self.runtime.switch_session(
+            "annie-a", chat_id="other-chat", persona_id=original["persona_id"],
+        )
+        for _ in range(100):
+            if a.ready and a.persona_snapshot and a.persona_snapshot["chat_id"] == "other-chat":
+                break
+            await asyncio.sleep(.01)
+        self.assertEqual(a.persona_snapshot["style_id"], "annie")
+        await self.runtime.switch_session(
+            "annie-a", chat_id=original["chat_id"], persona_id=original["persona_id"],
+        )
+        for _ in range(100):
+            if a.ready and a.persona_snapshot and a.persona_snapshot["chat_id"] == original["chat_id"]:
+                break
+            await asyncio.sleep(.01)
+        self.assertEqual(a.persona_snapshot["style_id"], "annie-lively")
+        with self.assertRaisesRegex(ValueError, "user_setting requires"):
+            await self.runtime.update_social_state(
+                "annie-a", {"persona_style": "unconfigured"},
+                source="user_setting", generation=a.robot.generation,
             )
 
 

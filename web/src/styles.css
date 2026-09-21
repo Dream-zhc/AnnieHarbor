@@ -128,6 +128,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,select:focus-v
 .inspector-robot>div{min-width:0;display:grid;gap:2px}.inspector-robot strong{overflow-wrap:anywhere}.inspector-robot small{color:#8796a8}
 .inspector-group{padding:14px 12px;margin:12px 0;background:white;border:1px solid #e1e8f3;border-radius:12px}.inspector-group h3{margin:0 0 8px;font-size:14px;color:#334c70}
 .voice-summary{border-color:#cad9f4;background:#fff}
+.room-debug-speaker{border:1px solid #d8e5f7;background:#f7faff;border-radius:10px;padding:10px;margin-top:12px;display:grid;gap:8px}
+.room-debug-speaker button{justify-self:start;font-size:12px;padding:9px 12px}
+.room-debug-speaker small{color:#42618c;overflow-wrap:anywhere}
+.room-debug-speaker p{color:#687c96;font-size:11px;line-height:1.6;margin:0}
 .inspector-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#334c70;font-size:13px;font-weight:750;list-style:none}
 .inspector-panel>summary::-webkit-details-marker{display:none}
 .inspector-panel>summary::after{content:'⌄';color:#7189af;font-size:18px;line-height:1}

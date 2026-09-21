@@ -39,3 +39,10 @@
 - 右侧以「语音输出」优先展示真实 TTS 状态、最近 PCM 发布帧、设备回执；Persona/追问、多轮复跑和连接详情为命名明确的折叠卡。聊天气泡限制阅读宽度，桌面输入区保留在视口内，窄屏不横向溢出。
 - 现场 `/health` 的 `annie-a / roomv2` 曾显示 TTS `cancelled`、已发布 768 帧 PCM、设备回执 `unknown`；这不是「TTS 未配置」，也不是网页或设备完成播放证据。正式 React 不含浏览器 PCM 播放器；没有私自重建已在 4C 删除的第二套播放器、不自动启用浏览器和真机双声源或修改现场 Room/`.env`。
 - 共性 Persona 指令抑制用户陈述喜好后跑题为机器人身体能力解释与故事菜单；生效需下一次 Provider Session 初始化，不宣称旧会话回复已变好。
+
+## 2026-09-21 追加：Room TTS 网页调试扬声器
+
+- 用户明确要求在正式 React 对话页接 `reb_tts` 的原音频，并有手动开关。右侧语音输出卡片加入默认关闭的「开启网页调试扬声器」；只连接所选 robot 归属 Room 的 `urls.tts`，检查 WELCOME `room + reb_tts`、订阅 `tts` 并确认 ACK。24kHz/mono/S16LE Base64 PCM 按真实 sample cursor 顺序进 AudioContext；重复 seq 不重播、停播立即清空、500ms 以上积压舍弃，关闭/离页/切机器人释放 WS 与音频节点。打开后只听新发布的帧，**不是历史音频下载或第二次合成**。
+- 正式后端继续只把 TTS 输出发布到 Room `reb_tts`；网页没有 Provider Key，不向 Room 重发 TTS PCM、不建第二个 TTS 服务，也**不向 `reb_main` 伪报 browser_test/speaker 回执**。网页能听见≠实体扬声器实际播放；原 `speaker_reported_*` 证据继续单列。请使用耳机，避免与本页 Room 麦克风或外部扬声器形成回声。
+- 本机对真实 `roomv2/reb_tts` 做**只读连接/订阅检查**，收到 `WELCOME roomv2/reb_tts` 及 `ACK subscriptions=['TTS','*']`，随后退出；未向现场发布测试音频、未调用模型。Chromium + 假 Room 配合假 AudioContext 验证 960B PCM 调度、重复 seq 去重、Room stop、开关关闭及切机器人释放；另用**原生 Chromium AudioContext** 检查播放节点实际调度到 `onended`。仍不能把无真实扬声器/声学测量的浏览器测试记为耳听、AEC 或真机验收。
+- 回归：`npm --prefix web run typecheck`、`npm --prefix web test`（11 passed）、`npm --prefix web run build`、Ruff/diff check 通过；可选真实 Chromium 复跑 `node web/tests/room-debug-speaker.browser.mjs`，需本地 Runtime，但 mock 拦截 reb_tts 不会向现场发布帧。

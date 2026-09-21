@@ -3,6 +3,7 @@ import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents,type PersonaProfile} from './api';
 import {RealtimeMicrophone} from './microphone';
+import {RoomDebugSpeaker} from './room-debug-speaker';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
 type View='overview'|'chat'|'robots'|'developer';
@@ -429,10 +430,12 @@ export function Workbench(){
               <div className="info-line"><span>TTS 合成</span><State value={speech?.state}/></div>
               <div className="info-line"><span>已发布 PCM</span><strong>{speech?.pcm_frames_published??0} 帧</strong></div>
               <div className="info-line"><span>设备播放回执</span><strong>{speech?.playback_evidence==='unknown'?'尚未确认':speech?.playback_evidence??'尚未确认'}</strong></div>
-              <div className="info-line"><span>网页声音</span><strong>未接入试听</strong></div>
+              <RoomDebugSpeaker key={robotId+'\u0000'+(route?.room_id??'')}
+                url={route?.urls?.tts} roomId={route?.room_id}
+                available={!!speech&&speech.state!=='not_configured'}/>
               <p className="audio-guidance">{speech?.state==='not_configured'
                 ?'当前机器人 TTS 未启用；需要服务端配置后才会发布声音。'
-                :'声音发布到所属 Room，不会自动从此网页扬声器播放。PCM 已发布不等于设备已播；没有扬声器回执时保持未确认。'}</p>
+                :'TTS 只发布到所属 Room。网页调试扬声器默认关闭；本地试听不代表实体扬声器已播放。'}</p>
               {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
               <details><summary>音频与嘴型详情</summary>
                 <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>

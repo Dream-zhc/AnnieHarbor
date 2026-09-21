@@ -338,6 +338,130 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored["turns"][0]["assistant_generated_text"], "收到语音。")
         self.assertEqual(client.snapshot()["provider_text_ignored"], 1)
 
+    async def test_external_llm_duplicate_final_does_not_launch_two_answers(self):
+        llm = FakeExternalLlm([FakeLlmDelta("text", "只回复一次。")])
+        runtime = HarborRuntime(
+            [RobotConfig("annie-one", room_id="room-one", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "duplicate-final.db", realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket, external_llm=llm,
+        )
+        await runtime.start()
+        self.addAsyncCleanup(runtime.close)
+        client = runtime.realtime["annie-one"]
+        for _ in range(100):
+            if client.ready:
+                break
+            await asyncio.sleep(0.01)
+        final = {"type": "conversation.item.input_audio_transcription.completed",
+                 "item_id": "asr-001", "transcript": "你好"}
+        await client.handle(final, client.robot.generation)
+        await client.handle(final, client.robot.generation)
+        for _ in range(100):
+            if client.turn_id is None:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.ledger.flush()
+        turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0]["assistant_generated_text"], "只回复一次。")
+        self.assertEqual(len(llm.messages), 1)
+        self.assertTrue(any(e["kind"] == "transcript.duplicate" for e in client.events))
+
+    async def test_external_llm_tool_only_response_requires_text_followup(self):
+        class ToolOnlyLlm(FakeExternalLlm):
+            async def stream(self, messages, *, tools=True):
+                self.messages.append((messages, tools))
+                if tools:
+                    yield FakeLlmDelta("tool_call", tool_call={
+                        "id": "call-01", "name": "preview_action",
+                        "arguments": '{"description":"点头"}',
+                    })
+                else:
+                    self.assert_tool_messages(messages)
+                    yield FakeLlmDelta("text", "只是模拟点头，没有执行真机动作。")
+
+            @staticmethod
+            def assert_tool_messages(messages):
+                assert messages[-1]["role"] == "tool"
+                assert '"real_device_executed": false' in messages[-1]["content"]
+
+        llm = ToolOnlyLlm()
+        runtime = HarborRuntime(
+            [RobotConfig("annie-one", room_id="room-one", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "tool-only.db", realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket, external_llm=llm,
+        )
+        await runtime.start()
+        self.addAsyncCleanup(runtime.close)
+        client = runtime.realtime["annie-one"]
+        for _ in range(100):
+            if client.ready:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.realtime_text("annie-one", "请模拟点头")
+        for _ in range(100):
+            if client.turn_id is None:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.ledger.flush()
+        turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
+        self.assertEqual(turns[0]["assistant_generated_text"], "只是模拟点头，没有执行真机动作。")
+        self.assertEqual([tools for _messages, tools in llm.messages], [True, False])
+
+    async def test_external_llm_valid_barge_cancels_old_generation(self):
+        class SlowLlm(FakeExternalLlm):
+            def __init__(self):
+                super().__init__()
+                self.started = asyncio.Event()
+                self.release = asyncio.Event()
+
+            async def stream(self, messages, *, tools=True):
+                self.messages.append((messages, tools))
+                if messages[-1]["content"] == "旧问题":
+                    self.started.set()
+                    await self.release.wait()
+                    yield FakeLlmDelta("text", "不应出现")
+                else:
+                    yield FakeLlmDelta("text", "新回复。")
+
+        llm = SlowLlm()
+        runtime = HarborRuntime(
+            [RobotConfig("annie-one", room_id="room-one", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "barge.db", realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket, external_llm=llm,
+        )
+        await runtime.start()
+        self.addAsyncCleanup(runtime.close)
+        client = runtime.realtime["annie-one"]
+        for _ in range(100):
+            if client.ready:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.realtime_text("annie-one", "旧问题")
+        await asyncio.wait_for(llm.started.wait(), 1)
+        gen = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started", "item_id": "voice-new"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "voice-new", "transcript": "新问题"}, gen)
+        llm.release.set()
+        for _ in range(100):
+            if client.turn_id is None:
+                break
+            await asyncio.sleep(0.01)
+        await runtime.ledger.flush()
+        turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
+        self.assertEqual([t["status"] for t in turns], ["cancelled", "completed"])
+        self.assertEqual(turns[-1]["user_text"], "新问题")
+        self.assertEqual(turns[-1]["assistant_generated_text"], "新回复。")
+        self.assertFalse(any(e.get("text") == "不应出现" for e in client.events))
+
+    async def test_llm_history_keeps_persona_system_and_prefers_bounded_spoken_history(self):
+        client = self.runtime.realtime["annie-a"]
+        messages = client._history_messages("你选哪个？")
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[-1], {"role": "user", "content": "你选哪个？"})
+        self.assertIn("小安妮", messages[0]["content"])
+
     async def test_audio_gate_drains_to_own_realtime_socket(self):
         source = "room:roomv2:reb_mic"
         self.runtime.bind_input_source(source, ["annie-a"])

@@ -63,3 +63,19 @@
 - 文本输入路径不再向 Realtime 发送 `response.create`；音频路径在 ASR final 后启动外置 LLM，忽略 Realtime sensor 可能吐出的 `.` 或其他内部文本，避免双回答。语音打断方面，ASR 增量会发布 `playback.hold_requested` 诊断事件；有效 final 会取消旧 TTS 并启动新回答。完整的 Demo 式“暂停保留音频 → 无效恢复 → 有效清空”还未迁入实体/Room 播放端，下一步应移植可靠播放器状态机。
 - 修复一个前次 TTS 背压补丁遗漏：当 TTS 队列已被消费完、`finish()` 才到达时，worker 可能睡在 `queue.get()`，不会发布 `stream_final`；现在 finish 会唤醒 worker 并发布尾包。新增回归覆盖「finish 晚于队列清空」场景。
 - 回归：Python 125 passed / 25 subtests / 2 条既有警告；前端 12 passed，TS/build、Ruff、uv lock、diff check 通过。未重启现场 8780 Runtime，未向真实 Room 注入测试音频；真实全双工、语义质量、tool call 能力和连续播放仍需现场复测。
+
+## 2026-09-21 Demo 迁移复核与统一测试边界
+
+**本轮只允许验证已接通的级联链路，不能签发完整全双工 PASS。** 代码复审发现并修复：外部 LLM 的 18 条历史切片可能移除 system/Persona；用户设置的追问偏好未传给外置 LLM；合法新插话取消旧轮时 `_finish()` 清空 `self.transcript`，新一轮被错误写成空用户问题；带 `item_id` 的重复 final 会再次调用 LLM；Provider 断线可能留下外部 LLM 后台流继续输出；工具只返回 `tool_calls` 时没有第二次无工具回复；TTS 已空队列的 finish 唤醒不能依赖每段额外创建的小任务。对应增加了假 Provider/假 LLM 回归。
+
+| 子链路 | 当前真实代码 | 尚未交付，勿在统一测试中标 PASS |
+| --- | --- | --- |
+| 麦克风→Room | 原 Room `MIC_AUDIO` 20ms 帧；浏览器本地电平与设备名；单房间单音源前提不变 | Demo AudioWorklet capture、完整 AEC/回声声学验证、真人语音电平+ASR 对照 |
+| Qwen-Audio→ASR/smart_turn | 可选听觉协处理器，`[text,audio]` Session；final 按 item_id 去重并驱动外置 LLM；工作台有 ASR 暂定/最终与 Session 计数 | Demo 的静默 heartbeat、ambient 有意义短句提升、精确超时恢复/在途音频缓存尚未迁移；现场 Provider 尚未验证 |
+| 外置回复 LLM | 默认代码配置 `qwen3.7-flash`；流式 text、preview_action 工具模拟与工具-only 追问；系统 Persona/追问偏好保留，8 轮有界历史 | 模型端实际工具调用兼容性/回答效果未经真机 A/B；**真实机器人动作从未执行**，仅模拟结果，不得假称模型工具能力已验收 |
+| LLM→TTS→Room | 单机器人独立 TTS 文字队列/背压；修复队列空时迟到 finish；协议仍向所属 `reb_tts` 发布 24k PCM/stop | **仍是逐短语新建 TTS WebSocket 任务**，未迁 Demo 连续双向 TTS Session/接续韵律；真人整句无断流待验 |
+| 插话 | 新有效 ASR final 取消旧外置 LLM/TTS，旧回合记 cancelled，保留新文本身份；网页有 stop | **暂定 HOLD → turn_invalid 原位恢复 → 确认打断**尚未完成，`playback.hold_requested` 只是诊断事件；真机扬声器的 Hold/Resume 协议与准确回执待验 |
+| 网页听音 | 显式开关订阅当前 Room 的 `reb_tts`，不增加第二 TTS，不冒充真机回执 | 仍逐帧 AudioBufferSource；正常积压超 500ms 会丢队列；Demo Worklet 的预缓冲/断粮重缓冲/可逆 Hold 尚未迁入，**不能当播放稳定性验收** |
+| 网页工作台 | 聊天按 turn_id 合并，输入电平，ASR 暂定/最终，当前外置 LLM 型号/状态/错误，TTS/PCM/网页试听/设备回执，Chat/Persona/多轮复跑与开发者事件 | 页面计数≠真人 ASR/播出；没有完整声学回路的可视化，不能替代现场听觉实验 |
+
+**统一测试建议（分离标记）：** 先仅开一个 Room 麦克风、一个 Room 调试扬声器（戴耳机），新 Chat 按「你好→你喜欢喝茶吗→不是茶是咖啡→继续刚才→我说话时试着打断」观察每句 `ASR final → LLM text.delta → TTS PCM → stop/drain`。手机/桌面、短句/长句、静音/噪声、重复 final 与多机器人切换分别记录；**暂不以可逆打断或实体扬声器播完为通过条件**，因为这两项代码尚缺。`127.0.0.1:8780` 本轮审查时不可连接，未重启或操作现场实例；运行时 `.env` 与模型可用性以现场显示为准。

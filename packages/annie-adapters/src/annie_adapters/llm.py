@@ -62,7 +62,7 @@ class ExternalChatLLM:
     async def close(self) -> None:
         await self.client.aclose()
 
-    async def stream(self, messages: list[dict[str, str]], *, tools: bool = True) -> AsyncIterator[ChatDelta]:
+    async def stream(self, messages: list[dict[str, Any]], *, tools: bool = True) -> AsyncIterator[ChatDelta]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,

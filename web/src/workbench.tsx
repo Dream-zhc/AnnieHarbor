@@ -416,7 +416,7 @@ export function Workbench(){
                 <textarea id="message-input" value={text} maxLength={2000} rows={2} onChange={e=>setText(e.target.value)}
                   onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void sendText();}}}
                   placeholder="给小安妮发送消息…（Enter 发送，Shift + Enter 换行）" disabled={!robotId}/>
-                <div className="composer-actions"><span>文字 · 同一 Realtime 会话</span><div>
+                <div className="composer-actions"><span>文字 · 当前 Chat / Persona</span><div>
                   <button type="button" className="stop-button" onClick={()=>void cancelCurrent()} disabled={!robotId}>停止回复</button>
                   <button className="primary-button" type="submit" disabled={!text.trim()||pending||!realtime?.ready}>发送 ↗</button>
                 </div></div>
@@ -426,6 +426,18 @@ export function Workbench(){
           <aside className="inspector" aria-label="当前机器人状态">
             <div className="inspector-title"><span className="eyebrow">CURRENT ROBOT</span><h2>实时状态</h2></div>
             <div className="inspector-robot"><span className="robot-avatar large">{robotId.slice(0,1).toUpperCase()||'A'}</span><div><strong>{robotId||'未选择'}</strong><small>{selectedRobot?.room_id??'—'}</small></div><State value={realtime?.state} good={realtime?.ready}/></div>
+            <section className="inspector-group voice-summary" aria-label="全双工链路">
+              <h3>当前语音链路</h3>
+              <div className="info-line"><span>听觉 / ASR</span><strong>Qwen-Audio smart_turn</strong></div>
+              <div className="info-line"><span>最终回答模型</span><strong>{realtime?.cascade_llm??'Realtime（未启用外置 LLM）'}</strong></div>
+              <div className="info-line"><span>LLM 状态</span><State value={realtime?.llm_state??'not_configured'}/></div>
+              <div className="info-line"><span>当前 Session 有效转写</span><strong>{realtime?.transcripts_completed??0} 次</strong></div>
+              <div className="info-line"><span>当前 Session 无效轮次</span><strong>{realtime?.invalid_turns??0} 次</strong></div>
+              {previewTranscript&&<p className="quality-prompt">ASR 暂定：{previewTranscript}</p>}
+              {finalTranscript?.text&&<p className="quality-prompt">ASR 最终：{finalTranscript.text}</p>}
+              <small>顺序：Room 麦克风 → 听觉/ASR → 最终回答模型 → TTS → Room。可逆 Hold/Resume 尚未接线；此处不显示为已通过。</small>
+              {realtime?.llm_error&&<p className="inline-error" role="alert">{realtime.llm_error}</p>}
+            </section>
             <section className="inspector-group voice-summary" aria-label="语音输出状态"><h3>语音输出</h3>
               <div className="info-line"><span>TTS 合成</span><State value={speech?.state}/></div>
               {speech?.last_stop_reason&&<div className="info-line"><span>最近停播原因</span><strong>{speech.last_stop_reason}</strong></div>}

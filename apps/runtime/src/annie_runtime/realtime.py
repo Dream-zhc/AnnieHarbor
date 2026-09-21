@@ -39,6 +39,8 @@ class RealtimeRobot:
         self.response_id = None
         self.turn_id = None
         self.audio_turn_id = None  # retain the audio turn across response.done for late final ASR
+        self.audio_item_turns = {}
+        self.pending_audio_item_id = None
         self.transcript = ""
         self.text = ""
         self.speech_active = False
@@ -47,6 +49,7 @@ class RealtimeRobot:
         self.followup_needed = False
         self.llm_task = None
         self.provider_text_ignored = 0
+        self.llm_error = None
         self.first_text_ms = None
         self.began = None
         self.frames_sent = 0
@@ -60,6 +63,7 @@ class RealtimeRobot:
         self.turn_identity = None
         self.restored_context = None
         self.persona_snapshot = None
+        self.social_state = {}
         self._stopping = False
         self._opening = False
         self._open_done = asyncio.Event()
@@ -116,6 +120,8 @@ class RealtimeRobot:
             "restored_context": self.restored_context,
             "persona_snapshot": self.persona_snapshot,
             "cascade_llm": self.external_llm.model if self.external_llm else None,
+            "llm_state": "streaming" if self.llm_task and not self.llm_task.done() else "idle",
+            "llm_error": self.llm_error,
             "provider_text_ignored": self.provider_text_ignored,
         }
 
@@ -139,6 +145,8 @@ class RealtimeRobot:
         self._stopping = True
         self.restored_context = None
         self.persona_snapshot = None
+        self.audio_item_turns.clear()
+        self.pending_audio_item_id = None
         if self.speech:
             await self.speech.close()
         if self.llm_task and not self.llm_task.done():
@@ -188,20 +196,36 @@ class RealtimeRobot:
         self.followup_needed = False
         self.turn_identity = None
 
+    async def _interrupt_active_turn(self, reason):
+        task = self.llm_task
+        self.llm_task = None
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if self.speech and self.speech.turn_id:
+            await self.speech.cancel(reason)
+        if self.turn_id:
+            self._finish("cancelled", cancel_source=reason)
+
     def _history_messages(self, user_text):
         instructions, _snapshot = session_instructions(
-            self.robot.persona_id, self.persona_profiles, {},
+            self.robot.persona_id, self.persona_profiles, self.social_state,
         )
         messages = [{"role": "system", "content": instructions}]
-        for item in self.robot.recent_context():
-            user = (item.get("user_text") or "").strip()
-            reply = (item.get("assistant_context_text") or "").strip()
+        packet = select_restorable_context(
+            self.robot.recent_context(), speech_enabled=self.speech is not None,
+            max_turns=min(8, self.robot.context_limit),
+        )
+        for item in packet["turns"]:
+            user = item["user_text"]
+            reply = item["assistant_text"]
             if user:
                 messages.append({"role": "user", "content": user})
             if reply:
                 messages.append({"role": "assistant", "content": reply})
         messages.append({"role": "user", "content": user_text})
-        return messages[-18:]
+        # Never slice away system/Persona rules as history grows.
+        return [messages[0], *messages[1:][-16:]]
 
     @staticmethod
     def _parse_preview_action(call):
@@ -222,6 +246,9 @@ class RealtimeRobot:
         if self.llm_task and not self.llm_task.done():
             self.llm_task.cancel()
             await asyncio.gather(self.llm_task, return_exceptions=True)
+        self.llm_error = None
+        if self.error and self.error.startswith("cascade_llm:"):
+            self.error = None
         self.llm_task = asyncio.create_task(
             self._run_external_llm(self.turn_id, dict(self.turn_identity), user_text),
             name=f"cascade-llm:{self.robot.config.robot_id}",
@@ -229,8 +256,10 @@ class RealtimeRobot:
 
     async def _run_external_llm(self, turn_id, identity, user_text):
         parts = []
+        tool_results = []
+        messages = self._history_messages(user_text)
         try:
-            async for item in self.external_llm.stream(self._history_messages(user_text), tools=True):
+            async for item in self.external_llm.stream(messages, tools=True):
                 if self.turn_id != turn_id or self.turn_identity != identity:
                     return
                 if item.type == "text" and item.text:
@@ -243,10 +272,35 @@ class RealtimeRobot:
                         await self.speech.feed(turn_id, identity, item.text)
                 elif item.type == "tool_call":
                     result = self._parse_preview_action(item.tool_call)
+                    tool_results.append((item.tool_call or {}, result))
                     self.publish("tool.result", call_id=(item.tool_call or {}).get("id"),
                                  name=(item.tool_call or {}).get("name"),
                                  arguments=(item.tool_call or {}).get("arguments"),
                                  result=result, valid=result.get("status") == "simulated")
+            if tool_results and not parts:
+                # Tool-only stream is not a spoken answer. Give the model the
+                # simulated result exactly once; never invent real device work.
+                messages.append({"role": "assistant", "content": None,
+                                 "tool_calls": [{"id": call.get("id") or f"preview-{i}",
+                                                 "type": "function",
+                                                 "function": {"name": call.get("name") or "preview_action",
+                                                              "arguments": call.get("arguments") or "{}"}}
+                                                for i, (call, _result) in enumerate(tool_results)]})
+                messages.extend({"role": "tool", "tool_call_id": call.get("id") or f"preview-{i}",
+                                 "content": json.dumps(result, ensure_ascii=False)}
+                                for i, (call, result) in enumerate(tool_results))
+                async for item in self.external_llm.stream(messages, tools=False):
+                    if self.turn_id != turn_id or self.turn_identity != identity:
+                        return
+                    if item.type != "text" or not item.text:
+                        continue
+                    parts.append(item.text)
+                    self.text += item.text
+                    self.publish("text.delta", turn_id=turn_id, delta=item.text, text=self.text)
+                    if self.speech:
+                        await self.speech.feed(turn_id, identity, item.text)
+            if not parts:
+                raise RuntimeError("LLM returned no answer text")
             self.text = "".join(parts).strip() or self.text
             self.publish("text.done", turn_id=turn_id, text=self.text)
             if self.speech:
@@ -256,6 +310,7 @@ class RealtimeRobot:
             raise
         except Exception as exc:
             self.error = f"cascade_llm: {type(exc).__name__}: {str(exc)[:140]}"
+            self.llm_error = self.error
             logger.warning("cascade_llm robot=%s failed: %s", self.robot.config.robot_id, self.error)
             if self.speech:
                 await self.speech.cancel("cascade_llm_error")
@@ -283,6 +338,7 @@ class RealtimeRobot:
                     self.robot.config.robot_id, self.robot.chat_id, self.robot.persona_id,
                     time.time_ns() // 1_000_000,
                 )
+                self.social_state = social
                 instructions, persona_snapshot = session_instructions(
                     self.robot.persona_id, self.persona_profiles, social,
                 )
@@ -313,6 +369,8 @@ class RealtimeRobot:
                         break
                 if generation != self.robot.generation:
                     continue
+                self.audio_item_turns.clear()
+                self.pending_audio_item_id = None
                 self.session_frames_sent = self.speech_started_count = 0
                 self.transcripts_completed = self.invalid_turns = 0
                 self.last_provider_speech_ms = self.last_provider_transcript_ms = None
@@ -339,6 +397,10 @@ class RealtimeRobot:
                 self.ready = False
                 self.restored_context = None
                 self.persona_snapshot = None
+                if self.llm_task and not self.llm_task.done():
+                    self.llm_task.cancel()
+                    await asyncio.gather(self.llm_task, return_exceptions=True)
+                self.llm_task = None
                 if self.speech and self.speech.turn_id is not None:
                     await self.speech.cancel("realtime_disconnected")
                 logger.info("realtime_cleanup robot=%s begin", self.robot.config.robot_id)
@@ -472,7 +534,7 @@ class RealtimeRobot:
     async def submit_text(self, text):
         if not self.ready or not self.socket:
             raise RobotUnavailableError("Realtime Session not ready")
-        if self.speech_active or self.response_id or self.turn_id:
+        if self.speech_active or self.turn_id or (self.response_id and not self.external_llm):
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
         self.audio_turn_id = None
         self._create_turn(text)
@@ -513,7 +575,7 @@ class RealtimeRobot:
             raise RuntimeError(self._provider_error(event))
         if kind == "input_audio_buffer.speech_started":
             self.speech_active = True
-            self.audio_turn_id = None
+            self.pending_audio_item_id = event.get("item_id")
             self.speech_started_count += 1
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
@@ -533,6 +595,28 @@ class RealtimeRobot:
             self.transcripts_completed += 1
             self.last_provider_transcript_ms = time.time_ns() // 1_000_000
             self.transcript = event.get("transcript", "")
+            final_text = self.transcript.strip()
+            item_id = event.get("item_id")
+            if self.external_llm and item_id and item_id in self.audio_item_turns:
+                # Replayed provider final: neither restart LLM nor cancel this turn.
+                self.publish("transcript.duplicate", item_id=item_id)
+                return
+            if self.external_llm and final_text:
+                self.speech_active = False
+                self.pending_audio_item_id = None
+                if self.turn_id:
+                    await self._interrupt_active_turn("valid_smart_turn")
+                # _finish() resets self.transcript; retain the actual ASR final
+                # across the old-turn cancellation before creating the new one.
+                self.transcript = final_text
+                self._create_turn(final_text, audio=True)
+                if item_id:
+                    self.audio_item_turns[item_id] = self.turn_id
+                    if len(self.audio_item_turns) > 128:
+                        self.audio_item_turns.pop(next(iter(self.audio_item_turns)))
+                self.publish("transcript.done", text=final_text, turn_id=self.turn_id)
+                await self._start_external_turn(final_text)
+                return
             if self.transcript.strip() and not self.turn_id:
                 # A final transcript can arrive after response.done; update its
                 # audio turn rather than creating a duplicate completed turn.
@@ -552,10 +636,6 @@ class RealtimeRobot:
                         self.robot.config.robot_id, target, self.transcript, now,
                     )
             self.publish("transcript.done", text=self.transcript, turn_id=target)
-            if self.external_llm and self.transcript.strip() and target:
-                if self.speech and self.speech.turn_id and self.speech.turn_id != target:
-                    await self.speech.cancel("valid_smart_turn")
-                await self._start_external_turn(self.transcript.strip())
         elif kind == "response.created":
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)

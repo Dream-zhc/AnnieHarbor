@@ -125,6 +125,12 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/speech_output/);
   assert.match(source,/session_frames_sent/);
   assert.match(source,/speech_started_count/);
+  assert.match(source,/当前语音链路/);
+  assert.match(source,/realtime\?\.cascade_llm/);
+  assert.match(source,/ASR 暂定/);
+  assert.match(source,/ASR 最终/);
+  assert.match(source,/可逆 Hold\/Resume 尚未接线/);
+  assert.match(source,/realtime\?\.llm_error/);
   assert.match(source,/last_stop_reason/);
   assert.match(source,/playback_evidence/);
   assert.match(source,/phase4c\.html/);

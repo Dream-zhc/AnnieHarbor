@@ -10,7 +10,7 @@ from collections import deque
 from uuid import uuid4
 
 from annie_adapters.realtime import QwenRealtimeSocket, audio_append, session_update
-from annie_brain.context import select_restorable_context
+from annie_brain.context import INTERRUPTED_USER_SOURCES, select_restorable_context
 from annie_brain.persona import session_instructions
 from annie_core import RobotUnavailableError
 
@@ -242,6 +242,7 @@ class RealtimeRobot:
 
     async def _stop_impl(self):
         self._stopping = True
+        self.speech_active = False
         self.restored_context = None
         self.last_llm_input = None
         self.persona_snapshot = None
@@ -293,7 +294,8 @@ class RealtimeRobot:
         self.turn_id = self.response_id = None
         self.text = self.transcript = ""
         self.began = self.first_text_ms = None
-        self.speech_active = False
+        # Finishing the old answer cannot reset a newer microphone candidate.
+        self.speech_active = bool(self.pending_audio_item_id) and self.speech_active
         self.calls.clear()
         self.call_count = 0
         self.followup_needed = False
@@ -347,8 +349,10 @@ class RealtimeRobot:
             if reply:
                 messages.append({"role": "assistant", "content": reply})
         messages.append({"role": "user", "content": user_text})
-        # Never slice away system/Persona rules as history grows.
-        return [messages[0], *messages[1:][-16:]]
+        # Context selection already bounds complete exchanges. Another
+        # message-level slice can orphan an old assistant reply by dropping
+        # its matching user message.
+        return messages
 
     @staticmethod
     def _parse_preview_action(call):
@@ -420,6 +424,11 @@ class RealtimeRobot:
                 messages.extend({"role": "tool", "tool_call_id": call.get("id") or f"preview-{i}",
                                  "content": json.dumps(result, ensure_ascii=False)}
                                 for i, (call, result) in enumerate(tool_results))
+                if (self.last_llm_input is not None and
+                    self.last_llm_input["turn_id"] == turn_id):
+                    self.last_llm_input["tool_followup_messages"] = [
+                        message.copy() for message in messages
+                    ]
                 async for item in self.external_llm.stream(messages, tools=False):
                     if self.turn_id != turn_id or self.turn_identity != identity:
                         return
@@ -708,6 +717,12 @@ class RealtimeRobot:
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
         elif interrupted:
+            if (turn is not None and self.speech is not None
+                and cancel_source in INTERRUPTED_USER_SOURCES
+                and self.turn_identity == self.robot.session_state()):
+                # The confirmed user spoke; the cancelled assistant did not
+                # necessarily speak. Keep the user input but no assistant text.
+                self.robot._cache_context_turn(turn, allow_generated=False)
             self.robot.snapshot.cancelled += 1
         elif status != "discarded":
             self.robot.snapshot.failures += 1
@@ -765,13 +780,15 @@ class RealtimeRobot:
         if kind == "input_audio_buffer.speech_started":
             self._last_activity_t = time.monotonic()
             new_item_id = event.get("item_id")
+            if new_item_id and new_item_id == self.pending_audio_item_id and self.speech_active:
+                self.publish("speech.duplicate", item_id=new_item_id)
+                return
             if new_item_id and (new_item_id in self.audio_item_turns or
                                 new_item_id in self.superseded_audio_items):
                 self.publish("transcript.stale", item_id=new_item_id,
                              event_kind=kind, pending_item_id=self.pending_audio_item_id)
                 return
-            if (self.pending_audio_item_id and new_item_id and
-                self.pending_audio_item_id != new_item_id):
+            if self.pending_audio_item_id and self.pending_audio_item_id != new_item_id:
                 self._obsolete_audio_item(self.pending_audio_item_id)
             self.speech_active = True
             self._candidate_confirmed = False

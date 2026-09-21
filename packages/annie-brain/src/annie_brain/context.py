@@ -6,6 +6,11 @@ This is not long-term memory and never makes an additional model call.
 CONTEXT_CHAR_BUDGET = 12_000  # conservative character proxy, NOT provider tokens
 MAX_UNHEARD_USER_TURNS = 3  # avoid restoring a fabricated 20-user-message monologue
 EXCERPT = "……（历史回复节选）"
+# A confirmed user utterance remains factual after their assistant is
+# interrupted. Never carry over that assistant's unplayed text or local cancel.
+INTERRUPTED_USER_SOURCES = frozenset({
+    "stable_asr_prefix", "valid_smart_turn", "meaningful_ambient",
+})
 
 
 def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
@@ -20,13 +25,22 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
     selected = []
     used = 0
     consecutive_unheard = 0
-    valid = [r for r in rows if r.get("status") == "completed"
-             and not r.get("cancelled") and not r.get("interrupted")
+    valid = [r for r in rows if ((
+                 r.get("status") == "completed"
+                 and not r.get("cancelled") and not r.get("interrupted")
+             ) or (
+                 speech_enabled and r.get("status") == "cancelled"
+                 and r.get("cancel_source") in INTERRUPTED_USER_SOURCES
+             ))
              and isinstance(r.get("user_text"), str) and r["user_text"].strip()]
     for turn in reversed(valid[-max_turns:]):
         user = turn["user_text"].strip()
         spoken = turn.get("assistant_spoken_text")
-        if speech_enabled:
+        interrupted_user = turn.get("status") == "cancelled"
+        if interrupted_user:
+            reply = ""
+            source = "interrupted_user_only"
+        elif speech_enabled:
             reply = (spoken if turn.get("playback_evidence_status") == "speaker_reported_drained"
                      and isinstance(spoken, str) else "")
             source = "speaker_reported_drained" if reply else "user_only_no_speaker_drain"

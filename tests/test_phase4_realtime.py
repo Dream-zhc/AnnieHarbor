@@ -301,6 +301,30 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                              for e in client.events))
         self.assertFalse(any(e["kind"] == "transcript.stale" for e in other.events))
 
+    async def test_duplicate_speech_start_does_not_rehold_or_reset_asr(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "same"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.delta",
+                             "item_id": "same", "text": "我", "stash": "说"}, gen)
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "same"}, gen)
+        self.assertEqual(client.speech_started_count, 1)
+        self.assertEqual(client.asr_delta_count, 1)
+        self.assertEqual(client.events[-1]["kind"], "speech.duplicate")
+
+    async def test_unidentified_new_speech_supersedes_identified_old_candidate(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "old"}, gen)
+        await client.handle({"type": "input_audio_buffer.speech_started"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "old", "transcript": "上轮问题"}, gen)
+        self.assertEqual(client.events[-1]["kind"], "transcript.stale")
+        self.assertIsNone(client.turn_id)
+
     async def test_llm_context_is_frozen_at_turn_admission_not_task_scheduling(self):
         client = self.runtime.realtime["annie-a"]
         llm = FakeExternalLlm([FakeLlmDelta("text", "咖啡，收到。")])
@@ -321,6 +345,41 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("给我讲昨天的故事", str(llm.messages[0][0]))
         self.assertEqual(client.robot.turn_cache[turn_id]["assistant_generated_text"],
                          "咖啡，收到。")
+
+    async def test_old_llm_finish_cannot_clear_next_microphone_candidate(self):
+        client = self.runtime.realtime["annie-a"]
+        client.external_llm = FakeExternalLlm()
+        client._create_turn("旧问题")
+        client.text = "旧答复"
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "next-user"}, client.robot.generation)
+        self.assertTrue(client.speech_active)
+        client._finish("completed")
+        self.assertTrue(client.speech_active)
+        self.assertEqual(client.pending_audio_item_id, "next-user")
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "next-user", "transcript": "新的问题"},
+                            client.robot.generation)
+        await asyncio.wait_for(client.llm_task, 1)
+        self.assertEqual(client.last_llm_input["user_text"], "新的问题")
+
+    async def test_history_prunes_complete_turns_not_individual_messages(self):
+        client = self.runtime.realtime["annie-a"]
+        for index in range(8):
+            client.robot.context_cache.append({
+                "turn_id": f"history-{index}", "status": "completed",
+                "user_text": f"第{index}个问题",
+                "assistant_generated_text": f"第{index}个回答",
+            })
+        messages = client._history_messages("现在的问题")
+        self.assertEqual(len(messages), 18)
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[-1], {"role": "user", "content": "现在的问题"})
+        for index in range(8):
+            self.assertEqual(messages[index*2 + 1],
+                             {"role": "user", "content": f"第{index}个问题"})
+            self.assertEqual(messages[index*2 + 2],
+                             {"role": "assistant", "content": f"第{index}个回答"})
 
     async def test_push_subscriber_is_bounded_and_released(self):
         # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.
@@ -689,6 +748,12 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         turns = (await runtime.load_conversation("annie-one", "default", "annie"))["turns"]
         self.assertEqual(turns[0]["assistant_generated_text"], "只是模拟点头，没有执行真机动作。")
         self.assertEqual([tools for _messages, tools in llm.messages], [True, False])
+        self.assertEqual(client.last_llm_input["messages"][-1],
+                         {"role": "user", "content": "请模拟点头"})
+        self.assertEqual(client.last_llm_input["tool_followup_messages"][-1]["role"],
+                         "tool")
+        self.assertEqual(client.last_llm_input["tool_followup_messages"],
+                         llm.messages[-1][0])
 
     async def test_external_llm_valid_barge_cancels_old_generation(self):
         class SlowLlm(FakeExternalLlm):

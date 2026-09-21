@@ -884,7 +884,11 @@ class RuntimeStore:
                 interrupted,cancelled,cancel_source,created_ms,updated_ms
                 FROM conversation_turns
                 WHERE robot_id=? AND chat_id=? AND persona_id=?
-                  AND status='completed' AND cancelled=0 AND interrupted=0
+                  AND (
+                    (status='completed' AND cancelled=0 AND interrupted=0)
+                    OR (status='cancelled' AND cancel_source IN
+                        ('stable_asr_prefix','valid_smart_turn','meaningful_ambient'))
+                  )
                   AND TRIM(user_text) <> ''
                 ORDER BY id DESC LIMIT ?""",
                 (robot_id, chat_id, persona_id, limit),

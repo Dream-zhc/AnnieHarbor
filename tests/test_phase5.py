@@ -104,6 +104,29 @@ class ContextSelectionTests(unittest.TestCase):
         ], speech_enabled=False)
         self.assertEqual([r["turn_id"] for r in packet["turns"]], ["1"])
 
+    def test_confirmed_interrupted_user_is_preserved_without_unspoken_assistant(self):
+        history = [
+            row("1", "我喜欢茶", "一大段没说完的茶建议",
+                status="cancelled", cancelled=True, interrupted=True,
+                cancel_source="valid_smart_turn",
+                assistant_spoken_text="误写的回复",
+                playback_evidence_status="speaker_reported_drained"),
+            row("2", "不是茶，是咖啡", "只生成还没播的答复"),
+        ]
+        packet = select_restorable_context(history, speech_enabled=True)
+        self.assertEqual([item["user_text"] for item in packet["turns"]],
+                         ["我喜欢茶", "不是茶，是咖啡"])
+        self.assertEqual(packet["turns"][0]["assistant_text"], "")
+        self.assertEqual(packet["turns"][0]["assistant_source"], "interrupted_user_only")
+        self.assertEqual(packet["turns"][1]["assistant_text"], "")
+        self.assertEqual(select_restorable_context(history, speech_enabled=False)["turns"][
+            0]["turn_id"], "2")
+        for source in ("local", "session_replaced", "cascade_llm_error"):
+            history[0]["cancel_source"] = source
+            self.assertEqual([item["turn_id"] for item in
+                              select_restorable_context(history, speech_enabled=True)["turns"]],
+                             ["2"])
+
     def test_oversize_assistant_is_explicit_excerpt_and_user_is_intact(self):
         packet = select_restorable_context([
             row("1", "不是茶，是咖啡", "很多字" * 100),
@@ -182,6 +205,25 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(messages), 1)
             self.assertEqual(messages[0]["item"]["role"], "user")
             self.assertEqual(a.restored_context["turns"][0]["assistant_text"], "")
+        finally:
+            a.speech = None
+
+    async def test_confirmed_interruption_survives_sqlite_reload_as_user_only(self):
+        a = self.runtime.realtime["annie-a"]
+        a.speech = object()
+        try:
+            a._create_turn("不是茶，是咖啡")
+            a.text = "旧答复还没有播完"
+            a._finish("cancelled", cancel_source="valid_smart_turn")
+            self.assertEqual(a.robot.recent_context()[-1]["user_text"],
+                             "不是茶，是咖啡")
+            await self.runtime.ledger.flush()
+            await a.robot._load_context_cache()
+            packet = select_restorable_context(a.robot.recent_context(),
+                                                speech_enabled=True)
+            self.assertEqual(packet["turns"][-1]["user_text"], "不是茶，是咖啡")
+            self.assertEqual(packet["turns"][-1]["assistant_text"], "")
+            self.assertEqual(packet["turns"][-1]["assistant_source"], "interrupted_user_only")
         finally:
             a.speech = None
 

@@ -17,7 +17,6 @@ from annie_adapters import (
     parse_mic_start,
 )
 from annie_brain import FakeBrain
-from annie_brain.memory import CloudMemoryModel, MemoryService
 from annie_core import (
     AudioFormat,
     InputRejectedError,
@@ -831,12 +830,6 @@ class HarborRuntime:
         room_tts_factory=None,
         viseme_root: Path | None = None,
         viseme_python: str | None = None,
-        memory_key: str | None = None,
-        memory_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        memory_extract_model: str = "qwen3.8-flash",
-        memory_embedding_model: str = "text-embedding-v4",
-        memory_embedding_dimensions: int = 256,
-        memory_model=None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -850,16 +843,6 @@ class HarborRuntime:
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
         self.ledger = ConversationLedgerWriter(self.store)
-        self.memory = (
-            MemoryService(
-                self.store,
-                memory_model or CloudMemoryModel(
-                    memory_key, memory_base_url, memory_extract_model,
-                    memory_embedding_model, memory_embedding_dimensions,
-                ),
-                [c.robot_id for c in configs if c.enabled],
-            ) if memory_key or memory_model else None
-        )
         self.conversation_history_turns = conversation_history_turns
         self.persona_profiles = dict(persona_profiles or {})
         self.robots = {
@@ -895,9 +878,6 @@ class HarborRuntime:
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }
-        if self.memory:
-            for client in self.realtime.values():
-                client.memory = self.memory
         if tts_voice:
             if not realtime_key or room_server is None:
                 raise ValueError("TTS requires Realtime and a configured Room server")
@@ -1206,8 +1186,6 @@ class HarborRuntime:
         self.ledger.start()
         self.recorder.start()
         self.started = True
-        if self.memory:
-            await self.memory.start()
         for robot in self.robots.values():
             await robot.initialize_session()
             await robot.start()
@@ -1234,8 +1212,6 @@ class HarborRuntime:
     async def close(self):
         if self.started:
             self.started = False
-            if self.memory:
-                await self.memory.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
             for connections in self.playback_listeners.values():
@@ -1484,24 +1460,6 @@ class HarborRuntime:
         if robot_id not in self.realtime:
             raise RobotUnavailableError("Realtime is not configured; set DASHSCOPE_API_KEY")
         return await self.realtime[robot_id].submit_text(text)
-
-    async def memory_list(self, robot_id, persona_id, include_deleted=False):
-        if self.memory is None:
-            return {"status": "not_configured", "memories": []}
-        return {"status": "ready", "memories": await self.memory.list(
-            robot_id, persona_id, include_deleted,
-        )}
-
-    async def memory_put(self, robot_id, persona_id, kind, key, text):
-        if self.memory is None:
-            raise RobotUnavailableError("memory not configured")
-        result = await self.memory.put(robot_id, persona_id, kind, key, text)
-        return {"status": "active", "id": result[0], "version": result[1]}
-
-    async def memory_change(self, robot_id, persona_id, ident, version, text=None):
-        if self.memory is None:
-            raise RobotUnavailableError("memory not configured")
-        return await self.memory.change(robot_id, persona_id, ident, version, text)
 
     def realtime_state(self, robot_id: str):
         if robot_id not in self.realtime:

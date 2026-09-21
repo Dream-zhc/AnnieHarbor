@@ -71,10 +71,10 @@ class ContextSelectionTests(unittest.TestCase):
         self.assertIn("user explicitly asks", preview["description"])
         self.assertIn("Never call for conversational text", preview["description"])
 
-    def test_three_presets_share_identity_and_do_not_invent_user_facts(self):
-        self.assertEqual(set(PROFILES), {"annie", "annie-calm", "annie-lively"})
+    def test_four_presets_share_identity_and_do_not_invent_user_facts(self):
+        self.assertEqual(set(PROFILES), {"annie", "annie-calm", "annie-lively", "annie-roast"})
         instructions = [session_instructions(name, PROFILES, {})[0] for name in PROFILES]
-        self.assertEqual(len(set(instructions)), 3)
+        self.assertEqual(len(set(instructions)), 4)
         for text in instructions:
             self.assertIn("你是小安妮", text)
             self.assertIn("最新明确更正", text)
@@ -83,6 +83,16 @@ class ContextSelectionTests(unittest.TestCase):
             self.assertIn("不要描述没有发生的动作", text)
             self.assertIn("一次性要求在当轮执行后即结束", text)
             self.assertIn("用户再次开口或换话题时", text)
+            self.assertIn("回复长度由当轮需要决定", text)
+            self.assertIn("不为短而漏掉重点", text)
+            self.assertNotIn("普通闲聊通常一到三句", text)
+        self.assertIn("有主见的熟人", instructions[0])
+        self.assertIn("知心朋友", instructions[1])
+        self.assertIn("反差、双关或荒诞", instructions[2])
+        self.assertIn("有来有回的损友", instructions[3])
+        self.assertIn("不人身评价", instructions[3])
+        self.assertIn("邀请你怼也不是允许辱骂", instructions[3])
+        self.assertIn("工作焦虑后", instructions[3])
         self.assertNotIn("温和", session_instructions("unknown", PROFILES, {})[0])
         self.assertFalse(session_instructions("unknown", PROFILES, {})[1]["configured"])
         text, snapshot = session_instructions("annie", PROFILES, {
@@ -428,7 +438,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(a.socket, previous_socket)
         self.assertEqual(self.runtime.session_state("annie-a"), original)
         self.assertEqual(a.persona_snapshot["label"], "活泼俏皮")
-        self.assertIn("不写角色舞台动作", a.socket.outbound[0]["session"]["instructions"])
+        self.assertIn("不写舞台动作或旁白", a.socket.outbound[0]["session"]["instructions"])
         self.assertEqual(b.persona_snapshot["style_id"], "annie")
         current = await self.runtime.load_conversation(
             "annie-a", original["chat_id"], original["persona_id"])
@@ -453,6 +463,19 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(.01)
         self.assertEqual(a.persona_snapshot["style_id"], "annie-lively")
+        await self.runtime.update_social_state(
+            "annie-a", {"persona_style": "annie-roast"},
+            source="user_setting", generation=a.robot.generation,
+        )
+        for _ in range(100):
+            if a.ready and a.persona_snapshot and a.persona_snapshot["style_id"] == "annie-roast":
+                break
+            await asyncio.sleep(.01)
+        self.assertEqual(a.persona_snapshot["label"], "机灵互怼")
+        self.assertIn("邀请你怼也不是允许辱骂", a.socket.outbound[0]["session"]["instructions"])
+        self.assertEqual(b.persona_snapshot["style_id"], "annie")
+        self.assertEqual((await self.runtime.load_conversation(
+            "annie-a", original["chat_id"], original["persona_id"]))["turns"], earlier["turns"])
         with self.assertRaisesRegex(ValueError, "user_setting requires"):
             await self.runtime.update_social_state(
                 "annie-a", {"persona_style": "unconfigured"},

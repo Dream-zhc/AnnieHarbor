@@ -185,6 +185,41 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    if e["type"] == "conversation.item.delete"]
         self.assertEqual(deleted, ["unheard-item"])
 
+    async def test_smart_turn_interrupts_completed_reply_still_playing(self):
+        client = self.runtime.realtime["annie-a"]
+        client.external_llm = FakeExternalLlm([FakeLlmDelta("text", "新问题回复。")])
+        gen = client.robot.generation
+
+        class Speaker:
+            turn_id = "old-spoken-turn"
+            control_state = "held_confirmed"
+            cancelled = False
+
+            def request_playback_control(self, kind, *, reason):
+                pass
+
+            async def cancel(self, reason):
+                self.cancelled = reason
+                self.turn_id = None
+
+            async def close(self):
+                pass
+
+        speaker = Speaker()
+        client.speech = speaker
+        client._unheard_output_ids["old-spoken-turn"] = {"unheard-item"}
+        self.assertIsNone(client.turn_id)  # response.done already fired
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "new-audio"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "new-audio", "transcript": "不是茶，是咖啡"}, gen)
+        self.assertEqual(speaker.cancelled, "valid_smart_turn")
+        self.assertNotIn("old-spoken-turn", client._unheard_output_ids)
+        self.assertIn({"type": "conversation.item.delete", "item_id": "unheard-item"},
+                      client.socket.outbound)
+        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "不是茶，是咖啡")
+        await asyncio.wait_for(client.llm_task, 1)
+
     async def test_timeline_stage_contract_and_speaker_only_percentiles(self):
         client = self.runtime.realtime["annie-a"]
         turn_id = "timed-turn"

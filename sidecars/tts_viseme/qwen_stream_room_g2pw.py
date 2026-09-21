@@ -1505,6 +1505,7 @@ class OnlineAligner:
     speech_cursor: int = 0
     active_started: bool = False
     last_eval_samples: int = 0
+    empty_eval_count: int = 0
 
     def reset(self) -> None:
         self.emitted_indexes.clear()
@@ -1514,6 +1515,7 @@ class OnlineAligner:
         self.speech_cursor = 0
         self.active_started = False
         self.last_eval_samples = 0
+        self.empty_eval_count = 0
 
 
 @dataclass
@@ -2174,6 +2176,10 @@ class VisemeEngine:
                 return
             if not aligner.emitted_indexes and segment.total_samples < first_window:
                 return
+            # When the model returns no new phoneme, retry on newly arrived
+            # audio with increasing spacing rather than rescanning almost the
+            # same PCM every 120ms. A successful boundary resets the spacing.
+            align_eval *= min(8, 2 ** min(aligner.empty_eval_count, 3))
             if (
                 aligner.last_eval_samples
                 and segment.total_samples - aligner.last_eval_samples < align_eval
@@ -2199,6 +2205,7 @@ class VisemeEngine:
             flush=flush,
         )
         aligner.last_eval_samples = segment.total_samples
+        aligner.empty_eval_count = 0 if events else min(3, aligner.empty_eval_count + 1)
         compute_ms = (time.perf_counter() - t0) * 1000.0
         if conv.cleared or conv.mouth_epoch != epoch:
             aligner.reset()

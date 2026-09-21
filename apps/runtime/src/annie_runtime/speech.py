@@ -152,6 +152,7 @@ class SpeechOutput:
         if self.queue.full():
             return False  # retain the text in pending, never silently drop it
         self.queue.put_nowait(segment)
+        self.segment += 1
         self._emit("tts.segment_queued", chars=len(segment))
         return True
 
@@ -166,6 +167,12 @@ class SpeechOutput:
                             if char in CLAUSE_END and i + 1 >= 12), None)
             if cut is None and len(self.pending) >= self.max_chars:
                 cut = self.max_chars
+            if (cut is None and self.segment == 0 and len(self.pending) >= self.first_chars
+                    and not any(char in SENTENCE_END or char in CLAUSE_END
+                                for char in head)):
+                # Don't pay the fallback timer when the model already supplied
+                # a usable opening phrase without punctuation.
+                cut = self.first_chars
             if cut is None and force:
                 cut = len(self.pending)
             if cut is None:

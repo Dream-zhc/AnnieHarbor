@@ -330,6 +330,17 @@ class RealtimeRobot:
         return stale
 
     async def _interrupt_active_turn(self, reason):
+        # response.done can precede the end of independent TTS playback.
+        # A confirmed barge-in must retire that finished-but-unheard output,
+        # even when _finish() already cleared self.turn_id.
+        response_id = self.response_id if not self.external_llm else None
+        if response_id:
+            self._cancelled_response_ids.add(response_id)
+            self.response_id = None
+            if self.socket and self.ready:
+                await self.socket.send({"type": "response.cancel"})
+        unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
+                   if self.speech and self.speech.turn_id else set())
         task = self.llm_task
         self.llm_task = None
         if task and not task.done():
@@ -337,6 +348,8 @@ class RealtimeRobot:
             await asyncio.gather(task, return_exceptions=True)
         if self.speech and self.speech.turn_id:
             await self.speech.cancel(reason)
+        if unheard and self.socket and self.ready:
+            await self._delete_unheard_items(unheard)
         if self.turn_id:
             self._finish("cancelled", cancel_source=reason)
 
@@ -890,7 +903,7 @@ class RealtimeRobot:
                 self.publish("transcript.ambient_promoted", text=final_text, item_id=item_id)
                 self.publish("transcript.final_preview", text=final_text, item_id=item_id)
                 self.speech_active = False
-                if self.turn_id:
+                if self.turn_id or self.speech and self.speech.turn_id:
                     await self._interrupt_active_turn("meaningful_ambient")
                 self.transcript = final_text
                 self._create_turn(final_text, audio=True)
@@ -962,7 +975,7 @@ class RealtimeRobot:
                 self.publish("transcript.final_preview", text=final_text, item_id=item_id)
                 self.speech_active = False
                 self.pending_audio_item_id = None
-                if self.turn_id:
+                if self.turn_id or self.speech and self.speech.turn_id:
                     await self._interrupt_active_turn("valid_smart_turn")
                 # _finish() resets self.transcript; retain the actual ASR final
                 # across the old-turn cancellation before creating the new one.

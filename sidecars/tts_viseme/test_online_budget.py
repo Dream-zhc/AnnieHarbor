@@ -52,6 +52,36 @@ class OnlineBudgetTests(unittest.TestCase):
         self.assertEqual(calls, ["align"])
         self.assertFalse(segment.online_backlog_warned)
 
+    def test_no_progress_increases_spacing_and_success_restores_fast_path(self):
+        sr = 24000
+        conv = sidecar.ConversationState("conversation", latency_printed=True)
+        segment = sidecar.SegmentState(
+            "turn", authoritative_text="你好", sample_rate=sr,
+            total_samples=sr, pcm_buf=bytearray(sr * 2),
+        )
+        engine = sidecar.VisemeEngine(resolver=None)
+        calls = []
+        engine._prons_for_text = lambda *_a, **_kw: []
+        engine._build_online_events = lambda *_a, **_kw: (
+            calls.append(segment.total_samples) or [], {"mode": "test"}
+        )
+        engine._publish_mouth_events = lambda *_a, **_kw: None
+        with patch.object(sidecar, "log"):
+            engine._emit_segment(conv, segment)
+            self.assertEqual(segment.aligner.empty_eval_count, 1)
+            segment.total_samples += int(sr * .12)
+            engine._emit_segment(conv, segment)
+            self.assertEqual(len(calls), 1)
+            segment.total_samples += int(sr * .12)
+            engine._emit_segment(conv, segment)
+            self.assertEqual(len(calls), 2)
+            engine._build_online_events = lambda *_a, **_kw: (
+                [{"at_sample": 1}], {"mode": "test"}
+            )
+            segment.total_samples += int(sr * .48)
+            engine._emit_segment(conv, segment)
+            self.assertEqual(segment.aligner.empty_eval_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

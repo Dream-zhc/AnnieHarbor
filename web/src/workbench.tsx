@@ -78,6 +78,8 @@ export function Workbench(){
   const [liveText,setLiveText]=useState('');
   const [previewTranscript,setPreviewTranscript]=useState('');
   const [finalTranscript,setFinalTranscript]=useState<{turnId:string;text:string}|null>(null);
+  const [ambient,setAmbient]=useState<string[]>([]);
+  const [lastFirstText,setLastFirstText]=useState<number|null>(null);
   const [notice,setNotice]=useState('');
   const [text,setText]=useState('');
   const [pending,setPending]=useState(false);
@@ -95,6 +97,12 @@ export function Workbench(){
   const route=routes.find(item=>item.robot_id===robotId);
   const realtime=selectedRobot?.realtime;
   const speech=realtime?.speech_output;
+  const playbackEvent=[...realtimeEvents].reverse().find(item=>
+    (item.kind==='playback.hold_requested'||item.kind==='playback.resume_requested')&&item.turn_id);
+  const playbackCommand=playbackEvent?.turn_id?{
+    seq:playbackEvent.seq,turnId:playbackEvent.turn_id,
+    kind:playbackEvent.kind==='playback.hold_requested'?'hold' as const:'resume' as const,
+  }:undefined;
   const restored=realtime?.restored_context;
   const restoredForSession=restored&&session&&restored.robot_id===session.robot_id&&restored.chat_id===session.chat_id&&restored.persona_id===session.persona_id&&restored.session_epoch===session.session_epoch&&restored.generation===session.generation?restored:null;
   const persona=realtime?.persona_snapshot;
@@ -160,7 +168,7 @@ export function Workbench(){
     return()=>{active=false;};
   },[view,robotId,session?.generation]);
   useEffect(()=>{
-    setRealtimeEvents([]);setLiveTurn(null);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);eventCursor.current=0;
+    setRealtimeEvents([]);setLiveTurn(null);setLiveText('');setPreviewTranscript('');setFinalTranscript(null);setAmbient([]);setLastFirstText(null);eventCursor.current=0;
     followLatest.current=true;
     setCheckStep(0);
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
@@ -185,6 +193,9 @@ export function Workbench(){
                 ?{turnId:item.turn_id,userText:item.user_text??''}:null);
             }
             if(item.kind==='transcript.delta')setPreviewTranscript((item.stash??'')+(item.text??''));
+            if(item.kind==='transcript.ambient'&&item.text?.trim()){
+              setAmbient(previous=>[...previous,item.text!.trim()].slice(-5));
+            }
             if(item.kind==='transcript.done'){
               setPreviewTranscript('');
               if(item.text&&item.turn_id){
@@ -194,9 +205,13 @@ export function Workbench(){
             }
             if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
             if(item.kind==='session.error')setNotice('Realtime：'+(item.error??'发生错误'));
+            if(item.kind==='session.ready')setNotice(previous=>
+              previous.startsWith('Realtime：')||previous.startsWith('Realtime 实时推送中断')
+                ?'Realtime 已恢复连接（历史错误已解除）':previous);
             if(item.kind==='turn.done'){
               // Retain the final event until the Ledger read contains this turn.
               // Clearing immediately creates a disappearing/duplicate reply.
+              if(typeof item.first_text_ms==='number')setLastFirstText(item.first_text_ms);
               setLiveText(item.text??'');void refreshSelected(robotId);
             }
           }
@@ -435,16 +450,22 @@ export function Workbench(){
               <div className="info-line"><span>当前 Session 无效轮次</span><strong>{realtime?.invalid_turns??0} 次</strong></div>
               {previewTranscript&&<p className="quality-prompt">ASR 暂定：{previewTranscript}</p>}
               {finalTranscript?.text&&<p className="quality-prompt">ASR 最终：{finalTranscript.text}</p>}
-              <small>顺序：Room 麦克风 → 听觉/ASR → 最终回答模型 → TTS → Room。可逆 Hold/Resume 尚未接线；此处不显示为已通过。</small>
+              {ambient.length>0&&<p className="quality-prompt">smart_turn 忽略的输入：{ambient.join(' / ')}</p>}
+              <small>顺序：Room 麦克风 → 听觉/ASR → 最终回答模型 → TTS → Room。网页调试扬声器可逆 Hold/Resume；真实设备必须自行实现同一状态闭环。</small>
               {realtime?.llm_error&&<p className="inline-error" role="alert">{realtime.llm_error}</p>}
             </section>
             <section className="inspector-group voice-summary" aria-label="语音输出状态"><h3>语音输出</h3>
               <div className="info-line"><span>TTS 合成</span><State value={speech?.state}/></div>
+              <div className="info-line"><span>首字（本轮起点）</span><strong>{lastFirstText==null?'未测':lastFirstText+' ms'}</strong></div>
+              <div className="info-line"><span>首 PCM（当前 TTS 段）</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'}</strong></div>
+              <div className="info-line"><span>首 Room 发布（本轮 TTS 起点）</span><strong>{speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
+              <small>三项起点不同，不可相加；尚无浏览器真实起播与设备起播全链路数据。</small>
               {speech?.last_stop_reason&&<div className="info-line"><span>最近停播原因</span><strong>{speech.last_stop_reason}</strong></div>}
               <div className="info-line"><span>已发布 PCM</span><strong>{speech?.pcm_frames_published??0} 帧</strong></div>
               <div className="info-line"><span>设备播放回执</span><strong>{speech?.playback_evidence==='unknown'?'尚未确认':speech?.playback_evidence??'尚未确认'}</strong></div>
               <RoomDebugSpeaker key={robotId+'\u0000'+(route?.room_id??'')}
                 url={route?.urls?.tts} roomId={route?.room_id}
+                command={playbackCommand}
                 available={!!speech&&speech.state!=='not_configured'}/>
               <p className="audio-guidance">{speech?.state==='not_configured'
                 ?'当前机器人 TTS 未启用；需要服务端配置后才会发布声音。'
@@ -452,7 +473,6 @@ export function Workbench(){
               {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
               <details><summary>音频与嘴型详情</summary>
                 <div className="info-line"><span>嘴型</span><State value={speech?.viseme}/></div>
-                <div className="info-line"><span>首音频 / 首发布</span><strong>{speech?.first_audio_ms==null?'未测':speech.first_audio_ms+' ms'} / {speech?.first_publish_ms==null?'未测':speech.first_publish_ms+' ms'}</strong></div>
               </details>
             </section>
             <details className="inspector-group inspector-panel"><summary>Persona 与追问偏好 <span>{personaForSession?.label??session?.persona_id??'—'}</span></summary><div className="info-line"><span>Persona</span><strong>{session?.persona_id??'—'}</strong></div>

@@ -106,6 +106,32 @@ class RealtimeWireTests(unittest.TestCase):
 
 
 class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_speculative_hold_is_reversible_and_keeps_robot_scope(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+
+        class Speaking:
+            turn_id = "voice-turn"
+
+            async def close(self):
+                pass
+
+        client.external_llm = FakeExternalLlm()
+        client.speech = Speaking()
+        generation = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "candidate"}, generation)
+        hold = client.events[-1]
+        self.assertEqual(hold["kind"], "playback.hold_requested")
+        self.assertEqual(hold["turn_id"], "voice-turn")
+        self.assertEqual(hold["robot_id"], "annie-a")
+        await client.handle({"type": "input_audio_buffer.speech_stopped",
+                             "item_id": "candidate", "reason": "turn_invalid"}, generation)
+        resume = client.events[-1]
+        self.assertEqual(resume["kind"], "playback.resume_requested")
+        self.assertEqual(resume["turn_id"], hold["turn_id"])
+        self.assertFalse(any(event["kind"].startswith("playback.") for event in other.events))
+
     async def test_push_subscriber_is_bounded_and_released(self):
         # No 250ms HTTP poll; queued events remain scoped to their Realtime robot.
         client = self.runtime.realtime["annie-a"]

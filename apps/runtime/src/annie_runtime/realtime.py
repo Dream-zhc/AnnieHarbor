@@ -579,18 +579,24 @@ class RealtimeRobot:
             self.speech_started_count += 1
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
+            # A finished LLM turn may still be speaking. Freeze its local
+            # playback without cancelling TTS until smart_turn accepts speech.
+            if self.external_llm and self.speech and self.speech.turn_id:
+                self.publish("playback.hold_requested", turn_id=self.speech.turn_id,
+                             source="smart_turn")
         elif kind == "input_audio_buffer.speech_stopped":
             invalid = event.get("reason") == "turn_invalid"
             if invalid:
                 self.speech_active = False
                 self.invalid_turns += 1
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
+            if invalid and self.external_llm and self.speech and self.speech.turn_id:
+                self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
+                             reason="turn_invalid")
         elif kind == "conversation.item.ambient_audio_transcription.completed":
             self.publish("transcript.ambient", text=event.get("transcript", ""))
         elif kind == "conversation.item.input_audio_transcription.delta":
             self.publish("transcript.delta", text=event.get("text", ""), stash=event.get("stash", ""))
-            if self.external_llm and (self.turn_id or self.response_id) and event.get("text"):
-                self.publish("playback.hold_requested", source="smart_turn")
         elif kind == "conversation.item.input_audio_transcription.completed":
             self.transcripts_completed += 1
             self.last_provider_transcript_ms = time.time_ns() // 1_000_000

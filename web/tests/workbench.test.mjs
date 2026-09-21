@@ -129,7 +129,10 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/realtime\?\.cascade_llm/);
   assert.match(source,/ASR 暂定/);
   assert.match(source,/ASR 最终/);
-  assert.match(source,/可逆 Hold\/Resume 尚未接线/);
+  assert.match(source,/网页调试扬声器可逆 Hold\/Resume/);
+  assert.match(source,/playback\.resume_requested/);
+  assert.match(source,/transcript\.ambient/);
+  assert.match(source,/session\.ready/);
   assert.match(source,/realtime\?\.llm_error/);
   assert.match(source,/last_stop_reason/);
   assert.match(source,/playback_evidence/);
@@ -171,12 +174,14 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(workbench,/route=\{realtime\?\.ready\?route:undefined\}/);
   assert.doesNotMatch(workbench,/RoomPlayback|AudioWorklet/);
   assert.match(mic,/getUserMedia/);
-  assert.match(mic,/createMicPcmPump/);
+  assert.match(mic,/room-capture-worklet\.js/);
+  assert.match(mic,/new AudioWorkletNode\(context,'room-capture'/);
+  assert.doesNotMatch(mic,/createScriptProcessor|onaudioprocess/);
   assert.match(mic,/message\.robotId!=='reb_mic'/);
   assert.match(mic,/window\.addEventListener\('pagehide'/);
   assert.match(mic,/Room 发送积压超过 800ms/);
   assert.match(mic,/const captureWs=ws,captureContext=context,captureStream=stream/);
-  assert.match(mic,/captureWs\.send\(frame\)/);
+  assert.match(mic,/captureWs\.send\(pcmFrame\(new Uint8Array\(event\.data\.buffer\)\)\)/);
   assert.match(mic,/handedOff=true/);
   assert.doesNotMatch(mic,/ws=undefined;stream=undefined;context=undefined/);
   assert.match(mic,/3 秒未收到麦克风音频回调/);

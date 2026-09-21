@@ -48,6 +48,7 @@ class SpeechOutput:
         self.last_stop_reason = None
         self.finished = False
         self.published_text = ""
+        self.submitted_text = ""
         self.last_published_segment = None
         self.started_at = None
         self.next_pcm_at = None
@@ -69,6 +70,10 @@ class SpeechOutput:
         self.viseme_events = 0
         self.viseme_seen = set()
         self.viseme_state = "not_connected"
+        self.control_task = None
+        self.control_seq = 0
+        self.pending_controls = {}
+        self.control_state = "unknown"
 
     def snapshot(self):
         return {
@@ -90,10 +95,13 @@ class SpeechOutput:
             "last_stop_evidence": self.last_stop_evidence,
             "error": self.error,
             "last_stop_reason": self.last_stop_reason,
+            "playback_control_state": self.control_state,
+            "playback_control_pending": len(self.pending_controls),
         }
 
     def _emit(self, kind, **data):
-        self.event(kind, **{**(self.identity or self.robot.session_state()), **data})
+        self.event(kind, **{**(self.identity or self.robot.session_state()),
+                            "turn_id": self.turn_id, **data})
 
     async def _begin(self, turn_id, identity):
         if turn_id == self.turn_id:
@@ -112,6 +120,7 @@ class SpeechOutput:
         self.inflight_end = 0
         self.error = self.first_audio_ms = self.first_publish_ms = None
         self.published_text = ""
+        self.submitted_text = ""
         self.last_published_segment = None
         self.started_at = time.perf_counter()
         self.next_pcm_at = None
@@ -126,6 +135,9 @@ class SpeechOutput:
         self.synthesized_complete = False
         self.viseme_state = "not_connected"
         self.viseme_seen.clear()
+        self.control_seq = 0
+        self.pending_controls.clear()
+        self.control_state = "unknown"
         self.worker = asyncio.create_task(self._run(turn_id, dict(identity)), name=f"tts:{self.robot.config.robot_id}")
 
     def _current(self, turn_id, identity):
@@ -177,7 +189,9 @@ class SpeechOutput:
     async def _first_flush(self, turn_id, identity):
         try:
             await asyncio.sleep(self.first_wait_ms / 1000)
-            if self._current(turn_id, identity) and len(self.pending) >= self.first_chars:
+            if self._current(turn_id, identity) and self.pending and (
+                len(self.pending) >= self.first_chars or self.pending[-1] in SENTENCE_END
+            ):
                 self._drain_pending(force=True)
         except asyncio.CancelledError:
             raise
@@ -204,6 +218,12 @@ class SpeechOutput:
     async def cancel(self, reason="cancel"):
         was_active = self.turn_id is not None
         self.cancelled = True
+        if self.control_task:
+            self.control_task.cancel()
+            await asyncio.gather(self.control_task, return_exceptions=True)
+            self.control_task = None
+        self.pending_controls.clear()
+        self.control_state = "unknown"
         if was_active:
             self.last_stop_reason = reason
         if was_active:
@@ -250,6 +270,46 @@ class SpeechOutput:
         await self.cancel("runtime_stop")
         await self.publisher.close()
 
+    def request_playback_control(self, kind, *, reason):
+        """Schedule an ordered Room command, without blocking smart_turn on Room I/O."""
+        if kind not in {"hold", "resume"}:
+            raise ValueError("unsupported playback command")
+        if self.cancelled or not self.turn_id or not self.identity:
+            return False
+        self.control_seq += 1
+        sequence = self.control_seq
+        epoch, turn_id, identity = self.stream_epoch, self.turn_id, dict(self.identity)
+        previous = self.control_task
+        self.control_state = f"{kind}_requested"
+
+        async def send():
+            if previous:
+                await asyncio.gather(previous, return_exceptions=True)
+            if not self._current(turn_id, identity) or self.stream_epoch != epoch:
+                return
+            data = {
+                "protocol_version": 1, "conversation_id": turn_id,
+                "stream_epoch": epoch, "command_seq": sequence, "reason": reason,
+            }
+            self.pending_controls[sequence] = kind
+            try:
+                await self.publisher.publish({"type": f"tts.playback.{kind}",
+                                              "ts": time.time_ns() // 1_000_000, "data": data})
+            except Exception as exc:
+                self.pending_controls.pop(sequence, None)
+                self.control_state = "control_error"
+                self._emit("tts.playback.control_error", command=kind,
+                           error=type(exc).__name__)
+                return
+            if self._current(turn_id, identity) and self.stream_epoch == epoch:
+                if len(self.pending_controls) > 32:
+                    self.pending_controls.pop(next(iter(self.pending_controls)))
+                self._emit(f"tts.playback.{kind}_published", conversation_id=turn_id,
+                           stream_epoch=epoch, command_seq=sequence, device_applied="unknown")
+
+        self.control_task = asyncio.create_task(send(), name=f"playback:{kind}:{turn_id}")
+        return True
+
     def _packet(self, pcm, text, *, final=False, stop=False, segment_id=None,
                 reason=None, stream_final=False):
         self.seq += 1
@@ -275,23 +335,11 @@ class SpeechOutput:
 
     async def _run(self, turn_id, identity):
         try:
-            while True:
-                text = await self.queue.get()
-                try:
-                    if not self._current(turn_id, identity):
-                        return
-                    if text is not None:
-                        self.segment += 1
-                        await self._synthesize(text, f"{turn_id}-{self.segment}", turn_id, identity)
-                    self._drain_pending(force=self.finished)
-                    if self.finished and not self.pending and self.queue.empty():
-                        if self._current(turn_id, identity):
-                            await self.publisher.publish(self._packet(b"", "", final=True,
-                                                                      stream_final=True))
-                        self.synthesized_complete = True
-                        return
-                finally:
-                    self.queue.task_done()
+            await self._synthesize_stream(turn_id, identity)
+            if self._current(turn_id, identity):
+                await self.publisher.publish(self._packet(b"", self.published_text,
+                                                          final=True, stream_final=True))
+                self.synthesized_complete = True
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -308,24 +356,45 @@ class SpeechOutput:
                 self.queue.get_nowait()
                 self.queue.task_done()
 
-    async def _synthesize(self, text, segment_id, turn_id, identity):
+    async def _synthesize_stream(self, turn_id, identity):
+        """One provider task; receive and paced Room publication must not stall text."""
         socket = self.socket_factory(self.url, self.key)
         self.socket = socket
         started = time.perf_counter()
         task = task_id()
-        tail = bytearray()
-        sample_cursor = self.samples
-        first = True
-        sent_text = False
+        segment_id = f"{turn_id}-1"  # one acoustic/text segment per provider task
+        task_started = asyncio.Event()
+        audio = asyncio.Queue(maxsize=48)  # bounded ~960ms ahead of Room publication
         try:
-            async with asyncio.timeout(30):
-                await socket.open()
-                await socket.send(command("run-task", task, voice=self.voice))
-                while True:
-                    item = await socket.recv()
-                    if isinstance(item, bytes):
-                        if not self._current(turn_id, identity):
+            await socket.open()
+            await socket.send(command("run-task", task, voice=self.voice))
+
+            async def submit():
+                async with asyncio.timeout(10):
+                    await task_started.wait()
+                while self._current(turn_id, identity):
+                    text = await self.queue.get()
+                    try:
+                        if not text and self.finished and not self.pending and self.queue.empty():
+                            await socket.send(command("finish-task", task))
                             return
+                        if text:
+                            await socket.send(command("continue-task", task, text=text))
+                            self.submitted_text += text
+                            self._emit("tts.text_submitted", chars=len(text))
+                        self._drain_pending(force=self.finished)
+                        if self.finished and not self.pending and self.queue.empty():
+                            await socket.send(command("finish-task", task))
+                            return
+                    finally:
+                        self.queue.task_done()
+
+            async def receive():
+                tail = bytearray()
+                first = True
+                while self._current(turn_id, identity):
+                    item = await asyncio.wait_for(socket.recv(), timeout=30)
+                    if isinstance(item, bytes):
                         if not item:
                             continue
                         if first:
@@ -338,30 +407,40 @@ class SpeechOutput:
                         while len(tail) >= FRAME_BYTES:
                             frame = bytes(tail[:FRAME_BYTES])
                             del tail[:FRAME_BYTES]
-                            await self._publish_pcm(frame, text, segment_id, turn_id, identity, started)
+                            await audio.put(frame)
                     else:
                         header = item.get("header") or {}
                         if header.get("task_id") not in (None, task):
                             raise ValueError("TTS task_id mismatch")
                         event = header.get("event")
                         if event == "task-started":
-                            if sent_text:
-                                continue
-                            sent_text = True
-                            await socket.send(command("continue-task", task, text=text))
-                            await socket.send(command("finish-task", task))
+                            task_started.set()
                         elif event in {"task-failed", "error"}:
                             raise RuntimeError(f"TTS {event}: {str(header.get('error_code', 'provider_error'))[:80]}")
                         elif event == "task-finished":
                             if len(tail) % 2:
                                 raise ValueError("TTS PCM has an odd total byte count")
                             if tail:
-                                await self._publish_pcm(bytes(tail), text, segment_id, turn_id, identity, started)
-                                tail.clear()
-                            if self._current(turn_id, identity):
-                                await self.publisher.publish(self._packet(b"", "", final=True, segment_id=segment_id))
-                                self._emit("tts.segment_done", segment_id=segment_id, samples=self.samples-sample_cursor)
+                                await audio.put(bytes(tail))
+                            await audio.put(None)
                             return
+
+            async def publish():
+                while self._current(turn_id, identity):
+                    pcm = await audio.get()
+                    if pcm is None:
+                        return
+                    await self._publish_pcm(pcm, self.submitted_text, segment_id,
+                                            turn_id, identity, started)
+
+            async with asyncio.TaskGroup() as tasks:
+                tasks.create_task(submit())
+                tasks.create_task(receive())
+                tasks.create_task(publish())
+            if self._current(turn_id, identity):
+                await self.publisher.publish(self._packet(b"", self.submitted_text,
+                                                          final=True, segment_id=segment_id))
+                self._emit("tts.segment_done", segment_id=segment_id, samples=self.samples)
         finally:
             await socket.close()
             if self.socket is socket:
@@ -389,9 +468,9 @@ class SpeechOutput:
         if self.first_publish_ms is None:
             self.first_publish_ms = round((time.perf_counter() - self.started_at) * 1000, 2)
             self._emit("tts.first_published", first_publish_ms=self.first_publish_ms)
-        if self.last_published_segment != segment_id:
+        if text != self.published_text:
             self.last_published_segment = segment_id
-            self.published_text += text
+            self.published_text = text
             now = time.time_ns() // 1_000_000
             self.robot.ledger.enqueue(
                 "update_playback", self.robot.config.robot_id, turn_id,
@@ -419,6 +498,38 @@ class SpeechOutput:
             return False
         source, playback_id = data["source"], data["playback_id"]
         track = self.receipt_tracks.get(source) if active else None
+        kind = message["type"].removeprefix("tts.playback.")
+        if kind in {"held", "resumed"}:
+            command_seq = data["command_seq"]
+            expected = "hold" if kind == "held" else "resume"
+            if not active or self.pending_controls.get(command_seq) != expected:
+                return False
+            if track is not None and (
+                track["id"] != playback_id or data["seq"] <= track["seq"] or
+                data["played_sample_count"] < track["played"] or
+                track["state"] in {"stopped", "drained"}
+            ):
+                return False
+            if kind == "resumed" and (track is None or track["state"] != "held"):
+                return False
+            self.pending_controls.pop(command_seq)
+            self.receipt_tracks[source] = {
+                "id": playback_id, "seq": data["seq"],
+                "played": data["played_sample_count"], "state": kind,
+            }
+            if not any(seq > command_seq for seq in self.pending_controls):
+                self.control_state = f"{kind}_confirmed"
+            self.playback_source = source
+            self.playback_id = playback_id
+            self.playback_state = kind
+            self.playback_evidence = f"{source}_reported_{kind}"
+            self.played_samples = data["played_sample_count"]
+            self._emit("tts.playback." + kind, conversation_id=cid,
+                       stream_epoch=epoch, command_seq=command_seq,
+                       played_sample_count=self.played_samples,
+                       evidence=self.playback_evidence,
+                       receipt_ms=time.time_ns() // 1_000_000)
+            return True
         if active and track is not None:
             if track["id"] != playback_id or data["seq"] <= track["seq"]:
                 return False
@@ -430,15 +541,14 @@ class SpeechOutput:
             data["source"], data["playback_id"]
         ) != self.pending_stop_source:
             return False
-        kind = message["type"].removeprefix("tts.playback.")
         if kind == "started" and (not active or limit == 0):
             return False
         state = track["state"] if track is not None else "unknown"
-        if kind in {"progress", "drained"} and state not in {"started", "progress"}:
+        if kind in {"progress", "drained"} and state not in {"started", "progress", "resumed"}:
             return False
         if kind in {"started", "progress"} and (not active or state in {"stopped", "drained"}):
             return False
-        if kind == "started" and track is not None:
+        if kind == "started" and track is not None and state != "resumed":
             return False
         if kind == "drained" and (
             not active or not self.synthesized_complete or
@@ -479,7 +589,7 @@ class SpeechOutput:
         self._emit("tts.playback." + kind, conversation_id=cid, stream_epoch=epoch,
                    played_sample_count=data["played_sample_count"], source=data["source"],
                    playback_id=data["playback_id"], receipt_ms=received_ms,
-                   evidence=evidence, **(old_identity or {}))
+                   evidence=evidence, turn_id=cid, **(old_identity or {}))
         # Only a completed, fully drained turn can claim a complete spoken text.
         # A partial stop has no per-word acoustic boundary, so never infer it.
         if kind == "drained" and data["source"] == "speaker" and cid in self.robot.turn_cache:

@@ -256,13 +256,13 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         """Formerly 8 queued segments -> queue_full/timeout -> Room STOP."""
         identity = self.robot.session_state()
         text = "你好，" * 120
-        segments = []
+        class SlowTts(FakeTts):
+            async def send(self, message):
+                if message["header"]["action"] == "continue-task":
+                    await asyncio.sleep(0.005)
+                await super().send(message)
 
-        async def slow_synthesize(segment, *_args):
-            await asyncio.sleep(0.005)
-            segments.append(segment)
-
-        self.speech._synthesize = slow_synthesize
+        self.speech.socket_factory = SlowTts
         self.speech.max_chars = 20
         began = time.perf_counter()
         await self.speech.feed("long-turn", identity, text)
@@ -271,7 +271,8 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(self.speech.queue.qsize(), 8)
         self.assertTrue(self.speech.pending)
         await asyncio.wait_for(self.speech.worker, 3)
-        self.assertEqual("".join(segments), text)
+        self.assertEqual(self.speech.submitted_text, text)
+        self.assertEqual(len(FakeTts.instances), 1)
         self.assertFalse(self.speech.cancelled)
         self.assertIsNone(self.speech.error)
         self.assertIsNone(self.speech.snapshot()["last_stop_reason"])
@@ -294,7 +295,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.robot.turn_cache["turn1"] = {"turn_id": "turn1"}
         await self.speech.feed("turn1", identity, "你好。")
         await self.speech.finish("turn1")
-        await asyncio.wait_for(self.speech.queue.join(), 2)
+        await asyncio.wait_for(self.speech.worker, 2)
         self.assertEqual(len(FakeTts.instances), 1)
         actions = [item["header"]["action"] for item in FakeTts.instances[0].sent]
         self.assertEqual(actions, ["run-task", "continue-task", "finish-task"])
@@ -324,7 +325,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.robot.turn_cache[cid]={"turn_id":cid,"status":"completed"}
         await self.speech.feed(cid, self.robot.session_state(), "你好。")
         await self.speech.finish(cid)
-        await asyncio.wait_for(self.speech.queue.join(),2)
+        await asyncio.wait_for(self.speech.worker,2)
         epoch=self.speech.stream_epoch
         self.assertFalse(self.speech.on_playback_receipt(receipt("started",cid,epoch+1,0)))
         self.assertTrue(self.speech.on_playback_receipt(receipt("started",cid,epoch,0)))
@@ -343,7 +344,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.robot.turn_cache[cid]={"turn_id":cid,"status":"completed"}
         await self.speech.feed(cid,self.robot.session_state(),"你好。")
         await self.speech.finish(cid)
-        await asyncio.wait_for(self.speech.queue.join(),2)
+        await asyncio.wait_for(self.speech.worker,2)
         epoch=self.speech.stream_epoch
         self.assertTrue(self.speech.on_playback_receipt(
             receipt("started",cid,epoch,0,source="speaker")))
@@ -353,12 +354,53 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.robot.context_cache),1)
         self.assertEqual(self.speech.playback_evidence,"speaker_reported_drained")
 
+    async def test_room_hold_resume_requires_physical_speaker_ack_and_preserves_cursor(self):
+        cid = "duplex-controls"
+        await self.speech.feed(cid, self.robot.session_state(), "测试打断恢复。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.worker, 2)
+        epoch = self.speech.stream_epoch
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("started", cid, epoch, 100, source="speaker")))
+        self.assertTrue(self.speech.request_playback_control("hold", reason="speech_started"))
+        await asyncio.wait_for(self.speech.control_task, 1)
+        hold = self.publisher.messages[-1]
+        self.assertEqual(hold["type"], "tts.playback.hold")
+        self.assertEqual(hold["data"]["conversation_id"], cid)
+        self.assertEqual(hold["data"]["stream_epoch"], epoch)
+        self.assertEqual(self.speech.control_state, "hold_requested")
+        self.assertNotEqual(self.speech.playback_evidence, "speaker_reported_held")
+        ack = receipt("held", cid, epoch, 100, source="speaker", seq=2)
+        ack["data"]["command_seq"] = hold["data"]["command_seq"]
+        with self.assertRaisesRegex(ValueError, "physical speaker"):
+            self.speech.on_playback_receipt({
+                **ack, "data": {**ack["data"], "source": "browser_test"}})
+        self.assertTrue(self.speech.on_playback_receipt(ack))
+        self.assertEqual(self.speech.control_state, "held_confirmed")
+        self.assertEqual(self.speech.played_samples, 100)
+        self.assertTrue(self.speech.request_playback_control("resume", reason="turn_invalid"))
+        await asyncio.wait_for(self.speech.control_task, 1)
+        resume = self.publisher.messages[-1]
+        self.assertEqual(resume["type"], "tts.playback.resume")
+        self.assertGreater(resume["data"]["command_seq"], hold["data"]["command_seq"])
+        ack = receipt("resumed", cid, epoch, 100, source="speaker", seq=3)
+        ack["data"]["command_seq"] = resume["data"]["command_seq"]
+        self.assertTrue(self.speech.on_playback_receipt(ack))
+        self.assertEqual(self.speech.control_state, "resumed_confirmed")
+        self.assertEqual(self.speech.played_samples, 100)
+        self.assertFalse(self.speech.on_playback_receipt(ack))
+        self.assertTrue(self.speech.on_playback_receipt(
+            receipt("progress", cid, epoch, 480, source="speaker", seq=4)))
+        await self.speech.cancel("interrupt")
+        self.assertFalse(self.speech.on_playback_receipt(ack))
+
     async def test_browser_monitor_never_blocks_real_speaker_receipts(self):
+        # Separate from the hold/resume control acknowledgements below.
         cid="parallel-output"
         self.robot.turn_cache[cid]={"turn_id":cid,"status":"completed"}
         await self.speech.feed(cid,self.robot.session_state(),"你好。")
         await self.speech.finish(cid)
-        await asyncio.wait_for(self.speech.queue.join(),2)
+        await asyncio.wait_for(self.speech.worker,2)
         epoch=self.speech.stream_epoch
         # Browser listener starts first; physical speaker begins later at its
         # own sample cursor, independently of the browser's progress.
@@ -385,7 +427,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
     async def test_stop_ack_of_old_epoch_does_not_claim_new_turn_stopped(self):
         await self.speech.feed("old",self.robot.session_state(),"你好。")
         await self.speech.finish("old")
-        await asyncio.wait_for(self.speech.queue.join(),2)
+        await asyncio.wait_for(self.speech.worker,2)
         old_epoch=self.speech.stream_epoch
         old_total=self.speech.samples
         self.speech.on_playback_receipt(receipt("started","old",old_epoch,0))
@@ -434,11 +476,50 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         for chunk in ("你好，", "你好。", "我可以陪你聊", "天、解答问题。"):
             await self.speech.feed("natural", identity, chunk)
         await self.speech.finish("natural")
-        await asyncio.wait_for(self.speech.queue.join(), 2)
+        await asyncio.wait_for(self.speech.worker, 2)
         sent = [item["payload"]["input"].get("text") for socket in FakeTts.instances
                 for item in socket.sent if item["header"]["action"] == "continue-task"]
         self.assertEqual(sent, ["你好，你好。我可以陪你聊天、解答问题。"])
         self.assertEqual(self.speech.published_text, "".join(sent))
+
+    async def test_multiple_chunks_share_one_task_and_one_pcm_alignment_segment(self):
+        class StreamingTts(FakeTts):
+            async def send(self, message):
+                action = message["header"]["action"]
+                self.sent.append(message)
+                task = message["header"]["task_id"]
+                if action == "run-task":
+                    await self.received.put({"header": {"event": "task-started", "task_id": task}})
+                elif action == "continue-task":
+                    # Simulate provider streaming PCM while later text is still arriving.
+                    await self.received.put(bytes([1, 0]) * 480)
+                elif action == "finish-task":
+                    await self.received.put({"header": {"event": "task-finished", "task_id": task}})
+
+        self.speech.socket_factory = StreamingTts
+        identity = self.robot.session_state()
+        await self.speech.feed("duplex", identity, "第一句话结束。")
+        for _ in range(100):
+            if self.speech.frames:
+                break
+            await asyncio.sleep(.002)
+        self.assertGreater(self.speech.frames, 0, "first PCM must publish before LLM finishes")
+        await self.speech.feed("duplex", identity, "第二句话结束。")
+        await self.speech.finish("duplex")
+        await asyncio.wait_for(self.speech.worker, 2)
+        sent = FakeTts.instances[0].sent
+        actions = [item["header"]["action"] for item in sent]
+        self.assertEqual(actions, ["run-task", "continue-task", "continue-task", "finish-task"])
+        self.assertEqual(len(FakeTts.instances), 1)
+        frames = [item["data"] for item in self.publisher.messages if item["data"]["audio"]]
+        self.assertEqual([frame["start_sample"] for frame in frames], [0, 480])
+        self.assertEqual([frame["end_sample"] for frame in frames], [480, 960])
+        self.assertEqual({frame["turn_id"] for frame in frames}, {"duplex-1"})
+        self.assertEqual(frames[0]["text"], "第一句话结束。")
+        self.assertEqual(frames[-1]["text"], "第一句话结束。第二句话结束。")
+        self.assertEqual(self.speech.published_text, "第一句话结束。第二句话结束。")
+        self.assertEqual(sum(bool(item["data"].get("stream_final"))
+                             for item in self.publisher.messages), 1)
 
     async def test_pcm_publisher_can_build_a_jitter_reserve_before_realtime_pacing(self):
         identity = self.robot.session_state()
@@ -453,7 +534,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         cid="mouth-turn"
         await self.speech.feed(cid,self.robot.session_state(),"你好。")
         await self.speech.finish(cid)
-        await asyncio.wait_for(self.speech.queue.join(),2)
+        await asyncio.wait_for(self.speech.worker,2)
         good={"type":"mouth_script","conversation_id":cid,"stream_id":"actual",
               "seq":1,"start_sample":12,"end_sample":96,"viseme":"a",
               "timing_source":"qwen3_forced_aligner_online"}
@@ -488,7 +569,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.speech.socket_factory = FailedTts
         await self.speech.feed("turn-failed", self.robot.session_state(), "失败测试。")
         await self.speech.finish("turn-failed")
-        await asyncio.wait_for(self.speech.queue.join(), 2)
+        await asyncio.wait_for(self.speech.worker, 2)
         self.assertEqual(self.speech.snapshot()["state"], "error")
         self.assertEqual(self.speech.frames, 0)
         self.assertTrue(any(name == "tts.error" for name, _ in self.events))
@@ -509,8 +590,8 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.gather(self.speech.finish("a-turn"), output.finish("b-turn"))
         await asyncio.gather(
-            asyncio.wait_for(self.speech.queue.join(), 2),
-            asyncio.wait_for(output.queue.join(), 2),
+            asyncio.wait_for(self.speech.worker, 2),
+            asyncio.wait_for(output.worker, 2),
         )
         self.assertTrue(all(m["data"]["conversation_id"] == "a-turn" for m in self.publisher.messages))
         self.assertTrue(all(m["data"]["conversation_id"] == "b-turn" for m in p2.messages))

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import time
 from collections import deque
 from uuid import uuid4
@@ -69,6 +70,47 @@ class RealtimeRobot:
         self._open_done = asyncio.Event()
         self._open_done.set()
         self._lifecycle = asyncio.Lock()
+        self._keepalive_task = None
+        self._last_activity_t = time.monotonic()
+        self._keepalive_pending = False
+        self._keepalive_items = set()
+        self.keepalive_count = 0
+        self.last_provider_stopped_ms = None
+        self._turn_timelines = {}
+        self._timeline_order = deque(maxlen=32)
+
+    def _timeline_snapshot(self, turn_id):
+        record = self._turn_timelines.get(turn_id)
+        if record is None:
+            return None
+        times = dict(record["times"])
+        pairs = {
+            "speech_to_asr_final_ms": ("speech_started_ms", "asr_final_ms"),
+            "endpoint_to_asr_final_ms": ("speech_stopped_ms", "asr_final_ms"),
+            "llm_request_to_first_text_ms": ("llm_request_ms", "llm_first_text_ms"),
+            "tts_submit_to_pcm_ms": ("tts_submit_ms", "tts_first_pcm_ms"),
+            "room_to_speaker_start_ms": ("room_first_publish_ms", "speaker_started_ms"),
+            "endpoint_to_speaker_start_ms": ("speech_stopped_ms", "speaker_started_ms"),
+        }
+        durations = {}
+        for name, (start, end) in pairs.items():
+            a, b = times.get(start), times.get(end)
+            durations[name] = max(0, b - a) if a is not None and b is not None else None
+        return {"turn_id": turn_id, "times": times, "durations": durations}
+
+    def _timeline_percentiles(self):
+        fields = ("endpoint_to_speaker_start_ms", "llm_request_to_first_text_ms")
+        result = {}
+        for field in fields:
+            values = sorted(value for turn in self._timeline_order
+                            if (value := (self._timeline_snapshot(turn) or {})
+                                .get("durations", {}).get(field)) is not None)
+            result[field] = {
+                "samples": len(values),
+                "p50_ms": values[math.ceil(.50 * len(values)) - 1] if values else None,
+                "p95_ms": values[math.ceil(.95 * len(values)) - 1] if values else None,
+            }
+        return result
 
     def publish(self, kind, **fields):
         self.sequence += 1
@@ -83,6 +125,30 @@ class RealtimeRobot:
             "ts_ms": time.time_ns() // 1_000_000,
             **fields,
         }
+        if kind == "turn.started" and fields.get("turn_id"):
+            turn_id = fields["turn_id"]
+            if len(self._timeline_order) == self._timeline_order.maxlen:
+                self._turn_timelines.pop(self._timeline_order[0], None)
+            self._timeline_order.append(turn_id)
+            self._turn_timelines[turn_id] = {"times": {
+                "speech_started_ms": fields.get("speech_started_ms"),
+                "speech_stopped_ms": fields.get("speech_stopped_ms"),
+                "asr_final_ms": fields.get("asr_final_ms"),
+            }}
+        else:
+            slot = {
+                "llm.request_started": "llm_request_ms",
+                "text.delta": "llm_first_text_ms",
+                "tts.text_submitted": "tts_submit_ms",
+                "tts.first_audio": "tts_first_pcm_ms",
+                "tts.first_published": "room_first_publish_ms",
+                "tts.playback.started": "speaker_started_ms",
+            }.get(kind)
+            turn_id = fields.get("turn_id")
+            if slot and turn_id in self._turn_timelines and (
+                slot != "speaker_started_ms" or fields.get("source") == "speaker"
+            ):
+                self._turn_timelines[turn_id]["times"].setdefault(slot, event["ts_ms"])
         self.events.append(event)
         for queue in tuple(self.event_subscribers):
             if queue.full():
@@ -123,6 +189,11 @@ class RealtimeRobot:
             "llm_state": "streaming" if self.llm_task and not self.llm_task.done() else "idle",
             "llm_error": self.llm_error,
             "provider_text_ignored": self.provider_text_ignored,
+            "keepalive_count": self.keepalive_count,
+            "keepalive_pending": self._keepalive_pending,
+            "last_turn_timeline": self._timeline_snapshot(self._timeline_order[-1])
+            if self._timeline_order else None,
+            "latency_percentiles": self._timeline_percentiles(),
         }
 
     def since(self, after):
@@ -146,6 +217,8 @@ class RealtimeRobot:
         self.restored_context = None
         self.persona_snapshot = None
         self.audio_item_turns.clear()
+        self._turn_timelines.clear()
+        self._timeline_order.clear()
         self.pending_audio_item_id = None
         if self.speech:
             await self.speech.close()
@@ -258,6 +331,7 @@ class RealtimeRobot:
         parts = []
         tool_results = []
         messages = self._history_messages(user_text)
+        self.publish("llm.request_started", turn_id=turn_id)
         try:
             async for item in self.external_llm.stream(messages, tools=True):
                 if self.turn_id != turn_id or self.turn_identity != identity:
@@ -382,6 +456,12 @@ class RealtimeRobot:
                 retry = 1
                 self.publish("session.ready", model="qwen-audio-3.0-realtime-flash")
                 self.audio_task = asyncio.create_task(self._audio_pump(generation))
+                self._last_activity_t = time.monotonic()
+                self._keepalive_pending = False
+                if self.external_llm:
+                    self._keepalive_task = asyncio.create_task(
+                        self._idle_keepalive(generation), name=f"keepalive:{self.robot.config.robot_id}"
+                    )
                 while generation == self.robot.generation:
                     event = await self.socket.recv()
                     await self.handle(event, generation)
@@ -395,6 +475,12 @@ class RealtimeRobot:
                 self.publish("session.error", error=self.error)
             finally:
                 self.ready = False
+                if self._keepalive_task:
+                    self._keepalive_task.cancel()
+                    await asyncio.gather(self._keepalive_task, return_exceptions=True)
+                    self._keepalive_task = None
+                self._keepalive_pending = False
+                self._keepalive_items.clear()
                 self.restored_context = None
                 self.persona_snapshot = None
                 if self.llm_task and not self.llm_task.done():
@@ -473,6 +559,30 @@ class RealtimeRobot:
             finally:
                 audio.queue.task_done()
 
+    async def _idle_keepalive(self, generation):
+        """Sensor-only app heartbeat; a normal speaking Realtime must never get an unsolicited reply."""
+        while self.ready and not self._stopping and generation == self.robot.generation:
+            await asyncio.sleep(5)
+            await self._maybe_keepalive(generation)
+
+    async def _maybe_keepalive(self, generation):
+        if (not self.external_llm or not self.ready or self._stopping or
+            generation != self.robot.generation or self._keepalive_pending or
+            self.speech_active or self.turn_id or self.response_id or
+            time.monotonic() - self._last_activity_t < 120 or self.socket is None):
+            return False
+        # The configured sensor_only Session returns a discarded punctuation response.
+        # Do not emit a user turn or invoke the independent LLM/TTS.
+        self._keepalive_pending = True
+        try:
+            await self.socket.send({"type": "response.create"})
+        except BaseException:
+            self._keepalive_pending = False
+            raise
+        self.keepalive_count += 1
+        self.publish("session.keepalive", count=self.keepalive_count)
+        return True
+
     def _create_turn(self, user_text, *, audio=False):
         if self.turn_id:
             return
@@ -493,7 +603,18 @@ class RealtimeRobot:
             self.audio_turn_id = turn_id
         self.turn_identity = identity
         self.began = time.perf_counter()
-        self.publish("turn.started", turn_id=turn_id, user_text=user_text)
+        self.publish("turn.started", turn_id=turn_id, user_text=user_text,
+                     speech_started_ms=(
+                         self.last_provider_speech_ms if audio and
+                         self.last_provider_speech_ms is not None and
+                         0 <= now - self.last_provider_speech_ms < 30000 else None
+                     ),
+                     speech_stopped_ms=(
+                         self.last_provider_stopped_ms if audio and
+                         self.last_provider_stopped_ms is not None and
+                         0 <= now - self.last_provider_stopped_ms < 30000 else None
+                     ),
+                     asr_final_ms=now if audio else None)
 
     def _finish(self, status, *, cancel_source=None):
         if not self.turn_id:
@@ -574,6 +695,7 @@ class RealtimeRobot:
         if kind == "error":
             raise RuntimeError(self._provider_error(event))
         if kind == "input_audio_buffer.speech_started":
+            self._last_activity_t = time.monotonic()
             self.speech_active = True
             self.pending_audio_item_id = event.get("item_id")
             self.speech_started_count += 1
@@ -584,20 +706,26 @@ class RealtimeRobot:
             if self.external_llm and self.speech and self.speech.turn_id:
                 self.publish("playback.hold_requested", turn_id=self.speech.turn_id,
                              source="smart_turn")
+                self.speech.request_playback_control("hold", reason="speech_started")
         elif kind == "input_audio_buffer.speech_stopped":
             invalid = event.get("reason") == "turn_invalid"
             if invalid:
                 self.speech_active = False
                 self.invalid_turns += 1
+                self.last_provider_stopped_ms = None
+            else:
+                self.last_provider_stopped_ms = time.time_ns() // 1_000_000
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
             if invalid and self.external_llm and self.speech and self.speech.turn_id:
                 self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
                              reason="turn_invalid")
+                self.speech.request_playback_control("resume", reason="turn_invalid")
         elif kind == "conversation.item.ambient_audio_transcription.completed":
             self.publish("transcript.ambient", text=event.get("transcript", ""))
         elif kind == "conversation.item.input_audio_transcription.delta":
             self.publish("transcript.delta", text=event.get("text", ""), stash=event.get("stash", ""))
         elif kind == "conversation.item.input_audio_transcription.completed":
+            self._last_activity_t = time.monotonic()
             self.transcripts_completed += 1
             self.last_provider_transcript_ms = time.time_ns() // 1_000_000
             self.transcript = event.get("transcript", "")
@@ -645,6 +773,11 @@ class RealtimeRobot:
         elif kind == "response.created":
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
+        elif kind == "response.output_item.added":
+            if self.external_llm and self._keepalive_pending:
+                item = event.get("item") or {}
+                if item.get("role") == "assistant" and item.get("id"):
+                    self._keepalive_items.add(item["id"])
         elif kind == "response.text.delta":
             if self.external_llm:
                 self.provider_text_ignored += 1
@@ -672,7 +805,15 @@ class RealtimeRobot:
             response = event.get("response") or {}
             status = response.get("status", "failed")
             self.response_id = None
+            self._last_activity_t = time.monotonic()
             if self.external_llm:
+                if self._keepalive_pending:
+                    self._keepalive_pending = False
+                    for item_id in self._keepalive_items:
+                        await self.socket.send({
+                            "type": "conversation.item.delete", "item_id": item_id,
+                        })
+                    self._keepalive_items.clear()
                 return
             if self.followup_needed and status == "completed":
                 self.followup_needed = False

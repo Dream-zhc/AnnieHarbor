@@ -106,6 +106,59 @@ class RealtimeWireTests(unittest.TestCase):
 
 
 class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timeline_stage_contract_and_speaker_only_percentiles(self):
+        client = self.runtime.realtime["annie-a"]
+        turn_id = "timed-turn"
+        client.publish("turn.started", turn_id=turn_id, user_text="测试",
+                       speech_started_ms=1000, speech_stopped_ms=1500,
+                       asr_final_ms=1650)
+        client.publish("llm.request_started", turn_id=turn_id)
+        client.publish("text.delta", turn_id=turn_id, text="回复")
+        client.publish("tts.text_submitted", turn_id=turn_id)
+        client.publish("tts.first_audio", turn_id=turn_id)
+        client.publish("tts.first_published", turn_id=turn_id)
+        snap = client.snapshot()
+        timings = snap["last_turn_timeline"]["durations"]
+        self.assertEqual(timings["speech_to_asr_final_ms"], 650)
+        self.assertEqual(timings["endpoint_to_asr_final_ms"], 150)
+        self.assertIsNone(timings["endpoint_to_speaker_start_ms"])
+        self.assertEqual(
+            snap["latency_percentiles"]["endpoint_to_speaker_start_ms"]["samples"], 0)
+        client.publish("tts.playback.started", turn_id=turn_id, source="browser_test")
+        self.assertIsNone(client.snapshot()["last_turn_timeline"]["durations"][
+            "endpoint_to_speaker_start_ms"])
+        client.publish("tts.playback.started", turn_id=turn_id, source="speaker")
+        stats = client.snapshot()["latency_percentiles"]["endpoint_to_speaker_start_ms"]
+        self.assertEqual(stats["samples"], 1)
+        self.assertEqual(stats["p50_ms"], stats["p95_ms"])
+        self.assertGreater(stats["p50_ms"], 0)
+
+    async def test_sensor_idle_heartbeat_does_not_generate_business_turn(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+        generation = client.robot.generation
+        client._last_activity_t -= 121
+        self.assertFalse(await client._maybe_keepalive(generation))
+        llm = FakeExternalLlm()
+        client.external_llm = llm
+        self.assertTrue(await client._maybe_keepalive(generation))
+        self.assertEqual(client.socket.outbound[-1], {"type": "response.create"})
+        self.assertFalse(await client._maybe_keepalive(generation))
+        await client.handle({"type": "response.created",
+                             "response": {"id": "heartbeat"}}, generation)
+        await client.handle({"type": "response.output_item.added",
+                             "item": {"id": "heartbeat-item", "role": "assistant"}}, generation)
+        await client.handle({"type": "response.done",
+                             "response": {"status": "completed"}}, generation)
+        self.assertEqual(client.socket.outbound[-1], {
+            "type": "conversation.item.delete", "item_id": "heartbeat-item",
+        })
+        self.assertEqual(client.keepalive_count, 1)
+        self.assertFalse(client._keepalive_pending)
+        self.assertFalse(llm.messages)
+        self.assertFalse(client.robot.turn_cache)
+        self.assertEqual(other.keepalive_count, 0)
+
     async def test_speculative_hold_is_reversible_and_keeps_robot_scope(self):
         client = self.runtime.realtime["annie-a"]
         other = self.runtime.realtime["annie-b"]
@@ -115,6 +168,9 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
             async def close(self):
                 pass
+
+            def request_playback_control(self, kind, *, reason):
+                return True
 
         client.external_llm = FakeExternalLlm()
         client.speech = Speaking()

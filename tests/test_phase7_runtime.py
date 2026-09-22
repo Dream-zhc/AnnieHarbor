@@ -258,3 +258,30 @@ def test_smallbrain_action_prep_requires_matching_asr_identity(tmp_path):
             await rt.close()
 
     asyncio.run(exercise())
+
+
+def test_function_call_before_final_asr_returns_rejection_not_silent_hang(tmp_path):
+    async def exercise():
+        rt = runtime(tmp_path)
+        await ready(rt)
+        try:
+            client = rt.realtime["a"]
+            assert client.turn_id is None
+            output = await result_from_call(
+                client, "premature-action", "perform_action",
+                {"script_id": "agree_micro_nod"},
+            )
+            assert output == [{
+                "status": "rejected", "reason": "unconfirmed_current_turn",
+                "real_device_executed": False,
+            }]
+            assert (await rt.action_list("a"))["requests"] == []
+            await client.handle({
+                "type": "response.done",
+                "response": {"status": "completed"},
+            }, client.robot.generation)
+            assert client.socket.outbound[-1]["type"] == "response.create"
+        finally:
+            await rt.close()
+
+    asyncio.run(exercise())

@@ -15,33 +15,70 @@ from annie_brain.action_catalog import resolve_action
 
 EXPRESSIONS = frozenset({"喜", "怒", "哀", "乐", "中"})
 ANCHOR_TIMEOUT = 15
-MOTION_WORDS = re.compile(
-    r"点.{0,2}头|看.{0,4}(左|右|上)|眨.{0,3}(眼|下)|"
-    r"歪头|摇头|动一动|做动作|眼神|表情|笑脸|"
-    r"blink|nod|look (left|right)|expression",
-    re.I,
+_LEAD = (
+    r"(?:小安妮[，, ]*)?"
+    r"(?:(?:请你|请|你(?:能不能|可不可以|可以|能)?|给我|帮我|来|能不能|可不可以)"
+    r"(?:给我|帮我)?)?\s*"
 )
-REQUEST_PREFIX = re.compile(
-    r"^(?:你|小安妮|给我|帮我|请|能不能|可不可以|可以|来|做|试|现在|表演|展示|"
-    r"show|please)",
-    re.I,
-)
+_TAIL = r"(?:一下|两下|一眼|吧|呀|啊|哦|好吗|可以吗|行吗|吗)?"
+# Only the four default trial scripts have reviewed text-intent grammars.
+# This does NOT establish that the physical device or motion is safe.
+# An additional catalog ID cannot become motor-enabled merely by
+# editing ANNIE_ACTION_ALLOWLIST; it needs an explicit reviewed grammar.
+_ACTION_PHRASES = {
+    "agree_micro_nod": r"点(?:一?下|个|两下)?头",
+    "look_left": (
+        r"(?:看(?:一下|一眼)?(?:往|向)?左(?:边|面)?|"
+        r"(?:往|向)?左(?:边|面)?看(?:一下|一眼)?)"
+    ),
+    "look_right": (
+        r"(?:看(?:一下|一眼)?(?:往|向)?右(?:边|面)?|"
+        r"(?:往|向)?右(?:边|面)?看(?:一下|一眼)?)"
+    ),
+    "fast_double_blink": r"(?:连|快)?眨(?:两|二|2)下(?:眼(?:睛)?)?",
+}
+_EXPRESSION_PHRASES = {
+    "喜": r"(?:开心|高兴|喜悦)",
+    "怒": r"(?:生气|愤怒)",
+    "哀": r"(?:难过|悲伤|伤心)",
+    "乐": r"(?:快乐|欢乐)",
+    "中": r"(?:中性|平静)",
+}
 
 
-def explicit_physical_request(text):
-    """Fail closed: old narrative and ambient emotion are not motor commands."""
+def explicit_physical_request(text, *, kind=None, value=None):
+    """Require an imperative for the EXACT selected motion/expression.
+
+    A narrative, question about a gesture, or left/right mismatch must never
+    turn into motor execution merely because the LLM chose a known ID.
+    """
     if not isinstance(text, str):
         return False
     plain = text.strip(" 。？!！?，,")
-    if not plain or not MOTION_WORDS.search(plain):
+    if not plain or len(plain) > 64:
         return False
     if re.search(r"别|不要|不能|不许|停止|取消|不再", plain):
         return False
-    if plain.endswith("了"):
-        return False
-    return plain in {"点头", "点下头", "看左边", "看右边", "眨眼", "眨两下眼"} or bool(
-        REQUEST_PREFIX.match(plain)
+    actions = (
+        [(value, _ACTION_PHRASES[value])] if kind == "action" and value in _ACTION_PHRASES
+        else list(_ACTION_PHRASES.items()) if kind is None else []
     )
+    for _ident, phrase in actions:
+        if re.fullmatch(_LEAD + phrase + _TAIL, plain):
+            return True
+    expressions = (
+        [(value, _EXPRESSION_PHRASES[value])]
+        if kind == "expression" and value in _EXPRESSION_PHRASES
+        else list(_EXPRESSION_PHRASES.items()) if kind is None else []
+    )
+    for _ident, phrase in expressions:
+        if re.fullmatch(
+            _LEAD + r"(?:做(?:个|一个)?|露(?:个|一个)?|摆(?:个|一个)?|展示|来个)?"
+            + phrase + r"(?:的)?(?:表情|脸|笑脸)" + _TAIL,
+            plain,
+        ):
+            return True
+    return False
 
 
 class ActionCoordinator:
@@ -80,6 +117,22 @@ class ActionCoordinator:
                 UNIQUE(robot_id,turn_id,kind,value))""")
             db.execute("""CREATE INDEX IF NOT EXISTS action_requests_recent
                 ON action_requests(robot_id,updated_ms DESC)""")
+            # No restarted process can publish its previous PCM anchor.
+            # Retire abandoned in-memory requests instead of blocking motions
+            # indefinitely or falsely reporting that the device moved.
+            now = time.time_ns() // 1_000_000
+            db.execute(
+                """UPDATE action_requests SET status='expired_no_pcm',
+                   error='process_restarted',updated_ms=?
+                   WHERE status='awaiting_audio_anchor'""",
+                (now,),
+            )
+            db.execute(
+                """UPDATE action_requests SET status='cancelled_before_send',
+                   error='process_restarted',updated_ms=?
+                   WHERE status='reserved'""",
+                (now,),
+            )
 
     async def start(self):
         await asyncio.to_thread(self._initialize)
@@ -130,14 +183,17 @@ class ActionCoordinator:
             # the catalog's own motion duration. No guessed strength/duration.
             if kind == "action":
                 last = db.execute(
-                    """SELECT updated_ms, status FROM action_requests
+                    """SELECT value, updated_ms, status FROM action_requests
                        WHERE robot_id=? AND kind='action'
                        ORDER BY ts_ms DESC LIMIT 1""",
                     (robot_id,),
                 ).fetchone()
                 if last and (last["status"] == "awaiting_audio_anchor" or
                              last["status"] in {"published_unknown", "send_unknown"} and
-                             now - last["updated_ms"] < cooldown):
+                             now - last["updated_ms"] < max(
+                                 cooldown,
+                                 self.catalog.get(last["value"], {}).get("duration_ms", cooldown),
+                             )):
                     return None, False
             db.execute(
                 """INSERT INTO action_requests
@@ -183,7 +239,7 @@ class ActionCoordinator:
                 not isinstance(turn_id, str) or not turn_id or
                 type(generation) is not int):
             raise ValueError("invalid action turn identity")
-        if not explicit_physical_request(user_text):
+        if not explicit_physical_request(user_text, kind=kind, value=value):
             raise ValueError("physical action requires an explicit CURRENT user request")
         if kind == "action":
             if value not in self.allowlist:
@@ -210,6 +266,13 @@ class ActionCoordinator:
                         "real_device_executed": False}
             self._event(row)
             if kind == "action":
+                if speech.turn_id == turn_id and speech.frames:
+                    await asyncio.to_thread(
+                        self._status, robot_id, call_id, "awaiting_audio_anchor",
+                        "rejected_late",
+                    )
+                    self._event(row, status="rejected_late")
+                    return {"status": "rejected_late", "real_device_executed": False}
                 self.pending[(robot_id, turn_id)] = (call_id, generation)
                 self._schedule(self._expire(robot_id, turn_id, call_id, generation))
                 return {"status": "awaiting_audio_anchor", "script_id": value,
@@ -217,7 +280,10 @@ class ActionCoordinator:
                         "real_device_executed": False}
             # Expression goes out ahead of its corresponding first PCM, on
             # the SAME publisher socket as speech. No device ack is implied.
-            if speech.turn_id == turn_id and speech.frames:
+            if (speech.turn_id == turn_id and speech.frames or
+                    speech.turn_id not in (None, turn_id) and
+                    getattr(speech, "worker", None) is not None and
+                    not speech.worker.done()):
                 await asyncio.to_thread(self._status, robot_id, call_id, "reserved",
                                         "rejected_late")
                 self._event(row, status="rejected_late")
@@ -231,6 +297,10 @@ class ActionCoordinator:
             try:
                 await asyncio.wait_for(speech.publisher.publish(packet), 6)
             except Exception as exc:
+                await asyncio.to_thread(
+                    self._status, robot_id, call_id, "send_unknown", "send_unknown",
+                    type(exc).__name__,
+                )
                 self._event(row, status="send_unknown", error=type(exc).__name__)
                 return {"status": "send_unknown", "real_device_executed": False}
             await asyncio.to_thread(
@@ -293,6 +363,10 @@ class ActionCoordinator:
             try:
                 await asyncio.wait_for(self.main_publishers[robot_id].publish(packet), 6)
             except Exception as exc:
+                await asyncio.to_thread(
+                    self._status, robot_id, call_id, "send_unknown", "send_unknown",
+                    type(exc).__name__,
+                )
                 self._event(row, status="send_unknown", error=type(exc).__name__)
                 return
             await asyncio.to_thread(

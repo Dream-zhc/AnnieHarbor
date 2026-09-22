@@ -27,6 +27,7 @@
 - **工作台**：顶部「动作」显示当前 robot_id 的SQLite真实执行记录、等待/失败/未知状态、动作目录和本机白名单；示例动作按钮仅填入对话输入框，不直接发电机命令。不新增独立Phase7 HTML页。
 - **启用**：默认 ANNIE_ACTIONS_ENABLED 未设置时仍为关闭。只有确认接收端、安全幅度及测试环境后，停止麦克风并安全重启 Runtime 时配置 ANNIE_ACTIONS_ENABLED=1，同时需 ANNIE_TTS_ENABLED=1、DASHSCOPE_API_KEY、正确Room；可用 ANNIE_ACTION_ALLOWLIST 进一步收紧允许的目录ID。建议首先仅放行 agree_micro_nod。旧 preview_action 在动作关闭时仍是模拟；动作启用时从模型工具列表移除，不在真实执行中混淆预览。天气沿用 AMAP_WEATHER_API_KEY。
 - **验收证据**：tests/test_phase7_execution.py、tests/test_phase7_runtime.py、tests/test_phase7_wire.py 覆盖真实SQLite与Fake Room、双机器人隔离、动作/表情旧wire、去重/冷却/取消/过期、ASR身份匹配、ASGI工作台接口和天气Mock；web/tests/action-panel.test.mjs 验证仅填入且未出现直接动作POST。隔离的真实Qwen-Audio Realtime三例：“点头”触发 agree_micro_nod、“眨两下眼”触发 fast_double_blink、“北京天气”触发 get_weather；真实高德北京市实时天气返回成功。这些都**没有**执行真实物理动作。
-- **自动化结果**：Python 全量 200 passed、30 subtests passed；前端24 passed；Ruff、TypeScript、Vite生产构建、uv锁和diff检查通过。两条警告来自第三方弃用接口，不是设备验证证据。阶段7源码已从共用文件中只选择本阶段差异入Git，先前未提交的Phase6、旧Web/sidecar修改不擅自提交或清理。
+- **审查返工（2026-09-22）**：修复“问你有没有点头”等叙述/疑问误命令、用户要求看右边却被模型选看左边、表情喜哀不匹配；只能执行当前输入明确对应的四项命令或五种表情。新的目录ID需专门补经审查的语义规则，修改白名单本身不代表可安全执行。修复重启残留awaiting_audio_anchor阻断后续动作、冷却时间按前后两动作较长者计算、首PCM已发送仍注册动作而空等15秒、上一轮TTS进行中发送下一轮表情、Room发送故障未写入SQLite。若Function Calling先于当前最终ASR，明确回写unconfirmed_current_turn且绝不执行，不能像此前静默丢工具；需由真人连续语音验收确认这种保守降级出现频率。
+- **自动化结果**：Python 全量 212 passed、30 subtests passed；前端24 passed；Ruff、TypeScript、Vite生产构建、uv锁和diff检查通过。两条警告来自第三方弃用接口，不是设备验证证据。阶段7源码从共用文件中只选择本阶段差异入Git；先前未提交的Phase6、旧Web/sidecar修改不擅自提交或清理。
 - **现场P7-W1**：未启用时先核验模拟/未知状态；安全启用后A说“请你点下头”，工作台与接收端逐条核对工具→PCM→reb_main→设备动作，B独立聊天；表情及对应TTS和嘴型分别核验。
 - **现场P7-W2**：重复相同call、无效ID、取消、过期、旧generation、网络失败、小脑action_prep及B不串动作；没有实际设备回执时只给unknown，真人物理完成/停止和Windows双头仍待用户人工签收。计划中的“挥挥手”不在34个已有脚本，不能擅创ID。

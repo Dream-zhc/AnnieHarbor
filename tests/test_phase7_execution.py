@@ -170,6 +170,7 @@ def test_uncertain_transport_never_retries_or_claims_hardware_completion(tmp_pat
         await wait_for(lambda: not actions.pending)
         await asyncio.sleep(.03)
         assert (await actions.list("A"))[0]["status"] == "send_unknown"
+        assert (await actions.list("A"))[0]["error"] == "TimeoutError"
         await actions.close()
 
     asyncio.run(run())
@@ -179,9 +180,108 @@ def test_uncertain_transport_never_retries_or_claims_hardware_completion(tmp_pat
     ("你点下头", True), ("来眨两下眼", True), ("看左边", True),
     ("我看见你点头了", False), ("你别看左边", False),
     ("他刚才点头了", False), ("你好", False),
+    ("你看左边的天气怎么样", False),
+    ("你现在点头了吗", False),
+    ("你刚刚看左边了吗", False),
+    ("请你给我讲讲点头有什么含义", False),
+    ("你做过哪些表情呀", False),
+    ("你能往左看一下吗", True),
+    ("你给我做个开心表情", True),
 ])
 def test_physical_intent_gate(text, expected):
     assert explicit_physical_request(text) is expected
+
+
+def test_model_must_select_exact_user_requested_motion_and_expression(tmp_path):
+    async def run():
+        actions, pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        speech = SimpleNamespace(turn_id=None, frames=0, publisher=FakePublisher())
+        for kind, value, user_text in (
+            ("action", "look_left", "你看右边"),
+            ("action", "agree_micro_nod", "你看右边"),
+            ("action", "look_left", "你看左边的天气怎么样"),
+            ("expression", "喜", "你给我做个难过表情"),
+            ("expression", "喜", "你做过哪些表情呀"),
+        ):
+            with pytest.raises(ValueError, match="explicit CURRENT"):
+                await actions.request(
+                    "A", "rejected-" + value, "turn", 1, kind, value,
+                    speech=speech, user_text=user_text,
+                )
+        assert (await actions.list("A")) == []
+        assert pubs["A"].sent == pubs["B"].sent == []
+        await actions.close()
+
+    asyncio.run(run())
+
+
+def test_already_started_tts_does_not_create_an_unfulfillable_action_anchor(tmp_path):
+    async def run():
+        actions, pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        speech = SimpleNamespace(turn_id="current", frames=1,
+                                 publisher=FakePublisher())
+        late = await actions.request(
+            "A", "late-motion", "current", 1, "action", "look_left",
+            speech=speech, user_text="你看左边",
+        )
+        assert late["status"] == "rejected_late"
+        assert actions.pending == {}
+        assert (await actions.list("A"))[0]["status"] == "rejected_late"
+        actions.on_first_pcm({"robot_id": "A", "turn_id": "current", "generation": 1})
+        await asyncio.sleep(.02)
+        assert pubs["A"].sent == []
+        await actions.close()
+
+    asyncio.run(run())
+
+
+def test_old_tts_cannot_receive_new_turn_expression(tmp_path):
+    async def run():
+        actions, _pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        worker = SimpleNamespace(done=lambda: False)
+        tts = FakePublisher()
+        speech = SimpleNamespace(turn_id="old-turn", frames=80,
+                                 worker=worker, publisher=tts)
+        reply = await actions.request(
+            "A", "face-late", "new-turn", 1, "expression", "喜",
+            speech=speech, user_text="你给我做个开心表情",
+        )
+        assert reply["status"] == "rejected_late"
+        assert tts.sent == []
+        await actions.close()
+
+    asyncio.run(run())
+
+
+def test_crash_retires_orphaned_sqlite_requests_without_replaying_motion(tmp_path):
+    async def run():
+        first, pubs, _events, _a, _b = coordinator(tmp_path)
+        await first.start()
+        speech = SimpleNamespace(turn_id=None, frames=0, publisher=FakePublisher())
+        await first.request(
+            "A", "old-call", "old-turn", 1, "action", "agree_micro_nod",
+            speech=speech, user_text="你点下头",
+        )
+        # Deliberately do not close the first process; emulate hard termination
+        # by reopening its DB before any graceful cancel runs.
+        recovered, new_pubs, _events, _a, _b = coordinator(tmp_path)
+        await recovered.start()
+        old = (await recovered.list("A"))[0]
+        assert old["status"] == "expired_no_pcm"
+        assert old["error"] == "process_restarted"
+        accepted = await recovered.request(
+            "A", "new-call", "new-turn", 1, "action", "look_right",
+            speech=speech, user_text="你看右边",
+        )
+        assert accepted["status"] == "awaiting_audio_anchor"
+        assert pubs["A"].sent == new_pubs["A"].sent == []
+        await first.close()
+        await recovered.close()
+
+    asyncio.run(run())
 
 
 def test_amap_weather_uses_provider_data_without_secret_leakage():

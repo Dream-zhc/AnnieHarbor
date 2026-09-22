@@ -970,13 +970,29 @@ class RealtimeRobot:
                 self._reset_turn()
 
     async def _tool_call(self, event):
-        if self.turn_id is None or self.socket is None or not self.ready:
+        if self.socket is None or not self.ready:
             return
         call_id, name = event.get("call_id"), event.get("name")
         if not call_id:
             return
         if call_id in self.calls:
             self.publish("tool.duplicate", call_id=call_id)
+            return
+        if self.turn_id is None:
+            # The provider may deliver a function call BEFORE final ASR. Never
+            # execute an unowned motion or silently drop its required output.
+            # This response can retry only after a confirmed current turn.
+            self.calls.add(call_id)
+            result = {"status": "rejected", "reason": "unconfirmed_current_turn",
+                      "real_device_executed": False}
+            self.publish("tool.result", call_id=call_id, name=name,
+                         arguments=event.get("arguments"), result=result, valid=False)
+            await self.socket.send({
+                "type": "conversation.item.create",
+                "item": {"type": "function_call_output", "call_id": call_id,
+                         "output": json.dumps(result, ensure_ascii=False)},
+            })
+            self.followup_needed = True
             return
         self.calls.add(call_id)
         self.call_count += 1

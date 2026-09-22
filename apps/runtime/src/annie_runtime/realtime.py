@@ -84,6 +84,8 @@ class RealtimeRobot:
         self.restored_context = None
         self.persona_snapshot = None
         self.social_state = {}
+        self.actions = None  # physical dispatch only if operator explicitly enables it
+        self.weather = None
         self._stopping = False
         self._opening = False
         self._open_done = asyncio.Event()
@@ -183,6 +185,8 @@ class RealtimeRobot:
             ):
                 self._turn_timelines[turn_id]["times"].setdefault(slot, event["ts_ms"])
         self.events.append(event)
+        if kind == "tts.first_published" and self.actions is not None:
+            self.actions.on_first_pcm(event)
         for queue in tuple(self.event_subscribers):
             if queue.full():
                 queue.get_nowait()
@@ -257,6 +261,8 @@ class RealtimeRobot:
         self._turn_timelines.clear()
         self._timeline_order.clear()
         self.pending_audio_item_id = None
+        if self.actions is not None:
+            await self.actions.cancel_pending(self.robot.config.robot_id)
         if self.speech:
             await self.speech.close()
         logger.info(
@@ -329,6 +335,11 @@ class RealtimeRobot:
         # A confirmed barge-in must retire that finished-but-unheard output,
         # even when _finish() already cleared self.turn_id.
         response_id = self.response_id
+        if self.actions is not None:
+            await self.actions.cancel_pending(
+                self.robot.config.robot_id,
+                self.speech.turn_id if self.speech and self.speech.turn_id else self.turn_id,
+            )
         if response_id:
             self._cancelled_response_ids.add(response_id)
             self.response_id = None
@@ -378,10 +389,27 @@ class RealtimeRobot:
                 # provider's unanswered user-message queue. Include the
                 # bounded evidence in initial instructions, before ready.
                 instructions += historical_user_evidence(restore)
+                physical = bool(self.actions and self.actions.enabled and self.speech)
+                if physical:
+                    instructions += (
+                        "\n只有本轮用户明确要求已有动作或表情时才调用对应工具，"
+                        "不要因为礼貌应答、寒暄、情绪猜测或历史指令自主动作。"
+                        "动作awaiting_audio_anchor仅已排队，published_unknown只表明"
+                        "房间发送完成，均没有设备完成回执。不能说自己已点头、眨眼或执行成功；"
+                        "结果失败/未知应如实表达，不将上轮动作留给新一轮。"
+                    )
+                if self.weather is not None:
+                    instructions += (
+                        "\n仅用户询问明确城市的实时天气时调用get_weather；"
+                        "未提供城市先询问，接口失败或未配置不能编造天气。"
+                    )
                 self.history_turns_confirmed = None
                 await self.socket.send(session_update(
                     instructions,
                     self.history_turns,
+                    actions=self.actions.allowlist if physical else (),
+                    expressions=physical,
+                    weather=self.weather is not None,
                 ))
                 # An invalid combined capability must fail visibly before audio enters the model.
                 while True:
@@ -668,6 +696,8 @@ class RealtimeRobot:
         # Mark ownership before any await: a late response.done must not
         # complete the next turn while the speaker is stopping.
         cancelled_response = self.response_id
+        if self.actions is not None:
+            await self.actions.cancel_pending(self.robot.config.robot_id)
         completed_unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
                              if self.speech and self.speech.turn_id else set())
         if cancelled_response:
@@ -943,29 +973,66 @@ class RealtimeRobot:
         if self.turn_id is None or self.socket is None or not self.ready:
             return
         call_id, name = event.get("call_id"), event.get("name")
-        if not call_id or call_id in self.calls:
+        if not call_id:
+            return
+        if call_id in self.calls:
             self.publish("tool.duplicate", call_id=call_id)
             return
         self.calls.add(call_id)
         self.call_count += 1
         arguments = event.get("arguments", "")
         try:
-            if self.call_count > 2:
+            if self.call_count > (4 if (self.actions and self.actions.enabled or
+                                      self.weather) else 2):
                 raise ValueError("tool call budget exceeded")
-            if name != "preview_action":
-                raise ValueError("unsupported tool")
             if not isinstance(arguments, str) or len(arguments) > 4096:
                 raise ValueError("invalid arguments size")
             args = json.loads(arguments)
-            if not isinstance(args, dict) or set(args) != {"description"}:
-                raise ValueError("expected exactly description")
-            desc = args["description"]
-            if not isinstance(desc, str) or not 1 <= len(desc.strip()) <= 100:
-                raise ValueError("description must be 1..100 characters")
-            result = {"status": "simulated", "description": desc, "real_device_executed": False}
+            if not isinstance(args, dict):
+                raise ValueError("expected object arguments")
+            if name == "get_weather" and self.weather is not None:
+                if set(args) != {"city"}:
+                    raise ValueError("expected exactly city")
+                if self.turn_identity != self.robot.session_state():
+                    raise ValueError("stale weather request")
+                if not isinstance(args["city"], str):
+                    raise ValueError("invalid city")
+                current = self.robot.turn_cache.get(self.turn_id) or {}
+                utterance = str(current.get("user_text") or self.transcript or "")
+                if args["city"] not in utterance:
+                    raise ValueError("weather requires current user query")
+                result = await self.weather.current(args["city"])
+            elif name in {"perform_action", "set_expression"} and self.actions is not None:
+                expected = {"script_id"} if name == "perform_action" else {"expression"}
+                if set(args) != expected:
+                    raise ValueError("invalid physical tool arguments")
+                if self.turn_identity != self.robot.session_state():
+                    raise ValueError("stale physical tool request")
+                cached = self.robot.turn_cache.get(self.turn_id) or {}
+                result = await self.actions.request(
+                    self.robot.config.robot_id, call_id, self.turn_id,
+                    self.robot.generation,
+                    "action" if name == "perform_action" else "expression",
+                    args["script_id"] if name == "perform_action" else args["expression"],
+                    speech=self.speech,
+                    user_text=cached.get("user_text") or self.transcript,
+                )
+            elif name == "preview_action":
+                if set(args) != {"description"}:
+                    raise ValueError("expected exactly description")
+                desc = args["description"]
+                if not isinstance(desc, str) or not 1 <= len(desc.strip()) <= 100:
+                    raise ValueError("description must be 1..100 characters")
+                result = {"status": "simulated", "description": desc, "real_device_executed": False}
+            else:
+                raise ValueError("unsupported tool")
             valid = True
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             result = {"status": "rejected", "reason": str(exc), "real_device_executed": False}
+            valid = False
+        except Exception as exc:
+            logger.exception("memory/tool operation failed name=%s", name)
+            result = {"status": "unavailable", "reason": type(exc).__name__}
             valid = False
         self.publish("tool.result", call_id=call_id, name=name,
                      arguments=arguments, result=result, valid=valid)

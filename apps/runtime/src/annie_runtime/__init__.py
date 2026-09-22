@@ -13,6 +13,7 @@ from annie_adapters import (
     RoomPcmConnection,
     RuntimeStore,
     decode_room_binary_frame,
+    match_cancel_identity,
     normalize_room_event,
     parse_mic_start,
 )
@@ -830,6 +831,12 @@ class HarborRuntime:
         room_tts_factory=None,
         viseme_root: Path | None = None,
         viseme_python: str | None = None,
+        action_catalog: Path | None = None,
+        actions_enabled: bool = False,
+        action_allowlist: tuple[str, ...] = (),
+        room_action_factory=None,
+        weather_key: str | None = None,
+        weather_client=None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -861,6 +868,8 @@ class HarborRuntime:
         self.room_connections = {}
         self.room_sources = {}
         self.playback_listeners = {}
+        self.smallbrain_links = {}
+        self.smallbrain_tasks = set()
         self.viseme_sidecars = None
         self.realtime = {}
         if realtime_key:
@@ -912,6 +921,45 @@ class HarborRuntime:
                 viseme_root, room_server, [client.robot for client in self.realtime.values()],
                 python=viseme_python,
             )
+        self.actions = None
+        if action_catalog is not None:
+            from annie_brain.action_catalog import load_action_catalog, resolve_action
+
+            from annie_runtime.actions import ActionCoordinator
+
+            if actions_enabled and (not self.realtime or room_server is None or not tts_voice):
+                raise ValueError("real action delivery requires Realtime, Room and TTS anchor")
+            catalog = load_action_catalog(action_catalog)
+            for script in action_allowlist:
+                resolve_action(catalog, script)
+            if len(set(action_allowlist)) != len(action_allowlist):
+                raise ValueError("duplicate action allowlist entry")
+            if actions_enabled and not action_allowlist:
+                raise ValueError("real actions require an explicit nonempty allowlist")
+            from annie_adapters.tts import RoomTtsPublisher
+
+            publishers = {
+                robot_id: (room_action_factory or RoomTtsPublisher)(
+                    room_server, robot.config.room_id, channel="main",
+                )
+                for robot_id, robot in self.robots.items()
+                if robot_id in self.realtime and room_server is not None and actions_enabled
+            }
+            self.actions = ActionCoordinator(
+                self.store, catalog, self.robots, publishers,
+                lambda robot_id, kind, **fields: self.realtime[robot_id].publish(kind, **fields),
+                enabled=actions_enabled,
+                allowlist=action_allowlist,
+            )
+            for client in self.realtime.values():
+                client.actions = self.actions
+        self.weather = None
+        if weather_key or weather_client:
+            from annie_adapters.weather import AmapWeather
+
+            self.weather = AmapWeather(weather_key or "", client=weather_client)
+            for client in self.realtime.values():
+                client.weather = self.weather
         self.started = False
         if room_server is not None:
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
@@ -1135,9 +1183,52 @@ class HarborRuntime:
 
     def _room_playback_receipt(self, robot_id, message):
         client = self.realtime.get(robot_id)
-        if client is None or client.speech is None or not str(message.get("type", "")).startswith(
-            "tts.playback."
-        ):
+        if client is None:
+            return
+        if message.get("type") in {"asr", "ASR_RESULT"}:
+            event = normalize_room_event(message)
+            current = client.robot.turn_cache.get(client.turn_id) if client.turn_id else None
+            if (event is not None and current is not None and
+                    event.payload["text"] == current.get("user_text") and
+                    time.time_ns() // 1_000_000 - current.get("created_ms", 0) < 10_000):
+                self.smallbrain_links[robot_id] = {
+                    "turn_id": client.turn_id,
+                    "generation": client.robot.generation,
+                    "asr_event_id": event.event_id,
+                    "asr_turn_token": event.payload.get("asr_turn_token"),
+                    "asr_from": event.source, "asr_ts": event.ts_ms,
+                    "text": event.payload["text"], "cancelled": False,
+                }
+            return
+        if message.get("type") == "cancel" and message.get("reason") == "action_prep":
+            link = self.smallbrain_links.get(robot_id)
+            matched, reason = match_cancel_identity(link or {}, message)
+            if not (matched and client.ready and link["turn_id"] == client.turn_id and
+                    link["generation"] == client.robot.generation):
+                client.publish("smallbrain.cancel.ignored", reason=reason,
+                               device_action_untouched=True)
+                return
+            link["cancelled"] = True
+
+            async def apply_cancel():
+                if client.turn_id != link["turn_id"] or client.robot.generation != link["generation"]:
+                    return
+                # Small brain owns its immediate motion. Stop our pending
+                # semantic action + speech, NEVER send motion.stop to take
+                # ownership of the small brain's action.
+                try:
+                    await client._interrupt_active_turn("action_prep")
+                    client.publish("smallbrain.cancel.accepted",
+                                   device_action_untouched=True)
+                except Exception as exc:
+                    client.publish("smallbrain.cancel.failed",
+                                   reason=type(exc).__name__, device_action_untouched=True)
+
+            task = asyncio.create_task(apply_cancel())
+            self.smallbrain_tasks.add(task)
+            task.add_done_callback(self.smallbrain_tasks.discard)
+            return
+        if client.speech is None or not str(message.get("type", "")).startswith("tts.playback."):
             return
         try:
             if not client.speech.on_playback_receipt(message):
@@ -1183,6 +1274,8 @@ class HarborRuntime:
         if self.started:
             return
         await asyncio.to_thread(self.store.migrate)
+        if self.actions is not None:
+            await self.actions.start()
         self.ledger.start()
         self.recorder.start()
         self.started = True
@@ -1212,8 +1305,16 @@ class HarborRuntime:
     async def close(self):
         if self.started:
             self.started = False
+            for task in tuple(self.smallbrain_tasks):
+                task.cancel()
+            await asyncio.gather(*self.smallbrain_tasks, return_exceptions=True)
+            self.smallbrain_tasks.clear()
             for realtime in self.realtime.values():
                 await realtime.stop()
+            if self.actions is not None:
+                await self.actions.close()
+            if self.weather is not None:
+                await self.weather.close()
             for connections in self.playback_listeners.values():
                 await asyncio.gather(*(connection.close() for connection in connections))
             if self.viseme_sidecars is not None:
@@ -1461,6 +1562,21 @@ class HarborRuntime:
             raise RobotUnavailableError("Realtime is not configured; set DASHSCOPE_API_KEY")
         return await self.realtime[robot_id].submit_text(text)
 
+    async def action_list(self, robot_id: str):
+        if robot_id not in self.robots:
+            raise KeyError(robot_id)
+        if self.actions is None:
+            return {"status": "not_configured", "enabled": False,
+                    "allowlist": [], "actions": [], "requests": []}
+        return {
+            "status": "ready" if self.actions.enabled else "disabled",
+            "enabled": self.actions.enabled,
+            "allowlist": list(self.actions.allowlist),
+            "actions": list(self.actions.catalog.values()),
+            "requests": await self.actions.list(robot_id),
+            "transport_error": self.actions.connection_errors.get(robot_id),
+        }
+
     def realtime_state(self, robot_id: str):
         if robot_id not in self.realtime:
             return {**self.session_state(robot_id), "ready": False, "state": "not_configured"}
@@ -1533,6 +1649,14 @@ class HarborRuntime:
                 "ledger_queue_depth": self.ledger.queue.qsize(),
                 "ledger_queue_capacity": self.ledger.queue.maxsize,
             },
+            "actions": {
+                "configured": self.actions is not None,
+                "enabled": bool(self.actions and self.actions.enabled),
+                "allowlist": list(self.actions.allowlist) if self.actions else [],
+                "device_completion": "unknown_no_verified_action_receipt",
+                "transport_errors": dict(self.actions.connection_errors) if self.actions else {},
+            },
+            "weather": {"configured": self.weather is not None, "source": "amap"},
             "room_gateway": {
                 "configured": room_required,
                 "ready": room_ready,

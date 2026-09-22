@@ -22,7 +22,9 @@ def realtime_url(base_url: str, model: str = MODEL) -> str:
     return urlunparse(parsed._replace(query=urlencode({"model": model})))
 
 
-def session_update(instructions: str, history_turns: int = 20) -> dict:
+def session_update(instructions: str, history_turns: int = 20, *,
+                   actions: tuple[str, ...] = (), expressions: bool = False,
+                   weather: bool = False) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
     if type(history_turns) is not int or not 1 <= history_turns <= 50:
         raise ValueError("Realtime history_turns must be an integer between 1 and 50")
@@ -49,6 +51,65 @@ def session_update(instructions: str, history_turns: int = 20) -> dict:
                 },
             },
         }]
+    if actions:
+        # In real-motion mode, an ambiguous preview tool would intercept real
+        # motion requests. Keep the legacy fake tool ONLY in safe/dry-run mode.
+        session["tools"] = [
+            tool for tool in session["tools"]
+            if tool["function"]["name"] != "preview_action"
+        ]
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "perform_action",
+                "description": (
+                    "ONLY when the CURRENT user explicitly requests a physical action "
+                    "supported by this robot. The result awaiting_audio_anchor or "
+                    "published_unknown is NOT proof of physical execution; never "
+                    "claim that the robot moved without a device completion receipt."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"script_id": {"type": "string", "enum": list(actions)}},
+                    "required": ["script_id"],
+                },
+            },
+        })
+    if expressions:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "set_expression",
+                "description": (
+                    "ONLY when explicitly asked to show a facial expression. "
+                    "Published does NOT mean a real device showed the expression."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"expression": {
+                        "type": "string", "enum": ["喜", "怒", "哀", "乐", "中"],
+                    }},
+                    "required": ["expression"],
+                },
+            },
+        })
+    if weather:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": (
+                    "Use ONLY when user requests current weather for an explicitly named city. "
+                    "Never invent weather or choose a location on behalf of the user."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string",
+                                            "description": "User-named city or adcode"}},
+                    "required": ["city"],
+                },
+            },
+        })
     return {
         "type": "session.update",
         "session": session,

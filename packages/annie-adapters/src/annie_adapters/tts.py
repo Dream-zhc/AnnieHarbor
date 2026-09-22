@@ -76,37 +76,47 @@ def task_id() -> str:
 
 
 class RoomTtsPublisher:
-    """One reb_tts publisher per robot; never publish PCM to reb_mic or reb_sam."""
+    """One verified Room channel per connection; no cross-robot routing."""
 
-    def __init__(self, room_config, room_id: str, socket_factory=connect):
-        self.url = room_config.url_for(room_id, "tts")
+    def __init__(self, room_config, room_id: str, socket_factory=connect, *, channel="tts"):
+        if channel not in {"tts", "main"}:
+            raise ValueError("only verified tts/main outgoing channels are allowed")
+        self.url = room_config.url_for(room_id, channel)
         self.room_id = room_id
-        self.channel = room_config.channels["tts"]
+        self.channel = room_config.channels[channel]
         self.timeout = room_config.connect_timeout_sec
         self.socket_factory = socket_factory
         self.socket = None
         self.lock = asyncio.Lock()
 
+    async def _ensure_connected(self):
+        if self.socket is None:
+            from annie_adapters import parse_room_welcome
+
+            ws = await self.socket_factory(
+                self.url, open_timeout=self.timeout, close_timeout=2,
+            )
+            try:
+                async with asyncio.timeout(self.timeout):
+                    raw = await ws.recv()
+                if not isinstance(raw, str):
+                    raise ValueError("Room WELCOME must be JSON")
+                welcome = parse_room_welcome(json.loads(raw))
+                if welcome.room != self.room_id or welcome.robot_id != self.channel:
+                    raise ValueError("Room publisher WELCOME identity mismatch")
+                self.socket = ws
+            except BaseException:
+                ws.transport.abort()
+                raise
+
+    async def open(self):
+        """Optional prewarm for a motion tied to the FIRST already-moving PCM."""
+        async with self.lock:
+            await self._ensure_connected()
+
     async def publish(self, message: dict):
         async with self.lock:
-            if self.socket is None:
-                from annie_adapters import parse_room_welcome
-
-                ws = await self.socket_factory(
-                    self.url, open_timeout=self.timeout, close_timeout=2,
-                )
-                try:
-                    async with asyncio.timeout(self.timeout):
-                        raw = await ws.recv()
-                    if not isinstance(raw, str):
-                        raise ValueError("Room WELCOME must be JSON")
-                    welcome = parse_room_welcome(json.loads(raw))
-                    if welcome.room != self.room_id or welcome.robot_id != self.channel:
-                        raise ValueError("TTS Room WELCOME identity mismatch")
-                    self.socket = ws
-                except BaseException:
-                    ws.transport.abort()
-                    raise
+            await self._ensure_connected()
             try:
                 async with asyncio.timeout(2):
                     await self.socket.send(json.dumps(message, ensure_ascii=False, separators=(",", ":")))

@@ -1,0 +1,5 @@
+.action-dialog{max-width:740px;max-height:90vh;overflow:auto}
+.action-samples{display:flex;flex-wrap:wrap;gap:8px}
+.action-records{max-height:38vh;overflow:auto}
+.action-records article{padding:10px;margin:8px 0}
+.action-records small{display:block;overflow-wrap:anywhere}

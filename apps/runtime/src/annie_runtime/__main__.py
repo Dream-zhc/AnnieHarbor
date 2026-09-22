@@ -200,6 +200,15 @@ def main():
         tts_url=os.environ.get("ANNIE_TTS_URL") or None,
         viseme_root=root if os.environ.get("ANNIE_VISEME_ENABLED") == "1" else None,
         viseme_python=os.environ.get("ANNIE_VISEME_PYTHON") or None,
+        action_catalog=root / "config/action_scripts.json",
+        actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
+        action_allowlist=tuple(
+            item.strip() for item in os.environ.get(
+                "ANNIE_ACTION_ALLOWLIST",
+                "agree_micro_nod,look_left,look_right,fast_double_blink",
+            ).split(",") if item.strip()
+        ),
+        weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
     )
     try:
         runtime.preflight()

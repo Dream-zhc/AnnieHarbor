@@ -4,6 +4,7 @@ import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents,type PersonaProfile} from './api';
 import {RealtimeMicrophone} from './microphone';
 import {RoomDebugSpeaker} from './room-debug-speaker';
+import {ActionPanel} from './action-panel';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
@@ -59,6 +60,7 @@ export function Workbench(){
   },{scope:root});
   const [developerOpen,setDeveloperOpen]=useState(false);
   const [historyOpen,setHistoryOpen]=useState(false);
+  const [actionOpen,setActionOpen]=useState(false);
   const [micLevel,setMicLevel]=useState<number|null>(null);
   const [browserBuffer,setBrowserBuffer]=useState<number|null>(null);
   const [health,setHealth]=useState<Health|null>(null);
@@ -355,6 +357,7 @@ export function Workbench(){
       </div>
       <div className="topbar-right">
         <span className={'top-health '+(health?.ready?'online':'offline')}><i/>{health?.ready?'在线':'未就绪'}</span>
+        <button className="quiet-button" type="button" onClick={()=>setActionOpen(true)} disabled={!robotId}>动作</button>
         <button className="quiet-button developer-trigger" type="button" onClick={()=>setDeveloperOpen(true)}
           aria-haspopup="dialog" aria-expanded={developerOpen}>开发者</button>
       </div>
@@ -481,6 +484,9 @@ export function Workbench(){
           </aside>
       </div>
     </main>
+    {actionOpen&&session&&<ActionPanel key={session.robot_id}
+      robotId={session.robot_id} onClose={()=>setActionOpen(false)}
+      onFillText={setText}/>}
     {developerOpen&&<div className="developer-backdrop" role="presentation"
       onMouseDown={event=>{if(event.target===event.currentTarget)setDeveloperOpen(false);}}>
       <aside className="developer-drawer" role="dialog" aria-modal="true" aria-labelledby="developer-title">

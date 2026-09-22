@@ -5,6 +5,7 @@ import {api,robotPath,eventBelongsToSession,type Health,type Session,type Realti
 import {RealtimeMicrophone} from './microphone';
 import {RoomDebugSpeaker} from './room-debug-speaker';
 import {ActionPanel} from './action-panel';
+import {ExternalEvents} from './external-events';
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
@@ -481,6 +482,10 @@ export function Workbench(){
               <small>网页监听不是实体扬声器回执；请使用耳机避免回声。</small>
               {speech?.error&&<p className="inline-error" role="alert">{speech.error}</p>}
             </section>
+          {session&&<details className="inspector-group inspector-panel">
+            <summary>Phase 8 · 外部事件</summary>
+            <ExternalEvents robotId={robotId} session={session} events={realtimeEvents}/>
+          </details>}
           </aside>
       </div>
     </main>

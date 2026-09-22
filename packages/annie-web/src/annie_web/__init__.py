@@ -174,6 +174,11 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         require_robot(robot_id)
         return await runtime.action_list(robot_id)
 
+    @app.get("/api/robots/{robot_id}/external-events")
+    async def external_events(robot_id: str):
+        require_robot(robot_id)
+        return runtime.external_events(robot_id)
+
     @app.get("/api/robots/{robot_id}/realtime/stream")
     async def realtime_stream(robot_id: str, after: int = 0):
         require_robot(robot_id)

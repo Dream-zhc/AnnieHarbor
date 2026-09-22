@@ -30,6 +30,7 @@ from annie_core import (
 )
 from annie_observability import Recorder, RuntimeEvent
 
+from annie_runtime.events import EventService
 from annie_runtime.realtime import RealtimeRobot
 from annie_runtime.speech import SpeechOutput
 from annie_runtime.viseme import VisemeSidecars
@@ -71,6 +72,13 @@ class TurnCoordinator:
         if state not in {"idle", "playing", "unknown", "stopped"}:
             raise ValueError("invalid_playback_state")
         self.playback_state = state
+
+    def event_block_reason(self, *, model_busy: bool, playback_active: bool):
+        if model_busy:
+            return "model_busy"
+        if playback_active or self.playback_state in {"playing", "unknown"}:
+            return "playback_active"
+        return None
 
     def _prune(self, now_ms: int):
         expired = [
@@ -963,7 +971,31 @@ class HarborRuntime:
             for client in self.realtime.values():
                 client.weather = self.weather
         self.started = False
+        self.events = EventService(self)
+        for robot_id, client in self.realtime.items():
+            client.event_activity = lambda robot_id=robot_id: self.events.wake(robot_id)
         if room_server is not None:
+            from annie_adapters.playback import RoomEventListener
+
+            for config in configs:
+                if not config.enabled or config.robot_id not in self.realtime:
+                    continue
+                room = config.room_id
+                for channel in ("main", "visualdata"):
+                    self.bind_input_source(f"room:{room}:{channel}-event", [config.robot_id])
+                listeners = list(self.playback_listeners.get(config.robot_id, ()))
+                if not tts_voice:
+                    listeners.append(RoomEventListener(
+                        room_server, room, "main",
+                        lambda message, robot_id=config.robot_id: self._room_external_event(
+                            robot_id, "main", message),
+                    ))
+                listeners.append(RoomEventListener(
+                    room_server, room, "visualdata",
+                    lambda message, robot_id=config.robot_id: self._room_external_event(
+                        robot_id, "visualdata", message),
+                ))
+                self.playback_listeners[config.robot_id] = tuple(listeners)
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):
@@ -1123,6 +1155,7 @@ class HarborRuntime:
             robot.snapshot.last_event_kind = event.kind
             robot.snapshot.last_input_source = source_id
             robot.record(f"input_event:{event.kind}", source=source_id)
+            self.events.route(robot_id, event, source_id)
         return {robot_id: event for robot_id in targets}
 
     def input_stats(self, robot_id: str):
@@ -1184,6 +1217,7 @@ class HarborRuntime:
             logger.exception("failed to reset disconnected Room input source=%s", source_id)
 
     def _room_playback_receipt(self, robot_id, message):
+        self._room_external_event(robot_id, "main", message)
         client = self.realtime.get(robot_id)
         if client is None:
             return
@@ -1237,6 +1271,18 @@ class HarborRuntime:
                 client.publish("tts.playback.rejected", reason="stale_or_invalid_state")
         except ValueError as exc:
             client.publish("tts.playback.rejected", reason=str(exc)[:120])
+
+    def _room_external_event(self, robot_id, channel, message):
+        if message.get("type") not in {
+            "pressure", "touch", "gas", "vision.perception", "robot_event",
+            "face", "object", "gesture",
+        }:
+            return
+        source = f"room:{self.robots[robot_id].config.room_id}:{channel}-event"
+        try:
+            self.dispatch_room_event(source, message, target_robot_id=robot_id)
+        except InputRejectedError:
+            logger.warning("Room external event rejected robot=%s channel=%s", robot_id, channel)
 
     def _room_mouth_script(self, robot_id, message):
         client = self.realtime.get(robot_id)
@@ -1311,6 +1357,7 @@ class HarborRuntime:
                 task.cancel()
             await asyncio.gather(*self.smallbrain_tasks, return_exceptions=True)
             self.smallbrain_tasks.clear()
+            await self.events.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
             if self.actions is not None:
@@ -1362,6 +1409,8 @@ class HarborRuntime:
         )
         if robot_id in self.realtime and result != previous:
             await self.realtime[robot_id].restart()
+        if result != previous:
+            self.events.wake(robot_id)
         return result
 
     async def list_conversations(self, robot_id: str):
@@ -1435,6 +1484,7 @@ class HarborRuntime:
     ):
         robot = self.robots[robot_id]
         robot.coordinator.set_playback_state(playback_state)
+        self.events.wake(robot_id)
         updated_ms = time.time_ns() // 1_000_000
         if robot.cached_turn(turn_id) is None:
             await self.ledger.flush()
@@ -1461,6 +1511,7 @@ class HarborRuntime:
 
     async def set_playback_state(self, robot_id: str, state: str):
         self.robots[robot_id].coordinator.set_playback_state(state)
+        self.events.wake(robot_id)
         return self.coordinator_state(robot_id)
 
     def request_response(self, robot_id: str, *, source: str, dedupe_key: str, ttl_ms: int):
@@ -1592,6 +1643,9 @@ class HarborRuntime:
         if robot_id not in self.realtime:
             return {"events": [], "latest": 0, "gap": False}
         return self.realtime[robot_id].since(after)
+
+    def external_events(self, robot_id: str):
+        return self.events.snapshot(robot_id)
 
     def health(self):
         snapshots = []

@@ -56,6 +56,7 @@ class RealtimeRobot:
         self._response_output_ids = {}
         self._unheard_output_ids = {}
         self.turn_id = None
+        self.external_turn_id = None
         self.audio_turn_id = None  # retain the audio turn across response.done for late final ASR
         self.audio_item_turns = {}
         self.pending_audio_item_id = None
@@ -191,6 +192,11 @@ class RealtimeRobot:
             if queue.full():
                 queue.get_nowait()
             queue.put_nowait(event)
+        if kind in {"turn.done", "speech.stopped", "tts.playback.drained",
+                    "tts.playback.stopped", "response.done", "session.updated"}:
+            callback = getattr(self, "event_activity", None)
+            if callback:
+                callback()
         return event
 
     def subscribe(self):
@@ -301,6 +307,7 @@ class RealtimeRobot:
 
     def _reset_turn(self):
         self.turn_id = self.response_id = None
+        self.external_turn_id = None
         self.text = self.transcript = ""
         self.began = self.first_text_ms = None
         # Finishing the old answer cannot reset a newer microphone candidate.
@@ -681,13 +688,14 @@ class RealtimeRobot:
         error = event.get("error") or {}
         return f"{error.get('code', 'provider_error')}: {str(error.get('message', 'error'))[:150]}"
 
-    async def submit_text(self, text):
+    async def submit_text(self, text, *, source="user"):
         if not self.ready or not self.socket:
             raise RobotUnavailableError("Realtime Session not ready")
         if self.speech_active or self.turn_id or self.response_id:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
         self.audio_turn_id = None
         self._create_turn(text)
+        self.external_turn_id = self.turn_id if source == "external" else None
         try:
             await self.socket.send({
                 "type": "conversation.item.create",
@@ -1014,6 +1022,13 @@ class RealtimeRobot:
             args = json.loads(arguments)
             if not isinstance(args, dict):
                 raise ValueError("expected object arguments")
+            if self.turn_id == self.external_turn_id and name in {
+                "perform_action", "set_expression", "preview_action",
+                "forget_memory", "correct_memory",
+            }:
+                raise ValueError("external_event_no_motion" if name in {
+                    "perform_action", "set_expression", "preview_action"
+                } else "external_event_no_memory_write")
             if name == "get_weather" and self.weather is not None:
                 if set(args) != {"city"}:
                     raise ValueError("expected exactly city")

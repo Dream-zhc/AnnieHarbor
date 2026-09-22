@@ -58,6 +58,18 @@ class ResponseRequestInput(BaseModel):
     ttl_ms: int = Field(ge=1, le=60000)
 
 
+class ReminderInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=200)
+    delay_ms: int = Field(ge=1000, le=86_400_000)
+    request_key: str = Field(min_length=1, max_length=128)
+
+
+class ReminderAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(pattern="^(pause|resume|cancel)$")
+
+
 class SocialStateInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fields: dict
@@ -178,6 +190,30 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     async def external_events(robot_id: str):
         require_robot(robot_id)
         return runtime.external_events(robot_id)
+
+    @app.get("/api/robots/{robot_id}/reminders")
+    async def reminders(robot_id: str):
+        require_robot(robot_id)
+        return {"tasks": await runtime.reminder_list(robot_id)}
+
+    @app.post("/api/robots/{robot_id}/reminders")
+    async def reminder_create(robot_id: str, body: ReminderInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.reminder_create(
+                robot_id, body.text, body.delay_ms, body.request_key)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/robots/{robot_id}/reminders/{task_id}/control")
+    async def reminder_control(robot_id: str, task_id: str, body: ReminderAction):
+        require_robot(robot_id)
+        try:
+            return await runtime.reminder_change(robot_id, task_id, body.action)
+        except KeyError as exc:
+            raise HTTPException(404, "unknown task_id") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/robots/{robot_id}/realtime/stream")
     async def realtime_stream(robot_id: str, after: int = 0):

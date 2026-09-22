@@ -26,7 +26,9 @@ class EventService:
                 "pending_count": sum(all(row[field] == identity[field] for field in
                     ("chat_id", "persona_id", "session_epoch", "generation"))
                     for row in self.pending[robot_id]),
-                "complex_task": "not_configured"}
+                "complex_task": ("one_time_reminder_available"
+                    if self.runtime.reminders.running and robot_id in self.runtime.realtime
+                    else "not_configured")}
 
     def _publish(self, robot_id, row):
         client = self.runtime.realtime.get(robot_id)
@@ -105,7 +107,8 @@ class EventService:
                     # Mark this as a sensor event, NEVER as a person's words or
                     # proof that the model spoke / the speaker played it.
                     result = await client.submit_text(
-                        "【外部事件，非用户发言】" + row["prompt"], source="external",
+                        "【外部事件，非用户发言】" + row["prompt"],
+                        source="external", expected_identity=row,
                     )
                     row.update(status="submitted_unknown", turn_id=result["turn_id"])
                 except Exception as exc:

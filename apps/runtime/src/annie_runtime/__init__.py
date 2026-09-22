@@ -32,6 +32,7 @@ from annie_observability import Recorder, RuntimeEvent
 
 from annie_runtime.events import EventService
 from annie_runtime.realtime import RealtimeRobot
+from annie_runtime.reminders import ReminderService
 from annie_runtime.speech import SpeechOutput
 from annie_runtime.viseme import VisemeSidecars
 
@@ -972,8 +973,13 @@ class HarborRuntime:
                 client.weather = self.weather
         self.started = False
         self.events = EventService(self)
+        self.reminders = ReminderService(self)
         for robot_id, client in self.realtime.items():
-            client.event_activity = lambda robot_id=robot_id: self.events.wake(robot_id)
+            def wake_external(robot_id=robot_id):
+                self.events.wake(robot_id)
+                self.reminders.wake(robot_id)
+
+            client.event_activity = wake_external
         if room_server is not None:
             from annie_adapters.playback import RoomEventListener
 
@@ -1330,6 +1336,7 @@ class HarborRuntime:
         for robot in self.robots.values():
             await robot.initialize_session()
             await robot.start()
+        await self.reminders.start()
         if self.viseme_sidecars is not None:
             await self.viseme_sidecars.start()
         for realtime in self.realtime.values():
@@ -1357,6 +1364,7 @@ class HarborRuntime:
                 task.cancel()
             await asyncio.gather(*self.smallbrain_tasks, return_exceptions=True)
             self.smallbrain_tasks.clear()
+            await self.reminders.close()
             await self.events.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
@@ -1407,10 +1415,16 @@ class HarborRuntime:
             persona_id=persona_id,
             persona_revision=persona_revision,
         )
+        if result != previous:
+            try:
+                await self.reminders.invalidate_previous(previous)
+            except Exception:
+                logger.exception("reminder session invalidation failed robot=%s", robot_id)
         if robot_id in self.realtime and result != previous:
             await self.realtime[robot_id].restart()
         if result != previous:
             self.events.wake(robot_id)
+            self.reminders.wake(robot_id)
         return result
 
     async def list_conversations(self, robot_id: str):
@@ -1485,6 +1499,7 @@ class HarborRuntime:
         robot = self.robots[robot_id]
         robot.coordinator.set_playback_state(playback_state)
         self.events.wake(robot_id)
+        self.reminders.wake(robot_id)
         updated_ms = time.time_ns() // 1_000_000
         if robot.cached_turn(turn_id) is None:
             await self.ledger.flush()
@@ -1512,6 +1527,7 @@ class HarborRuntime:
     async def set_playback_state(self, robot_id: str, state: str):
         self.robots[robot_id].coordinator.set_playback_state(state)
         self.events.wake(robot_id)
+        self.reminders.wake(robot_id)
         return self.coordinator_state(robot_id)
 
     def request_response(self, robot_id: str, *, source: str, dedupe_key: str, ttl_ms: int):
@@ -1646,6 +1662,15 @@ class HarborRuntime:
 
     def external_events(self, robot_id: str):
         return self.events.snapshot(robot_id)
+
+    async def reminder_list(self, robot_id):
+        return await self.reminders.list(robot_id, self.session_state(robot_id))
+
+    async def reminder_create(self, robot_id, text, delay_ms, request_key):
+        return await self.reminders.create(robot_id, text, delay_ms, request_key)
+
+    async def reminder_change(self, robot_id, task_id, action):
+        return await self.reminders.change(robot_id, task_id, action)
 
     def health(self):
         snapshots = []

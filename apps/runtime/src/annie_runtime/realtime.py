@@ -192,7 +192,7 @@ class RealtimeRobot:
             if queue.full():
                 queue.get_nowait()
             queue.put_nowait(event)
-        if kind in {"turn.done", "speech.stopped", "tts.playback.drained",
+        if kind in {"session.ready", "turn.done", "speech.stopped", "tts.playback.drained",
                     "tts.playback.stopped", "response.done", "session.updated"}:
             callback = getattr(self, "event_activity", None)
             if callback:
@@ -688,13 +688,19 @@ class RealtimeRobot:
         error = event.get("error") or {}
         return f"{error.get('code', 'provider_error')}: {str(error.get('message', 'error'))[:150]}"
 
-    async def submit_text(self, text, *, source="user"):
+    async def submit_text(self, text, *, source="user", expected_identity=None):
         if not self.ready or not self.socket:
             raise RobotUnavailableError("Realtime Session not ready")
+        if expected_identity is not None and any(
+            expected_identity.get(key) != self.robot.session_state()[key]
+            for key in ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
+        ):
+            raise RobotUnavailableError("stale external session")
         if self.speech_active or self.turn_id or self.response_id:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
         self.audio_turn_id = None
         self._create_turn(text)
+        owned_turn = self.turn_id
         self.external_turn_id = self.turn_id if source == "external" else None
         try:
             await self.socket.send({
@@ -702,11 +708,17 @@ class RealtimeRobot:
                 "item": {"type": "message", "role": "user",
                          "content": [{"type": "input_text", "text": text}]},
             })
+            if expected_identity is not None and any(
+                expected_identity.get(key) != self.robot.session_state()[key]
+                for key in ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
+            ):
+                raise RobotUnavailableError("stale external session after send")
             await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
         except Exception:
-            self._finish("failed", cancel_source="send_failed")
+            if self.turn_id == owned_turn:
+                self._finish("failed", cancel_source="send_failed")
             raise
-        return {"status": "accepted", "turn_id": self.turn_id, **self.robot.session_state()}
+        return {"status": "accepted", "turn_id": owned_turn, **self.robot.session_state()}
 
     async def cancel(self):
         # Mark ownership before any await: a late response.done must not

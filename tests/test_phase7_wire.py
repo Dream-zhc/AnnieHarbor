@@ -18,15 +18,16 @@ class Transport:
 
 
 class FakeRoom:
-    def __init__(self, correct=True):
+    def __init__(self, correct=True, channel="main"):
         self.correct = correct
+        self.channel = channel
         self.sent = []
         self.transport = Transport()
 
     async def recv(self):
         return json.dumps({
             "type": "WELCOME", "ok": True, "clientId": "conn-test",
-            "robotId": "reb_main" if self.correct else "reb_mic",
+            "robotId": f"reb_{self.channel}" if self.correct else "reb_mic",
             "room": "roomv2", "size": 1, "subscriptions": [], "catalog": [],
         })
 
@@ -64,5 +65,38 @@ def test_main_room_publisher_validates_welcome_before_action_send():
             await blocked.publish(packet)
         assert wrong.sent == []
         assert wrong.transport.aborted
+
+    asyncio.run(run())
+
+
+def test_expression_condition_checked_after_acquiring_pcm_socket_lock():
+    async def run():
+        socket = FakeRoom(channel="tts")
+
+        async def connect(_url, **_kwargs):
+            return socket
+
+        publisher = RoomTtsPublisher(room_server(), "roomv2",
+                                     socket_factory=connect, channel="tts")
+        await publisher.open()
+        speech = {"first_pcm_in_flight": False}
+        packet = {"type": "expression", "data": {"expression": "喜"}}
+        # PCM may acquire the websocket lock first and set its inflight
+        # marker before an expression can send. Verify the conditional send
+        # checks the marker *under* that exact lock, not only before await.
+        async with publisher.lock:
+            late = asyncio.create_task(publisher.publish_if(
+                packet, lambda: not speech["first_pcm_in_flight"],
+            ))
+            await asyncio.sleep(0)
+            speech["first_pcm_in_flight"] = True
+        assert await late is False
+        assert socket.sent == []
+        speech["first_pcm_in_flight"] = False
+        assert await publisher.publish_if(
+            packet, lambda: not speech["first_pcm_in_flight"],
+        ) is True
+        assert len(socket.sent) == 1
+        await publisher.close()
 
     asyncio.run(run())

@@ -115,14 +115,21 @@ class RoomTtsPublisher:
             await self._ensure_connected()
 
     async def publish(self, message: dict):
+        await self.publish_if(message, lambda: True)
+
+    async def publish_if(self, message: dict, permitted):
+        """Check an expression's first-PCM barrier under the same socket lock as PCM."""
         async with self.lock:
             await self._ensure_connected()
+            if not permitted():
+                return False
             try:
                 async with asyncio.timeout(2):
                     await self.socket.send(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
             except BaseException:
                 await self.close()
                 raise
+            return True
 
     async def close(self):
         if self.socket is not None:

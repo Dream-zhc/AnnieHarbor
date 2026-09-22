@@ -39,4 +39,10 @@
 - **SQLite边界收拢**：Runtime不再sqlite3.connect或CREATE TABLE。action_requests结构纳入annie-adapters的RuntimeStore迁移，schema版本升至5；预约幂等/冷却、记录查询、CAS状态及崩溃恢复由RuntimeStore承担，ActionCoordinator只负责调度和Room。原历史和Phase6数据不删除。
 - **测试**：新增慢Room发送时同头取消不被6秒网络等待阻塞、B可并发工作、表情网络卡住时同头其他动作可预约、社交轻动作需单独授权与大动作被拒、崩溃恢复与SQLite迁移回归。原有“右/左必须由Regex匹配”的测试已改为硬白名单/取消/授权测试；模型语义正确性留给真实Qwen样本与人工评估，不能由Fake测试冒充。
 - **审查保留项**：该阶段未实现设备动作完成/停止的可信回执，也不推断严格扬声器物理起声同步；Phase6依赖/云调用暂不在本次提交范围。先按此软件分工送审，真人物理闭环仍待统一测试。
-- **本轮自动化复跑**：全量 Python 215 passed、30 subtests passed（另2条第三方弃用告警）；前端24 passed；Ruff、TypeScript、Vite构建、uv锁检查和diff检查均通过。真实Qwen自主微动作使用真实服务的选择频率/误触发率及设备动作完成/撤销仍须独立验收，模拟工具和单测不能替代。
+
+## 2026-09-22｜再次复核：前述“已全部修复”结论不成立
+
+- **找到并修复首PCM并发漏洞**：SpeechOutput在发出首帧PCM之前设置inflight_end，原动作和表情却只检查发送完成后才增加的frames，因此动作可以在PCM发送中预约，表情可以晚于首帧发送。本轮两处都检查inflight_end，表情通过与PCM共用的reb_tts WebSocket锁进行第二次校验。新增在途PCM和锁竞争测试。
+- **尚未解决的硬保证**：ANNIE_SOCIAL_ACTIONS_ENABLED=0仅隐藏perform_social_action，但无法保证模型不会把普通聊天（如“我完全赞成你”）误选为普通perform_action。隔离复现：社交模式关闭时，普通工具以该文本与agree_micro_nod调用，仍返回awaiting_audio_anchor。总动作开关和目录白名单仍生效，但不得声称“关闭社交动作后，聊天绝不会触发点头”。不能重新使用中文句式正则伪装已解决语义问题。若需要硬保证，必须对明确动作意图做独立授权，或要求用户确认；需先确定交互延迟和安全性取舍，当前尚未完成。
+- **物理闭环仍待验证**：Room发送不等于真实扬声器起声；没有可信设备动作完成或停止回执，send_unknown后取消无法保证电机停止。当前运行工作区包含Phase6等未提交更改，审查完整运行态不能只看HEAD。
+- **本轮自动化复跑**：全量 Python 221 passed、30 subtests passed（另2条第三方弃用告警）；前端24 passed；Ruff、TypeScript、Vite构建、uv锁检查和diff检查均通过。真实Qwen自主微动作使用真实服务的选择频率/误触发率及设备动作完成/撤销仍须独立验收，模拟工具和单测不能替代。

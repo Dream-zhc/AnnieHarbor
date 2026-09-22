@@ -252,6 +252,7 @@ def test_uncertain_transport_never_retries_or_claims_hardware_completion(tmp_pat
 @pytest.mark.parametrize("text, expected", [
     ("你点下头", True), ("来眨两下眼", True), ("看左边", True),
     ("我看见你点头了", True), ("你别看左边", False),
+    ("我不想你点头", False), ("你不用给我眨眼", False),
     ("他刚才点头了", True), ("你好", True),
     ("你看左边的天气怎么样", True),
     ("你现在点头了吗", True),
@@ -313,6 +314,26 @@ def test_already_started_tts_does_not_create_an_unfulfillable_action_anchor(tmp_
     asyncio.run(run())
 
 
+def test_first_pcm_in_flight_rejects_late_motion_anchor(tmp_path):
+    async def run():
+        actions, pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        speech = SimpleNamespace(turn_id="current", frames=0,
+                                 inflight_end=480, publisher=FakePublisher())
+        late = await actions.request(
+            "A", "late-inflight", "current", 1, "action", "look_left",
+            speech=speech, user_text="你看左边",
+        )
+        assert late["status"] == "rejected_late"
+        actions.on_first_pcm({"robot_id": "A", "turn_id": "current",
+                              "generation": 1})
+        await asyncio.sleep(.02)
+        assert pubs["A"].sent == []
+        await actions.close()
+
+    asyncio.run(run())
+
+
 def test_old_tts_cannot_receive_new_turn_expression(tmp_path):
     async def run():
         actions, _pubs, _events, _a, _b = coordinator(tmp_path)
@@ -327,6 +348,47 @@ def test_old_tts_cannot_receive_new_turn_expression(tmp_path):
         )
         assert reply["status"] == "rejected_late"
         assert tts.sent == []
+        await actions.close()
+
+    asyncio.run(run())
+
+
+def test_completed_previous_tts_allows_next_turn_expression(tmp_path):
+    async def run():
+        actions, _pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        tts = FakePublisher()
+        speech = SimpleNamespace(
+            turn_id="finished-turn", frames=80, inflight_end=9600,
+            worker=SimpleNamespace(done=lambda: True), publisher=tts,
+        )
+        result = await actions.request(
+            "A", "next-face", "next-turn", 1, "expression", "喜",
+            speech=speech, user_text="你给我做个开心表情",
+        )
+        assert result["status"] == "published_unknown"
+        assert tts.sent[0]["data"]["turn_id"] == "next-turn"
+        await actions.close()
+
+    asyncio.run(run())
+
+
+def test_first_pcm_in_flight_rejects_expression_before_frames_increment(tmp_path):
+    async def run():
+        actions, _pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        tts = FakePublisher()
+        # SpeechOutput sets inflight_end BEFORE waiting for the room WebSocket.
+        # frames is incremented only AFTER the WebSocket send returns.
+        speech = SimpleNamespace(turn_id="face-turn", frames=0,
+                                 inflight_end=480, publisher=tts)
+        result = await actions.request(
+            "A", "face-race", "face-turn", 1, "expression", "喜",
+            speech=speech, user_text="请给我一个开心表情",
+        )
+        assert result["status"] == "rejected_late"
+        assert tts.sent == []
+        assert (await actions.list("A"))[0]["status"] == "rejected_late"
         await actions.close()
 
     asyncio.run(run())

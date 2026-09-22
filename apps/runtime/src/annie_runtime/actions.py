@@ -26,7 +26,10 @@ def current_action_not_vetoed(text):
     plain = text.strip()
     if not plain or len(plain) > 1500:
         return False
-    return re.search(r"别动|不要|别(?:看|点头|眨眼|做动作|做表情)|不许|停止|取消|禁止", plain) is None
+    return re.search(
+        r"别动|不要|不想|不需要|不用|不准|别(?:看|点头|眨眼|做动作|做表情)"
+        r"|不许|停止|取消|禁止", plain,
+    ) is None
 
 
 class ActionCoordinator:
@@ -39,7 +42,7 @@ class ActionCoordinator:
         self.emit = emit
         self.enabled = enabled
         self.allowlist = tuple(allowlist)
-        self.social_actions = bool(social_actions)
+        self.social_actions = bool(enabled and social_actions)
         self.social_allowlist = tuple(
             script_id for script_id in self.allowlist
             if catalog[script_id]["category"] == "micro"
@@ -122,7 +125,9 @@ class ActionCoordinator:
                         "real_device_executed": False}
             self._event(row)
             if kind == "action":
-                if speech.turn_id == turn_id and speech.frames:
+                if speech.turn_id == turn_id and (
+                    speech.frames or getattr(speech, "inflight_end", 0)
+                ):
                     await asyncio.to_thread(
                         self.store.set_action_status, robot_id, call_id, "awaiting_audio_anchor",
                         "rejected_late",
@@ -136,7 +141,8 @@ class ActionCoordinator:
                         "real_device_executed": False}
             # Expression goes out ahead of its corresponding first PCM, on
             # the SAME publisher socket as speech. No device ack is implied.
-            if (speech.turn_id == turn_id and speech.frames or
+            if (speech.turn_id == turn_id and (
+                    speech.frames or getattr(speech, "inflight_end", 0)) or
                     speech.turn_id not in (None, turn_id) and
                     getattr(speech, "worker", None) is not None and
                     not speech.worker.done()):
@@ -152,8 +158,27 @@ class ActionCoordinator:
                                "source": "robot_main_brain"}}
         # Lock protects reservations only. Room I/O may stall, but cancel and
         # other action requests must still be able to acquire this robot's lock.
+        def expression_still_before_pcm():
+            previous = speech.turn_id not in (None, turn_id)
+            worker = getattr(speech, "worker", None)
+            return (
+                generation == robot.generation
+                and not getattr(speech, "cancelled", False)
+                and (not previous or worker is None or worker.done())
+                and not (speech.turn_id == turn_id and (
+                    speech.frames or getattr(speech, "inflight_end", 0)))
+            )
+
         try:
-            await asyncio.wait_for(speech.publisher.publish(packet), 6)
+            if hasattr(speech.publisher, "publish_if"):
+                sent = await asyncio.wait_for(
+                    speech.publisher.publish_if(packet, expression_still_before_pcm), 6,
+                )
+            elif expression_still_before_pcm():
+                await asyncio.wait_for(speech.publisher.publish(packet), 6)
+                sent = True
+            else:
+                sent = False
         except Exception as exc:
             await asyncio.to_thread(
                 self.store.set_action_status, robot_id, call_id,
@@ -161,6 +186,13 @@ class ActionCoordinator:
             )
             self._event(row, status="send_unknown", error=type(exc).__name__)
             return {"status": "send_unknown", "real_device_executed": False}
+        if not sent:
+            await asyncio.to_thread(
+                self.store.set_action_status, robot_id, call_id,
+                "send_unknown", "rejected_late",
+            )
+            self._event(row, status="rejected_late")
+            return {"status": "rejected_late", "real_device_executed": False}
         await asyncio.to_thread(
             self.store.set_action_status, robot_id, call_id,
             "send_unknown", "published_unknown",

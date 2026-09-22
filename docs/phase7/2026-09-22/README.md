@@ -31,3 +31,12 @@
 - **自动化结果**：Python 全量 212 passed、30 subtests passed；前端24 passed；Ruff、TypeScript、Vite生产构建、uv锁和diff检查通过。两条警告来自第三方弃用接口，不是设备验证证据。阶段7源码从共用文件中只选择本阶段差异入Git；先前未提交的Phase6、旧Web/sidecar修改不擅自提交或清理。
 - **现场P7-W1**：未启用时先核验模拟/未知状态；安全启用后A说“请你点下头”，工作台与接收端逐条核对工具→PCM→reb_main→设备动作，B独立聊天；表情及对应TTS和嘴型分别核验。
 - **现场P7-W2**：重复相同call、无效ID、取消、过期、旧generation、网络失败、小脑action_prep及B不串动作；没有实际设备回执时只给unknown，真人物理完成/停止和Windows双头仍待用户人工签收。计划中的“挥挥手”不在34个已有脚本，不能擅创ID。
+
+## 2026-09-22｜针对性返工：审查报告问题处理
+
+- **已移除手写中文动作句式清单**：先前本页“只能执行当前输入明确对应的四项命令/五种表情、每个新ID需补中文正则”已被本次实现取代。Qwen Realtime 根据本轮语境及实时白名单目录（提供各动作原有description）选择工具；后端不再拿中文关键词进行第二次语义判断，仅做本轮明确否定/取消的简短 veto，校验机器人、turn/generation/call_id、脚本是否enabled及被允许、冷却和冲突。**模型可能误判语义**，因此硬件总开关仍默认关闭。额外的社交自主轻动作由 ANNIE_SOCIAL_ACTIONS_ENABLED=1 单独显式授权，独立 perform_social_action 只授予目录 micro 类与 agree_micro_nod，不能据此自主调用头部大动作；未授权时模型不见该工具。自然附和只是能力，不保证模型每次都调用。
+- **网络等待脱离机器人锁**：动作在首PCM锚点后，先原子迁移SQLite到send_unknown并释放锁，然后执行Room发送。表情同样先落状态再释放锁发布。网络卡顿期间取消和其他机器人动作不会在此锁上等待；已进入send_unknown的动作可能已经被设备接收，取消不能伪报cancelled_before_send，也不盲目重试。实际物理动作停止需要接收端提供协议，仍无回执则unknown。
+- **SQLite边界收拢**：Runtime不再sqlite3.connect或CREATE TABLE。action_requests结构纳入annie-adapters的RuntimeStore迁移，schema版本升至5；预约幂等/冷却、记录查询、CAS状态及崩溃恢复由RuntimeStore承担，ActionCoordinator只负责调度和Room。原历史和Phase6数据不删除。
+- **测试**：新增慢Room发送时同头取消不被6秒网络等待阻塞、B可并发工作、表情网络卡住时同头其他动作可预约、社交轻动作需单独授权与大动作被拒、崩溃恢复与SQLite迁移回归。原有“右/左必须由Regex匹配”的测试已改为硬白名单/取消/授权测试；模型语义正确性留给真实Qwen样本与人工评估，不能由Fake测试冒充。
+- **审查保留项**：该阶段未实现设备动作完成/停止的可信回执，也不推断严格扬声器物理起声同步；Phase6依赖/云调用暂不在本次提交范围。先按此软件分工送审，真人物理闭环仍待统一测试。
+- **本轮自动化复跑**：全量 Python 215 passed、30 subtests passed（另2条第三方弃用告警）；前端24 passed；Ruff、TypeScript、Vite构建、uv锁检查和diff检查均通过。真实Qwen自主微动作使用真实服务的选择频率/误触发率及设备动作完成/撤销仍须独立验收，模拟工具和单测不能替代。

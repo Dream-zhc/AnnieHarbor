@@ -5,7 +5,8 @@ import './action-panel.css';
 type Action={id:string;name:string;duration_ms:number;enabled:boolean;category:string};
 type Request={robot_id:string;room_id:string;turn_id:string;call_id:string;kind:string;
   value:string;status:string;error:string|null;updated_ms:number};
-type State={status:string;enabled:boolean;allowlist:string[];actions:Action[];requests:Request[]};
+type State={status:string;enabled:boolean;social_actions_enabled:boolean;
+  allowlist:string[];actions:Action[];requests:Request[]};
 const sample:Record<string,string>={
   agree_micro_nod:'请你点下头',look_left:'你看左边',
   look_right:'你看右边',fast_double_blink:'请你眨两下眼',
@@ -39,6 +40,7 @@ export function ActionPanel({robotId,onClose,onFillText}:{robotId:string;onClose
       <p>仅通过当前机器人实时对话提出动作；此页不直接控制电机。发送成功不等于物理设备执行或完成。</p>
       {error&&<p role="alert" className="danger-text">{error}</p>}
       <p role="status">真机发送：{data?.enabled?'已显式启用':data?'未启用':'读取中'} ·
+        自主轻动作：{data?.social_actions_enabled?'已单独授权':'关闭'} ·
         设备完成回执：未确认</p>
       {!data?.enabled&&<p>启用需在确认真实设备接收端后配置 ANNIE_ACTIONS_ENABLED=1，
         再停止麦克风、安全重启 Runtime。默认仅放行四个轻动作，其他目录项不会自动开放。</p>}

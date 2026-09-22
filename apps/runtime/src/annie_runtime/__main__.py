@@ -202,6 +202,7 @@ def main():
         viseme_python=os.environ.get("ANNIE_VISEME_PYTHON") or None,
         action_catalog=root / "config/action_scripts.json",
         actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
+        social_actions_enabled=os.environ.get("ANNIE_SOCIAL_ACTIONS_ENABLED") == "1",
         action_allowlist=tuple(
             item.strip() for item in os.environ.get(
                 "ANNIE_ACTION_ALLOWLIST",

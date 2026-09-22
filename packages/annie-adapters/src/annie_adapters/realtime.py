@@ -24,7 +24,9 @@ def realtime_url(base_url: str, model: str = MODEL) -> str:
 
 def session_update(instructions: str, history_turns: int = 20, *,
                    actions: tuple[str, ...] = (), expressions: bool = False,
-                   weather: bool = False) -> dict:
+                   weather: bool = False,
+                   action_descriptions: dict[str, str] | None = None,
+                   social_actions: tuple[str, ...] = ()) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
     if type(history_turns) is not int or not 1 <= history_turns <= 50:
         raise ValueError("Realtime history_turns must be an integer between 1 and 50")
@@ -66,11 +68,41 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "ONLY when the CURRENT user explicitly requests a physical action "
                     "supported by this robot. The result awaiting_audio_anchor or "
                     "published_unknown is NOT proof of physical execution; never "
-                    "claim that the robot moved without a device completion receipt."
+                    "claim that the robot moved without a device completion receipt. "
+                    "Enabled catalog: " +
+                    "; ".join(
+                        f"{script_id}: {(action_descriptions or {}).get(script_id, script_id)}"
+                        for script_id in actions
+                    )
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {"script_id": {"type": "string", "enum": list(actions)}},
+                    "required": ["script_id"],
+                },
+            },
+        })
+    if social_actions:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "perform_social_action",
+                "description": (
+                    "Optional operator-enabled short companion gesture. Only if a "
+                    "small response naturally fits the CURRENT conversation, "
+                    "such as a subtle nod of agreement. Never infer an instruction "
+                    "from old messages, never gesture on a negation or cancellation. "
+                    "A Room submission is not physical completion. Allowed: " +
+                    "; ".join(
+                        f"{script_id}: {(action_descriptions or {}).get(script_id, script_id)}"
+                        for script_id in social_actions
+                    )
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"script_id": {
+                        "type": "string", "enum": list(social_actions),
+                    }},
                     "required": ["script_id"],
                 },
             },

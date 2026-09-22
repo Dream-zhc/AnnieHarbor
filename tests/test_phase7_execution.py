@@ -6,10 +6,11 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from annie_adapters import RuntimeStore
 from annie_adapters.weather import AmapWeather
 from annie_brain.action_catalog import load_action_catalog
 from annie_core import RobotConfig
-from annie_runtime.actions import ActionCoordinator, explicit_physical_request
+from annie_runtime.actions import ActionCoordinator, current_action_not_vetoed
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = load_action_catalog(ROOT / "config/action_scripts.json")
@@ -30,14 +31,28 @@ class FakePublisher:
         self.closed = True
 
 
+class BlockingPublisher(FakePublisher):
+    def __init__(self):
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def publish(self, event):
+        self.started.set()
+        await self.release.wait()
+        await super().publish(event)
+
+
 def coordinator(tmp_path, *, enabled=True):
     a, b = SimpleNamespace(config=RobotConfig("A", room_id="roomv2"), generation=1), (
         SimpleNamespace(config=RobotConfig("B", room_id="roomv3"), generation=1)
     )
     publishers = {"A": FakePublisher(), "B": FakePublisher()}
     events = []
+    store = RuntimeStore(tmp_path / "actions.db")
+    store.migrate()
     actions = ActionCoordinator(
-        SimpleNamespace(path=tmp_path / "actions.db"),
+        store,
         CATALOG, {"A": a, "B": b}, publishers,
         lambda robot_id, kind, **data: events.append((robot_id, kind, data)),
         enabled=enabled, allowlist=("agree_micro_nod", "look_left",
@@ -99,6 +114,67 @@ def test_two_room_action_sends_once_after_first_pcm_and_survives_restart(tmp_pat
     asyncio.run(run())
 
 
+def test_network_stall_does_not_hold_robot_lock_or_claim_cancelled_motion(tmp_path):
+    async def run():
+        actions, pubs, events, _a, _b = coordinator(tmp_path)
+        blocked = pubs["A"] = BlockingPublisher()
+        await actions.start()
+        speech = SimpleNamespace(turn_id=None, frames=0, publisher=FakePublisher())
+        await actions.request(
+            "A", "slow", "turn-slow", 1, "action", "look_left",
+            speech=speech, user_text="你看左边",
+        )
+        actions.on_first_pcm({
+            "robot_id": "A", "turn_id": "turn-slow", "generation": 1,
+        })
+        await asyncio.wait_for(blocked.started.wait(), 1)
+        # No motor cancellation wire exists. This is already send_unknown,
+        # even though the socket has not yet finished the send.
+        await asyncio.wait_for(actions.cancel_pending("A"), .3)
+        assert (await actions.list("A"))[0]["status"] == "send_unknown"
+        assert not any(e[2].get("status") == "cancelled_before_send" for e in events
+                       if e[2].get("call_id") == "slow")
+        # B's unrelated action remains free to reserve and publish.
+        assert (await actions.request(
+            "B", "b-call", "b-turn", 1, "action", "look_right",
+            speech=speech, user_text="你看右边",
+        ))["status"] == "awaiting_audio_anchor"
+        actions.on_first_pcm({"robot_id": "B", "turn_id": "b-turn", "generation": 1})
+        await wait_for(lambda: len(pubs["B"].sent) == 1)
+        blocked.release.set()
+        await wait_for(lambda: len(blocked.sent) == 1)
+        await wait_for(lambda: next(iter(
+            [row["status"] for row in actions.store.list_actions("A")]), ""
+        ) == "published_unknown")
+        await actions.close()
+
+    asyncio.run(run())
+
+
+def test_slow_expression_does_not_lock_other_calls_for_same_robot(tmp_path):
+    async def run():
+        actions, _pubs, _events, _a, _b = coordinator(tmp_path)
+        await actions.start()
+        blocked = BlockingPublisher()
+        speech = SimpleNamespace(turn_id=None, frames=0, publisher=blocked)
+        in_flight = asyncio.create_task(actions.request(
+            "A", "face-slow", "face-turn", 1, "expression", "喜",
+            speech=speech, user_text="给我一个开心表情",
+        ))
+        await asyncio.wait_for(blocked.started.wait(), 1)
+        await asyncio.wait_for(actions.cancel_pending("A"), .3)
+        new = await asyncio.wait_for(actions.request(
+            "A", "motion-after-face", "next-turn", 1, "action", "look_left",
+            speech=speech, user_text="你看左边",
+        ), .3)
+        assert new["status"] == "awaiting_audio_anchor"
+        blocked.release.set()
+        assert (await in_flight)["status"] == "published_unknown"
+        await actions.close()
+
+    asyncio.run(run())
+
+
 def test_cancel_old_generation_invalid_parameter_and_cooldown(tmp_path):
     async def run():
         actions, pubs, events, a, _b = coordinator(tmp_path)
@@ -107,9 +183,6 @@ def test_cancel_old_generation_invalid_parameter_and_cooldown(tmp_path):
         with pytest.raises(ValueError):
             await actions.request("A", "bad", "t1", 1, "action", "invented_wave",
                                   speech=speech, user_text="给我挥挥手")
-        with pytest.raises(ValueError):
-            await actions.request("A", "wrong", "t1", 1, "action", "look_left",
-                                  speech=speech, user_text="我看见左边有朋友")
         with pytest.raises(ValueError):
             await actions.request("A", "unsafe", "t1", 1, "action", "look_left",
                                   speech=speech, user_text="你别看左边")
@@ -178,37 +251,40 @@ def test_uncertain_transport_never_retries_or_claims_hardware_completion(tmp_pat
 
 @pytest.mark.parametrize("text, expected", [
     ("你点下头", True), ("来眨两下眼", True), ("看左边", True),
-    ("我看见你点头了", False), ("你别看左边", False),
-    ("他刚才点头了", False), ("你好", False),
-    ("你看左边的天气怎么样", False),
-    ("你现在点头了吗", False),
-    ("你刚刚看左边了吗", False),
-    ("请你给我讲讲点头有什么含义", False),
-    ("你做过哪些表情呀", False),
+    ("我看见你点头了", True), ("你别看左边", False),
+    ("他刚才点头了", True), ("你好", True),
+    ("你看左边的天气怎么样", True),
+    ("你现在点头了吗", True),
+    ("你刚刚看左边了吗", True),
+    ("请你给我讲讲点头有什么含义", True),
+    ("你做过哪些表情呀", True),
     ("你能往左看一下吗", True),
     ("你给我做个开心表情", True),
 ])
 def test_physical_intent_gate(text, expected):
-    assert explicit_physical_request(text) is expected
+    assert current_action_not_vetoed(text) is expected
 
 
-def test_model_must_select_exact_user_requested_motion_and_expression(tmp_path):
+def test_runtime_veto_does_not_reimplement_qwen_semantics(tmp_path):
     async def run():
         actions, pubs, _events, _a, _b = coordinator(tmp_path)
         await actions.start()
         speech = SimpleNamespace(turn_id=None, frames=0, publisher=FakePublisher())
         for kind, value, user_text in (
-            ("action", "look_left", "你看右边"),
-            ("action", "agree_micro_nod", "你看右边"),
-            ("action", "look_left", "你看左边的天气怎么样"),
-            ("expression", "喜", "你给我做个难过表情"),
-            ("expression", "喜", "你做过哪些表情呀"),
+            ("action", "look_left", "你别看左边"),
+            ("action", "agree_micro_nod", "不要点头"),
+            ("expression", "喜", "取消这个表情"),
         ):
-            with pytest.raises(ValueError, match="explicit CURRENT"):
+            with pytest.raises(ValueError, match="vetoed"):
                 await actions.request(
                     "A", "rejected-" + value, "turn", 1, kind, value,
                     speech=speech, user_text=user_text,
                 )
+        with pytest.raises(ValueError):
+            await actions.request(
+                "A", "invented", "turn", 1, "action", "invented_wave",
+                speech=speech, user_text="你做个动作",
+            )
         assert (await actions.list("A")) == []
         assert pubs["A"].sent == pubs["B"].sent == []
         await actions.close()

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -536,7 +537,7 @@ def resolve_database(root: Path, value: str) -> Path:
 
 
 class RuntimeStore:
-    SCHEMA_VERSION = 3
+    SCHEMA_VERSION = 5
 
     def __init__(self, path: Path):
         self.path = path
@@ -631,7 +632,105 @@ class RuntimeStore:
                 expires_at_ms INTEGER,
                 updated_ms INTEGER NOT NULL,
                 PRIMARY KEY(robot_id, chat_id, persona_id, state_key))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS action_requests (
+                robot_id TEXT NOT NULL, call_id TEXT NOT NULL, turn_id TEXT NOT NULL,
+                generation INTEGER NOT NULL, room_id TEXT NOT NULL,
+                kind TEXT NOT NULL, value TEXT NOT NULL, status TEXT NOT NULL,
+                error TEXT, ts_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL,
+                PRIMARY KEY(robot_id,call_id),
+                UNIQUE(robot_id,turn_id,kind,value))""")
+            db.execute("""CREATE INDEX IF NOT EXISTS action_requests_recent
+                ON action_requests(robot_id,updated_ms DESC)""")
             db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
+
+    def recover_actions(self):
+        """Retire in-memory-only reservations after an actual process restart."""
+        with self.connect() as db:
+            now = time.time_ns() // 1_000_000
+            db.execute(
+                """UPDATE action_requests SET status='expired_no_pcm',
+                   error='process_restarted',updated_ms=?
+                   WHERE status='awaiting_audio_anchor'""", (now,),
+            )
+            db.execute(
+                """UPDATE action_requests SET status='cancelled_before_send',
+                   error='process_restarted',updated_ms=?
+                   WHERE status='reserved'""", (now,),
+            )
+
+    def list_actions(self, robot_id, limit=50):
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            return [dict(row) for row in db.execute(
+                "SELECT * FROM action_requests WHERE robot_id=? ORDER BY ts_ms DESC LIMIT ?",
+                (robot_id, limit),
+            )]
+
+    def get_action(self, robot_id, call_id):
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute(
+                "SELECT * FROM action_requests WHERE robot_id=? AND call_id=?",
+                (robot_id, call_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def reserve_action(self, robot_id, call_id, turn_id, generation, room_id,
+                       kind, value, cooldown, catalog):
+        now = time.time_ns() // 1_000_000
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                "SELECT * FROM action_requests WHERE robot_id=? AND call_id=?",
+                (robot_id, call_id),
+            ).fetchone()
+            if existing:
+                return dict(existing), True
+            same = db.execute(
+                """SELECT * FROM action_requests
+                   WHERE robot_id=? AND turn_id=? AND kind=? AND value=?""",
+                (robot_id, turn_id, kind, value),
+            ).fetchone()
+            if same:
+                return dict(same), True
+            if kind == "action":
+                last = db.execute(
+                    """SELECT value,updated_ms,status FROM action_requests
+                       WHERE robot_id=? AND kind='action'
+                       ORDER BY ts_ms DESC LIMIT 1""",
+                    (robot_id,),
+                ).fetchone()
+                if last and (
+                    last["status"] == "awaiting_audio_anchor"
+                    or last["status"] in {"published_unknown", "send_unknown"}
+                    and now - last["updated_ms"] < max(
+                        cooldown,
+                        catalog.get(last["value"], {}).get("duration_ms", cooldown),
+                    )
+                ):
+                    return None, False
+            db.execute(
+                "INSERT INTO action_requests VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (robot_id, call_id, turn_id, generation, room_id, kind, value,
+                 "awaiting_audio_anchor" if kind == "action" else "reserved",
+                 None, now, now),
+            )
+            row = db.execute(
+                "SELECT * FROM action_requests WHERE robot_id=? AND call_id=?",
+                (robot_id, call_id),
+            ).fetchone()
+            return dict(row), False
+
+    def set_action_status(self, robot_id, call_id, before, after, error=None):
+        now = time.time_ns() // 1_000_000
+        with self.connect() as db:
+            cursor = db.execute(
+                """UPDATE action_requests SET status=?,error=?,updated_ms=?
+                   WHERE robot_id=? AND call_id=? AND status=?""",
+                (after, error, now, robot_id, call_id, before),
+            )
+            return cursor.rowcount == 1
 
     def write_batch(self, records):
         with self.connect() as db:

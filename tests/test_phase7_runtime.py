@@ -47,7 +47,7 @@ def room_server():
     )
 
 
-def runtime(tmp_path, weather_client=None):
+def runtime(tmp_path, weather_client=None, *, social_actions=False):
     Publisher.instances.clear()
     FakeSocket.instances.clear()
     return HarborRuntime(
@@ -61,6 +61,7 @@ def runtime(tmp_path, weather_client=None):
         room_action_factory=Publisher,
         action_catalog=ROOT / "config/action_scripts.json",
         actions_enabled=True,
+        social_actions_enabled=social_actions,
         action_allowlist=("agree_micro_nod", "look_left",
                           "look_right", "fast_double_blink"),
         weather_key="fake-map-key" if weather_client else None,
@@ -283,5 +284,47 @@ def test_function_call_before_final_asr_returns_rejection_not_silent_hang(tmp_pa
             assert client.socket.outbound[-1]["type"] == "response.create"
         finally:
             await rt.close()
+
+    asyncio.run(exercise())
+
+
+def test_social_nod_is_opt_in_and_never_grants_large_motion(tmp_path):
+    async def exercise():
+        rt = runtime(tmp_path, social_actions=True)
+        await ready(rt)
+        try:
+            a = rt.realtime["a"]
+            functions = {
+                item["function"]["name"]: item["function"]
+                for item in a.socket.outbound[0]["session"]["tools"]
+            }
+            ids = functions["perform_social_action"][
+                "parameters"]["properties"]["script_id"]["enum"]
+            assert "agree_micro_nod" in ids
+            assert "fast_double_blink" in ids
+            assert "look_left" not in ids and "look_right" not in ids
+            assert "附和" in functions["perform_action"]["description"]
+            a._create_turn("好的，我完全赞成你的方案")
+            permitted = await result_from_call(
+                a, "social-nod", "perform_social_action",
+                {"script_id": "agree_micro_nod"},
+            )
+            assert permitted[0]["status"] == "awaiting_audio_anchor"
+            refused = await result_from_call(
+                a, "social-look", "perform_social_action",
+                {"script_id": "look_left"},
+            )
+            assert refused[0]["status"] == "rejected"
+            assert len((await rt.action_list("a"))["requests"]) == 1
+        finally:
+            await rt.close()
+        disabled = runtime(tmp_path, social_actions=False)
+        await ready(disabled)
+        try:
+            names = [item["function"]["name"] for item in
+                     disabled.realtime["a"].socket.outbound[0]["session"]["tools"]]
+            assert "perform_social_action" not in names
+        finally:
+            await disabled.close()
 
     asyncio.run(exercise())

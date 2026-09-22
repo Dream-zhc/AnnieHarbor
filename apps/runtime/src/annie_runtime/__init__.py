@@ -834,6 +834,7 @@ class HarborRuntime:
         action_catalog: Path | None = None,
         actions_enabled: bool = False,
         action_allowlist: tuple[str, ...] = (),
+        social_actions_enabled: bool = False,
         room_action_factory=None,
         weather_key: str | None = None,
         weather_client=None,
@@ -950,6 +951,7 @@ class HarborRuntime:
                 lambda robot_id, kind, **fields: self.realtime[robot_id].publish(kind, **fields),
                 enabled=actions_enabled,
                 allowlist=action_allowlist,
+                social_actions=social_actions_enabled,
             )
             for client in self.realtime.values():
                 client.actions = self.actions
@@ -1567,11 +1569,15 @@ class HarborRuntime:
             raise KeyError(robot_id)
         if self.actions is None:
             return {"status": "not_configured", "enabled": False,
-                    "allowlist": [], "actions": [], "requests": []}
+                    "allowlist": [], "social_actions_enabled": False,
+                    "actions": [], "requests": []}
         return {
             "status": "ready" if self.actions.enabled else "disabled",
             "enabled": self.actions.enabled,
             "allowlist": list(self.actions.allowlist),
+            "social_actions_enabled": bool(
+                self.actions.enabled and self.actions.social_actions
+            ),
             "actions": list(self.actions.catalog.values()),
             "requests": await self.actions.list(robot_id),
             "transport_error": self.actions.connection_errors.get(robot_id),
@@ -1653,6 +1659,9 @@ class HarborRuntime:
                 "configured": self.actions is not None,
                 "enabled": bool(self.actions and self.actions.enabled),
                 "allowlist": list(self.actions.allowlist) if self.actions else [],
+                "social_actions_enabled": bool(
+                    self.actions and self.actions.social_actions
+                ),
                 "device_completion": "unknown_no_verified_action_receipt",
                 "transport_errors": dict(self.actions.connection_errors) if self.actions else {},
             },

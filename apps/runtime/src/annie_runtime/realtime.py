@@ -392,8 +392,10 @@ class RealtimeRobot:
                 physical = bool(self.actions and self.actions.enabled and self.speech)
                 if physical:
                     instructions += (
-                        "\n只有本轮用户明确要求已有动作或表情时才调用对应工具，"
-                        "不要因为礼貌应答、寒暄、情绪猜测或历史指令自主动作。"
+                        "\nperform_action与set_expression仅响应当前轮明确请求；"
+                        "不要因历史指令自主动作。若单独启用perform_social_action，"
+                        "只允许在本轮语境确实合适时偶尔作短促附和动作，"
+                        "不要为每句寒暄或情绪猜测频繁动作，也不响应否定/取消指令。"
                         "动作awaiting_audio_anchor仅已排队，published_unknown只表明"
                         "房间发送完成，均没有设备完成回执。不能说自己已点头、眨眼或执行成功；"
                         "结果失败/未知应如实表达，不将上轮动作留给新一轮。"
@@ -408,6 +410,12 @@ class RealtimeRobot:
                     instructions,
                     self.history_turns,
                     actions=self.actions.allowlist if physical else (),
+                    action_descriptions=(
+                        {script_id: self.actions.catalog[script_id]["description"]
+                         for script_id in self.actions.allowlist}
+                        if physical else None
+                    ),
+                    social_actions=self.actions.social_allowlist if physical else (),
                     expressions=physical,
                     weather=self.weather is not None,
                 ))
@@ -1018,8 +1026,9 @@ class RealtimeRobot:
                 if args["city"] not in utterance:
                     raise ValueError("weather requires current user query")
                 result = await self.weather.current(args["city"])
-            elif name in {"perform_action", "set_expression"} and self.actions is not None:
-                expected = {"script_id"} if name == "perform_action" else {"expression"}
+            elif name in {"perform_action", "perform_social_action", "set_expression"} and self.actions is not None:
+                is_action = name != "set_expression"
+                expected = {"script_id"} if is_action else {"expression"}
                 if set(args) != expected:
                     raise ValueError("invalid physical tool arguments")
                 if self.turn_identity != self.robot.session_state():
@@ -1028,10 +1037,11 @@ class RealtimeRobot:
                 result = await self.actions.request(
                     self.robot.config.robot_id, call_id, self.turn_id,
                     self.robot.generation,
-                    "action" if name == "perform_action" else "expression",
-                    args["script_id"] if name == "perform_action" else args["expression"],
+                    "action" if is_action else "expression",
+                    args["script_id"] if is_action else args["expression"],
                     speech=self.speech,
                     user_text=cached.get("user_text") or self.transcript,
+                    social=name == "perform_social_action",
                 )
             elif name == "preview_action":
                 if set(args) != {"description"}:

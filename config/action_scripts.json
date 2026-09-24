@@ -34,6 +34,11 @@
     {"id":"think_curious","llm_id":31,"name":"思考复合","description":"带一点好奇和搞怪的思考语境使用；严肃场景不用。","duration_ms":3100,"category":"primary","enabled":true},
     {"id":"fast_double_blink","llm_id":32,"name":"连眨两下","description":"轻微困惑、意外、怀疑、重新确认、被问懵或自然表达‘嗯？’时使用。","duration_ms":550,"category":"micro","enabled":true},
     {"id":"wink_left","llm_id":33,"name":"左眼 Wink","description":"轻松玩笑、默契、俏皮暗示时偶尔左眼眨一下；严肃场景不用。","duration_ms":520,"category":"special","enabled":true},
-    {"id":"wink_right","llm_id":34,"name":"右眼 Wink","description":"轻松玩笑、默契、俏皮暗示时偶尔右眼眨一下；严肃场景不用。","duration_ms":520,"category":"special","enabled":true}
+    {"id":"wink_right","llm_id":34,"name":"右眼 Wink","description":"轻松玩笑、默契、俏皮暗示时偶尔右眼眨一下；严肃场景不用。","duration_ms":520,"category":"special","enabled":true},
+    {"id":"surprise","llm_id":35,"name":"惊讶","description":"当前对话出现明显出乎意料的好消息、反转或惊喜时，可自然做一次夸张惊讶；普通问候、严肃坏消息不使用。","duration_ms":1600,"category":"primary","enabled":true},
+    {"id":"smirk","llm_id":36,"name":"坏笑","description":"当前双方轻松开玩笑、俏皮调侃或心照不宣时，可自然做一次坏笑；用户难过、被冒犯或严肃场景不用。","duration_ms":1500,"category":"primary","enabled":true},
+    {"id":"proud","llm_id":37,"name":"得意","description":"当前有小成就、答对谜题、轻松自夸或俏皮炫耀时，可做一次夸张得意；不要因用户的成就抢功。","duration_ms":1950,"category":"primary","enabled":true},
+    {"id":"skeptical","llm_id":38,"name":"怀疑","description":"当前出现明显可疑的玩笑、让人半信半疑的说法时，可做一次俏皮怀疑；不要用来质疑用户真实经历或倾诉。","duration_ms":1600,"category":"primary","enabled":true},
+    {"id":"shy","llm_id":39,"name":"害羞（脸部）","description":"当前收到夸奖、亲昵但舒适的调侃或轻松害羞语境时，可做一次新脸部害羞动作；与身体蜷缩的shy_retract是不同脚本，不要混用。","duration_ms":2000,"category":"primary","enabled":true}
   ]
 }

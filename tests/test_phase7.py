@@ -13,10 +13,23 @@ CATALOG = ROOT / "config/action_scripts.json"
 def test_existing_catalog_is_consistent_and_read_only():
     before = CATALOG.read_bytes()
     actions = load_action_catalog(CATALOG)
-    assert len(actions) == 34
+    assert len(actions) == 39
     assert resolve_action(actions, "agree_micro_nod")["llm_id"] == 1
     assert resolve_action(actions, "look_left")["duration_ms"] == 1300
     assert CATALOG.read_bytes() == before
+
+
+@pytest.mark.parametrize(("script_id", "duration_ms"), [
+    ("surprise", 1600), ("smirk", 1500), ("proud", 1950),
+    ("skeptical", 1600), ("shy", 2000),
+])
+def test_new_expressive_scripts_have_independent_ids_and_exact_durations(script_id, duration_ms):
+    actions = load_action_catalog(CATALOG)
+    assert resolve_action(actions, script_id)["duration_ms"] == duration_ms
+    assert resolve_action(actions, script_id)["enabled"] is True
+    assert resolve_action(actions, script_id)["category"] == "primary"
+    assert actions[script_id]["llm_id"] != actions["shy_retract"]["llm_id"]
+    assert actions[script_id]["id"] != "shy_retract"
 
 
 @pytest.mark.parametrize("script_id", [

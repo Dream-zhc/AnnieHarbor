@@ -34,7 +34,7 @@ def current_action_not_vetoed(text):
 
 class ActionCoordinator:
     def __init__(self, store, catalog, robots, main_publishers, emit, *,
-                 enabled=False, allowlist=(), social_actions=False):
+                 enabled=False, allowlist=()):
         self.store = store
         self.catalog = catalog
         self.robots = robots
@@ -42,13 +42,8 @@ class ActionCoordinator:
         self.emit = emit
         self.enabled = enabled
         self.allowlist = tuple(allowlist)
-        self.social_actions = bool(enabled and social_actions)
-        self.social_allowlist = tuple(
-            script_id for script_id in self.allowlist
-            if catalog[script_id]["category"] == "micro"
-            or script_id == "agree_micro_nod"
-        ) if self.social_actions else ()
         self.pending = {}  # (robot_id,turn_id) -> (call_id,session identity)
+        self.pending_expressions = {}  # (robot_id,call_id) -> turn_id
         self.tasks = set()
         self.connection_errors = {}
         self.locks = {robot_id: asyncio.Lock() for robot_id in robots}
@@ -85,7 +80,7 @@ class ActionCoordinator:
         )
 
     async def request(self, robot_id, call_id, turn_id, generation, kind, value, *,
-                      speech, user_text, social=False):
+                      speech, user_text):
         if not self.enabled:
             return {"status": "not_configured", "real_device_executed": False}
         if robot_id not in self.robots or speech is None or robot_id not in self.main_publishers:
@@ -97,9 +92,6 @@ class ActionCoordinator:
             raise ValueError("invalid action turn identity")
         if not current_action_not_vetoed(user_text):
             raise ValueError("physical action vetoed by current user")
-        if social and (not self.social_actions or kind != "action"
-                       or value not in self.social_allowlist):
-            raise ValueError("social motion is not permitted for this robot")
         if kind == "action":
             if value not in self.allowlist:
                 raise ValueError("action is not enabled for physical execution")
@@ -115,7 +107,7 @@ class ActionCoordinator:
         async with self.locks[robot_id]:
             row, duplicate = await asyncio.to_thread(
                 self.store.reserve_action, robot_id, call_id, turn_id, generation,
-                robot.config.room_id, kind, value, cooldown, self.catalog,
+                robot.config.room_id, kind, value, cooldown,
             )
             if row is None:
                 return {"status": "conflict_or_cooldown", "real_device_executed": False}
@@ -150,14 +142,36 @@ class ActionCoordinator:
                                         "rejected_late")
                 self._event(row, status="rejected_late")
                 return {"status": "rejected_late", "real_device_executed": False}
-            await asyncio.to_thread(
-                self.store.set_action_status, robot_id, call_id, "reserved", "send_unknown",
+            self.pending_expressions[(robot_id, call_id)] = turn_id
+            self._schedule(self._dispatch_expression(row, generation, speech))
+            return {"status": "queued", "room_id": robot.config.room_id,
+                    "real_device_executed": False, "device_completion": "unknown"}
+
+    async def _dispatch_expression(self, row, generation, speech):
+        """The Realtime tool response must never await a Room websocket."""
+        robot_id, call_id, turn_id = row["robot_id"], row["call_id"], row["turn_id"]
+        robot = self.robots[robot_id]
+        async with self.locks[robot_id]:
+            if self.pending_expressions.pop((robot_id, call_id), None) != turn_id:
+                return
+            if generation != robot.generation or getattr(speech, "cancelled", False):
+                await asyncio.to_thread(
+                    self.store.set_action_status, robot_id, call_id,
+                    "reserved", "cancelled_before_send",
+                )
+                self._event(row, status="cancelled_before_send")
+                return
+            changed = await asyncio.to_thread(
+                self.store.set_action_status, robot_id, call_id,
+                "reserved", "send_unknown",
             )
-            packet = {"type": "expression", "ts": time.time_ns() // 1_000_000,
-                      "data": {"expression": value, "turn_id": turn_id,
-                               "source": "robot_main_brain"}}
-        # Lock protects reservations only. Room I/O may stall, but cancel and
-        # other action requests must still be able to acquire this robot's lock.
+            if not changed:
+                return
+        packet = {"type": "expression", "ts": time.time_ns() // 1_000_000,
+                  "data": {"expression": row["value"], "turn_id": turn_id,
+                           "source": "robot_main_brain"}}
+        self._event(row, status="send_unknown")
+
         def expression_still_before_pcm():
             previous = speech.turn_id not in (None, turn_id)
             worker = getattr(speech, "worker", None)
@@ -185,21 +199,19 @@ class ActionCoordinator:
                 "send_unknown", "send_unknown", type(exc).__name__,
             )
             self._event(row, status="send_unknown", error=type(exc).__name__)
-            return {"status": "send_unknown", "real_device_executed": False}
+            return
         if not sent:
             await asyncio.to_thread(
                 self.store.set_action_status, robot_id, call_id,
                 "send_unknown", "rejected_late",
             )
             self._event(row, status="rejected_late")
-            return {"status": "rejected_late", "real_device_executed": False}
+            return
         await asyncio.to_thread(
             self.store.set_action_status, robot_id, call_id,
             "send_unknown", "published_unknown",
         )
         self._event(row, status="published_unknown")
-        return {"status": "published_unknown", "real_device_executed": False,
-                "device_completion": "unknown"}
 
     def _schedule(self, awaitable):
         task = asyncio.create_task(awaitable)
@@ -270,6 +282,20 @@ class ActionCoordinator:
         if robot_id not in self.locks:
             return
         async with self.locks[robot_id]:
+            expressions = [
+                (key, pending_turn) for key, pending_turn in self.pending_expressions.items()
+                if key[0] == robot_id and (turn_id is None or pending_turn == turn_id)
+            ]
+            for key, pending_turn in expressions:
+                self.pending_expressions.pop(key, None)
+                changed = await asyncio.to_thread(
+                    self.store.set_action_status, robot_id, key[1],
+                    "reserved", "cancelled_before_send",
+                )
+                if changed:
+                    self.emit(robot_id, "action.state", turn_id=pending_turn,
+                              call_id=key[1], status="cancelled_before_send",
+                              real_device_executed=False, device_completion="unknown")
             keys = [key for key in self.pending
                     if key[0] == robot_id and (turn_id is None or key[1] == turn_id)]
             for key in keys:

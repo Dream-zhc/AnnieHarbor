@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 from annie_adapters import RoomServerConfig
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
@@ -47,7 +48,7 @@ def room_server():
     )
 
 
-def runtime(tmp_path, weather_client=None, *, social_actions=False):
+def runtime(tmp_path, weather_client=None):
     Publisher.instances.clear()
     FakeSocket.instances.clear()
     return HarborRuntime(
@@ -61,9 +62,9 @@ def runtime(tmp_path, weather_client=None, *, social_actions=False):
         room_action_factory=Publisher,
         action_catalog=ROOT / "config/action_scripts.json",
         actions_enabled=True,
-        social_actions_enabled=social_actions,
         action_allowlist=("agree_micro_nod", "look_left",
-                          "look_right", "fast_double_blink"),
+                          "look_right", "fast_double_blink",
+                          "surprise", "smirk", "proud", "skeptical", "shy"),
         weather_key="fake-map-key" if weather_client else None,
         weather_client=weather_client,
     )
@@ -97,6 +98,9 @@ def test_realtime_tool_action_and_expression_only_a_changes(tmp_path):
         try:
             a, b = rt.realtime["a"], rt.realtime["b"]
             tools = a.socket.outbound[0]["session"]["tools"]
+            spoken = a.socket.outbound[0]["session"]["instructions"]
+            assert "不要把‘动作已发出/已发送/指令已下发/动作已执行’当作给用户的回复" in spoken
+            assert "好嘞，眨两下～" in spoken
             names = [item["function"]["name"] for item in tools]
             assert "perform_action" in names and "set_expression" in names
             assert "get_weather" not in names
@@ -131,7 +135,11 @@ def test_realtime_tool_action_and_expression_only_a_changes(tmp_path):
             a._finish("completed")
             a._create_turn("你给我做个开心表情")
             face = await result_from_call(a, "face", "set_expression", {"expression": "喜"})
-            assert face[0]["status"] == "published_unknown"
+            assert face[0]["status"] == "queued"
+            for _ in range(100):
+                if Publisher.instances["roomv2", "tts"].messages:
+                    break
+                await asyncio.sleep(.01)
             assert Publisher.instances["roomv2", "tts"].messages[0]["type"] == "expression"
             assert Publisher.instances["roomv3", "tts"].messages == []
             b._create_turn("你看左边")
@@ -139,6 +147,50 @@ def test_realtime_tool_action_and_expression_only_a_changes(tmp_path):
                                              {"script_id": "invented_wave"})
             assert blocked[0]["status"] == "rejected"
             assert Publisher.instances["roomv3", "main"].messages == []
+        finally:
+            await rt.close()
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(("script_id", "duration_ms"), [
+    ("surprise", 1600), ("smirk", 1500), ("proud", 1950),
+    ("skeptical", 1600), ("shy", 2000),
+])
+def test_expressive_script_tool_to_own_room_after_first_pcm(tmp_path, script_id, duration_ms):
+    async def exercise():
+        rt = runtime(tmp_path)
+        await ready(rt)
+        try:
+            a = rt.realtime["a"]
+            session = a.socket.outbound[0]["session"]
+            functions = {tool["function"]["name"]: tool["function"]
+                         for tool in session["tools"]}
+            assert script_id in functions["perform_action"]["parameters"][
+                "properties"]["script_id"]["enum"]
+            assert script_id in functions["perform_action"]["description"]
+            assert script_id in session["instructions"]
+            a._create_turn("刚才真是意想不到，太有意思了")
+            turn_id = a.turn_id
+            result = await result_from_call(
+                a, "expressive", "perform_action", {"script_id": script_id},
+            )
+            assert result[0]["status"] == "awaiting_audio_anchor"
+            assert Publisher.instances["roomv2", "main"].messages == []
+            assert Publisher.instances["roomv3", "main"].messages == []
+            a.publish("tts.first_published", turn_id=turn_id,
+                      robot_id="a", generation=a.robot.generation)
+            for _ in range(100):
+                if Publisher.instances["roomv2", "main"].messages:
+                    break
+                await asyncio.sleep(.01)
+            messages = Publisher.instances["roomv2", "main"].messages
+            assert len(messages) == 1
+            assert messages[0]["type"] == "action_trigger"
+            assert messages[0]["data"]["script_id"] == script_id
+            assert messages[0]["data"]["conversation_id"] == turn_id
+            assert Publisher.instances["roomv3", "main"].messages == []
+            assert (await rt.action_list("a"))["requests"][0]["duration_ms"] == duration_ms
         finally:
             await rt.close()
 
@@ -199,6 +251,34 @@ def test_live_weather_tool_uses_current_user_city_and_true_provider_data(tmp_pat
                 assert "fake-map-key" not in str(result)
                 rejected = await result_from_call(a, "wrongcity", "get_weather",
                                                   {"city": "../上海"})
+                assert rejected[0]["status"] == "rejected"
+            finally:
+                await rt.close()
+
+    asyncio.run(exercise())
+
+
+def test_live_weather_accepts_city_suffix_but_not_different_district(tmp_path):
+    async def exercise():
+        def handler(request):
+            assert request.url.params["city"] == "西安市"
+            return httpx.Response(200, json={"status": "1", "lives": [{
+                "city": "西安市", "adcode": "610100", "weather": "晴",
+                "temperature": "25", "reporttime": "2026-09-24 14:00:00",
+            }]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            rt = runtime(tmp_path, weather_client=client)
+            await ready(rt)
+            try:
+                a = rt.realtime["a"]
+                a._create_turn("西安的天气怎么样")
+                result = await result_from_call(a, "city-suffix", "get_weather",
+                                                {"city": "西安市"})
+                assert result[0]["status"] == "ok"
+                assert result[0]["adcode"] == "610100"
+                rejected = await result_from_call(a, "wrong-district", "get_weather",
+                                                  {"city": "西安区"})
                 assert rejected[0]["status"] == "rejected"
             finally:
                 await rt.close()
@@ -288,9 +368,9 @@ def test_function_call_before_final_asr_returns_rejection_not_silent_hang(tmp_pa
     asyncio.run(exercise())
 
 
-def test_social_nod_is_opt_in_and_never_grants_large_motion(tmp_path):
+def test_only_one_physical_action_tool_is_exposed(tmp_path):
     async def exercise():
-        rt = runtime(tmp_path, social_actions=True)
+        rt = runtime(tmp_path)
         await ready(rt)
         try:
             a = rt.realtime["a"]
@@ -298,33 +378,68 @@ def test_social_nod_is_opt_in_and_never_grants_large_motion(tmp_path):
                 item["function"]["name"]: item["function"]
                 for item in a.socket.outbound[0]["session"]["tools"]
             }
-            ids = functions["perform_social_action"][
+            assert "perform_social_action" not in functions
+            ids = functions["perform_action"][
                 "parameters"]["properties"]["script_id"]["enum"]
             assert "agree_micro_nod" in ids
             assert "fast_double_blink" in ids
-            assert "look_left" not in ids and "look_right" not in ids
-            assert "附和" in functions["perform_action"]["description"]
-            a._create_turn("好的，我完全赞成你的方案")
-            permitted = await result_from_call(
-                a, "social-nod", "perform_social_action",
-                {"script_id": "agree_micro_nod"},
-            )
-            assert permitted[0]["status"] == "awaiting_audio_anchor"
+            assert "look_left" in ids and "look_right" in ids
+            a._create_turn("你看右边")
             refused = await result_from_call(
-                a, "social-look", "perform_social_action",
+                a, "unsupported-tool", "perform_social_action",
                 {"script_id": "look_left"},
             )
             assert refused[0]["status"] == "rejected"
-            assert len((await rt.action_list("a"))["requests"]) == 1
+            assert (await rt.action_list("a"))["requests"] == []
         finally:
             await rt.close()
-        disabled = runtime(tmp_path, social_actions=False)
-        await ready(disabled)
+
+    asyncio.run(exercise())
+
+
+def test_expression_tool_result_and_followup_do_not_wait_for_room_network(tmp_path):
+    async def exercise():
+        rt = runtime(tmp_path)
+        await ready(rt)
+        client = rt.realtime["a"]
+        speaker = Publisher.instances["roomv2", "tts"]
+        started, release = asyncio.Event(), asyncio.Event()
+        original_publish = speaker.publish
+
+        async def blocked_publish(packet):
+            started.set()
+            await release.wait()
+            await original_publish(packet)
+
+        speaker.publish = blocked_publish
         try:
-            names = [item["function"]["name"] for item in
-                     disabled.realtime["a"].socket.outbound[0]["session"]["tools"]]
-            assert "perform_social_action" not in names
+            client._create_turn("你给我做个开心表情")
+            output = await asyncio.wait_for(
+                result_from_call(client, "slow-expression", "set_expression",
+                                 {"expression": "喜"}),
+                .5,
+            )
+            assert output[0]["status"] == "queued"
+            assert output[0]["real_device_executed"] is False
+            await asyncio.wait_for(started.wait(), .5)
+            assert speaker.messages == []
+            await asyncio.wait_for(
+                client.handle({"type": "response.done", "response": {
+                    "status": "completed",
+                }}, client.robot.generation),
+                .5,
+            )
+            assert client.socket.outbound[-1]["type"] == "response.create"
+            assert (await rt.action_list("a"))["requests"][0]["status"] == "send_unknown"
+            release.set()
+            for _ in range(100):
+                if (await rt.action_list("a"))["requests"][0]["status"] == "published_unknown":
+                    break
+                await asyncio.sleep(.01)
+            assert (await rt.action_list("a"))["requests"][0]["status"] == "published_unknown"
+            assert speaker.messages[0]["type"] == "expression"
         finally:
-            await disabled.close()
+            release.set()
+            await rt.close()
 
     asyncio.run(exercise())

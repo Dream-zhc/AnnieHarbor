@@ -169,7 +169,13 @@ def test_slow_expression_does_not_lock_other_calls_for_same_robot(tmp_path):
         ), .3)
         assert new["status"] == "awaiting_audio_anchor"
         blocked.release.set()
-        assert (await in_flight)["status"] == "published_unknown"
+        assert (await in_flight)["status"] == "queued"
+        await wait_for(
+            lambda: any(
+                row["call_id"] == "face-slow" and row["status"] == "published_unknown"
+                for row in actions.store.list_actions("A")
+            )
+        )
         await actions.close()
 
     asyncio.run(run())
@@ -217,7 +223,8 @@ def test_expression_preserves_tts_channel_and_unknown_device_result(tmp_path):
         result = await actions.request("A", "face-1", "t-face", 1,
                                        "expression", "喜", speech=speech,
                                        user_text="你给我做个开心表情")
-        assert result["status"] == "published_unknown"
+        assert result["status"] == "queued"
+        await wait_for(lambda: len(tts.sent) == 1)
         assert result["real_device_executed"] is False
         assert tts.sent[0]["type"] == "expression"
         assert tts.sent[0]["data"] == {
@@ -366,7 +373,8 @@ def test_completed_previous_tts_allows_next_turn_expression(tmp_path):
             "A", "next-face", "next-turn", 1, "expression", "喜",
             speech=speech, user_text="你给我做个开心表情",
         )
-        assert result["status"] == "published_unknown"
+        assert result["status"] == "queued"
+        await wait_for(lambda: len(tts.sent) == 1)
         assert tts.sent[0]["data"]["turn_id"] == "next-turn"
         await actions.close()
 
@@ -440,10 +448,26 @@ def test_amap_weather_uses_provider_data_without_secret_leakage():
             assert result["temperature_c"] == "22"
             assert result["city"] == "北京"
             assert "test-secret" not in str(result)
-            assert urls[0].params["city"] == "北京"
+            assert urls[0].params["city"] == "北京市"
             assert urls[0].params["extensions"] == "base"
             assert urls[0].host == "restapi.amap.com"
             with pytest.raises(ValueError):
                 await tool.current("../北京")
+
+    asyncio.run(run())
+
+
+def test_amap_weather_failure_explains_provider_rejection_without_key():
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={
+                "status": "0", "infocode": "10001", "info": "INVALID_USER_KEY",
+            })
+        )) as client:
+            tool = AmapWeather("test-secret", client=client)
+            result = await tool.current("西安")
+            assert result == {"status": "unavailable", "source": "amap",
+                              "reason": "provider_rejected", "infocode": "10001"}
+            assert "test-secret" not in str(result)
 
     asyncio.run(run())

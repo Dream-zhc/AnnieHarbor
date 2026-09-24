@@ -131,6 +131,7 @@ class RealtimeRobot:
         self._lifecycle = asyncio.Lock()
         self.last_provider_stopped_ms = None
         self._last_conversation_activity_t = time.monotonic()
+        self._last_user_turn_at = None  # monotonic, not a wall clock or last external event
         self._idle_recycled = False
         self._turn_timelines = {}
         self._turn_prompt_snapshots = {}
@@ -948,6 +949,8 @@ class RealtimeRobot:
         if self.turn_id:
             return
         self._last_conversation_activity_t = time.monotonic()
+        if source == "user":
+            self._last_user_turn_at = self._last_conversation_activity_t
         self._idle_recycled = False
         now = time.time_ns() // 1_000_000
         turn_id = uuid4().hex
@@ -1420,7 +1423,7 @@ class RealtimeRobot:
                 raise ValueError("expected object arguments")
             if self.turn_id == self.external_turn_id and name in {
                 "perform_action", "set_expression", "preview_action",
-                "forget_memory", "correct_memory", "create_reminder",
+                "forget_memory", "correct_memory", "recall_memory", "create_reminder",
             }:
                 raise ValueError("external_event_no_motion" if name in {
                     "perform_action", "set_expression", "preview_action"

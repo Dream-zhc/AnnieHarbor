@@ -169,6 +169,20 @@ def main():
         runtime_defaults = tomllib.load(file)
     with (root / "config/providers.toml").open("rb") as file:
         provider_defaults = tomllib.load(file)
+    idle_enabled = os.environ.get("ANNIE_IDLE_ENABLED") == "1"
+    if idle_enabled and (not os.environ.get("DASHSCOPE_API_KEY")
+                         or os.environ.get("ANNIE_TTS_ENABLED") != "1"):
+        raise ValueError("8C idle planning requires DASHSCOPE_API_KEY and ANNIE_TTS_ENABLED=1")
+    idle_model = None
+    if idle_enabled:
+        from annie_brain.idle_plan import QwenIdleModel
+
+        inquiry = provider_defaults["llm"]["inquiry"]
+        idle_model = QwenIdleModel(
+            os.environ["DASHSCOPE_API_KEY"], inquiry["base_url"],
+            model=os.environ.get("ANNIE_IDLE_MODEL", inquiry["model"]),
+            timeout=float(inquiry["timeout_sec"]),
+        )
     logging.basicConfig(
         level=resolve_log_level(os.environ.get("ANNIE_LOG_LEVEL", config["app"].get("log_level", "INFO"))),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -211,6 +225,7 @@ def main():
         memory_embedding_model=provider_defaults["memory"]["embedding_model"],
         memory_embedding_dimensions=provider_defaults["memory"]["embedding_dimensions"],
         action_catalog=root / "config/action_scripts.json",
+        idle_model=idle_model,
         actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
         action_allowlist=tuple(
             item.strip() for item in os.environ.get(

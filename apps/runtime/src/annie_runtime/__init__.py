@@ -31,6 +31,7 @@ from annie_core import (
 from annie_observability import Recorder, RuntimeEvent
 
 from annie_runtime.events import EventService
+from annie_runtime.idle import IdleService
 from annie_runtime.realtime import RealtimeRobot
 from annie_runtime.reminders import ReminderService
 from annie_runtime.room_monitor import RoomMonitor
@@ -857,6 +858,9 @@ class HarborRuntime:
         weather_client=None,
         weather_timeout_ms: int = 1200,
         weather_cache_sec: int = 180,
+        idle_model=None,
+        idle_seconds: float = 60,
+        idle_second_seconds: float = 120,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -1021,6 +1025,8 @@ class HarborRuntime:
         self.started = False
         self.events = EventService(self)
         self.reminders = ReminderService(self)
+        self.idle = IdleService(self, idle_model, idle_seconds=idle_seconds,
+                                second_seconds=idle_second_seconds)
         for robot_id, client in self.realtime.items():
             client.reminders = self.reminders
             def wake_external(robot_id=robot_id):
@@ -1428,6 +1434,10 @@ class HarborRuntime:
 
     def _room_visual_event(self, robot_id, message):
         if self.room_monitors[robot_id].on_visual(message):
+            self.idle.observe_visual(
+                robot_id,
+                message if self.room_monitors[robot_id].visual_facts_accepted else {},
+            )
             client = self.realtime.get(robot_id)
             if client is not None:
                 client.visual_changed()
@@ -1499,6 +1509,7 @@ class HarborRuntime:
             await robot.initialize_session()
             await robot.start()
         await self.reminders.start()
+        await self.idle.start()
         if self.viseme_sidecars is not None:
             await self.viseme_sidecars.start()
         for realtime in self.realtime.values():
@@ -1527,6 +1538,7 @@ class HarborRuntime:
             await asyncio.gather(*self.smallbrain_tasks, return_exceptions=True)
             self.smallbrain_tasks.clear()
             await self.reminders.close()
+            await self.idle.close()
             await self.events.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
@@ -1928,7 +1940,7 @@ class HarborRuntime:
         return self.realtime[robot_id].since(after)
 
     def external_events(self, robot_id: str):
-        return self.events.snapshot(robot_id)
+        return {**self.events.snapshot(robot_id), "idle": self.idle.snapshot(robot_id)}
 
     async def reminder_list(self, robot_id):
         return await self.reminders.list(robot_id, self.session_state(robot_id))

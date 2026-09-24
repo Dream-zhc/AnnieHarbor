@@ -5,7 +5,10 @@ type EventRow={kind:string;event_id:string|null;decision:string;status:string;
   reason:string|null;transport:string;observed_ms:number;expires_at_ms:number;
   chat_id:string;persona_id:string;generation:number;summary:unknown};
 type EventSnapshot={facts:unknown[];events:EventRow[];pending_count:number;
-  complex_task:string;chat_id:string;persona_id:string;generation:number};
+  complex_task:string;chat_id:string;persona_id:string;generation:number;
+  idle?:{enabled:boolean;status:string;reason:string|null;decision:string|null;
+    last_model_decision:string|null;last_topic:string;
+    attempts:number;presence_samples:number;presence_age_ms:number|null;updated_ms:number}};
 type Reminder={task_id:string;text:string;status:string;reason:string|null;
   due_ms:number;version:number;turn_id:string|null;result:unknown;checkpoint:unknown;
   robot_id:string;chat_id:string;persona_id:string;session_epoch:number;generation:number};
@@ -30,7 +33,8 @@ export function ExternalEvents({robotId,session,events}:{robotId:string;session:
   const [seconds,setSeconds]=useState(30);
   const [busy,setBusy]=useState(false);
   const keyRef=useRef<string|null>(null);
-  const policySeq=[...events].reverse().find(e=>e.kind==='event.policy'||e.kind==='task.status')?.seq??0;
+  const policySeq=[...events].reverse().find(e=>
+    ['event.policy','task.status','idle.policy'].includes(e.kind))?.seq??0;
   const refresh=useCallback(()=>setRefreshIndex(x=>x+1),[]);
   useEffect(()=>{
     let active=true;
@@ -112,6 +116,12 @@ export function ExternalEvents({robotId,session,events}:{robotId:string;session:
         </div>)}
       </div>:<p className="empty-copy">暂无定时提醒任务</p>}
       <div className="events-facts-section">
+        <div className="info-line"><span>8C 主动交谈</span><strong>{!snapshot.idle?.enabled?'未启用':
+          snapshot.idle.status+' · '+(snapshot.idle.reason??snapshot.idle.decision??'候选')}</strong></div>
+        {snapshot.idle?.enabled&&<div className="info-line"><span>现场人物证据</span>
+          <strong>{snapshot.idle.presence_samples} 帧 · 第 {snapshot.idle.attempts}/2 次</strong></div>}
+        {snapshot.idle?.last_model_decision&&<div className="info-line"><span>最近规划</span>
+          <strong>{snapshot.idle.last_model_decision} · {snapshot.idle.last_topic||'保持安静'}</strong></div>}
         <div className="info-line"><span>待处理发声</span><strong>{snapshot.pending_count}</strong></div>
         <details><summary>有效环境事实 ({snapshot.facts.length})</summary><pre>{JSON.stringify(snapshot.facts,null,2)}</pre></details>
         <details open><summary>最近事件流 ({snapshot.events.length})</summary>

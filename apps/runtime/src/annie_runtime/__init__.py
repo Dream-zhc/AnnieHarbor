@@ -33,6 +33,7 @@ from annie_observability import Recorder, RuntimeEvent
 from annie_runtime.events import EventService
 from annie_runtime.realtime import RealtimeRobot
 from annie_runtime.reminders import ReminderService
+from annie_runtime.room_monitor import RoomMonitor
 from annie_runtime.speech import SpeechOutput
 from annie_runtime.viseme import VisemeSidecars
 
@@ -362,6 +363,8 @@ class RobotRuntime:
             self.turn_cache.pop(next(iter(self.turn_cache)))
 
     def _cache_context_turn(self, turn: dict, *, allow_generated: bool = True):
+        if turn.get("turn_source", "user") != "user":
+            return  # internal events are not conversation evidence
         context = dict(turn)
         context["_requires_speaker"] = not allow_generated
         context["assistant_context_text"] = (
@@ -840,13 +843,20 @@ class HarborRuntime:
         room_tts_factory=None,
         viseme_root: Path | None = None,
         viseme_python: str | None = None,
+        memory_key: str | None = None,
+        memory_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        memory_extract_model: str = "qwen3.8-flash",
+        memory_embedding_model: str = "text-embedding-v4",
+        memory_embedding_dimensions: int = 256,
+        memory_model=None,
         action_catalog: Path | None = None,
         actions_enabled: bool = False,
         action_allowlist: tuple[str, ...] = (),
-        social_actions_enabled: bool = False,
         room_action_factory=None,
         weather_key: str | None = None,
         weather_client=None,
+        weather_timeout_ms: int = 1200,
+        weather_cache_sec: int = 180,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -860,6 +870,19 @@ class HarborRuntime:
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
         self.ledger = ConversationLedgerWriter(self.store)
+        if memory_key or memory_model:
+            from annie_brain.memory import CloudMemoryModel, MemoryService
+
+        self.memory = (
+            MemoryService(
+                self.store,
+                memory_model or CloudMemoryModel(
+                    memory_key, memory_base_url, memory_extract_model,
+                    memory_embedding_model, memory_embedding_dimensions,
+                ),
+                [c.robot_id for c in configs if c.enabled],
+            ) if memory_key or memory_model else None
+        )
         self.conversation_history_turns = conversation_history_turns
         self.persona_profiles = dict(persona_profiles or {})
         self.robots = {
@@ -878,6 +901,12 @@ class HarborRuntime:
         self.room_connections = {}
         self.room_sources = {}
         self.playback_listeners = {}
+        self.voice_publishers = {}
+        self.voice_tasks = set()
+        self.room_monitors = {
+            robot_id: RoomMonitor(robot.config.room_id)
+            for robot_id, robot in self.robots.items() if robot.config.enabled
+        }
         self.smallbrain_links = {}
         self.smallbrain_tasks = set()
         self.viseme_sidecars = None
@@ -897,6 +926,25 @@ class HarborRuntime:
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }
+        for robot_id, client in self.realtime.items():
+            client.visual_observer = (
+                lambda robot_id=robot_id: self._current_visual(robot_id)
+            )
+        if self.memory:
+            for client in self.realtime.values():
+                client.memory = self.memory
+        if room_server is not None and "voice" in room_server.channels and self.realtime:
+            from annie_adapters.tts import RoomTtsPublisher
+
+            for robot_id, client in self.realtime.items():
+                publisher = RoomTtsPublisher(
+                    room_server, client.robot.config.room_id, channel="voice",
+                )
+                self.voice_publishers[robot_id] = publisher
+                client.voice_event = (
+                    lambda kind, event, robot_id=robot_id:
+                    self._send_voice_event(robot_id, kind, event)
+                )
         if tts_voice:
             if not realtime_key or room_server is None:
                 raise ValueError("TTS requires Realtime and a configured Room server")
@@ -913,15 +961,12 @@ class HarborRuntime:
                     client.robot, publisher, url=url, key=realtime_key,
                     voice=tts_voice, socket_factory=tts_socket_factory or QwenTtsSocket,
                     event=client.publish,
+                    voice_publisher=self.voice_publishers.get(robot_id),
                 )
                 self.playback_listeners[robot_id] = (
                     RoomEventListener(
                         room_server, client.robot.config.room_id, "main",
                         lambda message, robot_id=robot_id: self._room_playback_receipt(robot_id, message),
-                    ),
-                    RoomEventListener(
-                        room_server, client.robot.config.room_id, "sam",
-                        lambda message, robot_id=robot_id: self._room_mouth_script(robot_id, message),
                     ),
                 )
         if viseme_root is not None:
@@ -960,7 +1005,6 @@ class HarborRuntime:
                 lambda robot_id, kind, **fields: self.realtime[robot_id].publish(kind, **fields),
                 enabled=actions_enabled,
                 allowlist=action_allowlist,
-                social_actions=social_actions_enabled,
             )
             for client in self.realtime.values():
                 client.actions = self.actions
@@ -968,13 +1012,17 @@ class HarborRuntime:
         if weather_key or weather_client:
             from annie_adapters.weather import AmapWeather
 
-            self.weather = AmapWeather(weather_key or "", client=weather_client)
+            self.weather = AmapWeather(
+                weather_key or "", client=weather_client,
+                timeout_ms=weather_timeout_ms, cache_sec=weather_cache_sec,
+            )
             for client in self.realtime.values():
                 client.weather = self.weather
         self.started = False
         self.events = EventService(self)
         self.reminders = ReminderService(self)
         for robot_id, client in self.realtime.items():
+            client.reminders = self.reminders
             def wake_external(robot_id=robot_id):
                 self.events.wake(robot_id)
                 self.reminders.wake(robot_id)
@@ -984,23 +1032,43 @@ class HarborRuntime:
             from annie_adapters.playback import RoomEventListener
 
             for config in configs:
-                if not config.enabled or config.robot_id not in self.realtime:
+                if not config.enabled:
                     continue
                 room = config.room_id
-                for channel in ("main", "visualdata"):
-                    self.bind_input_source(f"room:{room}:{channel}-event", [config.robot_id])
                 listeners = list(self.playback_listeners.get(config.robot_id, ()))
-                if not tts_voice:
+                if "voice" in room_server.channels and config.robot_id in self.realtime:
                     listeners.append(RoomEventListener(
-                        room_server, room, "main",
-                        lambda message, robot_id=config.robot_id: self._room_external_event(
-                            robot_id, "main", message),
+                        room_server, room, "voice",
+                        lambda message, robot_id=config.robot_id:
+                        self._room_voice_event(robot_id, message),
                     ))
                 listeners.append(RoomEventListener(
-                    room_server, room, "visualdata",
-                    lambda message, robot_id=config.robot_id: self._room_external_event(
-                        robot_id, "visualdata", message),
+                    room_server, room, "sam",
+                    lambda message, robot_id=config.robot_id: self._room_sam_event(
+                        robot_id, message),
                 ))
+                if config.robot_id in self.realtime:
+                    for channel in ("main", "visualdata"):
+                        self.bind_input_source(f"room:{room}:{channel}-event", [config.robot_id])
+                    if not tts_voice:
+                        listeners.append(RoomEventListener(
+                            room_server, room, "main",
+                            lambda message, robot_id=config.robot_id: self._room_external_event(
+                                robot_id, "main", message),
+                        ))
+                    listeners.append(RoomEventListener(
+                        room_server, room, "visualdata",
+                        lambda message, robot_id=config.robot_id: self._room_external_event(
+                            robot_id, "visualdata", message),
+                    ))
+                # Camera descriptions currently belong only to roomv2.
+                if (room == "roomv2"
+                        and "visualllm" in room_server.channels):
+                    listeners.append(RoomEventListener(
+                        room_server, room, "visualllm",
+                        lambda message, robot_id=config.robot_id: self._room_visual_event(
+                            robot_id, message),
+                    ))
                 self.playback_listeners[config.robot_id] = tuple(listeners)
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
@@ -1278,6 +1346,67 @@ class HarborRuntime:
         except ValueError as exc:
             client.publish("tts.playback.rejected", reason=str(exc)[:120])
 
+    def _room_voice_event(self, robot_id, message):
+        """reb_voice carries device status; microphone status never triggers ASR."""
+        kind = message.get("type", "")
+        if isinstance(kind, str) and kind.startswith("tts.playback."):
+            # Commands from Brain also pass through this subscription. Only
+            # device reports are accepted; avoid treating our own hold as ACK.
+            if kind in {"tts.playback.started", "tts.playback.progress",
+                        "tts.playback.held", "tts.playback.resumed",
+                        "tts.playback.stopped", "tts.playback.drained"}:
+                self._room_playback_receipt(robot_id, message)
+        elif kind in {"mic.capture.started", "mic.capture.stopped"}:
+            data = message.get("data")
+            if (isinstance(data, dict) and data.get("sender") == "microphone"
+                    and robot_id in self.realtime):
+                self.realtime[robot_id].publish(
+                    "voice.microphone", event_kind=kind, source="microphone",
+                )
+
+    def _send_voice_event(self, robot_id, kind, event):
+        """Relay Qwen's observations asynchronously; it does not talk to Room."""
+        publisher = self.voice_publishers.get(robot_id)
+        if publisher is None:
+            return
+        if len(self.voice_tasks) >= 32:
+            self.realtime[robot_id].publish("voice.signal.dropped", event_kind=kind)
+            return
+
+        async def send():
+            try:
+                labels = {
+                    "speech.started": "检测到用户开始说话",
+                    "speech.stopped": "检测到用户结束说话",
+                    "transcript.done": "用户语音识别最终文本",
+                    "transcript.final_preview": "用户语音识别待确认文本",
+                    "transcript.ambient": "未触发对话的环境语音",
+                }
+                await publisher.publish({
+                    "type": "voice.interaction",
+                    "description": labels.get(kind, "语音交互事件"),
+                    "ts": event["ts_ms"],
+                    "data": {
+                        "sender": "brain",
+                        "trigger_source": ("qwen_realtime" if kind.startswith(
+                            ("speech.", "transcript."),
+                        ) else "brain"),
+                        "event": kind, "robot_id": robot_id,
+                        "item_id": event.get("item_id"),
+                        "conversation_id": event.get("turn_id"),
+                        "text": str(event.get("text") or "")[:256],
+                    },
+                })
+            except Exception as exc:
+                self.realtime[robot_id].publish(
+                    "voice.signal.error", event_kind=kind,
+                    error=type(exc).__name__,
+                )
+
+        task = asyncio.create_task(send())
+        self.voice_tasks.add(task)
+        task.add_done_callback(self.voice_tasks.discard)
+
     def _room_external_event(self, robot_id, channel, message):
         if message.get("type") not in {
             "pressure", "touch", "gas", "vision.perception", "robot_event",
@@ -1290,10 +1419,41 @@ class HarborRuntime:
         except InputRejectedError:
             logger.warning("Room external event rejected robot=%s channel=%s", robot_id, channel)
 
-    def _room_mouth_script(self, robot_id, message):
+    def _room_sam_event(self, robot_id, message):
+        self.room_monitors[robot_id].on_sam(message)
         client = self.realtime.get(robot_id)
-        if client is not None and client.speech is not None:
+        if (message.get("type") == "mouth_script" and client is not None
+                and client.speech is not None):
             client.speech.on_mouth_script(message)
+
+    def _room_visual_event(self, robot_id, message):
+        if self.room_monitors[robot_id].on_visual(message):
+            client = self.realtime.get(robot_id)
+            if client is not None:
+                client.visual_changed()
+
+    def _current_visual(self, robot_id):
+        listeners = self.playback_listeners.get(robot_id, ())
+        visual = next((item for item in listeners if item.channel == "visualllm"), None)
+        return self.room_monitors[robot_id].current_visual(
+            connected=bool(visual and visual.connected),
+        )
+
+    def room_observations(self, robot_id):
+        monitor = self.room_monitors[robot_id]
+        listeners = self.playback_listeners.get(robot_id, ())
+        sam = next((item for item in listeners if item.channel == "sam"), None)
+        visual = next((item for item in listeners if item.channel == "visualllm"), None)
+        snapshot = monitor.snapshot(
+            sam_connected=sam.connected if sam else None,
+            visual_connected=bool(visual and visual.connected),
+            visual_configured=visual is not None,
+        )
+        client = self.realtime.get(robot_id)
+        snapshot["visual"]["llm_context"] = (
+            client.visual_context_snapshot() if client else {"state": "not_configured"}
+        )
+        return snapshot
 
     def room_routes(self):
         routes = []
@@ -1333,6 +1493,8 @@ class HarborRuntime:
         self.ledger.start()
         self.recorder.start()
         self.started = True
+        if self.memory:
+            await self.memory.start()
         for robot in self.robots.values():
             await robot.initialize_session()
             await robot.start()
@@ -1368,10 +1530,18 @@ class HarborRuntime:
             await self.events.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
+            for task in tuple(self.voice_tasks):
+                task.cancel()
+            await asyncio.gather(*self.voice_tasks, return_exceptions=True)
+            self.voice_tasks.clear()
+            for publisher in self.voice_publishers.values():
+                await publisher.close()
             if self.actions is not None:
                 await self.actions.close()
             if self.weather is not None:
                 await self.weather.close()
+            if self.memory:
+                await self.memory.close()
             for connections in self.playback_listeners.values():
                 await asyncio.gather(*(connection.close() for connection in connections))
             if self.viseme_sidecars is not None:
@@ -1401,6 +1571,16 @@ class HarborRuntime:
     def session_state(self, robot_id: str):
         return self.robots[robot_id].session_state()
 
+    async def list_persona_instances(self, robot_id):
+        return await asyncio.to_thread(self.store.list_persona_instances, robot_id)
+
+    async def name_persona_instance(self, robot_id, persona_id, display_name):
+        if (not isinstance(persona_id, str) or not 1 <= len(persona_id.strip()) <= 128
+                or not isinstance(display_name, str) or not 1 <= len(display_name.strip()) <= 40):
+            raise ValueError("invalid Persona id or display name")
+        return await asyncio.to_thread(self.store.set_persona_name, robot_id,
+                                       persona_id.strip(), display_name.strip())
+
     async def switch_session(
         self,
         robot_id: str,
@@ -1408,19 +1588,31 @@ class HarborRuntime:
         chat_id: str,
         persona_id: str,
         persona_revision: int = 1,
+        style_id: str | None = None,
     ):
+        if style_id is not None and style_id not in self.persona_profiles:
+            raise ValueError("unknown style_id")
         previous = self.robots[robot_id].session_state()
         result = await self.robots[robot_id].switch_session(
             chat_id=chat_id,
             persona_id=persona_id,
             persona_revision=persona_revision,
         )
+        if style_id is not None:
+            await asyncio.to_thread(
+                self.store.upsert_social_state,
+                robot_id, result["chat_id"], result["persona_id"],
+                "persona_style", style_id,
+                source="user_setting", source_turn_id=None,
+                generation=result["generation"], expires_at_ms=None,
+                updated_ms=time.time_ns() // 1_000_000,
+            )
         if result != previous:
             try:
                 await self.reminders.invalidate_previous(previous)
             except Exception:
                 logger.exception("reminder session invalidation failed robot=%s", robot_id)
-        if robot_id in self.realtime and result != previous:
+        if robot_id in self.realtime and (result != previous or style_id is not None):
             await self.realtime[robot_id].restart()
         if result != previous:
             self.events.wake(robot_id)
@@ -1636,24 +1828,99 @@ class HarborRuntime:
             raise KeyError(robot_id)
         if self.actions is None:
             return {"status": "not_configured", "enabled": False,
-                    "allowlist": [], "social_actions_enabled": False,
-                    "actions": [], "requests": []}
+                    "allowlist": [], "actions": [], "requests": []}
         return {
             "status": "ready" if self.actions.enabled else "disabled",
             "enabled": self.actions.enabled,
             "allowlist": list(self.actions.allowlist),
-            "social_actions_enabled": bool(
-                self.actions.enabled and self.actions.social_actions
-            ),
             "actions": list(self.actions.catalog.values()),
             "requests": await self.actions.list(robot_id),
             "transport_error": self.actions.connection_errors.get(robot_id),
         }
 
+    async def memory_list(self, robot_id, persona_id, include_deleted=False):
+        if self.memory is None:
+            return {"status": "not_configured", "memories": []}
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return {"status": "degraded" if robot_id in self.memory.errors else "ready",
+                "memories": await self.memory.list(
+            robot_id, persona_id, include_deleted,
+        )}
+
+    async def memory_put(self, robot_id, persona_id, kind, key, text):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        result = await self.memory.put(robot_id, persona_id, kind, key, text)
+        return {"status": "active", "id": result[0], "version": result[1]}
+
+    async def memory_change(self, robot_id, persona_id, ident, version, text=None):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return await self.memory.change(robot_id, persona_id, ident, version, text)
+
+    async def chat_memory_list(self, robot_id, include_deleted=False):
+        if self.memory is None:
+            return {"status": "not_configured", "memories": []}
+        robot = self.robots[robot_id]
+        return {"status": "degraded" if robot_id in self.memory.errors else "ready",
+                "memories": await self.memory.chat_list(
+                    robot_id, robot.persona_id, robot.chat_id, include_deleted,
+                )}
+
+    def _check_chat_memory_identity(self, robot_id, chat_id, persona_id, generation):
+        identity = self.robots[robot_id].session_state()
+        if (identity["chat_id"] != chat_id or identity["persona_id"] != persona_id
+                or identity["generation"] != generation):
+            raise ValueError("stale_chat_memory_session")
+        return identity
+
+    async def chat_memory_put(self, robot_id, key, text, expires_at_ms=None, *,
+                              chat_id, persona_id, generation):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        robot = self.robots[robot_id]
+        identity = self._check_chat_memory_identity(
+            robot_id, chat_id, persona_id, generation,
+        )
+        result = await self.memory.chat_put(
+            robot_id, identity["persona_id"], identity["chat_id"], key, text,
+            expires_at_ms=expires_at_ms,
+        )
+        if identity != robot.session_state():
+            raise ValueError("session changed while saving; check original Chat")
+        return {"status": "active", "id": result[0], "version": result[1]}
+
+    async def chat_memory_change(self, robot_id, ident, version, text=None, *,
+                                 chat_id, persona_id, generation):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        robot = self.robots[robot_id]
+        identity = self._check_chat_memory_identity(
+            robot_id, chat_id, persona_id, generation,
+        )
+        result = await self.memory.chat_change(
+            robot_id, identity["persona_id"], identity["chat_id"], ident, version, text,
+        )
+        if identity != robot.session_state():
+            raise ValueError("session changed while modifying; check original Chat")
+        return result
+
     def realtime_state(self, robot_id: str):
         if robot_id not in self.realtime:
             return {**self.session_state(robot_id), "ready": False, "state": "not_configured"}
         return self.realtime[robot_id].snapshot()
+
+    def realtime_diagnostics(self, robot_id: str):
+        if robot_id not in self.realtime:
+            return {**self.session_state(robot_id), "ready": False,
+                    "prompt_snapshot": None, "prompt_history": [],
+                    "turn_prompt_refs": [], "tool_history": []}
+        return self.realtime[robot_id].diagnostic_snapshot()
 
     def realtime_events(self, robot_id: str, after: int):
         if robot_id not in self.realtime:
@@ -1734,13 +2001,18 @@ class HarborRuntime:
                 "ledger_queue_depth": self.ledger.queue.qsize(),
                 "ledger_queue_capacity": self.ledger.queue.maxsize,
             },
+            "memory": {
+                "configured": self.memory is not None,
+                "running": bool(self.memory and self.memory.running),
+                "errors": dict(self.memory.errors) if self.memory else {},
+                "backend": "sqlite_vec_versioned",
+                "extraction": "langmem_alibaba_cloud" if self.memory else "not_configured",
+                "recall": "on_demand_only",
+            },
             "actions": {
                 "configured": self.actions is not None,
                 "enabled": bool(self.actions and self.actions.enabled),
                 "allowlist": list(self.actions.allowlist) if self.actions else [],
-                "social_actions_enabled": bool(
-                    self.actions and self.actions.social_actions
-                ),
                 "device_completion": "unknown_no_verified_action_receipt",
                 "transport_errors": dict(self.actions.connection_errors) if self.actions else {},
             },

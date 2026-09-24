@@ -1,6 +1,6 @@
 [app]
 name = "Annie Harbor"
-host = "127.0.0.1"
+host = "0.0.0.0"
 port = 8780
 log_level = "INFO"
 

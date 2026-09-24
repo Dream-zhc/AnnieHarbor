@@ -33,6 +33,7 @@ class SessionInput(BaseModel):
     chat_id: str = Field(min_length=1, max_length=128)
     persona_id: str = Field(min_length=1, max_length=128)
     persona_revision: int = Field(default=1, ge=1)
+    style_id: str | None = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("chat_id", "persona_id")
     @classmethod
@@ -41,6 +42,12 @@ class SessionInput(BaseModel):
         if not value:
             raise ValueError("session identity must not be blank")
         return value
+
+
+class PersonaInstanceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    persona_id: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=40)
 
 
 class PlaybackInput(BaseModel):
@@ -77,6 +84,43 @@ class SocialStateInput(BaseModel):
     generation: int = Field(ge=0)
     source_turn_id: str | None = Field(default=None, max_length=128)
     ttl_ms: int | None = Field(default=None, ge=1, le=86_400_000)
+
+
+class MemoryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(pattern="^(semantic|persona|episodes)$")
+    key: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=300)
+
+
+class ChatMemoryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=300)
+    expires_at_ms: int | None = None
+    chat_id: str = Field(min_length=1, max_length=128)
+    persona_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=0)
+
+
+class ChatMemoryEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+    text: str | None = Field(default=None, min_length=1, max_length=300)
+    chat_id: str = Field(min_length=1, max_length=128)
+    persona_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=0)
+
+
+class MemoryCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=300)
+
+
+class MemoryForget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
 
 
 def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None) -> FastAPI:
@@ -116,6 +160,11 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     @app.get("/api/phase2/rooms")
     async def phase2_rooms():
         return runtime.room_routes()
+
+    @app.get("/api/robots/{robot_id}/room-observations")
+    async def room_observations(robot_id: str):
+        require_robot(robot_id)
+        return runtime.room_observations(robot_id)
 
     @app.post("/api/debug/robots/{robot_id}/room-pcm")
     async def debug_room_pcm(robot_id: str, request: Request, source: str):
@@ -173,6 +222,11 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     async def realtime_state(robot_id: str):
         require_robot(robot_id)
         return runtime.realtime_state(robot_id)
+
+    @app.get("/api/robots/{robot_id}/diagnostics")
+    async def realtime_diagnostics(robot_id: str):
+        require_robot(robot_id)
+        return runtime.realtime_diagnostics(robot_id)
 
     @app.get("/api/robots/{robot_id}/realtime/events")
     async def realtime_events(robot_id: str, after: int = 0):
@@ -262,7 +316,23 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
         require_robot(robot_id)
         return runtime.session_state(robot_id)
 
+    @app.get("/api/robots/{robot_id}/persona-instances")
+    async def persona_instances(robot_id: str):
+        require_robot(robot_id)
+        return await runtime.list_persona_instances(robot_id)
+
+    @app.post("/api/robots/{robot_id}/persona-instances")
+    async def name_persona_instance(robot_id: str, body: PersonaInstanceInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.name_persona_instance(
+                robot_id, body.persona_id, body.display_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @app.post("/api/robots/{robot_id}/session")
+    @app.post("/api/robots/{robot_id}/activate")
     async def switch_session(robot_id: str, body: SessionInput):
         require_robot(robot_id)
         try:
@@ -271,6 +341,7 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
                 chat_id=body.chat_id,
                 persona_id=body.persona_id,
                 persona_revision=body.persona_revision,
+                style_id=body.style_id,
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -279,6 +350,90 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
     async def conversations(robot_id: str):
         require_robot(robot_id)
         return await runtime.list_conversations(robot_id)
+
+    @app.get("/api/robots/{robot_id}/memories")
+    async def memory_list(robot_id: str, include_deleted: bool = False):
+        require_robot(robot_id)
+        # Persona never comes from a browser field or model-provided target.
+        persona = runtime.session_state(robot_id)["persona_id"]
+        return await runtime.memory_list(robot_id, persona, include_deleted)
+
+    @app.get("/api/robots/{robot_id}/chat-memories")
+    async def chat_memories(robot_id: str, include_deleted: bool = False):
+        require_robot(robot_id)
+        return await runtime.chat_memory_list(robot_id, include_deleted)
+
+    @app.post("/api/robots/{robot_id}/chat-memories")
+    async def chat_memory_create(robot_id: str, body: ChatMemoryInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.chat_memory_put(
+                robot_id, body.key, body.text, body.expires_at_ms,
+                chat_id=body.chat_id, persona_id=body.persona_id,
+                generation=body.generation,
+            )
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.patch("/api/robots/{robot_id}/chat-memories/{memory_id}")
+    async def chat_memory_correct(robot_id: str, memory_id: str, body: ChatMemoryEdit):
+        require_robot(robot_id)
+        try:
+            return await runtime.chat_memory_change(
+                robot_id, memory_id, body.version, body.text,
+                chat_id=body.chat_id, persona_id=body.persona_id,
+                generation=body.generation,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "chat memory not found") from exc
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/api/robots/{robot_id}/chat-memories/{memory_id}")
+    async def chat_memory_delete(robot_id: str, memory_id: str, body: ChatMemoryEdit):
+        require_robot(robot_id)
+        try:
+            return await runtime.chat_memory_change(
+                robot_id, memory_id, body.version,
+                chat_id=body.chat_id, persona_id=body.persona_id,
+                generation=body.generation,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "chat memory not found") from exc
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/robots/{robot_id}/memories")
+    async def memory_create(robot_id: str, body: MemoryInput):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_put(robot_id, persona, body.kind, body.key, body.text)
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.patch("/api/robots/{robot_id}/memories/{memory_id}")
+    async def memory_correct(robot_id: str, memory_id: str, body: MemoryCorrection):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_change(robot_id, persona, memory_id,
+                                               body.version, body.text)
+        except KeyError as exc:
+            raise HTTPException(404, "memory not found") from exc
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete("/api/robots/{robot_id}/memories/{memory_id}")
+    async def memory_forget(robot_id: str, memory_id: str, body: MemoryForget):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_change(robot_id, persona, memory_id, body.version)
+        except KeyError as exc:
+            raise HTTPException(404, "memory not found") from exc
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/robots/{robot_id}/conversations/{chat_id}")
     async def conversation(robot_id: str, chat_id: str, persona_id: str):

@@ -23,10 +23,10 @@ def realtime_url(base_url: str, model: str = MODEL) -> str:
 
 
 def session_update(instructions: str, history_turns: int = 20, *,
-                   actions: tuple[str, ...] = (), expressions: bool = False,
-                   weather: bool = False,
-                   action_descriptions: dict[str, str] | None = None,
-                   social_actions: tuple[str, ...] = ()) -> dict:
+                   memory: bool = False, actions: tuple[str, ...] = (),
+                   expressions: bool = False, weather: bool = False,
+                   reminders: bool = False,
+                   action_descriptions: dict[str, str] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
     if type(history_turns) is not int or not 1 <= history_turns <= 50:
         raise ValueError("Realtime history_turns must be an integer between 1 and 50")
@@ -53,6 +53,45 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 },
             },
         }]
+    if memory:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "recall_memory",
+                "description": "Look up confirmed long-term user preferences or experiences ONLY when "
+                               "the user's current question needs an older memory. "
+                               "Never invent a memory when this tool returns no evidence.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Short relevant memory query"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        })
+        for action, description in (
+            ("forget_memory", "Forget ONLY a long-term memory when the user explicitly asks to forget it."),
+            ("correct_memory", "Correct a long-term memory when the user explicitly provides a new fact."),
+        ):
+            properties = {
+                "memory_id": {"type": "string", "description": "Exact ID from recall_memory"},
+                "version": {"type": "integer", "description": "Exact version from recall_memory"},
+            }
+            required = ["memory_id", "version"]
+            if action == "correct_memory":
+                properties["text"] = {"type": "string", "description": "User-confirmed corrected fact"}
+                required.append("text")
+            session["tools"].append({
+                "type": "function",
+                "function": {
+                    "name": action,
+                    "description": description + " First recall the exact ID/version; do not guess.",
+                    "parameters": {
+                        "type": "object", "properties": properties, "required": required,
+                    },
+                },
+            })
     if actions:
         # In real-motion mode, an ambiguous preview tool would intercept real
         # motion requests. Keep the legacy fake tool ONLY in safe/dry-run mode.
@@ -65,10 +104,18 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "perform_action",
                 "description": (
-                    "ONLY when the CURRENT user explicitly requests a physical action "
-                    "supported by this robot. The result awaiting_audio_anchor or "
-                    "published_unknown is NOT proof of physical execution; never "
-                    "claim that the robot moved without a device completion receipt. "
+                    "For ordinary scripts, ONLY when the CURRENT user explicitly requests "
+                    "that physical action. The five expressive scripts surprise, smirk, "
+                    "proud, skeptical and shy may ALSO be selected once when the CURRENT "
+                    "lighthearted conversation strongly fits their catalog descriptions, "
+                    "without an explicit command. Do not infer an action from earlier "
+                    "turns, force one every turn, or use playful expressions for distress, "
+                    "serious news, negation or cancellation. shy is a different facial "
+                    "script from shy_retract. awaiting_audio_anchor is queued until "
+                    "the first TTS PCM; do not say it has been sent yet. "
+                    "This project's execution criterion is successful publication "
+                    "to its Room; no motor completion receipt is required. "
+                    "Do not tell the user the device is awaiting execution. "
                     "Enabled catalog: " +
                     "; ".join(
                         f"{script_id}: {(action_descriptions or {}).get(script_id, script_id)}"
@@ -82,31 +129,6 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 },
             },
         })
-    if social_actions:
-        session["tools"].append({
-            "type": "function",
-            "function": {
-                "name": "perform_social_action",
-                "description": (
-                    "Optional operator-enabled short companion gesture. Only if a "
-                    "small response naturally fits the CURRENT conversation, "
-                    "such as a subtle nod of agreement. Never infer an instruction "
-                    "from old messages, never gesture on a negation or cancellation. "
-                    "A Room submission is not physical completion. Allowed: " +
-                    "; ".join(
-                        f"{script_id}: {(action_descriptions or {}).get(script_id, script_id)}"
-                        for script_id in social_actions
-                    )
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {"script_id": {
-                        "type": "string", "enum": list(social_actions),
-                    }},
-                    "required": ["script_id"],
-                },
-            },
-        })
     if expressions:
         session["tools"].append({
             "type": "function",
@@ -114,7 +136,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "name": "set_expression",
                 "description": (
                     "ONLY when explicitly asked to show a facial expression. "
-                    "Published does NOT mean a real device showed the expression."
+                    "Queued means awaiting Room publication; successful publication "
+                    "counts as executed for this project's user-facing action status."
                 ),
                 "parameters": {
                     "type": "object",
@@ -139,6 +162,31 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "properties": {"city": {"type": "string",
                                             "description": "User-named city or adcode"}},
                     "required": ["city"],
+                },
+            },
+        })
+    if reminders:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "create_reminder",
+                "description": (
+                    "Create a real one-time reminder ONLY when the CURRENT user explicitly "
+                    "asks to be reminded. Call this tool BEFORE claiming a reminder is set. "
+                    "Convert a stated relative delay to seconds; 1..86400 only. "
+                    "Do not invent a time; ask when if not specified. "
+                    "Only status=scheduled with task_id confirms successful creation. "
+                    "A conversational promise alone does NOT create a reminder."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "What to remind the user to do"},
+                        "delay_seconds": {"type": "integer", "minimum": 1,
+                                          "maximum": 86400,
+                                          "description": "Delay relative to now in seconds"},
+                    },
+                    "required": ["text", "delay_seconds"],
                 },
             },
         })

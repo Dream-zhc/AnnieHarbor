@@ -200,16 +200,28 @@ def main():
         tts_url=os.environ.get("ANNIE_TTS_URL") or None,
         viseme_root=root if os.environ.get("ANNIE_VISEME_ENABLED") == "1" else None,
         viseme_python=os.environ.get("ANNIE_VISEME_PYTHON") or None,
+        memory_key=(
+            os.environ.get("DASHSCOPE_API_KEY") or None
+            if os.environ.get("ANNIE_MEMORY_ENABLED", "1") != "0" else None
+        ),
+        memory_base_url=os.environ.get(
+            "ANNIE_MEMORY_BASE_URL", provider_defaults["llm"]["base_url"],
+        ),
+        memory_extract_model=provider_defaults["memory"]["extract_model"],
+        memory_embedding_model=provider_defaults["memory"]["embedding_model"],
+        memory_embedding_dimensions=provider_defaults["memory"]["embedding_dimensions"],
         action_catalog=root / "config/action_scripts.json",
         actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
-        social_actions_enabled=os.environ.get("ANNIE_SOCIAL_ACTIONS_ENABLED") == "1",
         action_allowlist=tuple(
             item.strip() for item in os.environ.get(
                 "ANNIE_ACTION_ALLOWLIST",
-                "agree_micro_nod,look_left,look_right,fast_double_blink",
+                "agree_micro_nod,look_left,look_right,fast_double_blink,"
+                "surprise,smirk,proud,skeptical,shy",
             ).split(",") if item.strip()
         ),
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
+        weather_timeout_ms=int(provider_defaults["weather"]["amap"]["timeout_ms"]),
+        weather_cache_sec=int(provider_defaults["weather"]["amap"]["live_cache_sec"]),
     )
     try:
         runtime.preflight()

@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from annie_core import AudioFormat, NormalizedEvent, RobotConfig
 from websockets.asyncio.client import connect
@@ -38,8 +39,10 @@ class RoomServerConfig:
             if parsed.query or parsed.fragment:
                 raise ValueError(f"Room {name} must not contain query or fragment")
         required_channels = {"main", "tts", "mic", "visualdata", "vision", "sam"}
-        if set(self.channels) != required_channels or set(self.default_urls) != required_channels:
-            raise ValueError("Room config must define main/tts/mic/visualdata/vision/sam channels and URLs")
+        if (not required_channels.issubset(self.channels)
+                or set(self.channels) != set(self.default_urls)
+                or set(self.channels) - required_channels - {"visualllm", "voice"}):
+            raise ValueError("Room config requires six base channels and optional visualllm/voice, with matching URLs")
         if not all(self._path_segment(value) for value in self.channels.values()):
             raise ValueError("Room channel names must be URL path segments")
         if not all(urlparse(value).scheme in {"ws", "wss"} for value in self.default_urls.values()):
@@ -537,7 +540,7 @@ def resolve_database(root: Path, value: str) -> Path:
 
 
 class RuntimeStore:
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 8
 
     def __init__(self, path: Path):
         self.path = path
@@ -596,6 +599,16 @@ class RuntimeStore:
                 session_epoch INTEGER NOT NULL,
                 generation INTEGER NOT NULL,
                 updated_ms INTEGER NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS conversation_chats (
+                robot_id TEXT NOT NULL, persona_id TEXT NOT NULL,
+                chat_id TEXT NOT NULL, persona_revision INTEGER NOT NULL,
+                created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL,
+                PRIMARY KEY(robot_id,persona_id,chat_id))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS persona_instances (
+                robot_id TEXT NOT NULL, persona_id TEXT NOT NULL,
+                display_name TEXT NOT NULL, created_ms INTEGER NOT NULL,
+                updated_ms INTEGER NOT NULL,
+                PRIMARY KEY(robot_id,persona_id))""")
             db.execute("""CREATE TABLE IF NOT EXISTS conversation_turns (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 turn_id TEXT NOT NULL UNIQUE,
@@ -607,6 +620,8 @@ class RuntimeStore:
                 session_epoch INTEGER NOT NULL,
                 generation INTEGER NOT NULL,
                 user_text TEXT NOT NULL,
+                turn_source TEXT NOT NULL DEFAULT 'user',
+                external_prompt TEXT,
                 assistant_planned_text TEXT,
                 assistant_generated_text TEXT,
                 assistant_published_text TEXT,
@@ -618,8 +633,43 @@ class RuntimeStore:
                 cancel_source TEXT,
                 created_ms INTEGER NOT NULL,
                 updated_ms INTEGER NOT NULL)""")
+            turn_columns = {row[1] for row in db.execute("PRAGMA table_info(conversation_turns)")}
+            if "turn_source" not in turn_columns:
+                db.execute("ALTER TABLE conversation_turns ADD COLUMN turn_source TEXT NOT NULL DEFAULT 'user'")
+            if "external_prompt" not in turn_columns:
+                db.execute("ALTER TABLE conversation_turns ADD COLUMN external_prompt TEXT")
+            # Repair previously persisted internal input, preserving the real
+            # prompt in diagnostics rather than treating it as user testimony.
+            if version < 8:
+                db.execute("""UPDATE conversation_turns SET turn_source='external',
+                    external_prompt=user_text, user_text=''
+                    WHERE turn_source='user' AND (
+                        user_text LIKE '【真实到期的单次提醒，非用户当前发言。%'
+                        OR user_text LIKE '【外部事件，非用户发言】%')""")
+                if db.execute("""SELECT 1 FROM sqlite_master
+                               WHERE type='table' AND name='phase8_reminders'""").fetchone():
+                    db.execute("""UPDATE conversation_turns SET turn_source='external',
+                        external_prompt=user_text,user_text=''
+                        WHERE turn_source='user' AND turn_id IN (
+                            SELECT turn_id FROM phase8_reminders WHERE turn_id IS NOT NULL)""")
             db.execute("""CREATE INDEX IF NOT EXISTS conversation_turn_scope_idx
                 ON conversation_turns(robot_id, chat_id, persona_id, id)""")
+            db.execute("""INSERT OR IGNORE INTO conversation_chats
+                (robot_id,persona_id,chat_id,persona_revision,created_ms,updated_ms)
+                SELECT t.robot_id,t.persona_id,t.chat_id,
+                    (SELECT latest.persona_revision FROM conversation_turns latest
+                     WHERE latest.robot_id=t.robot_id AND latest.persona_id=t.persona_id
+                     AND latest.chat_id=t.chat_id ORDER BY latest.id DESC LIMIT 1),
+                    MIN(t.created_ms),MAX(t.updated_ms)
+                FROM conversation_turns t GROUP BY t.robot_id,t.persona_id,t.chat_id""")
+            db.execute("""INSERT OR IGNORE INTO persona_instances
+                (robot_id,persona_id,display_name,created_ms,updated_ms)
+                SELECT robot_id,persona_id,persona_id,MIN(created_ms),MAX(updated_ms)
+                FROM conversation_turns GROUP BY robot_id,persona_id""")
+            db.execute("""INSERT OR IGNORE INTO persona_instances
+                (robot_id,persona_id,display_name,created_ms,updated_ms)
+                SELECT robot_id,persona_id,persona_id,updated_ms,updated_ms
+                FROM conversation_sessions""")
             db.execute("""CREATE TABLE IF NOT EXISTS conversation_social_state (
                 robot_id TEXT NOT NULL,
                 chat_id TEXT NOT NULL,
@@ -632,13 +682,48 @@ class RuntimeStore:
                 expires_at_ms INTEGER,
                 updated_ms INTEGER NOT NULL,
                 PRIMARY KEY(robot_id, chat_id, persona_id, state_key))""")
+            db.execute("""CREATE TABLE IF NOT EXISTS long_term_memories (
+                id TEXT PRIMARY KEY, robot_id TEXT NOT NULL,
+                persona_id TEXT NOT NULL, kind TEXT NOT NULL,
+                fact_key TEXT NOT NULL, text TEXT NOT NULL,
+                source_turn_id TEXT, source_created_ms INTEGER NOT NULL,
+                version INTEGER NOT NULL, status TEXT NOT NULL,
+                updated_ms INTEGER NOT NULL, index_state TEXT NOT NULL,
+                embedding BLOB,
+                UNIQUE(robot_id, persona_id, kind, fact_key))""")
+            db.execute("""INSERT OR IGNORE INTO persona_instances
+                (robot_id,persona_id,display_name,created_ms,updated_ms)
+                SELECT robot_id,persona_id,persona_id,MIN(source_created_ms),MAX(updated_ms)
+                FROM long_term_memories WHERE persona_id <> ''
+                GROUP BY robot_id,persona_id""")
+            db.execute("""CREATE INDEX IF NOT EXISTS memory_scope_idx
+                ON long_term_memories(robot_id, persona_id, status)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS chat_memories (
+                id TEXT PRIMARY KEY, robot_id TEXT NOT NULL,
+                persona_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+                fact_key TEXT NOT NULL, text TEXT NOT NULL,
+                source_turn_id TEXT, source_created_ms INTEGER NOT NULL,
+                version INTEGER NOT NULL, status TEXT NOT NULL,
+                expires_at_ms INTEGER, updated_ms INTEGER NOT NULL,
+                UNIQUE(robot_id, persona_id, chat_id, fact_key))""")
+            db.execute("""CREATE INDEX IF NOT EXISTS chat_memory_scope_idx
+                ON chat_memories(robot_id, persona_id, chat_id, status)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS memory_progress (
+                robot_id TEXT PRIMARY KEY, turn_row_id INTEGER NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS action_requests (
                 robot_id TEXT NOT NULL, call_id TEXT NOT NULL, turn_id TEXT NOT NULL,
                 generation INTEGER NOT NULL, room_id TEXT NOT NULL,
                 kind TEXT NOT NULL, value TEXT NOT NULL, status TEXT NOT NULL,
                 error TEXT, ts_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(robot_id,call_id),
                 UNIQUE(robot_id,turn_id,kind,value))""")
+            if "duration_ms" not in {
+                column[1] for column in db.execute("PRAGMA table_info(action_requests)")
+            }:
+                db.execute(
+                    "ALTER TABLE action_requests ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0"
+                )
             db.execute("""CREATE INDEX IF NOT EXISTS action_requests_recent
                 ON action_requests(robot_id,updated_ms DESC)""")
             db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
@@ -676,7 +761,7 @@ class RuntimeStore:
             return dict(row) if row else None
 
     def reserve_action(self, robot_id, call_id, turn_id, generation, room_id,
-                       kind, value, cooldown, catalog):
+                       kind, value, cooldown_ms):
         now = time.time_ns() // 1_000_000
         with self.connect() as db:
             db.row_factory = sqlite3.Row
@@ -696,7 +781,7 @@ class RuntimeStore:
                 return dict(same), True
             if kind == "action":
                 last = db.execute(
-                    """SELECT value,updated_ms,status FROM action_requests
+                    """SELECT duration_ms,updated_ms,status FROM action_requests
                        WHERE robot_id=? AND kind='action'
                        ORDER BY ts_ms DESC LIMIT 1""",
                     (robot_id,),
@@ -705,16 +790,18 @@ class RuntimeStore:
                     last["status"] == "awaiting_audio_anchor"
                     or last["status"] in {"published_unknown", "send_unknown"}
                     and now - last["updated_ms"] < max(
-                        cooldown,
-                        catalog.get(last["value"], {}).get("duration_ms", cooldown),
+                        cooldown_ms, last["duration_ms"],
                     )
                 ):
                     return None, False
             db.execute(
-                "INSERT INTO action_requests VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                """INSERT INTO action_requests
+                   (robot_id,call_id,turn_id,generation,room_id,kind,value,
+                    status,error,ts_ms,updated_ms,duration_ms)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (robot_id, call_id, turn_id, generation, room_id, kind, value,
                  "awaiting_audio_anchor" if kind == "action" else "reserved",
-                 None, now, now),
+                 None, now, now, cooldown_ms),
             )
             row = db.execute(
                 "SELECT * FROM action_requests WHERE robot_id=? AND call_id=?",
@@ -782,6 +869,23 @@ class RuntimeStore:
     def save_conversation_session(self, session: dict):
         with self.connect() as db:
             db.execute(
+                """INSERT OR IGNORE INTO persona_instances
+                (robot_id,persona_id,display_name,created_ms,updated_ms)
+                VALUES(?,?,?,?,?)""",
+                (session["robot_id"], session["persona_id"], session["persona_id"],
+                 session["updated_ms"], session["updated_ms"]),
+            )
+            db.execute(
+                """INSERT INTO conversation_chats
+                (robot_id,persona_id,chat_id,persona_revision,created_ms,updated_ms)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(robot_id,persona_id,chat_id) DO UPDATE SET
+                persona_revision=excluded.persona_revision,
+                updated_ms=excluded.updated_ms""",
+                (session["robot_id"], session["persona_id"], session["chat_id"],
+                 session["persona_revision"], session["updated_ms"], session["updated_ms"]),
+            )
+            db.execute(
                 """INSERT INTO conversation_sessions
                 (robot_id,room_id,chat_id,persona_id,persona_revision,session_epoch,generation,updated_ms)
                 VALUES (?,?,?,?,?,?,?,?)
@@ -805,13 +909,44 @@ class RuntimeStore:
                 ),
             )
 
+    def list_persona_instances(self, robot_id):
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT persona_id,display_name,created_ms,updated_ms
+                FROM persona_instances WHERE robot_id=? ORDER BY created_ms,persona_id""",
+                (robot_id,),
+            ).fetchall()
+        return [dict(zip(("persona_id", "display_name", "created_ms", "updated_ms"), row,
+                         strict=True)) for row in rows]
+
+    def get_persona_name(self, robot_id, persona_id):
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT display_name FROM persona_instances WHERE robot_id=? AND persona_id=?",
+                (robot_id, persona_id),
+            ).fetchone()
+        return row[0] if row else persona_id
+
+    def set_persona_name(self, robot_id, persona_id, display_name):
+        now = time.time_ns() // 1_000_000
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO persona_instances
+                (robot_id,persona_id,display_name,created_ms,updated_ms)
+                VALUES(?,?,?,?,?) ON CONFLICT(robot_id,persona_id) DO UPDATE SET
+                display_name=excluded.display_name,updated_ms=excluded.updated_ms""",
+                (robot_id, persona_id, display_name, now, now),
+            )
+        return {"persona_id": persona_id, "display_name": display_name}
+
     def create_conversation_turn(self, turn: dict):
         with self.connect() as db:
             db.execute(
                 """INSERT INTO conversation_turns
                 (turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,status,created_ms,updated_ms)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                session_epoch,generation,user_text,turn_source,external_prompt,
+                status,created_ms,updated_ms)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     turn["turn_id"],
                     turn["robot_id"],
@@ -822,6 +957,8 @@ class RuntimeStore:
                     turn["session_epoch"],
                     turn["generation"],
                     turn["user_text"],
+                    turn.get("turn_source", "user"),
+                    turn.get("external_prompt"),
                     turn["status"],
                     turn["created_ms"],
                     turn["updated_ms"],
@@ -908,6 +1045,8 @@ class RuntimeStore:
             "session_epoch",
             "generation",
             "user_text",
+            "turn_source",
+            "external_prompt",
             "assistant_planned_text",
             "assistant_generated_text",
             "assistant_published_text",
@@ -929,7 +1068,8 @@ class RuntimeStore:
         with self.connect() as db:
             row = db.execute(
                 """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,assistant_planned_text,assistant_generated_text,
+                session_epoch,generation,user_text,turn_source,external_prompt,
+                assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
                 interrupted,cancelled,cancel_source,created_ms,updated_ms
                 FROM conversation_turns WHERE robot_id=? AND turn_id=?""",
@@ -941,7 +1081,8 @@ class RuntimeStore:
         with self.connect() as db:
             rows = db.execute(
                 """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,assistant_planned_text,assistant_generated_text,
+                session_epoch,generation,user_text,turn_source,external_prompt,
+                assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
                 interrupted,cancelled,cancel_source,created_ms,updated_ms
                 FROM conversation_turns
@@ -954,14 +1095,16 @@ class RuntimeStore:
     def list_conversations(self, robot_id: str):
         with self.connect() as db:
             rows = db.execute(
-                """SELECT t.chat_id,t.persona_id,COUNT(*),MAX(t.updated_ms),
-                (SELECT latest.persona_revision FROM conversation_turns AS latest
-                 WHERE latest.robot_id=t.robot_id
-                   AND latest.chat_id=t.chat_id AND latest.persona_id=t.persona_id
-                 ORDER BY latest.id DESC LIMIT 1)
-                FROM conversation_turns AS t WHERE t.robot_id=?
-                GROUP BY t.chat_id,t.persona_id ORDER BY MAX(t.updated_ms) DESC""",
-                (robot_id,),
+                """SELECT c.chat_id,c.persona_id,COALESCE(t.count,0),
+                       MAX(c.updated_ms,COALESCE(t.updated_ms,0)),c.persona_revision
+                FROM conversation_chats c LEFT JOIN (
+                  SELECT robot_id,persona_id,chat_id,COUNT(*) AS count,
+                         MAX(updated_ms) AS updated_ms FROM conversation_turns
+                  WHERE robot_id=? GROUP BY robot_id,persona_id,chat_id
+                ) t ON t.robot_id=c.robot_id AND t.persona_id=c.persona_id
+                      AND t.chat_id=c.chat_id
+                WHERE c.robot_id=? ORDER BY MAX(c.updated_ms,COALESCE(t.updated_ms,0)) DESC""",
+                (robot_id, robot_id),
             ).fetchall()
         return [
             {
@@ -978,7 +1121,8 @@ class RuntimeStore:
         with self.connect() as db:
             rows = db.execute(
                 """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,assistant_planned_text,assistant_generated_text,
+                session_epoch,generation,user_text,turn_source,external_prompt,
+                assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
                 interrupted,cancelled,cancel_source,created_ms,updated_ms
                 FROM conversation_turns
@@ -988,7 +1132,7 @@ class RuntimeStore:
                     OR (status='cancelled' AND cancel_source IN
                         ('stable_asr_prefix','valid_smart_turn','meaningful_ambient'))
                   )
-                  AND TRIM(user_text) <> ''
+                  AND turn_source='user' AND TRIM(user_text) <> ''
                 ORDER BY id DESC LIMIT ?""",
                 (robot_id, chat_id, persona_id, limit),
             ).fetchall()
@@ -1014,7 +1158,90 @@ class RuntimeStore:
                 WHERE robot_id=? AND chat_id=? AND persona_id=?""",
                 (robot_id, chat_id, persona_id),
             )
+            db.execute(
+                """DELETE FROM conversation_chats
+                WHERE robot_id=? AND chat_id=? AND persona_id=?""",
+                (robot_id, chat_id, persona_id),
+            )
+            db.execute(
+                """DELETE FROM chat_memories
+                WHERE robot_id=? AND chat_id=? AND persona_id=?""",
+                (robot_id, chat_id, persona_id),
+            )
         return deleted_turns
+
+    def list_chat_memories(self, robot_id, persona_id, chat_id, include_deleted=False):
+        now = time.time_ns() // 1_000_000
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                """SELECT * FROM chat_memories
+                WHERE robot_id=? AND persona_id=? AND chat_id=?
+                AND (? OR (status='active' AND (expires_at_ms IS NULL OR expires_at_ms>?)))
+                ORDER BY updated_ms DESC LIMIT 128""",
+                (robot_id, persona_id, chat_id, int(include_deleted), now),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def put_chat_memory(self, robot_id, persona_id, chat_id, key, text,
+                        source_turn_id, source_created_ms, expires_at_ms=None):
+        now = time.time_ns() // 1_000_000
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            db.execute("BEGIN IMMEDIATE")
+            if source_turn_id is not None and db.execute(
+                """SELECT 1 FROM conversation_turns WHERE robot_id=?
+                AND persona_id=? AND chat_id=? AND turn_id=? AND status='completed'""",
+                (robot_id, persona_id, chat_id, source_turn_id),
+            ).fetchone() is None:
+                return None  # Deleted Chat cannot be recreated by an old extraction.
+            row = db.execute(
+                """SELECT id,version,status,source_created_ms FROM chat_memories
+                WHERE robot_id=? AND persona_id=? AND chat_id=? AND fact_key=?""",
+                (robot_id, persona_id, chat_id, key),
+            ).fetchone()
+            if row is not None and (row["status"] == "deleted" or
+                                    source_created_ms <= row["source_created_ms"]):
+                return None
+            if row is not None and source_turn_id is None:
+                raise ValueError("chat memory key exists; use the correction endpoint")
+            ident, version = (row["id"], row["version"] + 1) if row else (uuid4().hex, 1)
+            db.execute(
+                """INSERT INTO chat_memories
+                (id,robot_id,persona_id,chat_id,fact_key,text,source_turn_id,
+                 source_created_ms,version,status,expires_at_ms,updated_ms)
+                VALUES(?,?,?,?,?,?,?,?,?,'active',?,?)
+                ON CONFLICT(robot_id,persona_id,chat_id,fact_key) DO UPDATE SET
+                 text=excluded.text,source_turn_id=excluded.source_turn_id,
+                 source_created_ms=excluded.source_created_ms,version=excluded.version,
+                 status='active',expires_at_ms=excluded.expires_at_ms,
+                 updated_ms=excluded.updated_ms""",
+                (ident, robot_id, persona_id, chat_id, key, text, source_turn_id,
+                 source_created_ms, version, expires_at_ms, now),
+            )
+        return ident, version
+
+    def change_chat_memory(self, robot_id, persona_id, chat_id, ident, version, text):
+        now = time.time_ns() // 1_000_000
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT version,status,expires_at_ms FROM chat_memories
+                WHERE id=? AND robot_id=? AND persona_id=? AND chat_id=?""",
+                (ident, robot_id, persona_id, chat_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(ident)
+            if (row["version"] != version or row["status"] != "active" or
+                    row["expires_at_ms"] is not None and row["expires_at_ms"] <= now):
+                raise ValueError("chat memory version conflict or expired")
+            db.execute(
+                """UPDATE chat_memories SET text=?,status=?,version=version+1,
+                 source_created_ms=?,updated_ms=? WHERE id=?""",
+                (text or "", "active" if text else "deleted", now, now, ident),
+            )
+        return version + 1
 
     def upsert_social_state(
         self,

@@ -1,22 +1,62 @@
 import {useEffect,useRef,useState} from 'react';
 import {decodeRoomTts,type RoomTtsPacket} from './room-tts-pcm';
+import {acquireAudioContext,loadAudioWorklet,releaseAudioContext} from './shared-audio-context';
 
 type Speaker={
-  ws:WebSocket|null;context:AudioContext;node:AudioWorkletNode|null;gain:GainNode|null;
+  ws:WebSocket|null;voiceWs:WebSocket|null;voiceReady:boolean;
+  context:AudioContext;node:AudioWorkletNode|null;gain:GainNode|null;
   timer:number|null;stream:string;stopped:string;seq:number;endSample:number;
-  frames:number;final:boolean;held:boolean;
+  frames:number;final:boolean;held:boolean;playbackId:string;reportSeq:number;
 };
 
-/** Opt-in local audition of the existing Room stream. No Provider call or playback receipt. */
-export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:string;roomId?:string;
+/** Mac/browser audition reports ONLY browser_test, never claims physical speaker success. */
+export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer,onActive}:{url?:string;voiceUrl?:string;roomId?:string;
   available:boolean;command?:{seq:number;kind:'hold'|'resume';turnId:string};
-  onBuffer?:(bufferMs:number|null)=>void}){
+  onBuffer?:(bufferMs:number|null)=>void;onActive?:(active:boolean)=>void}){
   const active=useRef<Speaker|null>(null);
   const [status,setStatus]=useState('未开启');
   const [frames,setFrames]=useState(0);
   const [started,setStarted]=useState(false);
   const [bufferMs,setBufferMs]=useState(0);
   const [underruns,setUnderruns]=useState(0);
+
+  function report(s:Speaker,type:string,playedMs:number,commandSeq?:number|null){
+    if(!s.voiceReady||s.voiceWs?.readyState!==WebSocket.OPEN||!s.stream)return;
+    const [conversationId,epoch]=s.stream.split('\u0000');
+    const data:Record<string,unknown>={
+      protocol_version:1,conversation_id:conversationId,stream_epoch:Number(epoch),
+      playback_id:s.playbackId,source:'browser_test',sender:'browser_test',
+      sample_rate:24000,seq:++s.reportSeq,
+      played_sample_count:Math.min(s.endSample,Math.max(0,Math.round(playedMs*24))),
+    };
+    if(commandSeq!=null)data.command_seq=commandSeq;
+    const descriptions:Record<string,string>={
+      started:'网页试听开始播放',progress:'网页试听已消费的音频进度',
+      held:'网页试听已暂停',resumed:'网页试听已恢复',
+      stopped:'网页试听已停止',drained:'网页试听已播放完毕',
+    };
+    s.voiceWs.send(JSON.stringify({type:'tts.playback.'+type,
+      description:descriptions[type],ts:Date.now(),data}));
+  }
+
+  function control(s:Speaker,kind:'hold'|'resume',commandSeq?:number,fadeMs?:number){
+    if(!s.node||!s.gain)return;
+    const gain=s.gain.gain,now=s.context.currentTime;
+    if(kind==='hold'&&!s.held){
+      s.held=true;
+      gain.cancelScheduledValues(now);gain.setValueAtTime(gain.value,now);
+      gain.linearRampToValueAtTime(0,now+Math.max(0,Math.min(fadeMs??40,150))/1000);
+      s.node.port.postMessage({type:'hold',stream:s.stream,command_seq:commandSeq,
+        fade_ms:fadeMs??40});
+      setStatus('用户起声 · 渐弱并冻结未播 PCM');
+    }else if(kind==='resume'&&s.held){
+      s.held=false;
+      gain.cancelScheduledValues(now);gain.setValueAtTime(0,now);
+      gain.linearRampToValueAtTime(1,now+Math.max(0,Math.min(fadeMs??120,250))/1000);
+      s.node.port.postMessage({type:'resume',stream:s.stream,command_seq:commandSeq});
+      setStatus('无效打断 · 原位置渐强恢复');
+    }
+  }
 
   function clearAudio(s:Speaker){
     if(s.stream)s.node?.port.postMessage({type:'clear',stream:s.stream});
@@ -27,35 +67,23 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
     if(s){
       if(s.timer!==null)window.clearTimeout(s.timer);
       if(s.ws){s.ws.onmessage=s.ws.onerror=s.ws.onclose=null;s.ws.close();}
-      clearAudio(s);s.node?.disconnect();s.gain?.disconnect();void s.context.close();
+      if(s.voiceWs){s.voiceWs.onmessage=s.voiceWs.onerror=s.voiceWs.onclose=null;s.voiceWs.close();}
+      clearAudio(s);s.node?.disconnect();s.gain?.disconnect();releaseAudioContext(s.context);
     }
     onBuffer?.(null);
+    onActive?.(false);
     if(update){setStarted(false);setStatus('已关闭，网页不再接收或播放 Room TTS');}
   }
   useEffect(()=>{
     const hide=()=>stop(false);
     window.addEventListener('pagehide',hide);
     return()=>{window.removeEventListener('pagehide',hide);stop(false);};
-  },[url,roomId]);
+  },[url,voiceUrl,roomId]);
 
   useEffect(()=>{
     const s=active.current;
-    if(!s?.node||!s.gain||!command||!s.stream.startsWith(command.turnId+'\u0000'))return;
-    if(command.kind==='hold'&&!s.held){
-      s.held=true;
-      const gain=s.gain.gain,now=s.context.currentTime;
-      gain.cancelScheduledValues(now);gain.setValueAtTime(gain.value,now);
-      gain.linearRampToValueAtTime(0,now+.003);
-      s.node.port.postMessage({type:'hold',stream:s.stream});
-      setStatus('暂时静音，保留完整音频等待 smart_turn 判定');
-    }else if(command.kind==='resume'&&s.held){
-      s.held=false;
-      s.node.port.postMessage({type:'resume',stream:s.stream});
-      const gain=s.gain.gain,now=s.context.currentTime;
-      gain.cancelScheduledValues(now);gain.setValueAtTime(gain.value,now);
-      gain.linearRampToValueAtTime(1,now+.012);
-      setStatus('误判已恢复，从原采样位置继续播放');
-    }
+    if(!s||s.voiceReady||!command||!s.stream.startsWith(command.turnId+'\u0000'))return;
+    control(s,command.kind);
   },[command?.seq,command?.kind,command?.turnId]);
 
   function play(s:Speaker,packet:RoomTtsPacket){
@@ -73,6 +101,7 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
     if(s.stopped===key)return;
     if(s.stream!==key){
       clearAudio(s);s.stream=key;s.seq=0;s.endSample=packet.startSample;s.final=false;s.held=false;
+      s.playbackId=crypto.randomUUID();s.reportSeq=0;
       s.gain?.gain.setValueAtTime(1,s.context.currentTime);
       s.node?.port.postMessage({type:'generation',stream:key});
       setBufferMs(0);onBuffer?.(0);setUnderruns(0);
@@ -98,13 +127,14 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
     try{
       // AudioContext starts inside the click gesture, before any await.
       onBuffer?.(0);
-      const context=new AudioContext();
-      s={context,ws:null,node:null,gain:null,timer:null,stream:'',stopped:'',seq:0,
-        endSample:0,frames:0,final:false,held:false};
+      const context=acquireAudioContext();
+      s={context,ws:null,voiceWs:null,voiceReady:false,node:null,gain:null,timer:null,
+        stream:'',stopped:'',seq:0,endSample:0,frames:0,final:false,held:false,
+        playbackId:'',reportSeq:0};
       active.current=s;setStatus('正在连接 Room TTS…');setFrames(0);
       await context.resume();
       if(active.current!==s)return;
-      await context.audioWorklet.addModule('/room-player-worklet.js');
+      await loadAudioWorklet(context,'/room-player-worklet.js');
       if(active.current!==s)return;
       const node=new AudioWorkletNode(context,'room-player',{outputChannelCount:[1]});
       const gain=context.createGain();node.connect(gain).connect(context.destination);
@@ -115,8 +145,18 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
         const message=event.data;
         if(message.type==='buffer'){
           setBufferMs(Math.round(message.bufferMs));onBuffer?.(Math.round(message.bufferMs));setUnderruns(message.underruns);
+          // AudioWorklet buffer reports are local UI telemetry, not Room heartbeats.
+          // Lifecycle receipts carry the actual sample cursor when needed.
+        }else if(message.type==='started'){
+          report(current,'started',message.playedMs);
+        }else if(message.type==='held'||message.type==='resumed'){
+          if(Number.isInteger(message.command_seq))
+            report(current,message.type,message.playedMs,message.command_seq);
         }else if(message.type==='ended'){
+          if(current.final)report(current,'drained',message.playedMs);
           setBufferMs(0);onBuffer?.(0);setStatus('本轮网页试听结束（非真机播放回执）');
+        }else if(message.type==='cleared'){
+          report(current,'stopped',message.playedMs);
         }else if(message.type==='underflow'){
           setUnderruns(message.count);setStatus('播放断粮，正在重新预缓冲');
         }else if(message.type==='overflow'){
@@ -124,6 +164,44 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
           setStatus('音频队列超过灾难保护上限，停止试听而非静默吞字');
         }
       };
+      if(voiceUrl){
+        const voice=new WebSocket(voiceUrl);current.voiceWs=voice;
+        let voiceStage:'welcome'|'ack'|'listening'='welcome';
+        voice.onerror=()=>setStatus('reb_voice 无法连接，仍可试听但无播放回执');
+        voice.onclose=()=>{current.voiceReady=false;};
+        voice.onmessage=event=>{
+          if(active.current!==current||typeof event.data!=='string')return;
+          try{
+            const signal=JSON.parse(event.data) as Record<string,unknown>;
+            if(voiceStage==='welcome'){
+              if(signal.type!=='WELCOME'||signal.ok!==true||signal.room!==roomId||
+                signal.robotId!=='reb_voice')throw Error('reb_voice 身份不匹配');
+              voiceStage='ack';voice.send(JSON.stringify({type:'SUBSCRIBE',data:{types:['*']}}));return;
+            }
+            if(voiceStage==='ack'){
+              const data=signal.data as {what?:string;subscriptions?:string[]}|undefined;
+              if(signal.type!=='ACK'||data?.what!=='subscribed'||
+                !data.subscriptions?.includes('*'))throw Error('reb_voice 订阅失败');
+              voiceStage='listening';current.voiceReady=true;return;
+            }
+            if(!['tts.playback.hold','tts.playback.resume','tts.playback.stop'].includes(
+              String(signal.type)))return;
+            const data=signal.data as Record<string,unknown>|undefined;
+            if(!data||data.sender!=='brain'||!Number.isInteger(data.stream_epoch)||
+              typeof data.conversation_id!=='string'||
+              current.stream!==data.conversation_id+'\u0000'+data.stream_epoch)return;
+            if(signal.type==='tts.playback.stop'){
+              current.stopped=current.stream;
+              clearAudio(current);current.final=false;
+              setStatus('已确认打断 · 清空旧音频');
+            }else if(Number.isInteger(data.command_seq)){
+              control(current,signal.type==='tts.playback.hold'?'hold':'resume',
+                Number(data.command_seq),Number(data.fade_ms)||undefined);
+            }
+          }catch{current.voiceReady=false;voice.close();
+            setStatus('reb_voice 信令无效，保留 TTS 试听');}
+        };
+      }
       const ws=new WebSocket(url);current.ws=ws;
       let stage:'welcome'|'ack'|'listening'='welcome';
       current.timer=window.setTimeout(()=>{
@@ -151,7 +229,8 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
               throw Error('Room TTS 订阅未确认');
             }
             stage='listening';if(current.timer!==null)window.clearTimeout(current.timer);
-            current.timer=null;setStarted(true);setStatus('已订阅 '+roomId+' / reb_tts，等待新语音');return;
+            current.timer=null;setStarted(true);onActive?.(true);
+            setStatus('已订阅 '+roomId+' / reb_tts，等待新语音');return;
           }
           const packet=decodeRoomTts(message);
           if(packet)play(current,packet);
@@ -170,6 +249,5 @@ export function RoomDebugSpeaker({url,roomId,available,command,onBuffer}:{url?:s
     </button>
     <small role="status">{available?status:'当前机器人未启用 TTS'}{started&&frames>0?
       ' · 已接收 '+frames+' 帧 · 缓冲 '+bufferMs+'ms · 断粮 '+underruns+' 次':''}</small>
-    <p>只听当前 Room 新到达的 reb_tts 音频；不回放旧语音、不二次合成、不上报真机已播。请使用耳机，避免麦克风回声。</p>
   </div>;
 }

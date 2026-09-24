@@ -1,0 +1,454 @@
+/* Turn Diagnostics - Sleek Acoustic Round Inspector */
+.turn-diagnostic {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.turn-diagnostic-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-card, #0f1422);
+  border: 1px solid var(--border-card, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.turn-head-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.turn-diagnostic h3 {
+  margin: 0;
+  color: var(--text-main, #f8fafc);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.turn-head-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.turn-select-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-sub, #94a3b8);
+  font-weight: 550;
+}
+
+.turn-select-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.turn-select-wrap select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg-input, #080c14);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
+  color: var(--text-main, #f8fafc);
+  border: 1px solid var(--border-card, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 9px 34px 9px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.turn-select-wrap select:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background-color: rgba(18, 24, 38, 0.95);
+}
+
+.turn-select-wrap select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}
+
+.turn-diagnostic-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-sub, #94a3b8);
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.turn-id-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #64748b;
+}
+
+.turn-id-dot.dot-completed {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.turn-id-dot.dot-running {
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+  animation: pulseDot 1.4s infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+.turn-status-text {
+  font-weight: 650;
+  color: var(--text-main, #f8fafc);
+}
+
+.turn-id-sep {
+  opacity: 0.4;
+}
+
+.turn-id-hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #94a3b8;
+  word-break: break-all;
+}
+
+/* QA Cards */
+.turn-qa {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.turn-card {
+  padding: 13px 15px;
+  border: 1px solid var(--border-card, rgba(255, 255, 255, 0.08));
+  border-radius: 11px;
+  background: var(--bg-card, #0f1422);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.turn-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.turn-badge {
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.badge-user {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+
+.badge-assistant {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.25);
+}
+
+.badge-playback {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.evidence-badge {
+  font-size: 10.5px;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-weight: 550;
+}
+
+.evidence-badge.badge-good {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.evidence-badge.badge-muted {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.turn-card-user {
+  border-left: 3px solid #38bdf8;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.05) 0%, var(--bg-card, #0f1422) 100%);
+}
+
+.turn-card-assistant {
+  border-left: 3px solid #818cf8;
+  background: linear-gradient(135deg, rgba(129, 140, 248, 0.05) 0%, var(--bg-card, #0f1422) 100%);
+}
+
+.turn-card-playback {
+  border-left: 3px solid #34d399;
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.05) 0%, var(--bg-card, #0f1422) 100%);
+}
+
+.turn-card-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-main, #f8fafc);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.turn-card-body.assistant-body {
+  color: #e0e7ff;
+  font-weight: 450;
+}
+
+.turn-streaming-tag {
+  font-size: 11px;
+  color: #818cf8;
+  font-style: italic;
+  animation: pulseDot 1s infinite;
+}
+
+.turn-card small {
+  font-size: 11px;
+  color: var(--text-sub, #94a3b8);
+  margin-top: 4px;
+}
+
+/* Sections */
+.turn-diagnostic-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-card, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  background: var(--bg-card, #0f1422);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.section-icon {
+  font-size: 14px;
+}
+
+.turn-diagnostic-section h4 {
+  font-size: 13.5px;
+  margin: 0;
+  color: var(--text-main, #f8fafc);
+  font-weight: 700;
+}
+
+.turn-diagnostic-line {
+  font-size: 12px;
+  color: var(--text-sub, #94a3b8);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.turn-diagnostic-line strong {
+  color: var(--text-main, #f8fafc);
+}
+
+.turn-diagnostic-line code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.turn-diagnostic-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  font-size: 12px;
+}
+
+.turn-diagnostic-metric:last-of-type {
+  border-bottom: none;
+}
+
+.turn-diagnostic-metric span {
+  color: var(--text-sub, #94a3b8);
+}
+
+.turn-diagnostic-metric strong {
+  color: #38bdf8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Accordion Details */
+.turn-detail {
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.turn-detail summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #93c5fd;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.turn-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.turn-detail-chevron {
+  font-size: 9px;
+  transition: transform 0.2s ease;
+  display: inline-block;
+  opacity: 0.7;
+}
+
+.turn-detail[open] .turn-detail-chevron {
+  transform: rotate(90deg);
+}
+
+.turn-detail summary:hover {
+  color: #60a5fa;
+}
+
+.turn-detail pre {
+  margin-top: 8px;
+  max-height: 380px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  padding: 10px 12px;
+  background: var(--bg-input, #070a11);
+  border: 1px solid var(--border-card, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  color: #cbd5e1;
+}
+
+.turn-unrecorded {
+  font-size: 12px;
+  color: var(--text-sub, #64748b);
+  margin: 0;
+  font-style: italic;
+}
+
+.turn-diagnostic-section small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-dim, #64748b);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* Light Mode Overrides */
+:root[data-theme="light"] .turn-diagnostic-head,
+:root[data-theme="light"] .turn-diagnostic-section,
+:root[data-theme="light"] .turn-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px -2px rgba(15, 23, 42, 0.05);
+}
+
+:root[data-theme="light"] .turn-select-wrap select {
+  background-color: #f8fafc;
+  color: #1e293b;
+  border-color: #cbd5e1;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+:root[data-theme="light"] .turn-select-wrap select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+:root[data-theme="light"] .turn-diagnostic-id {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+:root[data-theme="light"] .turn-card-user {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.06) 0%, #ffffff 100%);
+  border-left-color: #0284c7;
+}
+
+:root[data-theme="light"] .turn-card-assistant {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, #ffffff 100%);
+  border-left-color: #4f46e5;
+}
+
+:root[data-theme="light"] .turn-card-playback {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, #ffffff 100%);
+  border-left-color: #059669;
+}
+
+:root[data-theme="light"] .turn-card-body.assistant-body {
+  color: #1e293b;
+}
+
+:root[data-theme="light"] .turn-detail pre {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+
+:root[data-theme="light"] .turn-detail summary {
+  color: #2563eb;
+}

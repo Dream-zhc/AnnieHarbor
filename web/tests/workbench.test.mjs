@@ -10,6 +10,36 @@ import {createMicPcmPump} from '../src/mic-pump.ts';
 
 const web=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 
+test('production panels use compact labels rather than repeated explanatory copy',async()=>{
+  const files=['workbench.tsx','memory-panel.tsx','developer-drawer.tsx',
+    'action-panel.tsx','external-events.tsx','audio-panels.tsx','latency-hud.tsx'];
+  const source=(await Promise.all(files.map(file=>readFile(path.join(web,'src',file),'utf8')))).join('\n');
+  for(const verbose of [
+    '公共偏好属于此机器人；角色关系和经历属于当前 Persona',
+    '当前 Persona 的关系事实与共同经历，跨其 Chat 可用',
+    '仅改变当前 Chat 的风格，保留原有历史和身份',
+    '旧版抽取空结果，不参与记忆注入或召回；可点击',
+    '单次任务持久化到本机 SQLite；到期提交模型',
+    '通过当前机器人实时对话触发动作；此页不直接控制电机',
+    '网页调试扬声器可逆 Hold/Resume',
+  ])assert.ok(!source.includes(verbose),`unnecessary UI explanation: ${verbose}`);
+  assert.match(source,/发至 Room 即完成/);
+  assert.match(source,/删除后无法恢复/);
+});
+
+test('memory panel separates public, persona-only and current-chat records',async()=>{
+  const source=await readFile(path.join(web,'src/memory-panel.tsx'),'utf8');
+  assert.match(source,/长期通用/);
+  assert.match(source,/当前角色/);
+  assert.match(source,/本次会话/);
+  assert.match(source,/visibleMemory\(item,scope,Date\.now\(\)\)/);
+  assert.match(source,/scope==='chat'\?'\/chat-memories':'\/memories'/);
+  assert.match(source,/creating&&<div className="memory-create-backdrop"/);
+  assert.match(source,/scope==='persona'&&<div className="memory-form-row">/);
+  assert.match(source,/activeCount=valid\.length/);
+  assert.doesNotMatch(source,/memory-key-badge/);
+});
+
 test('robot and session routing preserves all isolation dimensions',()=>{
   assert.equal(robotPath('annie/b'),'/api/robots/annie%2Fb');
   const a={robot_id:'a',chat_id:'same',persona_id:'same',session_epoch:4,generation:5};
@@ -26,6 +56,16 @@ test('Realtime stream is visible only within matching robot, chat, persona, epoc
   })){
     assert.equal(eventBelongsToSession({...event,[key]:value},event),false,key);
   }
+});
+
+test('internal prompts do not render user bubbles, including live turns',async()=>{
+  const workbench=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  const diagnostics=await readFile(path.join(web,'src/turn-diagnostics.tsx'),'utf8');
+  assert.match(workbench,/turn\.turn_source!=='external'&&<div className="message-row me"/);
+  assert.match(workbench,/liveTurn\.source!=='external'&&<div className="message-row me"/);
+  assert.match(workbench,/source:item\.turn_source==='external'/);
+  assert.match(diagnostics,/turn\.external_prompt/);
+  assert.match(diagnostics,/内部触发（非用户发言）/);
 });
 
 test('same-origin API sends exact scoped payload and shows server errors',async()=>{
@@ -100,7 +140,11 @@ test('React build is the only production page and serves local assets',async()=>
   for(const match of html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)){
     await access(path.join(web,'dist',match[1]));
   }
-  const source=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  const workbench=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  const drawer=await readFile(path.join(web,'src/developer-drawer.tsx'),'utf8');
+  const source=workbench+'\n'+drawer;
+  const audioPanels=await readFile(path.join(web,'src/audio-panels.tsx'),'utf8');
+  const latencyHud=await readFile(path.join(web,'src/latency-hud.tsx'),'utf8');
   assert.match(source,/session_epoch/);
   assert.match(source,/generation/);
   assert.match(source,/conversation/);
@@ -118,7 +162,7 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/语音转写中/);
   assert.match(source,/liveTurn\?\.turnId===turn\.turn_id/);
   assert.match(source,/playbackLabel\(turn,speech\?\.state==='not_configured'\)/);
-  assert.match(source,/<RoomDebugSpeaker/);
+  assert.match(audioPanels,/<RoomDebugSpeaker/);
   assert.match(source,/route\?\.urls\?\.tts/);
   assert.match(source,/inspector-panel/);
   assert.match(source,/session\.error/);
@@ -127,14 +171,21 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/session_frames_sent/);
   assert.match(source,/speech_started_count/);
   assert.match(source,/当前语音链路/);
-  assert.match(source,/realtime\?\.cascade_llm/);
+  assert.match(source,/Qwen-Audio 3\.0 Realtime Flash/);
   assert.match(source,/ASR 暂定/);
   assert.match(source,/ASR 最终/);
-  assert.match(source,/网页调试扬声器可逆 Hold\/Resume/);
+  assert.match(source,/playback\.hold_requested/);
   assert.match(source,/playback\.resume_requested/);
   assert.match(source,/transcript\.ambient/);
+  assert.match(source,/transcript\.ambient_delta/);
+  assert.match(source,/transcript\.final_preview/);
+  assert.match(source,/transcript\.first_delta/);
+  assert.match(source,/setPreviewTranscript\(\(item\.text\?\?'\'\)\+\(item\.stash\?\?'\'\)\)/);
+  assert.match(source,/云端起声 → 首次 ASR 增量/);
+  assert.match(await readFile(path.join(web,'src/microphone.tsx'),'utf8'),
+    /aria-label="麦克风增强"/);
   assert.match(source,/session\.ready/);
-  assert.match(source,/realtime\?\.llm_error/);
+  assert.doesNotMatch(source,/cascade_llm|last_llm_input|llm_error/);
   assert.match(source,/last_stop_reason/);
   assert.match(source,/playback_evidence/);
   assert.match(source,/phase4c\.html/);
@@ -145,15 +196,23 @@ test('React build is the only production page and serves local assets',async()=>
   assert.doesNotMatch(source,/type View=|'overview','chat','robots','developer'/);
   assert.match(source,/className="developer-drawer"/);
   assert.match(source,/historyOpen\?'history-open':'history-closed'/);
-  assert.match(source,/aria-label="延迟瀑布图"/);
-  assert.match(source,/onLevel=\{setMicLevel\}/);
-  assert.match(source,/onBuffer=\{setBrowserBuffer\}/);
+  assert.match(latencyHud,/aria-label="延迟瀑布图"/);
+  assert.match(audioPanels,/onLevel=\{setLevel\}/);
+  assert.match(audioPanels,/onBuffer=\{setBrowserBuffer\}/);
+  assert.doesNotMatch(source,/setMicLevel|setBrowserBuffer|setMicDiagnostics/);
   assert.match(source,/api<PersonaProfile\[]>\('\/api\/personas'\)/);
   assert.match(source,/source:'user_setting',generation:session.generation/);
+  assert.match(source,/aria-label="切换当前会话性格"/);
+  assert.match(source,/fields:\{persona_style:styleId\}/);
+  assert.match(source,/personaForSession.style_id===savedStyle/);
+  assert.match(source,/if\(item.kind==='session.ready'\)\{/);
   assert.match(source,/personaForSession\?\.provider_session_id|persona.provider_session_id===realtime\?\.provider_session_id/);
   assert.match(source,/conversationChecks\[checkIndex\]\.turns\[checkStep\]/);
   assert.match(await readFile(path.join(web,'src/styles.css'),'utf8'),
-    /grid-template-columns:minmax\(0,65fr\) minmax\(300px,35fr\)/);
+    /grid-template-columns:minmax\(0,1fr\) minmax\(260px,290px\)/);
+  assert.match(source,/↓ 回到最新/);
+  assert.match(source,/onWheel=\{e=>\{if\(e.deltaY<0\)/);
+  assert.match(source,/className="voice-mode"/);
   assert.doesNotMatch(source,/<Block title="能力状态"|<Block title="Room 六通道"/);
   assert.match(source,/cancelCurrent/);
   assert.match(source,/prefers-reduced-motion/);
@@ -177,11 +236,23 @@ test('remaining protocol fixtures stay separate from the production conversation
 test('real conversation has an explicitly authorized browser microphone and no test PCM control',async()=>{
   const workbench=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
   const mic=await readFile(path.join(web,'src/microphone.tsx'),'utf8');
-  assert.match(workbench,/<RealtimeMicrophone key=\{robotId/);
+  assert.match(workbench,/<MicrophoneControls key=\{robotId/);
+  assert.match(await readFile(path.join(web,'src/audio-panels.tsx'),'utf8'),
+    /<RealtimeMicrophone route=\{route\}/);
   assert.match(workbench,/route\?\.room_id\?\?''/);
   assert.match(workbench,/route=\{realtime\?\.ready\?route:undefined\}/);
   assert.doesNotMatch(workbench,/RoomPlayback|AudioWorklet/);
   assert.match(mic,/getUserMedia/);
+  assert.match(mic,/enumerateDevices\(\)/);
+  assert.match(mic,/item\.kind==='audioinput'/);
+  assert.match(mic,/aria-label="选择麦克风输入设备"/);
+  assert.match(mic,/deviceId:\{exact:selectedInput\}/);
+  assert.match(mic,/track\?\.getSettings\(\)/);
+  assert.match(mic,/track\.onmute/);
+  assert.match(mic,/frames>100&&level<0\.1/);
+  assert.match(mic,/echoCancellation:!rawDiagnostic/);
+  assert.match(mic,/noiseSuppression:!rawDiagnostic/);
+  assert.match(mic,/原始收音排障/);
   assert.match(mic,/room-capture-worklet\.js/);
   assert.match(mic,/new AudioWorkletNode\(context,'room-capture'/);
   assert.doesNotMatch(mic,/createScriptProcessor|onaudioprocess/);

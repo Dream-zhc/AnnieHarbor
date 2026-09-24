@@ -1,5 +1,184 @@
-.action-dialog{max-width:740px;max-height:90vh;overflow:auto}
-.action-samples{display:flex;flex-wrap:wrap;gap:8px}
-.action-records{max-height:38vh;overflow:auto}
-.action-records article{padding:10px;margin:8px 0}
-.action-records small{display:block;overflow-wrap:anywhere}
+/* ==========================================================================
+   Action & Expression Panel (动作与表情面板)
+   ========================================================================== */
+
+.action-dialog {
+  max-width: 760px !important;
+  width: 92vw !important;
+  max-height: 88vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  border-radius: 16px !important;
+  background: rgba(13, 18, 29, 0.98) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.action-dialog-header {
+  flex: 0 0 auto;
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--border-card);
+  position: relative;
+  background: rgba(14, 20, 32, 0.85);
+}
+
+.action-dialog-header h2 {
+  margin: 0 0 6px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-dialog-header p {
+  margin: 0 !important;
+  font-size: 12px !important;
+  color: var(--text-sub) !important;
+  line-height: 1.5 !important;
+}
+
+.action-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.action-status-card {
+  background: rgba(14, 20, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.action-status-card strong {
+  color: #ffffff;
+}
+
+.action-samples-section h3,
+.action-records-section h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 0 0 10px;
+}
+
+.action-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-sample-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e2e8f0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.16s ease;
+}
+
+.action-sample-chip:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 8px rgba(59, 130, 246, 0.2);
+}
+
+.action-records {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-record-card {
+  background: rgba(14, 20, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.action-record-card strong {
+  color: #f1f5f9;
+  font-size: 13px;
+}
+
+.action-record-card small {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+
+.action-dialog-footer {
+  flex: 0 0 auto;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-card);
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(14, 20, 32, 0.85);
+}
+
+/* Light Theme Overrides */
+:root[data-theme="light"] .action-dialog {
+  background: #ffffff !important;
+  border: 1px solid #d0d7de !important;
+  box-shadow: 0 24px 60px rgba(31, 35, 40, 0.16), 0 1px 3px rgba(31, 35, 40, 0.06) !important;
+}
+
+:root[data-theme="light"] .action-dialog-header,
+:root[data-theme="light"] .action-dialog-footer {
+  background: #ffffff !important;
+  border-color: #d0d7de !important;
+}
+
+:root[data-theme="light"] .action-dialog-header h2 {
+  color: #1f2328 !important;
+}
+
+:root[data-theme="light"] .action-status-card,
+:root[data-theme="light"] .action-record-card {
+  background: #ffffff !important;
+  border: 1px solid #d0d7de !important;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.04) !important;
+  color: #24292f !important;
+}
+
+:root[data-theme="light"] .action-record-card strong {
+  color: #1f2328 !important;
+}
+
+:root[data-theme="light"] .action-sample-chip {
+  background: #f6f8fa !important;
+  border: 1px solid #d0d7de !important;
+  color: #24292f !important;
+}
+
+:root[data-theme="light"] .action-sample-chip:hover {
+  background: #ddf4ff !important;
+  border-color: #0969da !important;
+  color: #0969da !important;
+}

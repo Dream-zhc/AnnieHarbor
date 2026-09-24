@@ -1,9 +1,13 @@
 import {useEffect,useRef,useState} from 'react';
 import {pcmFrame} from './pcm-format';
+import {acquireAudioContext,loadAudioWorklet,releaseAudioContext} from './shared-audio-context';
 
-type Route={room_id:string;mic_url:string};
+type Route={room_id:string;mic_url:string;urls?:Record<string,string>};
 type Microphone={ws:WebSocket;stream:MediaStream;context:AudioContext;
-  source:MediaStreamAudioSourceNode;processor:AudioWorkletNode;silent:GainNode;watchdog:number};
+  source:MediaStreamAudioSourceNode;processor:AudioWorkletNode;silent:GainNode;watchdog:number;
+  voiceWs:WebSocket|null};
+export type MicDiagnostics={dbfs:number;noiseFloor:number;snr:number;clipped:boolean};
+type InputDevice={deviceId:string;label:string};
 
 function connect(url:string,roomId:string):Promise<WebSocket>{
   return new Promise((resolve,reject)=>{
@@ -32,7 +36,10 @@ function connect(url:string,roomId:string):Promise<WebSocket>{
 }
 
 /** Actual Room speech input. No test-frame injection or fake ASR path. */
-export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLevel?:(level:number|null)=>void}){
+export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
+  route:Route|undefined;onLevel?:(level:number|null)=>void;
+  onDiagnostics?:(metrics:MicDiagnostics|null)=>void;onActive?:(active:boolean)=>void;
+}){
   const active=useRef<Microphone|null>(null);
   const token=useRef(0);
   const [confirmed,setConfirmed]=useState(false);
@@ -43,22 +50,55 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
   const [level,setLevel]=useState(0);
   const [gain,setGain]=useState(1.75);
   const [clipped,setClipped]=useState(false);
-  const [device,setDevice]=useState('');
+  const [inputs,setInputs]=useState<InputDevice[]>([]);
+  const [selectedInput,setSelectedInput]=useState('');
+  const [rawDiagnostic,setRawDiagnostic]=useState(false);
+  const [trackInfo,setTrackInfo]=useState('');
+  const [deviceError,setDeviceError]=useState('');
   useEffect(()=>{
     active.current?.processor.port.postMessage({type:'gain',value:gain});
   },[gain]);
+
+  async function refreshDevices(){
+    try{
+      if(!navigator.mediaDevices?.enumerateDevices){
+        setDeviceError('浏览器不支持列出录音设备');return;
+      }
+      const listed=(await navigator.mediaDevices.enumerateDevices())
+        .filter(item=>item.kind==='audioinput')
+        .map((item,index)=>({
+          deviceId:item.deviceId,label:item.label||'麦克风 '+(index+1)+'（允许权限后可显示名称）',
+        }));
+      setInputs(listed);
+      setDeviceError(listed.length?'':'Windows / 浏览器没有枚举到任何录音设备');
+      setSelectedInput(previous=>previous&&listed.some(item=>item.deviceId===previous)
+        ?previous:'');
+    }catch(error){
+      setDeviceError('无法列出录音设备：'+String(error));
+    }
+  }
+
+  useEffect(()=>{
+    void refreshDevices();
+    navigator.mediaDevices?.addEventListener?.('devicechange',refreshDevices);
+    return()=>navigator.mediaDevices?.removeEventListener?.('devicechange',refreshDevices);
+  },[]);
 
   function stop(update=true){
     token.current++;
     const old=active.current;active.current=null;
     if(old){
+      if(old.voiceWs?.readyState===WebSocket.OPEN){
+        old.voiceWs.send(JSON.stringify({type:'mic.capture.stopped',data:{sender:'microphone'}}));
+      }
+      old.voiceWs?.close();
       window.clearTimeout(old.watchdog);
       old.processor.port.onmessage=null;
       old.processor.disconnect();old.source.disconnect();old.silent.disconnect();
       old.stream.getTracks().forEach(track=>track.stop());
-      old.ws.onclose=null;old.ws.close();void old.context.close();
+      old.ws.onclose=null;old.ws.close();releaseAudioContext(old.context);
     }
-    onLevel?.(null);
+    onLevel?.(null);onDiagnostics?.(null);onActive?.(false);setTrackInfo('');
     if(update){setWorking(false);setListening(false);setStatus('已停止浏览器麦克风');}
   }
   useEffect(()=>{
@@ -82,15 +122,18 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
       // AudioContext after awaiting the permission dialog loses user activation
       // in some browsers, leaving an apparently live graph with zero callbacks.
       const permission=navigator.mediaDevices.getUserMedia({audio:{
-        channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false,
+        channelCount:1,echoCancellation:!rawDiagnostic,
+        noiseSuppression:!rawDiagnostic,autoGainControl:false,
+        ...(selectedInput?{deviceId:{exact:selectedInput}}:{}),
       }});
-      context=new AudioContext();
+      context=acquireAudioContext();
       const resume=context.resume();
       stream=await permission;
       if(current!==token.current)return;
+      void refreshDevices(); // permitted device labels become available after getUserMedia
       await resume;
       if(current!==token.current)return;
-      await context.audioWorklet.addModule('/room-capture-worklet.js');
+      await loadAudioWorklet(context,'/room-capture-worklet.js');
       if(current!==token.current)return;
       ws=await connect(route.mic_url,roomId);
       if(current!==token.current)return;
@@ -108,7 +151,12 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
         try{
           if(event.data.type==='level'){
             setLevel(event.data.value);setClipped(event.data.clipped>0);
-            onLevel?.(event.data.value);return;
+            onLevel?.(event.data.value);
+            onDiagnostics?.({
+              dbfs:event.data.dbfs,noiseFloor:event.data.noiseFloor,
+              snr:event.data.snr,clipped:event.data.clipped>0,
+            });
+            return;
           }
           if(event.data.type!=='audio')return;
           if(captureWs.bufferedAmount>651*40)throw new Error('Room 发送积压超过 800ms');
@@ -130,44 +178,102 @@ export function RealtimeMicrophone({route,onLevel}:{route:Route|undefined;onLeve
         setStatus('3 秒未收到麦克风音频回调：AudioContext='+state+
           '；设备='+ (track?.readyState??'none')+'；请检查浏览器麦克风授权与音频设备');
       },3000);
-      active.current={ws,stream,context,source,processor,silent,watchdog};
+      active.current={ws,stream,context,source,processor,silent,watchdog,voiceWs:null};
       handedOff=true;
+      if(route.urls?.voice){
+        const voiceWs=new WebSocket(route.urls.voice);
+        active.current.voiceWs=voiceWs;
+        voiceWs.onmessage=event=>{
+          if(active.current?.ws!==captureWs||typeof event.data!=='string')return;
+          try{
+            const message=JSON.parse(event.data) as {
+              type?:string;ok?:boolean;room?:string;robotId?:string;
+            };
+            if(message.type==='WELCOME'&&message.ok===true&&
+               message.room===roomId&&message.robotId==='reb_voice'){
+              voiceWs.send(JSON.stringify({type:'mic.capture.started',
+                data:{sender:'microphone'}}));
+            }
+          }catch{/* mic PCM must not be blocked by optional status signaling */}
+        };
+      }
       captureWs.onclose=()=>{if(active.current?.ws===captureWs){stop();setStatus('Room 麦克风连接已断开');}};
       stream.getAudioTracks().forEach(track=>{track.onended=()=>{
         if(active.current?.stream===captureStream){stop();setStatus('麦克风设备已停止');}
-      };});
+      };
+        track.onmute=()=>{
+          if(active.current?.stream===captureStream){
+            setTrackInfo('设备已被静音（track.muted=true）');
+            setStatus('录音设备已被 Windows 或浏览器静音');
+          }
+        };
+        track.onunmute=()=>{
+          if(active.current?.stream===captureStream){
+            setTrackInfo(track.label+' · track.muted=false');
+          }
+        };
+      });
       setFrames(0);setLevel(0);setClipped(false);onLevel?.(0);
-      setDevice(stream.getAudioTracks()[0]?.label??'');
+      const track=stream.getAudioTracks()[0];
+      const settings=track?.getSettings();
+      setTrackInfo('实际输入：'+(track?.label||'名称未提供')+
+        ' · '+(settings?.sampleRate??'?')+'Hz'+
+        ' · '+(settings?.channelCount??'?')+'ch'+
+        (track?.muted?' · 系统静音':'')+
+        (selectedInput&&settings?.deviceId!==selectedInput?' · 设备ID与选择不一致':'')+
+        (rawDiagnostic?' · 原始收音排障':''));
       setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
+      onActive?.(true);
     }catch(error){
       if(current===token.current)setStatus('开启失败：'+String(error));
     }finally{
       if(!handedOff){
         ws?.close();
         stream?.getTracks().forEach(track=>track.stop());
-        if(context)void context.close();
+        if(context)releaseAudioContext(context);
       }
       if(current===token.current)setWorking(false);
     }
   }
-  return <div className="voice-input">
-    <label className="mic-gain-control">麦克风增强 <strong>{gain.toFixed(2)}×</strong>
-      <input type="range" aria-label="麦克风增强" min="1" max="4" step="0.25"
-        value={gain} onChange={event=>setGain(Number(event.target.value))}/>
-    </label>
-    <small className="mic-gain-hint">默认轻度增强；说话时可逐步调高，出现削波或噪声放大请调低。不改变云端 smart_turn 门限。</small>
-    <label className="voice-confirm"><input type="checkbox" checked={confirmed} disabled={listening||working}
-      onChange={event=>setConfirmed(event.target.checked)}/>
-      <span>此 Room 没有另一个麦克风或机器人音源正在发送 PCM</span></label>
-    <div className="voice-actions">
-      <button type="button" className={listening||working?'stop-button':'quiet-button'}
-        onClick={()=>listening||working?stop():void start()}
-        disabled={!listening&&!working&&(!route||!confirmed)}>
-        {listening?'停止麦克风':working?'取消开启':'开启麦克风'}</button>
-      <span role="status">{status}{listening?' · 已发 '+frames+' 帧':''}</span>
+  // 原始收音排障（已从主面板移除，保持对讲座舱界面清爽克制）
+  return <div className="voice-input voice-input-compact">
+    <div className="voice-compact-bar">
+      <div className="voice-compact-group mic-device-wrap">
+        <select aria-label="选择麦克风输入设备" className="compact-device-select" value={selectedInput}
+          disabled={listening||working} onChange={event=>setSelectedInput(event.target.value)}>
+          <option value="">浏览器默认麦克风</option>
+          {inputs.filter(item=>item.deviceId&&item.deviceId!=='default').map(item=>
+            <option key={item.deviceId} value={item.deviceId}>{item.label}</option>)}
+        </select>
+        <button className="quiet-button compact-icon-btn" type="button" disabled={listening||working}
+          onClick={()=>void refreshDevices()} title="刷新设备">刷新</button>
+      </div>
+
+      <div className="voice-compact-group voice-compact-action-row">
+        <button type="button" className={listening||working?'stop-button compact-btn':'primary-button compact-btn'}
+          onClick={()=>listening||working?stop():void start()}
+          disabled={!listening&&!working&&(!route||!confirmed)}>
+          {listening?'■ 停止麦克风':working?'取消开启':'🎙 开启麦克风'}</button>
+        <span className="compact-status-badge" role="status">
+          {listening?`${frames}帧 · ${(level??0).toFixed(0)}%`:status}
+          {clipped?' ⚠️削波':''}
+        </span>
+      </div>
+
+      <div className="voice-compact-group voice-compact-sub-row">
+        <label className="voice-confirm compact-confirm">
+          <input type="checkbox" checked={confirmed} disabled={listening||working}
+            onChange={event=>setConfirmed(event.target.checked)}/>
+          <span>此 Room 没有另一个麦克风占用</span>
+        </label>
+        <label className="mic-gain-control compact-gain">
+          <span>增强 {gain.toFixed(2)}×</span>
+          <input type="range" aria-label="麦克风增强" min="1" max="4" step="0.25"
+            value={gain} onChange={event=>setGain(Number(event.target.value))}/>
+        </label>
+      </div>
     </div>
-    {listening&&<small className="mic-signal">输入设备：{device||'浏览器未提供名称'} · 本地电平 {level.toFixed(1)}%
-      {clipped?'（检测到削波，请降低增强）':''}
-      {frames>50&&level<0.2?'（接近静音；请检查输入设备/权限）':''}。发送帧数不代表识别到人声。</small>}
+    {deviceError&&<small role="alert" className="mic-signal" style={{marginTop:'2px'}}>{deviceError}</small>}
+    {listening&&frames>100&&level<0.1&&<small className="mic-signal" style={{marginTop:'2px'}}>仅检测到近静音，请核对实际输入设备与音量</small>}
   </div>;
 }

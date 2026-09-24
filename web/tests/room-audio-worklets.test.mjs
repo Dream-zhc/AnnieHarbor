@@ -31,12 +31,17 @@ test('Room player keeps a continuous queue across delayed packets and hold/resum
   assert.ok(start.some(x=>x!==0));
   const beforeHold=p.queued,played=p.played;
   send(p,{type:'hold',stream:'turn-1'});
+  for(let i=0;i<20;i++)process(p); // 40ms duck fade still consumes audible output
+  assert.equal(p.held,true);
+  assert.ok(p.played>played);
+  assert.ok(p.queued<beforeHold);
+  const frozen=p.played,remaining=p.queued;
   for(let i=0;i<30;i++)assert.ok(process(p).every(x=>x===0));
-  assert.equal(p.played,played);
-  assert.equal(p.queued,beforeHold);
+  assert.equal(p.played,frozen);
+  assert.equal(p.queued,remaining);
   send(p,{type:'resume',stream:'turn-1'});
   const after=process(p);
-  const expected=Math.sin((played)*2*Math.PI*220/48000)*.5;
+  const expected=Math.sin((frozen)*2*Math.PI*220/48000)*.5;
   assert.ok(Math.abs(after[0]-expected)<.001,'resume skipped the preserved sample cursor');
   assert.equal(p.underruns,0);
   assert.equal(p.messages.filter(item=>item.type==='underflow').length,0);
@@ -45,6 +50,7 @@ test('Room player keeps a continuous queue across delayed packets and hold/resum
   assert.equal(p.state,'ended');
   assert.equal(p.queued,0);
   assert.ok(p.messages.some(item=>item.type==='ended'));
+  assert.ok(Number.isFinite(p.messages.find(item=>item.type==='ended').playedMs));
 });
 
 test('Room player waits for 100ms before recovering from starvation',()=>{

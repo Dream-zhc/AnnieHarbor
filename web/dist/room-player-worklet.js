@@ -6,6 +6,7 @@ class RoomPlayerProcessor extends AudioWorkletProcessor {
     super();
     this.queue=[];this.offset=0;this.queued=0;
     this.stream='';this.finished=false;this.held=false;this.state='idle';
+    this.holdAfter=0;this.holdCommandSeq=null;
     this.played=0;this.underruns=0;this.report=0;
     this.sourceCount=0;this.nextPosition=0;this.last=0;this.hasLast=false;
     this.prebuffer=Math.round(sampleRate*.18);
@@ -18,6 +19,7 @@ class RoomPlayerProcessor extends AudioWorkletProcessor {
     if(message.type==='generation'){
       this.queue=[];this.offset=0;this.queued=0;
       this.stream=message.stream;this.finished=false;this.held=false;
+      this.holdAfter=0;this.holdCommandSeq=null;
       this.state='prebuffering';this.played=0;this.underruns=0;
       this.sourceCount=0;this.nextPosition=0;this.last=0;this.hasLast=false;
     }else if(message.type==='push'&&message.stream===this.stream){
@@ -47,13 +49,20 @@ class RoomPlayerProcessor extends AudioWorkletProcessor {
     }else if(message.type==='end'&&message.stream===this.stream){
       this.finished=true;this.maybeStart();
     }else if(message.type==='hold'&&message.stream===this.stream){
-      this.held=true;
-      this.port.postMessage({type:'held',stream:this.stream,playedMs:this.played/sampleRate*1000});
+      this.holdCommandSeq=message.command_seq??null;
+      this.holdAfter=this.state==='playing'?
+        Math.max(1,Math.round(sampleRate*(message.fade_ms??40)/1000)):0;
+      if(!this.holdAfter){
+        this.held=true;
+        this.port.postMessage({type:'held',stream:this.stream,
+          command_seq:this.holdCommandSeq,playedMs:this.played/sampleRate*1000});
+      }
     }else if(message.type==='resume'&&message.stream===this.stream){
-      this.held=false;this.maybeStart();
-      this.port.postMessage({type:'resumed',stream:this.stream,playedMs:this.played/sampleRate*1000});
+      this.holdAfter=0;this.held=false;this.maybeStart();
+      this.port.postMessage({type:'resumed',stream:this.stream,
+        command_seq:message.command_seq??null,playedMs:this.played/sampleRate*1000});
     }else if(message.type==='clear'&&message.stream===this.stream){
-      this.queue=[];this.offset=0;this.queued=0;this.held=false;
+      this.queue=[];this.offset=0;this.queued=0;this.held=false;this.holdAfter=0;
       this.finished=true;this.state='ended';
       this.port.postMessage({type:'cleared',stream:this.stream,playedMs:this.played/sampleRate*1000});
     }
@@ -76,18 +85,25 @@ class RoomPlayerProcessor extends AudioWorkletProcessor {
     if(!this.held&&this.state==='playing'){
       for(let i=0;i<out.length;i++){
         if(!this.queue.length){
-          if(this.finished){this.state='ended';this.port.postMessage({type:'ended',stream:this.stream});}
+          if(this.finished){this.state='ended';this.port.postMessage({type:'ended',stream:this.stream,playedMs:this.played/sampleRate*1000});}
           else {this.state='rebuffering';this.underruns++;
             this.port.postMessage({type:'underflow',stream:this.stream,count:this.underruns});}
           break;
         }
+        if(this.played===0)this.port.postMessage({type:'started',stream:this.stream,playedMs:0});
         const item=this.queue[0];out[i]=item[this.offset++];
         this.queued--;this.played++;
         if(this.offset===item.length){this.queue.shift();this.offset=0;}
+        if(this.holdAfter&&--this.holdAfter===0){
+          this.held=true;
+          this.port.postMessage({type:'held',stream:this.stream,
+            command_seq:this.holdCommandSeq,playedMs:this.played/sampleRate*1000});
+          break;
+        }
       }
     }
     if(this.finished&&!this.held&&this.queued===0&&this.state!=='ended'){
-      this.state='ended';this.port.postMessage({type:'ended',stream:this.stream});
+      this.state='ended';this.port.postMessage({type:'ended',stream:this.stream,playedMs:this.played/sampleRate*1000});
     }
     if(++this.report%20===0)this.port.postMessage({type:'buffer',stream:this.stream,
       bufferMs:this.queued/sampleRate*1000,playedMs:this.played/sampleRate*1000,

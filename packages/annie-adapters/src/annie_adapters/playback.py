@@ -26,7 +26,7 @@ def playback_receipt(message):
     if set(data) - {
         "protocol_version", "conversation_id", "stream_epoch", "played_sample_count",
         "sample_rate", "seq", "source", "playback_id", "reason",
-        "command_seq",
+        "command_seq", "sender",
     }:
         raise ValueError("unknown playback event fields")
     if type(data.get("protocol_version")) is not int or data["protocol_version"] != 1:
@@ -43,11 +43,11 @@ def playback_receipt(message):
         raise ValueError("playback seq must be positive integer")
     if data.get("source") not in {"browser_test", "speaker"}:
         raise ValueError("source must be speaker or browser_test")
+    if data.get("sender", data["source"]) != data["source"]:
+        raise ValueError("playback sender/source mismatch")
     if not isinstance(data.get("playback_id"), str) or not 1 <= len(data["playback_id"]) <= 128:
         raise ValueError("playback_id required")
     if message["type"] in {"tts.playback.held", "tts.playback.resumed"}:
-        if data["source"] != "speaker":
-            raise ValueError("only the physical speaker may acknowledge hold/resume")
         if type(data.get("command_seq")) is not int or data["command_seq"] < 1:
             raise ValueError("hold/resume requires command_seq")
     return message

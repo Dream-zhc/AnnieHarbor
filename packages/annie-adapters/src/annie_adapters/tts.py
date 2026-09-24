@@ -79,8 +79,8 @@ class RoomTtsPublisher:
     """One verified Room channel per connection; no cross-robot routing."""
 
     def __init__(self, room_config, room_id: str, socket_factory=connect, *, channel="tts"):
-        if channel not in {"tts", "main"}:
-            raise ValueError("only verified tts/main outgoing channels are allowed")
+        if channel not in {"tts", "main", "voice"}:
+            raise ValueError("only configured tts/main/voice outgoing channels are allowed")
         self.url = room_config.url_for(room_id, channel)
         self.room_id = room_id
         self.channel = room_config.channels[channel]

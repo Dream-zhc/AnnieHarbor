@@ -8,6 +8,8 @@ import time
 import unittest
 from pathlib import Path
 
+from websockets.exceptions import ConnectionClosedOK
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "docs/phase0/2026-09-17/fixtures"
 PHASE2_CONTROL_FIXTURES = ROOT / "docs/phase2/2026-09-18/room_control_live.jsonl"
@@ -36,6 +38,8 @@ class ProtocolAdapterTests(unittest.TestCase):
                 "visualdata": "ws://192.168.1.47:8090/robot/roomv2/reb_visualdata",
                 "vision": "ws://192.168.1.47:8090/robot/roomv2/reb_vision",
                 "sam": "ws://192.168.1.47:8090/robot/roomv2/reb_sam",
+                "visualllm": "ws://192.168.1.47:8090/robot/roomv2/reb_visualllm",
+                "voice": "ws://192.168.1.47:8090/robot/roomv2/reb_voice",
             },
         )
         self.assertEqual(
@@ -367,8 +371,9 @@ class RoomPcmNetworkIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         async def room_handler(ws):
             try:
-                room_id = ws.request.path.rstrip("/").split("/")[-2]
-                connection_count[room_id] += 1
+                room_id, channel = ws.request.path.rstrip("/").split("/")[-2:]
+                if channel == "reb_mic":
+                    connection_count[room_id] += 1
                 attempt = connection_count[room_id]
                 await ws.send(
                     json.dumps(
@@ -376,7 +381,7 @@ class RoomPcmNetworkIntegrationTests(unittest.IsolatedAsyncioTestCase):
                             "type": "WELCOME",
                             "ok": True,
                             "clientId": f"test-{room_id}-{attempt}",
-                            "robotId": "reb_mic",
+                            "robotId": channel,
                             "room": room_id,
                             "size": 1,
                             "subscriptions": [],
@@ -384,7 +389,14 @@ class RoomPcmNetworkIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         }
                     )
                 )
-                subscribe = json.loads(await ws.recv())
+                try:
+                    subscribe = json.loads(await ws.recv())
+                except ConnectionClosedOK:
+                    # Auxiliary reb_sam/voice observers may close during
+                    # teardown before subscribing; the mic stream must not.
+                    if channel != "reb_mic":
+                        return
+                    raise
                 if subscribe != {"type": "SUBSCRIBE", "data": {"types": ["*"]}}:
                     raise AssertionError(f"unexpected SUBSCRIBE: {subscribe!r}")
                 await ws.send(
@@ -395,6 +407,9 @@ class RoomPcmNetworkIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         }
                     )
                 )
+                if channel != "reb_mic":
+                    await ws.wait_closed()
+                    return
                 if room_id == "roomv2":
                     await ws.send(binary_frame(0x21 if attempt == 1 else 0x22))
                     if attempt == 1:

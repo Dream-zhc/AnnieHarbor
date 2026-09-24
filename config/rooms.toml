@@ -15,6 +15,8 @@ mic = "reb_mic"
 visualdata = "reb_visualdata"
 vision = "reb_vision"
 sam = "reb_sam"
+visualllm = "reb_visualllm"
+voice = "reb_voice" # 同一个 roomv2 下，麦克风/扬声器控制与回执，不承载 PCM
 
 [urls]
 main = "ws://192.168.1.47:8090/robot/roomv2/reb_main"
@@ -23,6 +25,8 @@ mic = "ws://192.168.1.47:8090/robot/roomv2/reb_mic"
 visualdata = "ws://192.168.1.47:8090/robot/roomv2/reb_visualdata"
 vision = "ws://192.168.1.47:8090/robot/roomv2/reb_vision"
 sam = "ws://192.168.1.47:8090/robot/roomv2/reb_sam"
+visualllm = "ws://192.168.1.47:8090/robot/roomv2/reb_visualllm"
+voice = "ws://192.168.1.47:8090/robot/roomv2/reb_voice"
 
 [protocol]
 asr_types = ["asr", "ASR_RESULT"]

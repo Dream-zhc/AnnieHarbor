@@ -18,9 +18,11 @@ class SpeechOutput:
     """One bounded text queue and one synthesis/publisher owner per robot."""
 
     def __init__(self, robot, publisher, *, url, key, voice, socket_factory=QwenTtsSocket,
-                 first_chars=10, max_chars=48, first_wait_ms=360, event=None):
+                 first_chars=10, max_chars=48, first_wait_ms=360, event=None,
+                 voice_publisher=None):
         self.robot = robot
         self.publisher = publisher
+        self.voice_publisher = voice_publisher  # control/status; PCM stays reb_tts
         self.url = url
         self.key = key
         self.voice = voice
@@ -67,6 +69,7 @@ class SpeechOutput:
         self.stopped_conversation_id = None
         self.last_stop_evidence = "unknown"
         self.synthesized_complete = False
+        self.local_output_completed_at = None  # monotonic; NOT a speaker receipt
         self.viseme_events = 0
         self.viseme_seen = set()
         self.viseme_state = "not_connected"
@@ -74,6 +77,35 @@ class SpeechOutput:
         self.control_seq = 0
         self.pending_controls = {}
         self.control_state = "unknown"
+        self.voice_tasks = set()
+
+    def _voice_signal(self, packet):
+        """Best-effort signaling must never await network I/O in a cancel path."""
+        if self.voice_publisher is None:
+            return
+        labels = {
+            "tts.playback.hold": "请求暂停播放",
+            "tts.playback.resume": "请求恢复播放",
+            "tts.playback.stop": "请求停止播放",
+        }
+        packet = {"type": packet["type"],
+                  "description": labels.get(packet["type"], "播放控制信令"),
+                  **{key: value for key, value in packet.items() if key != "type"}}
+        if len(self.voice_tasks) >= 16:
+            self._emit("tts.voice_signal.error", reason=packet["type"],
+                       error="voice_queue_full")
+            return
+
+        async def send():
+            try:
+                await self.voice_publisher.publish(packet)
+            except Exception as exc:
+                self._emit("tts.voice_signal.error", reason=packet["type"],
+                           error=type(exc).__name__)
+
+        task = asyncio.create_task(send())
+        self.voice_tasks.add(task)
+        task.add_done_callback(self.voice_tasks.discard)
 
     def snapshot(self):
         return {
@@ -133,6 +165,7 @@ class SpeechOutput:
         self.stopped_conversation_id = None
         self.last_stop_evidence = "unknown"
         self.synthesized_complete = False
+        self.local_output_completed_at = None
         self.viseme_state = "not_connected"
         self.viseme_seen.clear()
         self.control_seq = 0
@@ -264,6 +297,17 @@ class SpeechOutput:
         if was_active:
             # The established Room contract only proves publication of clear,
             # not that the device has actually stopped or which samples played.
+            stop_cid, stop_epoch = self.pending_stop[:2]
+            self._voice_signal({
+                "type": "tts.playback.stop", "ts": time.time_ns() // 1_000_000,
+                "data": {"protocol_version": 1,
+                         "conversation_id": stop_cid,
+                         "stream_epoch": stop_epoch,
+                         "reason": reason, "sender": "brain",
+                         "trigger_source": "qwen_realtime" if reason in {
+                             "valid_smart_turn", "meaningful_ambient",
+                         } else "runtime"},
+            })
             try:
                 await self.publisher.publish(self._packet(b"", "", final=True, stop=True, reason=reason))
                 self.stop_published_at = time.time_ns() // 1_000_000
@@ -279,6 +323,18 @@ class SpeechOutput:
     async def close(self):
         await self.cancel("runtime_stop")
         await self.publisher.close()
+        # Give the queued stop signal a bounded chance to reach reb_voice
+        # before closing its socket. Shutdown must not wait for a dead Room.
+        try:
+            await asyncio.wait_for(asyncio.gather(*self.voice_tasks,
+                                                   return_exceptions=True), .5)
+        except asyncio.TimeoutError:
+            pass
+        for task in tuple(self.voice_tasks):
+            task.cancel()
+        await asyncio.gather(*self.voice_tasks, return_exceptions=True)
+        if self.voice_publisher is not None:
+            await self.voice_publisher.close()
 
     def request_playback_control(self, kind, *, reason):
         """Schedule an ordered Room command, without blocking smart_turn on Room I/O."""
@@ -300,11 +356,18 @@ class SpeechOutput:
             data = {
                 "protocol_version": 1, "conversation_id": turn_id,
                 "stream_epoch": epoch, "command_seq": sequence, "reason": reason,
+                "sender": "brain",
+                "trigger_source": "qwen_realtime" if reason in {
+                    "speech_started", "turn_invalid", "ambient_audio",
+                } else "runtime",
+                "fade_ms": 40 if kind == "hold" else 120,
             }
             self.pending_controls[sequence] = kind
+            packet = {"type": f"tts.playback.{kind}",
+                      "ts": time.time_ns() // 1_000_000, "data": data}
+            self._voice_signal(packet)
             try:
-                await self.publisher.publish({"type": f"tts.playback.{kind}",
-                                              "ts": time.time_ns() // 1_000_000, "data": data})
+                await self.publisher.publish(packet)
             except Exception as exc:
                 self.pending_controls.pop(sequence, None)
                 self.control_state = "control_error"
@@ -350,6 +413,8 @@ class SpeechOutput:
                 await self.publisher.publish(self._packet(b"", self.published_text,
                                                           final=True, stream_final=True))
                 self.synthesized_complete = True
+                self.local_output_completed_at = time.monotonic()
+                self._emit("tts.stream_finished", device_played="unknown")
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -527,22 +592,28 @@ class SpeechOutput:
                 return False
             if kind == "resumed" and (track is None or track["state"] != "held"):
                 return False
-            self.pending_controls.pop(command_seq)
+            # Browser auditions report only browser playback. They may not
+            # consume or confirm the physical speaker's pending control.
+            if source == "speaker":
+                self.pending_controls.pop(command_seq)
             self.receipt_tracks[source] = {
                 "id": playback_id, "seq": data["seq"],
                 "played": data["played_sample_count"], "state": kind,
             }
-            if not any(seq > command_seq for seq in self.pending_controls):
+            if source == "speaker" and not any(
+                seq > command_seq for seq in self.pending_controls
+            ):
                 self.control_state = f"{kind}_confirmed"
-            self.playback_source = source
-            self.playback_id = playback_id
-            self.playback_state = kind
-            self.playback_evidence = f"{source}_reported_{kind}"
-            self.played_samples = data["played_sample_count"]
+            if self.playback_source != "speaker" or source == "speaker":
+                self.playback_source = source
+                self.playback_id = playback_id
+                self.playback_state = kind
+                self.playback_evidence = f"{source}_reported_{kind}"
+                self.played_samples = data["played_sample_count"]
             self._emit("tts.playback." + kind, conversation_id=cid,
                        stream_epoch=epoch, command_seq=command_seq,
-                       played_sample_count=self.played_samples,
-                       evidence=self.playback_evidence,
+                       played_sample_count=data["played_sample_count"],
+                       source=source, evidence=f"{source}_reported_{kind}",
                        receipt_ms=time.time_ns() // 1_000_000)
             return True
         if active and track is not None:

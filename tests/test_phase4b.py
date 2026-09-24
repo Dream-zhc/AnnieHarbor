@@ -252,6 +252,56 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.speech.close)
 
+    async def test_voice_channel_mirrors_control_with_sender_and_preserves_pcm_channel(self):
+        voice = FakePublisher()
+        self.speech.voice_publisher = voice
+        await self.speech.feed("voice-control", self.robot.session_state(), "测试语音交互。")
+        await self.speech.finish("voice-control")
+        await asyncio.wait_for(self.speech.worker, 2)
+        self.assertTrue(self.speech.request_playback_control("hold", reason="speech_started"))
+        await asyncio.wait_for(self.speech.control_task, 1)
+        await asyncio.sleep(0)
+        hold = voice.messages[-1]
+        self.assertEqual(hold["type"], "tts.playback.hold")
+        self.assertEqual(hold["data"]["sender"], "brain")
+        self.assertEqual(hold["data"]["trigger_source"], "qwen_realtime")
+        self.assertEqual(hold["data"]["fade_ms"], 40)
+        self.assertEqual(self.publisher.messages[-1]["type"], hold["type"])
+        self.assertTrue(self.speech.request_playback_control("resume", reason="turn_invalid"))
+        await asyncio.wait_for(self.speech.control_task, 1)
+        await asyncio.sleep(0)
+        resume = voice.messages[-1]
+        self.assertEqual(resume["data"]["fade_ms"], 120)
+        self.assertGreater(resume["data"]["command_seq"], hold["data"]["command_seq"])
+        await self.speech.cancel("valid_smart_turn")
+        await asyncio.sleep(0)
+        stop = voice.messages[-1]
+        self.assertEqual(stop["type"], "tts.playback.stop")
+        self.assertEqual(stop["data"]["conversation_id"], "voice-control")
+        self.assertEqual(stop["data"]["sender"], "brain")
+        self.assertEqual(stop["data"]["trigger_source"], "qwen_realtime")
+        self.assertTrue(any(packet["type"] == "tts" and packet["data"].get("stop")
+                            for packet in self.publisher.messages))
+
+    async def test_browser_controls_never_confirm_speaker_held_state(self):
+        cid = "browser-controls"
+        await self.speech.feed(cid, self.robot.session_state(), "暂停后恢复。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.worker, 2)
+        epoch = self.speech.stream_epoch
+        self.assertTrue(self.speech.on_playback_receipt(receipt("started", cid, epoch, 0)))
+        self.assertTrue(self.speech.request_playback_control("hold", reason="speech_started"))
+        await asyncio.wait_for(self.speech.control_task, 1)
+        seq = self.publisher.messages[-1]["data"]["command_seq"]
+        ack = receipt("held", cid, epoch, 200, seq=2)
+        ack["data"]["command_seq"] = seq
+        ack["data"]["sender"] = "browser_test"
+        self.assertTrue(self.speech.on_playback_receipt(ack))
+        self.assertEqual(self.speech.control_state, "hold_requested")
+        self.assertIn(seq, self.speech.pending_controls)
+        with self.assertRaisesRegex(ValueError, "sender/source mismatch"):
+            playback_receipt({**ack, "data": {**ack["data"], "sender": "speaker"}})
+
     async def test_short_stalled_first_phrase_reaches_tts_without_response_done(self):
         identity = self.robot.session_state()
         await self.speech.feed("short-turn", identity, "你好")
@@ -310,6 +360,8 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         await self.speech.finish("late-finish")
         await asyncio.wait_for(self.speech.worker, 1)
         self.assertTrue(self.speech.synthesized_complete)
+        self.assertIsNotNone(self.speech.local_output_completed_at)
+        self.assertEqual(self.speech.playback_evidence, "unknown")
         self.assertTrue(any(packet["data"].get("stream_final") for packet in self.publisher.messages))
 
     async def test_one_actual_pcm_shared_with_room_no_second_synthesis_and_no_false_playback(self):
@@ -394,9 +446,11 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(self.speech.playback_evidence, "speaker_reported_held")
         ack = receipt("held", cid, epoch, 100, source="speaker", seq=2)
         ack["data"]["command_seq"] = hold["data"]["command_seq"]
-        with self.assertRaisesRegex(ValueError, "physical speaker"):
-            self.speech.on_playback_receipt({
-                **ack, "data": {**ack["data"], "source": "browser_test"}})
+        browser = {**ack, "data": {**ack["data"], "source": "browser_test",
+                                   "playback_id": "browser-1"}}
+        self.assertTrue(self.speech.on_playback_receipt(browser))
+        self.assertEqual(self.speech.control_state, "hold_requested")
+        self.assertEqual(self.speech.playback_evidence, "speaker_reported_started")
         self.assertTrue(self.speech.on_playback_receipt(ack))
         self.assertEqual(self.speech.control_state, "held_confirmed")
         self.assertEqual(self.speech.played_samples, 100)

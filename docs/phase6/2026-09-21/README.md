@@ -1,35 +1,54 @@
-# Phase 6｜长期记忆开工与验收记录
+# Phase 6｜长期记忆实施与统一验收
 
-**状态：开工；仅完成命名空间硬边界和 macOS 依赖兼容性首轮试验。长期记忆尚未接入 Runtime/Realtime/React，不得标记可用。**
+**状态：接线完成，待用户现场统一测试。** 自动化、一次真实云端请求、真人语音、浏览器与物理机器人分别计证据。
 
-## 目标与边界
+## 已确认业务
 
-- 来源明确的用户偏好/经历跨 Chat 可召回；更正、遗忘先在读取路径生效，迟到旧任务不能复活事实。
-- 普通聊天仍由 Qwen-Audio Realtime 完成；后台 LangMem 不阻塞主链，不追加外置聊天 LLM。最多 4 条相关证据进入上下文，零条属于正常结果。
-- 保留 SQLite 全量 Ledger、20 轮本地上下文、Realtime 历史窗口、TTS/嘴型、独占 Room 和工作台现有功能；不创建 Phase 6 独立 HTML 页。
+- 遗忘只删除长期记忆，不删除原始 SQLite 对话、Ledger、历史导出或备份。事实正文与向量一起失效；保留事实键、来源标识、版本和墓碑以防迟到任务复活。事实键若含敏感信息，不声称已做全系统隐私擦除。
+- LangMem 0.0.30 调用阿里云 qwen3.8-flash 做后台抽取；text-embedding-v4 输出 256 维。密钥仅通过 DASHSCOPE_API_KEY；有 Key 默认启用，ANNIE_MEMORY_ENABLED=0 可关闭，ANNIE_MEMORY_BASE_URL 可覆盖百炼地址。
+- 服务器绑定 robot_id 是身份边界。semantic 同机器人跨 Chat 使用；persona 和 episodes 随人格隔离；不跨机器人共享，不自造 user_id。模型和浏览器都不能自选机器人和 Persona。
+- 现有 Realtime 主链、独立 TTS、Room、ForcedAligner 不变。普通闲聊不经过额外抽取或记忆搜索；问旧事才通过 Realtime recall_memory，明确更正/遗忘可通过版本化工具或工作台完成。
 
-## 已确认与待决业务规则
+## 数据和失败语义
 
-- 总计划第 9.1 节明确当前身份只用服务器绑定的 `robot_id`；跨 Chat 同一机器人共用 semantic，Persona/episodes 按 Persona 分隔，跨机器人默认不共享。第 25 节 Phase 6 任务卡仍写「可信用户」scope，与前述已确认约束冲突；不据此创设 `user_id` 或自动共享。
-- **待用户确认**：遗忘仅指长期记忆，还是还要删除对应 Ledger 原话、派生数据、导出和备份；若是后者需明确可追溯记录与备份保留策略。没有确认前不开放声称彻底遗忘的接口。
-- **待用户确认**：embedding 使用哪个模型/部署（本地 vs 云端），以及后台 LangMem 抽取所用模型/费用与网络策略；没有确认前不改模型、不引真实记忆服务。
-- Phase 5 真人语义、长空闲及实体播放仍待现场验收；本阶段的代码自动化不能代替它们。
+- 有来源、已完成且包含用户原话的 Ledger turn → 后台 LangMem 最多2条候选 → 版本化 SQLite 事实 → 异步向量写入。首启从当时最新 Ledger ID 开始，不会自行为旧历史批量调用云端模型。
+- 最多检索8个候选、注入4条相关证据，最多256 UTF-8字节（非精确Token计量）。显式记忆工具的总截止时间为1.2秒；**普通实时聊天不等待这1.2秒**。此预算不是声学首响 P95 的实测承诺。
+- 更正、遗忘由完整机器人/Persona、ID、版本校验，旧向量与正文同一事务失效；旧抽取和迟到 embedding 不能覆盖。Embedding 失败保留事实并显示失败状态，保守文字召回可兜底；检索故障不能编造用户经历。
+- sqlite-vec 在现有 Runtime SQLite 内计算向量距离，另有版本化行和墓碑。本次不是 AsyncSqliteStore 作为生产主存，也不是 ANN 虚拟索引；之前独立的 AsyncSqliteStore 兼容实验不作为此生产实现已使用的证明。
 
-## 检索预算（开工前固定的试验基线，尚未上线）
+## 自动化和真实云端证据
 
-- 每次最多取 8 个候选，相关且未失效的证据最多 4 条，不相关时为 0 条。
-- 记忆注入目标预算 256 Token；当前 Realtime 不报告可核实的逐段 Token 数，先用最多 256 UTF-8 字节作为保守代理，**不宣称已测得 Provider 的精确 Token 数**。
-- 前台整个检索总 deadline 100ms（包含 embedding、SQLite 等待和筛选）；超时的普通聊天不等检索、按无记忆继续，明确问旧记忆时不得编造。此为待压测的初始门槛，不是已证明能达到的 P95。
+- Python：uv run --locked pytest -q
+- 阶段六：uv run --locked pytest -q tests/test_phase6.py tests/test_phase6_memory.py tests/test_phase6_worker.py tests/test_phase6_failures.py tests/test_phase6_http.py
+- Ruff：uv run --locked ruff check apps packages tests
+- 依赖：uv lock --check
+- 前端：npm --prefix web run typecheck；npm --prefix web test；npm --prefix web run build
+- macOS arm64 / Python 3.11 实际验证：LangMem 抽取“喜欢喝茶”为 semantic，改口“喜欢咖啡”复用偏好键；text-embedding-v4 返回256维。Fake Cloud + 真实 SQLite/ASGI 测试覆盖 robot/Persona 隔离、跨 Chat、CRUD、版本冲突、迟到写入/向量、遗忘和后台 Ledger 消费。Windows、真实 Qwen Function Calling、多轮真人对话和物理播放仍待现场验证。
 
-## 验证记录（macOS arm64、Python 3.11.16）
+## 工作台统一测试 P6-W1 / P6-W2
 
-- 开工前：`uv run --locked pytest -q`：149 passed、30 subtests、2 条第三方弃用警告；`uv lock --check` 通过。
-- 使用 `uv run --no-project --python .venv/bin/python --with langmem --with 'langgraph-checkpoint-sqlite==3.1.1' --with 'sqlite-vec==0.1.9'` **临时隔离环境**，确认导入 LangMem 0.0.30、AsyncSqliteStore 3.1.1、sqlite-vec 0.1.9。未修改生产依赖或锁文件。
-- 官方 Store 的内存数据库、2 维 FakeEmbedding：put/get、robot A/B 精确隔离、向量搜索、更新和删除后向量检索为空，首轮试验通过；不等于生产环境持久化、慢 embedding、锁争用、乱序更新/遗忘一致性验收。Windows 仍待验证。
-- `memory_scope.py` 仅固定完整 namespace 构造和拒绝空标识，不连接数据库和模型，不构成长期记忆交付。
+1. 重启 Runtime，检查 health.memory 的运行和错误状态。当前机器人新 Chat 说“我喜欢喝茶”，待后台抽取后点顶部“记忆”查看事实、scope、来源、版本和索引状态；换 Chat 问“我之前说过喜欢喝什么”，核对回复与实际 recall_memory 结果。普通“你好”不应每轮调用记忆。
+2. 改口“不是茶，现在喜欢咖啡”，查是否更正同一事实；在工作台手动更正也应刷新后持久化，旧后台输出不可改回茶。
+3. 遗忘后刷新、换 Chat、重连不得通过长期记忆召回旧事实；原始历史仍在。旧版本修改、B机器人或其它 Persona 应拒绝或不泄漏。另用语音说“忘记这条长期记忆”，核对工具确实拿到所属 ID/版本并成功返回。
+4. 桌面/窄屏浏览器、真人多轮、Room 音频、设备扬声器和P50/P95另行记录；不把 Fake/构建/单次云端样本冒充人工 PASS。Phase 5 长空闲与声学问题仍需单独复验。
 
-## 后续交付门槛
+### 2026-09-22｜跨 Chat 相对日期召回返工（待真人语音复验）
 
-1. 明确遗忘与模型选择后锁定依赖及候选数、0–4 条、记忆 token 预算、总检索 deadline；先测慢 embedding 和 SQLite 写锁竞争，再用真实数据定稿。
-2. 连接有来源的 Ledger → 后台有界提取/合并 → 持久化与索引 → 按需检索；验证重复任务、更正抢占、删除生效及索引清理。
-3. 在现有 React 工作台实现查询来源、更正和遗忘状态，执行 P6-W1/W2 与 WEB-01～08；浏览器、真人模型质量、Room/物理体验分开记录，不替用户代验。
+- 复现：同一 `annie-lively` Persona 的旧 Chat 曾说“下周我朋友来找我”，新 Chat 问“下周有人找我吗”，已有 `episodes` 未进入 Realtime 初始化，工具调用也不保证触发。实际库中还存在来源不符的重复摘要。
+- 修复：Session 建立时仅从同机器人/Persona 的近期已完成用户原话中，有界恢复明确的来访陈述（21天、最多256轮扫描、最多2条，沿用512字节预算）；带原话 UTC 时间，明确相对日期需按原话时间解释，不将旧话断言为当前日程。较新的取消/忘记阻止旧陈述重现；问句、假设和别的 Persona 不作事实。普通回合不新增云端调用。
+- 抽取候选中“来访”须由当轮用户陈述支持；召回时过滤旧 `episodes` 中来源不支持的相对日期摘要，旧记录保留供人工核对，不静默改库。自动化测试覆盖完整假 Realtime `session.update`、跨 Chat、来源错误、问句、否定、时效、取消及遗忘。
+- 尚未验收：真实 Qwen 实际自然语言回答、真人 Room PCM 与浏览器、设备发声。自动化通过仅证明接线与证据输入，不宣称模型必然使用证据。
+
+### 2026-09-22｜记忆管理简化
+
+- 记忆管理仅列当前作用范围内仍有效的事实；遗忘、到期及旧 `no_extraction`、`placeholder`、能力测试和来源不匹配的旧来访摘要不占用主列表/计数。原始数据库记录不自动删除；技术字段只在单条「详情」展开。
+- 「长期通用 / 当前角色 / 本次会话」明确切分作用范围，「关系 / 经历」为中文类型；搜索和类型筛选仅影响展示，不改变存储。新增表单由右上角 `＋` 打开，不占常驻列表空间。
+- 自动提取与 SQLite 仍保持“用户……”客观第三人称，界面仅在已知句式中转换为“你……”；不改写底层事实，也不把关系推断成永久情感。遗留问题句及动作能力测试在后端注入/召回和新增抽取环节一并过滤。
+- 前端单元测试和 Python 提取质量测试已增加；真实浏览器交互与实体机器人的自然语言表现仍须人工验收。
+
+### 2026-09-23｜按回合统一诊断
+
+- 先选当前 Chat 的一轮，再查该轮用户原文、生成文本与扬声器完整播报证据；LLM 只展示该轮所属 Provider Session 实际下发的 instructions、建连时恢复的轮次、字符预算和启动记忆，云端持续滚动历史无法直接读取，不能称为本轮完整云端输入。
+- 显式 `recall_memory` 返回值、动作/表情 Function Calling 及后续 Room 状态、ForcedAligner 对齐音素计数/样本、音频和设备起播回执按 turn_id 隔离；模型调用返回、Room 发布、设备实际执行不混为一谈。
+- 时序仅使用本轮有时间戳的区间，未记录不计算；音素详细事件每轮最多抽样3个、计数单独累计，动作与播放事件单轮最多保留32条；32轮时间线、4份 Session 快照和64条工具记录有界，不作为全量持久审计。旧轮证据过期明确显示“未记录”。
+- Fake Realtime/SQLite 的分轮、工具和事件回归已补；真实云端提示词、真人语音、嘴型端和设备状态仍需现场验收。

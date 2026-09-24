@@ -2,7 +2,8 @@
 name = "annie-brain"
 version = "0.1.0"
 requires-python = ">=3.11,<3.12"
-dependencies = ["annie-core", "langgraph>=1.2,<2"]
+dependencies = ["annie-core", "httpx>=0.28,<1", "sqlite-vec==0.1.9",
+                "langmem==0.0.30", "langchain-openai>=1.1,<2", "langgraph>=1.2,<2"]
 
 [build-system]
 requires = ["hatchling>=1.27,<2"]

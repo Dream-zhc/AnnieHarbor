@@ -34,6 +34,7 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
                  speech_enabled and r.get("status") == "cancelled"
                  and r.get("cancel_source") in INTERRUPTED_USER_SOURCES
              ))
+             and r.get("turn_source", "user") == "user"
              and isinstance(r.get("user_text"), str) and r["user_text"].strip()]
     for turn in reversed(valid[-max_turns:]):
         user = turn["user_text"].strip()

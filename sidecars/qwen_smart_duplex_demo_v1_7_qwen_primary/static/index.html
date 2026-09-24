@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Qwen Smart Duplex Demo</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0e14; --panel:#121722; --line:#253044; --text:#e8edf7; --muted:#8d9bb2; --ok:#45d49a; --warn:#ffbd5a; --err:#ff6b7a; --accent:#7aa2ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:Inter,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+    main { max-width:1180px; margin:0 auto; padding:24px; }
+    header { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-bottom:18px; }
+    h1 { margin:0 0 8px; font-size:25px; }
+    .sub { color:var(--muted); line-height:1.6; }
+    button, select { border:1px solid var(--line); background:#1a2231; color:var(--text); border-radius:9px; padding:10px 12px; cursor:pointer; font-weight:650; }
+    button.primary { background:var(--accent); color:#07101f; border-color:transparent; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .status { display:inline-flex; padding:8px 12px; border-radius:999px; background:#1a2231; color:var(--muted); font-weight:700; }
+    .status.ready { color:var(--ok); }.status.listen{color:#82c8ff}.status.think{color:var(--warn)}.status.speak{color:#c39cff}.status.error{color:var(--err)}
+    .grid { display:grid; grid-template-columns:1.25fr .75fr; gap:16px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:17px; }
+    .panel h2 { font-size:15px; margin:0 0 12px; color:#cbd6e8; }
+    .conversation { min-height:315px; }
+    .label { color:var(--muted); font-size:12px; margin-top:13px; }
+    .text { min-height:42px; padding:9px 0; font-size:17px; line-height:1.65; white-space:pre-wrap; }
+    .partial { color:#92a3bd; }
+    .ambient { color:#7e8ba1; font-size:14px; }
+    .assistant { color:#d7c3ff; }
+    .metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+    .metric { border:1px solid var(--line); border-radius:10px; padding:11px; background:#0f141e; }
+    .metric span { display:block; color:var(--muted); font-size:11px; line-height:1.35; }
+    .metric strong { display:block; margin-top:5px; font-size:17px; }
+    .live { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    .live div { background:#0f141e; border-radius:9px; padding:10px; text-align:center; }
+    .live small { color:var(--muted); display:block; margin-bottom:5px; }
+    .state { margin-top:12px; border-top:1px solid var(--line); padding-top:12px; display:flex; justify-content:space-between; color:var(--muted); }
+    #log { max-height:270px; overflow:auto; font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .log-row { padding:5px 0; border-bottom:1px solid rgba(255,255,255,.04); color:#aab6ca; }
+    .log-row.ok { color:var(--ok); }.log-row.warn{color:var(--warn)}.log-row.error{color:var(--err)}.log-row.ai{color:#cfb8ff}
+    code { color:#a9c1ff; }
+    @media(max-width:800px){ .grid{grid-template-columns:1fr} header{flex-direction:column}.metrics{grid-template-columns:1fr 1fr} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Qwen Smart Duplex · 自定义 LLM/TTS Demo</h1>
+      <div class="sub">Qwen-Audio Realtime 负责 ASR + smart_turn；自定义 LLM 负责内容；Qwen-Audio-TTS 负责可控表达。<br><code id="models">尚未连接</code></div>
+    </div>
+    <div>
+      <div class="actions"><select id="bargeMode" title="打断策略"><option value="qwen" selected>推荐：Qwen smart_turn 主导 · 暂停后语义裁决</option><option value="cloud-hard">最快：Qwen speech_started 立即硬切</option><option value="semantic">对照：云端起声暂停 · legacy 逻辑</option><option value="hybrid">对照：本地噪声候选 + 云端</option><option value="hard">危险：本地候选立即硬切</option><option value="duck">旧版：本地 Duck</option></select><button id="startBtn" class="primary">启动全双工测试</button><button id="stopBtn" disabled>停止</button></div>
+      <div style="margin-top:10px"><span id="status" class="status">未启动</span></div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="panel conversation">
+      <h2>实时对话</h2>
+      <div class="label">ASR 增量</div><div id="asrPartial" class="text partial">点击启动后直接说话</div>
+      <div class="label">你的最终文本</div><div id="asrFinal" class="text">—</div>
+      <div class="label">AI 流式回答</div><div id="assistant" class="text assistant">—</div>
+      <div class="label">smart_turn 忽略的附和/环境音</div><div id="ambient" class="text ambient">—</div>
+    </section>
+
+    <aside class="panel">
+      <h2>全链路延迟</h2>
+      <div class="metrics">
+        <div class="metric"><span>端点 → ASR Final</span><strong id="mAsr">—</strong></div>
+        <div class="metric"><span>端点 → LLM 首字</span><strong id="mToken">—</strong></div>
+        <div class="metric"><span>端点 → 首音频</span><strong id="mAudio">—</strong></div>
+        <div class="metric"><span>LLM 请求 → 首字</span><strong id="mLlm">—</strong></div>
+        <div class="metric"><span>TTS task → 首文本提交</span><strong id="mTtsTextWait">—</strong></div>
+        <div class="metric"><span>TTS task → 首音频</span><strong id="mTts">—</strong></div>
+        <div class="metric"><span>TTS 首文本 → 首音频</span><strong id="mTtsText">—</strong></div>
+        <div class="metric"><span>TTS 音频下发速度</span><strong id="mTtsSpeed">—</strong></div>
+        <div class="metric"><span>播放器断粮次数</span><strong id="mUnderflow">0</strong></div>
+        <div class="metric"><span>Qwen 起声/候选 → 静音</span><strong id="mSilence">—</strong></div>
+        <div class="metric"><span>确认打断 → 清缓存</span><strong id="mInterrupt">—</strong></div>
+      </div>
+      <h2 style="margin-top:18px">麦克风与播放器</h2>
+      <div class="live">
+        <div><small>Mic dBFS</small><b id="dbfs">—</b></div>
+        <div><small>底噪 dBFS</small><b id="noiseFloor">—</b></div>
+        <div><small>SNR dB</small><b id="snr">—</b></div>
+        <div><small>播放缓存</small><b><span id="bufferMs">0</span> ms</b></div>
+        <div><small>播放音量</small><b id="gainValue">100%</b></div>
+        <div><small>轮次状态</small><b id="turnState">IDLE</b></div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="panel" style="margin-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2>事件日志</h2><button id="clearLog">清空</button></div>
+    <div id="log"></div>
+  </section>
+
+  <p class="sub">默认由 Qwen-Audio smart_turn 主导：本地 dBFS/SNR 只展示，不改变播放。云端 speech_started 后暂停并完整保留音频；turn_invalid/环境附和时原位续播，有效 ASR 出现后才清空并取消。</p>
+</main>
+<script src="/static/app.js?v=1.7.0"></script>
+</body>
+</html>

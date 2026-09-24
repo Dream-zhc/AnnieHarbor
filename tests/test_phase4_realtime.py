@@ -285,6 +285,115 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats["p50_ms"], stats["p95_ms"])
         self.assertGreater(stats["p50_ms"], 0)
 
+    async def test_new_speech_does_not_inherit_previous_utterance_endpoint(self):
+        client = self.runtime.realtime["annie-a"]
+        client.last_provider_stopped_ms = 123456
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "new-utterance"}, client.robot.generation)
+        self.assertIsNone(client.last_provider_stopped_ms)
+        client._create_turn("新一轮", audio=True)
+        timeline = client.snapshot()["last_turn_timeline"]
+        self.assertIsNone(timeline["times"]["speech_stopped_ms"])
+        self.assertIsNone(timeline["durations"]["endpoint_to_speaker_start_ms"])
+
+    async def test_diagnostics_capture_exact_session_prompt_and_bounded_tool_evidence(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+
+        class Memory:
+            async def bootstrap(self, robot, persona, chat):
+                self_scope = (robot, persona, chat)
+                assert self_scope == ("annie-a", "annie", "default")
+                return "\n记忆：\n[当前Chat约束] 本次少开玩笑\n[长期事实] 用户喜欢茶"
+
+            async def recall(self, _robot, _persona, _query):
+                return {"status": "ok", "evidence": [{"id": "m1", "text": "用户喜欢茶"}]}
+
+        client.memory = Memory()
+        await client.restart()
+        for _ in range(100):
+            if client.ready:
+                break
+            await asyncio.sleep(.01)
+        self.assertTrue(client.ready)
+        self.assertNotIn("prompt_snapshot", client.snapshot())
+        self.assertNotIn("prompt_snapshot", self.runtime.realtime_state("annie-a"))
+        prompt = client.diagnostic_snapshot()["prompt_snapshot"]
+        self.assertEqual(self.runtime.realtime_diagnostics("annie-a")["prompt_snapshot"], prompt)
+        outgoing = client.socket.outbound[0]["session"]
+        self.assertEqual(prompt["instructions"], outgoing["instructions"])
+        self.assertEqual(prompt["bootstrap_count"], 2)
+        self.assertIn("recall_memory", prompt["tool_names"])
+        self.assertEqual(prompt["provider_session_id"], client.session)
+        self.assertEqual(other.diagnostic_snapshot()["prompt_snapshot"]["bootstrap_count"], 0)
+        await client.submit_text("以前我喜欢喝什么")
+        turn_id = client.turn_id
+        await client._tool_call({"call_id": "memory-call", "name": "recall_memory",
+                                 "arguments": '{"query":"喜欢喝什么"}'})
+        for _ in range(600):
+            client.publish("transcript.delta", text="热事件")
+        history = client.diagnostic_snapshot()["tool_history"]
+        refs = client.diagnostic_snapshot()["turn_prompt_refs"]
+        self.assertEqual(refs[-1], {"turn_id": turn_id,
+                                    "provider_session_id": prompt["provider_session_id"]})
+        self.assertEqual(client.diagnostic_snapshot()["prompt_history"][-1]["instructions"],
+                         outgoing["instructions"])
+        self.assertEqual([item["kind"] for item in history], ["tool.called", "tool.result"])
+        self.assertEqual(history[-1]["turn_id"], turn_id)
+        self.assertEqual(history[-1]["evidence_count"], 1)
+        self.assertEqual(history[-1]["result"]["evidence"][0]["id"], "m1")
+        self.assertEqual(other.diagnostic_snapshot()["tool_history"], [])
+        await client.restart()
+        self.assertEqual(client.diagnostic_snapshot()["tool_history"], [])
+        self.assertEqual(client.diagnostic_snapshot()["turn_prompt_refs"], [])
+        self.assertEqual(client.diagnostic_snapshot()["prompt_history"], [])
+
+    async def test_turn_diagnostics_keep_action_viseme_and_timing_per_turn(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+        await client.submit_text("请点下头")
+        first = client.turn_id
+        client.publish("tts.first_audio", turn_id=first)
+        client.publish("tts.first_published", turn_id=first)
+        client.publish("action.state", turn_id=first, call_id="motion-1",
+                       action_kind="action", action_value="agree_micro_nod",
+                       status="published_unknown", real_device_executed=False,
+                       device_completion="unknown")
+        for index in range(100):
+            client.publish("viseme.aligned", turn_id=first, viseme="a",
+                           start_sample=index * 100, end_sample=index * 100 + 100)
+        for _ in range(700):
+            client.publish("transcript.delta", text="not_this_turn")
+        capture = client.diagnostic_snapshot()
+        one = next(item for item in capture["turn_timelines"]
+                   if item["turn_id"] == first)
+        self.assertEqual(one["viseme_count"], 100)
+        self.assertIsNotNone(one["times"]["llm_request_ms"])
+        self.assertIsNotNone(one["times"]["tts_first_pcm_ms"])
+        selected = [event for event in capture["turn_events"]
+                    if event["turn_id"] == first]
+        self.assertEqual(len([event for event in selected
+                              if event["kind"] == "viseme.aligned"]), 3)
+        self.assertEqual(next(event for event in selected
+                              if event["kind"] == "action.state")["status"],
+                         "published_unknown")
+        self.assertEqual(other.diagnostic_snapshot()["turn_events"], [])
+        await client.handle({"type": "response.done", "response": {
+            "status": "completed"}}, client.robot.generation)
+        await client.submit_text("第二轮")
+        second = client.turn_id
+        client.publish("action.state", turn_id=second, call_id="motion-2",
+                       status="rejected_late", real_device_executed=False)
+        capture = client.diagnostic_snapshot()
+        one_events = [event for event in capture["turn_events"]
+                      if event["turn_id"] == first]
+        two_events = [event for event in capture["turn_events"]
+                      if event["turn_id"] == second]
+        self.assertFalse(any(event.get("call_id") == "motion-2"
+                             for event in one_events))
+        self.assertTrue(any(event.get("call_id") == "motion-2"
+                            for event in two_events))
+
     async def test_speculative_hold_is_reversible_and_keeps_robot_scope(self):
         client = self.runtime.realtime["annie-a"]
         other = self.runtime.realtime["annie-b"]
@@ -450,6 +559,38 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(0.01)
         self.assertTrue(all(client.ready for client in self.runtime.realtime.values()))
+
+    async def test_qwen_speech_is_relayed_to_voice_by_brain_not_as_direct_cloud_message(self):
+        class Voice:
+            def __init__(self):
+                self.messages = []
+
+            async def publish(self, message):
+                self.messages.append(message)
+
+            async def close(self):
+                pass
+
+        voice = Voice()
+        client = self.runtime.realtime["annie-a"]
+        self.runtime.voice_publishers["annie-a"] = voice
+        client.voice_event = lambda kind, event: self.runtime._send_voice_event(
+            "annie-a", kind, event,
+        )
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "win-mic-speech"}, client.robot.generation)
+        for _ in range(20):
+            if voice.messages:
+                break
+            await asyncio.sleep(.005)
+        self.assertEqual(voice.messages[0]["type"], "voice.interaction")
+        self.assertEqual(list(voice.messages[0])[:3], ["type", "description", "ts"])
+        self.assertEqual(voice.messages[0]["description"], "检测到用户开始说话")
+        self.assertEqual(voice.messages[0]["data"]["sender"], "brain")
+        self.assertEqual(voice.messages[0]["data"]["trigger_source"], "qwen_realtime")
+        self.assertEqual(voice.messages[0]["data"]["event"], "speech.started")
+        self.assertEqual(voice.messages[0]["data"]["item_id"], "win-mic-speech")
+        self.assertEqual(self.runtime.realtime["annie-b"].voice_event, None)
 
     async def test_per_robot_text_delta_ledger_and_generation(self):
         client = self.runtime.realtime["annie-a"]

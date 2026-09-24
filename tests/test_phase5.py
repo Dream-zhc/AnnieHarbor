@@ -84,6 +84,11 @@ class ContextSelectionTests(unittest.TestCase):
             self.assertIn("一次性要求在当轮执行后即结束", text)
             self.assertIn("用户再次开口或换话题时", text)
             self.assertIn("回复长度由当轮需要决定", text)
+            self.assertIn("不问也能自然收住", text)
+            self.assertIn("上一轮是否已经问过", text)
+            self.assertIn("连续简短应答", text)
+            self.assertIn("只问一个对方刚提到的未展开细节", text)
+            self.assertIn("绝不牺牲本轮答案去制造下轮话题", text)
             self.assertIn("不为短而漏掉重点", text)
             self.assertNotIn("普通闲聊通常一到三句", text)
         self.assertIn("有主见的熟人", instructions[0])
@@ -103,6 +108,16 @@ class ContextSelectionTests(unittest.TestCase):
         self.assertEqual(session_instructions("annie", PROFILES, {
             "question_pressure": {"source": "sensor", "value": "none"},
         })[1]["question_pressure"], "normal")
+        normal, _ = session_instructions("annie", PROFILES, {})
+        low, _ = session_instructions("annie", PROFILES, {
+            "question_pressure": {"source": "user_setting", "value": "low"},
+        })
+        none, _ = session_instructions("annie", PROFILES, {
+            "question_pressure": {"source": "user_setting", "value": "none"},
+        })
+        self.assertIn("确有新细节且对方愿意展开", normal)
+        self.assertIn("默认不主动用问题续话", low)
+        self.assertIn("不要用问句续话", none)
 
     def test_correction_and_negation_kept_with_newest_first_budget(self):
         history = [row("1", "喜欢茶", "好"), row("2", "不是茶，是咖啡", "收到")]

@@ -139,12 +139,26 @@ def test_second_requires_new_topic_and_never_third_until_user_replies():
     async def run():
         service, clients, _, _, model = setup(
             {"decision": "SPEAK", "topic": "喝茶"},
-            {"decision": "SPEAK", "topic": "喝茶"}, robots=("a",))
+            {"decision": "SPEAK", "topic": "喝茶", "new_value": True}, robots=("a",))
         service.observe_visual("a", person())
         service.observe_visual("a", person())
         await settle(service, "a")
         assert len(clients["a"].messages) == 1
         assert service.snapshot("a")["attempts"] == 1
+        await settle(service, "a")
+        assert len(model.calls) == 1  # submission is not physical playback
+        assert service.snapshot("a")["reason"] == "await_speaker_receipt"
+        service.on_event("a", {"kind": "tts.playback.started", "turn_id": "fake",
+                               "source": "browser_test", **identity("a")})
+        assert not service.snapshot("a")["speaker_started"]
+        service.on_event("a", {"kind": "tts.playback.started", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        service.on_event("a", {"kind": "tts.playback.drained", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        await settle(service, "a")
+        assert len(model.calls) == 1  # same visual scene is not new value
+        assert service.snapshot("a")["reason"] == "second_no_new_evidence"
+        service.observe_visual("a", person(("cup",)))
         await settle(service, "a")
         assert model.calls[-1]["attempt"] == 2
         assert model.calls[-1]["previous"] == "喝茶"
@@ -152,6 +166,114 @@ def test_second_requires_new_topic_and_never_third_until_user_replies():
         await service.tick()
         assert len(model.calls) == 2
         assert service.snapshot("a")["reason"] == "repeated_or_empty"
+    asyncio.run(run())
+
+
+def test_second_requires_explicit_new_value_even_with_new_scene():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "书本"},
+            {"decision": "SPEAK", "topic": "茶杯", "new_value": False}, robots=("a",))
+        service.observe_visual("a", person(("book",)))
+        service.observe_visual("a", person(("book",)))
+        await settle(service, "a")
+        service.observe_visual("a", person(("cup",)))
+        await settle(service, "a")
+        assert len(model.calls) == 1
+        service.on_event("a", {"kind": "tts.playback.started", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        service.on_event("a", {"kind": "tts.playback.drained", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        await settle(service, "a")
+        assert len(model.calls) == 2
+        assert len(clients["a"].messages) == 1
+        assert service.snapshot("a")["reason"] == "repeated_or_empty"
+    asyncio.run(run())
+
+
+def test_second_speaks_only_after_verified_playback_new_scene_and_cooldown():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "看书"},
+            {"decision": "SPEAK", "topic": "喝茶", "new_value": True}, robots=("a",))
+        service.observe_visual("a", person(("book",)))
+        service.observe_visual("a", person(("book",)))
+        await settle(service, "a")
+        service.on_event("a", {"kind": "tts.playback.started", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        service.on_event("a", {"kind": "tts.playback.drained", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        service.second_seconds = 120
+        service.observe_visual("a", person(("cup",)))
+        await settle(service, "a")
+        assert service.snapshot("a")["reason"] == "second_cooldown"
+        service.rows["a"]["speaker_drained_at"] -= 121
+        await settle(service, "a")
+        assert len(clients["a"].messages) == len(model.calls) == 2
+        assert service.snapshot("a")["attempts"] == 2
+        await service.tick()
+        assert len(model.calls) == 2
+        assert service.snapshot("a")["model_ms"] is not None
+    asyncio.run(run())
+
+
+def test_changing_person_subject_id_resets_stability():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "安全公共话题"}, robots=("a",))
+        service.observe_visual("a", person())
+        switched = {"facts": {"subjects": [
+            {"id": "different", "kind": "person", "confidence": .95},
+        ]}}
+        service.observe_visual("a", switched)
+        await service.tick()
+        assert service.snapshot("a")["presence_samples"] == 1
+        assert model.calls == clients["a"].messages == []
+        service.observe_visual("a", switched)
+        await settle(service, "a")
+        assert len(model.calls) == len(clients["a"].messages) == 1
+    asyncio.run(run())
+
+
+def test_speech_start_or_second_person_suppresses_active_planning():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "看书"}, robots=("a",))
+        service.observe_visual("a", person())
+        service.observe_visual("a", person())
+        model.gate = asyncio.Event()
+        await service.tick()
+        await asyncio.sleep(0)
+        service.on_event("a", {"kind": "speech.started", **identity("a")})
+        model.gate.set()
+        await service.tasks["a"]
+        assert clients["a"].messages == []
+        assert service.snapshot("a")["attempts"] == 2
+        assert service.snapshot("a")["reason"] == "speech_preempted"
+        service.observe_visual("a", {"facts": {"subjects": [
+            {"id": "a", "kind": "person", "confidence": .99},
+            {"id": "b", "kind": "person", "confidence": .99},
+        ]}})
+        await service.tick()
+        assert service.snapshot("a")["presence_samples"] == 0
+        assert len(model.calls) == 1
+    asyncio.run(run())
+
+
+def test_two_heads_have_independent_qualified_graph_calls():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "公共内容一"},
+            {"decision": "SPEAK", "topic": "公共内容二"})
+        for rid in ("a", "b"):
+            service.observe_visual(rid, person())
+            service.observe_visual(rid, person())
+        await service.tick()
+        await asyncio.gather(*service.tasks.values())
+        assert len(model.calls) == 2
+        assert len(clients["a"].messages) == len(clients["b"].messages) == 1
+        assert clients["a"].messages[0][2]["robot_id"] == "a"
+        assert clients["b"].messages[0][2]["robot_id"] == "b"
     asyncio.run(run())
 
 
@@ -193,6 +315,55 @@ def test_disabled_has_no_worker_or_provider_calls():
     asyncio.run(run())
 
 
+def test_enabled_idle_subscribes_each_head_own_visual_room(tmp_path):
+    from annie_adapters import RoomServerConfig
+    from annie_core import RobotConfig
+    from annie_runtime import HarborRuntime
+
+    from tests.test_phase5 import FakeSocket
+
+    root = "ws://localhost:1/robot"
+    channels = {name: "reb_" + name for name in (
+        "main", "tts", "mic", "visualdata", "vision", "sam", "visualllm")}
+    room = RoomServerConfig(
+        base_url=root + "/roomv2", room_root=root, channels=channels,
+        default_urls={name: root + "/roomv2/" + channel
+                      for name, channel in channels.items()},
+    )
+    rt = HarborRuntime(
+        [RobotConfig("a", room_id="roomv2"), RobotConfig("b", room_id="roomv3")],
+        tmp_path / "idle-rooms.db", room, realtime_key="fake",
+        realtime_socket_factory=FakeSocket, idle_model=Model(),
+    )
+    assert next(item.url for item in rt.playback_listeners["a"]
+                if item.channel == "visualllm") == root + "/roomv2/reb_visualllm"
+    assert next(item.url for item in rt.playback_listeners["b"]
+                if item.channel == "visualllm") == root + "/roomv3/reb_visualllm"
+
+
+def test_chat_switch_needs_new_chat_user_turn_before_any_planning():
+    async def run():
+        service, clients, identities, _, model = setup(
+            {"decision": "SPEAK", "topic": "公共话题"}, robots=("a",))
+        clients["a"]._last_user_turn_identity = dict(identities["a"])
+        identities["a"]["chat_id"] = "new-chat"
+        service.observe_visual("a", person())
+        service.observe_visual("a", person())
+        await service.tick()
+        assert len(model.calls) == 0
+        assert service.snapshot("a")["reason"] == "waiting_user_turn"
+        clients["a"]._last_user_turn_identity = dict(identities["a"])
+        clients["a"]._last_user_turn_at = time.monotonic() - 200
+        clients["a"]._last_conversation_activity_t = clients["a"]._last_user_turn_at
+        await service.tick()
+        service.observe_visual("a", person())
+        service.observe_visual("a", person())
+        await settle(service, "a")
+        assert len(model.calls) == 1
+        assert clients["a"].messages[0][2]["chat_id"] == "new-chat"
+    asyncio.run(run())
+
+
 def test_runtime_idle_submission_is_internal_and_scoped_to_own_robot(tmp_path):
     from annie_core import RobotConfig
     from annie_runtime import HarborRuntime
@@ -219,6 +390,7 @@ def test_runtime_idle_submission_is_internal_and_scoped_to_own_robot(tmp_path):
             rt._current_visual = lambda robot_id: "现场有人" if robot_id == "a" else None
             a, b = rt.realtime["a"], rt.realtime["b"]
             a._last_user_turn_at = time.monotonic() - 120
+            a._last_user_turn_identity = a.robot.session_state()
             a._last_conversation_activity_t = a._last_user_turn_at
             await rt.idle.tick()  # synchronize session ownership first
             rt.idle.observe_visual("a", person(("book",)))

@@ -171,11 +171,12 @@ def main():
         provider_defaults = tomllib.load(file)
     idle_enabled = os.environ.get("ANNIE_IDLE_ENABLED") == "1"
     if idle_enabled and (not os.environ.get("DASHSCOPE_API_KEY")
-                         or os.environ.get("ANNIE_TTS_ENABLED") != "1"):
-        raise ValueError("8C idle planning requires DASHSCOPE_API_KEY and ANNIE_TTS_ENABLED=1")
+                         or os.environ.get("ANNIE_TTS_ENABLED") != "1"
+                         or os.environ.get("ANNIE_IDLE_TRUSTED_ROOM") != "1"):
+        raise ValueError("8C requires API key, TTS, and explicit trusted-room consent")
     idle_model = None
     if idle_enabled:
-        from annie_brain.idle_plan import QwenIdleModel
+        from annie_adapters.idle import QwenIdleModel
 
         inquiry = provider_defaults["llm"]["inquiry"]
         idle_model = QwenIdleModel(

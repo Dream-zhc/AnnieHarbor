@@ -20,11 +20,11 @@ model = "qwen-flash"
 timeout_ms = 1500
 
 [llm.inquiry]
-model = "qwen3.8-flash"
+model = "qwen3.8-max-0902"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 enable_thinking = true
 reasoning_effort = "low"
-timeout_sec = 8.0
+timeout_sec = 12.0
 max_concurrent = 1
 
 [llm.dialogue_state]

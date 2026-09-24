@@ -8,6 +8,8 @@ type EventSnapshot={facts:unknown[];events:EventRow[];pending_count:number;
   complex_task:string;chat_id:string;persona_id:string;generation:number;
   idle?:{enabled:boolean;status:string;reason:string|null;decision:string|null;
     last_model_decision:string|null;last_topic:string;
+    model:string|null;model_ms:number|null;turn_id:string|null;
+    speaker_started:boolean;speaker_drained:boolean;
     attempts:number;presence_samples:number;presence_age_ms:number|null;updated_ms:number}};
 type Reminder={task_id:string;text:string;status:string;reason:string|null;
   due_ms:number;version:number;turn_id:string|null;result:unknown;checkpoint:unknown;
@@ -21,6 +23,17 @@ const reminderStatus:Record<string,string>={
   scheduled:'已排期',paused:'已暂停',submitting:'正在提交',
   submitted_unknown:'已提交处理',played:'已播报',spoken:'已播报',
   cancelled:'已取消',expired:'已过期',send_unknown:'提交异常',
+};
+const idleReason:Record<string,string>={
+  waiting_user_turn:'等待用户交谈',max_attempts:'本轮已结束',
+  visual_missing_or_disconnected:'视觉未连接或已过期',person_unconfirmed:'人物证据不足',
+  conversation_busy:'正在对话',playback_active:'扬声器播放中',
+  external_event_pending:'事件待处理',idle_wait:'尚未达到空闲阈值',
+  second_cooldown:'二次追问冷却中',second_no_new_evidence:'无新场景',
+  await_speaker_receipt:'等待真机播完回执',speaker_interrupted:'播放被打断',
+  speech_preempted:'用户插话，已取消',model_no_speak:'模型决定不说',
+  repeated_or_empty:'无新的话题价值',realtime_unavailable:'实时模型未就绪',
+  tts_unavailable:'TTS未就绪',
 };
 
 export function ExternalEvents({robotId,session,events}:{robotId:string;session:Session|null;events:RealtimeEvent[]}){
@@ -117,9 +130,13 @@ export function ExternalEvents({robotId,session,events}:{robotId:string;session:
       </div>:<p className="empty-copy">暂无定时提醒任务</p>}
       <div className="events-facts-section">
         <div className="info-line"><span>8C 主动交谈</span><strong>{!snapshot.idle?.enabled?'未启用':
-          snapshot.idle.status+' · '+(snapshot.idle.reason??snapshot.idle.decision??'候选')}</strong></div>
+          snapshot.idle.status+' · '+(idleReason[snapshot.idle.reason??'']??snapshot.idle.reason??snapshot.idle.decision??'候选')}</strong></div>
         {snapshot.idle?.enabled&&<div className="info-line"><span>现场人物证据</span>
           <strong>{snapshot.idle.presence_samples} 帧 · 第 {snapshot.idle.attempts}/2 次</strong></div>}
+        {snapshot.idle?.enabled&&<div className="info-line"><span>独立规划模型</span>
+          <strong>{snapshot.idle.model??'待配置'} · {snapshot.idle.model_ms===null?'未请求':snapshot.idle.model_ms+'ms'}</strong></div>}
+        {snapshot.idle?.turn_id&&<div className="info-line"><span>真机播放回执</span>
+          <strong>{snapshot.idle.speaker_drained?'已播完':snapshot.idle.speaker_started?'已起声':'未确认起声'}</strong></div>}
         {snapshot.idle?.last_model_decision&&<div className="info-line"><span>最近规划</span>
           <strong>{snapshot.idle.last_model_decision} · {snapshot.idle.last_topic||'保持安静'}</strong></div>}
         <div className="info-line"><span>待处理发声</span><strong>{snapshot.pending_count}</strong></div>

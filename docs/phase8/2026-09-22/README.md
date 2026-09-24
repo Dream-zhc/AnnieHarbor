@@ -13,12 +13,14 @@
 - Fake Qwen/SQLite回归覆盖Session工具声明、7200秒创建任务、重复call_id去重、跨机器人隔离、外部事件拒绝；另使用独立真实Qwen Realtime文字会话验证该输入返回`create_reminder`，参数`{"text":"取外卖","delay_seconds":7200}`且本轮未先输出文本。真实模型测试**未写入生产Runtime/SQLite或现场Room**，真实口语到期提醒与设备播放仍待验。
 - 8C已按以下「可选首版」接入；此前的“未实现”是2026-09-23时点状态，不能视为今日现场验收结论。
 
-## 2026-09-24｜8C 可选主动规划首版（现场待验）
+## 2026-09-24｜8C 主动规划软件闭环（现场验收待完成）
 
-- 启用：默认 `ANNIE_IDLE_ENABLED=0`。仅同时配置真实TTS及 `DASHSCOPE_API_KEY` 才能显式设置为1；部署前须确认所属 Room 的 `reb_visualllm` 已提供结构化人物事实。独立Qwen使用 `config/providers.toml` 的 `llm.inquiry`（当前 `qwen3.8-flash`，超时8秒、单客户端连接）。用户提出的“qwen3.8-plus”尚无已核实模型ID，不擅自编造或替换。可在验证百炼地域支持后用 `ANNIE_IDLE_MODEL` 覆盖。
-- 判定：仅在有效用户回合之后、普通会话/PCM/TTS空闲超过60秒，且**实际已连接的视觉房间**最近10秒的v2结构化 `facts.subjects` 至少两帧、间隔至少1秒明确包含置信度≥0.8的person/human/人，才允许一次8C候选。自然语言“有人”不算人物证据；`roomv3`无已接入视觉监听则不会臆造人物。模型最多两次；第二次至少120秒且持续有人、不同话题，无答复不追第三次。任一模型超时/错误/NO_SPEAK直接收束这段静默，不轮询重试模型。
-- 权限：Graph仅在候选成立时运行，始终不直接发房间/电机/扬声器。独立Qwen仅收到匿名公共场景的有限物体类别，不传当前Chat或长期记忆；Realtime使用既有 `source=external`，工具层拦截动作、表情、提醒及记忆召回/写入。现场人物**未验证是原用户**，故默认关闭且不得用此链路公开私人记忆；同一Realtime Session本身保留上下文，现阶段仍未得到对生成内容的强隐私保证，不能作为开放场所无条件自动搭话的验收证明。
-- 多头：robot/chat/persona/session_epoch/generation分别绑定；模型异步完成后先复核身份、人物新鲜度及语音/播放门控，晚到不得插入新的用户回合。工作台原「定时提醒与事件」面板显示`idle.policy`决定/抑制原因/在场帧数/次数；`submitted_unknown`仅证实送进Realtime，**不等于物理播放**。本轮新增 `tests/test_phase8c_idle.py` 的软件隔离与Fake Realtime/Graph用例；真Room、真实Qwen、双头以及扬声器和用户感受另需现场P8-W4验收。
+- 模型：**独立规划专用** `qwen3.8-max-0902`，从 `config/providers.toml` 的 `llm.inquiry` 读取，12秒独立超时、最多2个HTTP连接，显式 `enable_thinking=false` 以保持后台决策延迟可控；`ANNIE_IDLE_MODEL` 可覆盖。普通Qwen-Audio Realtime、记忆抽取及天气工具模型均不变。已在项目当前百炼配置下真实调用，成功返回合法结构化SPEAK/new_value；该请求不是整条Room/TTS真机实测。
+- 启用：`ANNIE_IDLE_ENABLED=1`、`ANNIE_TTS_ENABLED=1`、`ANNIE_IDLE_TRUSTED_ROOM=1` 和 `DASHSCOPE_API_KEY` 缺一不能启动8C。**仅运营者明确确认受控私有空间**才设 trusted-room，不要在公共区域启用；模型仍复用已有Realtime Chat，因此不保证从云端已有历史中绝不生成私密细节，未验证现场人物身份时不可宣称已完成隐私验收。
+- 判定：有效用户回合结束超过约60秒，当前TTS/音频/事件均无抢占，Room `reb_visualllm` 连接新鲜（≤10秒），同一私有场景中恰好1个人、v2结构化 `facts.subjects` 至少2帧相隔≥1秒且置信度≥0.8，才调用一次Graph+独立Qwen。自然语言“有人”不构成人物证明；`roomv3`尚无可用视觉监听时保持静默。超时、失败或NO_SPEAK均本轮静默不重试。
+- 二次追问：第一句必须有**同轮真实speaker started + drained回执**，从实际播完起至少120秒，持续有人且有不同于第一句的新公共场景证据，同时模型结构化 `new_value=true` 且新话题与上一句非重复才允许；最多两次，不可凭 `submitted_unknown`、网页试听或本地PCM完成继续追问。所有音频/视觉/Chat/Persona/generation在异步完成后复核；用户语音开始立刻作废候选并禁用本轮再次尝试。
+- 权限：Graph不发房间/电机，规划模型仅见公共物体类别，不携带历史对话和记忆；最终表达仍通过当前Realtime/TTS。外部回合禁止物理动作、表情、提醒创建和记忆召回/改写；未实测原Chat记忆可能混入最终生成文本的强隔离，**不得在公共场所开启**。
+- 诊断与验收：工作台「定时提醒与事件」展示模型、实际规划耗时、抑制原因、次数和真机播放回执；`submitted_unknown`仅证明提交Realtime。本轮Fake Graph/Realtime/双头/视觉/打断、Qwen HTTP MockTransport验证见 `tests/test_phase8c_idle.py`、`tests/test_phase8c_model.py`。P8-W4还需真实持续视频流、真实模型与Realtime回答、设备开始/结束播报、双头及隐私人工验收；网页/模拟用例不代填这些结论。
 
 ## 8A 已实现的软件边界
 

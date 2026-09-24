@@ -132,6 +132,9 @@ class RealtimeRobot:
         self.last_provider_stopped_ms = None
         self._last_conversation_activity_t = time.monotonic()
         self._last_user_turn_at = None  # monotonic, not a wall clock or last external event
+        self._last_user_turn_identity = None
+        self._last_provider_speech_started_t = None
+        self.idle_observer = None
         self._idle_recycled = False
         self._turn_timelines = {}
         self._turn_prompt_snapshots = {}
@@ -189,6 +192,8 @@ class RealtimeRobot:
         return result
 
     def publish(self, kind, **fields):
+        if kind == "speech.started":
+            self._last_provider_speech_started_t = time.monotonic()
         if kind == "tts.playback.drained" and fields.get("source") == "speaker":
             self._unheard_output_ids.pop(fields.get("turn_id"), None)
             turn = self.robot.turn_cache.get(fields.get("turn_id"))
@@ -263,6 +268,8 @@ class RealtimeRobot:
                         records.pop(0)
                     records.append(event)
         self.events.append(event)
+        if self.idle_observer is not None:
+            self.idle_observer(event)
         if self.voice_event and kind in {
             "speech.started", "speech.stopped", "transcript.done",
             "transcript.ambient", "transcript.ambient_promoted",
@@ -955,6 +962,8 @@ class RealtimeRobot:
         now = time.time_ns() // 1_000_000
         turn_id = uuid4().hex
         identity = self.robot.session_state()
+        if source == "user":
+            self._last_user_turn_identity = dict(identity)
         if source not in {"user", "external"}:
             raise ValueError("unsupported turn source")
         visible_text = user_text if source == "user" else ""
@@ -1049,6 +1058,7 @@ class RealtimeRobot:
             raise RobotUnavailableError("stale external session")
         if self.speech_active or self.turn_id or self.response_id:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
+        speech_at = self._last_provider_speech_started_t
         self.audio_turn_id = None
         self._create_turn(text, source=source)
         owned_turn = self.turn_id
@@ -1064,6 +1074,9 @@ class RealtimeRobot:
                 for key in ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
             ):
                 raise RobotUnavailableError("stale external session after send")
+            if (source == "external" and
+                    (self.speech_active or speech_at != self._last_provider_speech_started_t)):
+                raise RobotUnavailableError("external response preempted by speech")
             self.publish("llm.request_started", turn_id=self.turn_id)
             await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
         except Exception:

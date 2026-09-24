@@ -1028,6 +1028,9 @@ class HarborRuntime:
         self.idle = IdleService(self, idle_model, idle_seconds=idle_seconds,
                                 second_seconds=idle_second_seconds)
         for robot_id, client in self.realtime.items():
+            client.idle_observer = (
+                lambda event, robot_id=robot_id: self.idle.on_event(robot_id, event)
+            )
             client.reminders = self.reminders
             def wake_external(robot_id=robot_id):
                 self.events.wake(robot_id)
@@ -1067,8 +1070,10 @@ class HarborRuntime:
                         lambda message, robot_id=config.robot_id: self._room_external_event(
                             robot_id, "visualdata", message),
                     ))
-                # Camera descriptions currently belong only to roomv2.
-                if (room == "roomv2"
+                # Preserve the existing roomv2 listener; 8C needs independent
+                # visual evidence for every enabled robot's own Room.
+                if ((room == "roomv2" or
+                     idle_model is not None and config.robot_id in self.realtime)
                         and "visualllm" in room_server.channels):
                     listeners.append(RoomEventListener(
                         room_server, room, "visualllm",

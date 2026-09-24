@@ -2,7 +2,17 @@
 
 当前独立开发根：`/Users/dream/Documents/zhc/python/brainv2`。
 
-**状态：Phase 1本机收尾已通过；Phase 2真实Room PCM Gateway已接入，roomv2/roomv3真实Java Room数据面隔离已通过，浏览器真实麦克风回环待人工验收。** 原目录继续冻结，只读参考，不回写。
+**当前状态以[总计划执行摘要](docs/规划/小安妮V2后端开发总计划.md)及对应阶段验收记录为准；本页不重复维护阶段通过/待验结论。** 原目录继续冻结，只读参考，不回写。
+
+## 先看阶段目标
+
+[总计划开头的“业务边界与阶段效果”](docs/规划/小安妮V2后端开发总计划.md)先解释做完能看到什么；第25节是Phase 2–11逐阶段任务卡（目标、输入输出、必须做/保留、不做、验收、必须先问、交付），第32节是AI开工模板。阶段README只记录实际证据，不定义另一套目标。
+
+**固定业务模型：一机器人一独立Room，一房间六通道、一路PCM。** A→roomv2，B→roomv3；每个Room只归属一个机器人，六通道不因当前只接mic而删除。本期不做同房间多机器人或多音源混流。
+
+## Phase 4C：正式工作台基础与功能整合（规划）
+
+复用现有React + TypeScript工程及Phase 4/4B接线；4B正在开发，新增4C专门完善网页基础、接齐Phase 1–4B已有功能并验收布局/交互。之后功能在同一工作台追加，不重做4B、不另建前端。范围见[总计划第22/25节](docs/规划/小安妮V2后端开发总计划.md)，4C当前为规划，不代填完成。
 
 ## 开发前阅读
 
@@ -39,9 +49,9 @@
 
 ## 当前下一步
 
-先用`/phase-tests/phase2.html`完成人工真实麦克风回环：选择roomv2/roomv3对应机器人，确认麦克风帧持续发送且只有对应机器人的`accepted`增长；再执行页面“多房间隔离测试”。该人工验收通过后Phase 2收尾，再进入Phase 3。AEC、TTS输出、播放回执属于后续输出/全双工阶段，不再阻塞Phase 2输入Gateway。
+以[总计划“当前执行摘要”](docs/规划/小安妮V2后端开发总计划.md)和对应阶段README为准，不在这里维护另一份验收进度。Phase 3验收与进入Phase 4的门槛见[Phase 3记录](docs/phase3/2026-09-18/README.md)；本次增加React工作台规划，不代替用户验收或启动下一阶段。
 
-后续按`3会话/协调 → 4 Realtime音频输入/文本输出 → 4B独立TTS+最小嘴型 → 5上下文 → 6记忆 → 7真实工具/多设备 → 8事件/复杂工作流 → 9完整嘴型/观测 → 10复验`推进；Phase 11再评估复杂任务模型策略。
+后续按`4 React工作台+Realtime文字 → 4B独立TTS+最小嘴型 → 4C工作台基础/功能/布局整合 → 5上下文 → 6记忆 → 7真实工具 → 8事件/复杂工作流 → 9嘴型/观测 → 10复验`推进，均在同一正式工作台交付；Phase 11再评估复杂任务模型策略。
 
 **目标架构（规划，未接线）：** Qwen-Audio 3.0 Realtime Flash负责ASR、smart_turn、对话、Persona和Function Calling；普通聊天不经过LangGraph。保留独立Qwen-Audio-3.0-TTS-Flash与ForcedAligner（同一PCM+文本对齐后生成嘴型）；动作/表情/简单工具走Function Calling。事件经Event Router、Speak Policy、TurnCoordinator决定是否/何时开口；LangGraph仅负责复杂任务与结构化结果，Realtime统一最终表达。
 
@@ -60,7 +70,7 @@ uv run --locked ruff check apps packages tests/test_phase1.py tests/test_phase2.
 
 Windows使用`start.bat`进入同一个Python入口。当前sidecar仍未多头化；Phase 2只完成Room PCM输入，不把后续TTS/动作/嘴型输出能力提前标为完成。
 
-可视化验收页：`/phase-tests/phase1.html`用于单进程多头并发回合验收；`/phase-tests/phase2.html`用于真实麦克风→Java Room→Runtime回环和多Room PCM隔离验收。阶段HTML统一放`tests/html/`，最终整合时删除。
+可视化验收页：`/phase-tests/phase1.html`用于单进程多头并发回合验收；`/phase-tests/phase2.html`用于真实麦克风→Java Room→Runtime回环和多Room PCM隔离验收。Phase 1–5（含4B/4C）的阶段HTML统一放`tests/html/`；Phase 6及以后不新增独立HTML页，功能与网页验收直接进入现有React工作台。既有临时页按Phase 10最终整合安排、用户确认后清理，不提前删除。
 
 配置优先级固定为：CLI参数 > 已导出的系统环境变量 > 根目录`.env` > `config/*.toml`。机器本地配置从`.env.example`复制为`.env`；`.env`不提交。
 
@@ -70,10 +80,13 @@ Windows使用`start.bat`进入同一个Python入口。当前sidecar仍未多头�
 只在/Users/dream/Documents/zhc/python/brainv2开发。
 先读AGENTS.md、docs/README.md、PROJECT_RULES.md和后端总计划；不要默认扫描历史阶段资料。
 Phase 1骨架与本机审查收尾已经完成；Phase 2内部协议/PCM Gate已实现，不重复造Gateway。
-Phase 2真实Room PCM Adapter已经接入并完成roomv2/roomv3真实数据面隔离测试；进入Phase 3前只需完成人工浏览器麦克风回环验收。
+实际当前阶段与验收缺项按总计划执行摘要和对应阶段README核实，不从历史Phase 2说明推导当前进度。
+保留Phase 4/4B既有React与业务接线；Phase 4C统一补齐网页基础、前序功能和布局验收，之后持续追加。
 旧版只证明协议与行为，不决定V2结构；禁止运行时依赖父目录或robot_brain。
 当前Runtime只有Fake Brain；Room PCM输入已真实连接，Realtime/TTS/长期记忆/嘴型均未连接。
 目标热链是Room PCM → Realtime纯文本 → 独立TTS/ForcedAligner，正常聊天禁止经过LangGraph。
 LangGraph仅做复杂任务结构化结果；事件/工具续推理由TurnCoordinator协调，Persona按Session/revision加载。
-每个robot_id继续隔离可变状态；一个机器人只绑定一个Room，多个机器人通过不同room_id隔离。
+每个robot_id继续隔离状态；一机器人独占一个Room、六通道全保留、一路PCM输入，本期不做同房间多机器人。
+实施前按总计划第25/32节复述目标/效果、输入输出、保留项、不做事项、验收和未决问题。
+不明确的业务/协议/设备语义或删除配置/换模型/跨阶段扩展先问用户；相关改动等答复，不擅自替用户决定。
 ```

@@ -31,6 +31,12 @@ max_concurrent = 1
 model = "qwen3.8-flash"
 timeout_sec = 4.0
 
+# 后台长期记忆：只在有效用户回合结束后抽取，不阻塞Realtime。
+[memory]
+extract_model = "qwen3.8-flash"
+embedding_model = "text-embedding-v4"
+embedding_dimensions = 256
+
 [tts]
 provider = "qwen_audio"
 sentence_min_chars = 4
@@ -63,7 +69,7 @@ api_key_env = "AMAP_WEATHER_API_KEY"
 default_adcode = "110000"
 default_city = "北京市"
 timeout_ms = 1200
-http_retries = 1
+http_retries = 0 # 语音热路径不串行重试；失败返回诊断，避免放大延迟与 QPS
 live_cache_sec = 180
 forecast_cache_sec = 1800
 district_cache_sec = 86400

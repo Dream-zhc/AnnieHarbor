@@ -80,24 +80,53 @@ class ReminderStore:
                                    (item[0],))) for item in ids]
 
     def next_due(self, robot_id):
+        # Pending reminders remain durable until claimed or explicitly cancelled.
         with sqlite3.connect(self.path, timeout=5) as db:
             return self._row(db.execute("""SELECT * FROM phase8_reminders
                 WHERE robot_id=? AND status='scheduled'
                 ORDER BY due_ms LIMIT 1""", (robot_id,)))
 
+    def due_batch(self, robot_id, now_ms):
+        with sqlite3.connect(self.path, timeout=5) as db:
+            ids = db.execute("""SELECT task_id FROM phase8_reminders
+                WHERE robot_id=? AND status='scheduled' AND due_ms<=?
+                ORDER BY due_ms""", (robot_id, now_ms)).fetchall()
+            return [self._row(db.execute(
+                "SELECT * FROM phase8_reminders WHERE task_id=?", (task_id,)))
+                for (task_id,) in ids]
+
+    def claim_batch(self, robot_id, checkpoints, now_ms):
+        if not checkpoints:
+            return False
+        with sqlite3.connect(self.path, timeout=5) as db:
+            db.execute("BEGIN IMMEDIATE")
+            for task_id in checkpoints:
+                row = db.execute("SELECT status FROM phase8_reminders WHERE robot_id=? AND task_id=?",
+                                 (robot_id, task_id)).fetchone()
+                if row != ("scheduled",):
+                    return False
+            for task_id, checkpoint in checkpoints.items():
+                db.execute("""UPDATE phase8_reminders SET status='submitting',
+                    version=version+1, updated_ms=?, checkpoint=?, result=?
+                    WHERE robot_id=? AND task_id=?""", (now_ms,
+                    json.dumps(checkpoint, ensure_ascii=False),
+                    json.dumps(checkpoint["result"], ensure_ascii=False),
+                    robot_id, task_id))
+            return True
+
     def adopt_restart(self, identity, now_ms):
-        # initialize_session increments both counters exactly once per boot.
-        # Only the immediately preceding session of the same Chat/Persona
-        # is safe to recover; switching away and back cannot adopt old jobs.
+        # Repeated restarts must not strand an earlier pending task. Explicit
+        # Chat/Persona switches already invalidate their previous tasks.
         with sqlite3.connect(self.path, timeout=5) as db:
             db.execute("""UPDATE phase8_reminders SET session_epoch=?, generation=?,
-                version=version+1, updated_ms=?
+                version=version+1, updated_ms=?,
+                status=CASE WHEN status='expired' THEN 'scheduled' ELSE status END,
+                reason=CASE WHEN due_ms<=? THEN 'restart_recovered' ELSE reason END
                 WHERE robot_id=? AND chat_id=? AND persona_id=?
-                AND session_epoch=? AND generation=?
-                AND status IN ('scheduled', 'paused')""",
-                (identity["session_epoch"], identity["generation"], now_ms,
-                 identity["robot_id"], identity["chat_id"], identity["persona_id"],
-                 identity["session_epoch"] - 1, identity["generation"] - 1))
+                AND (status IN ('scheduled', 'paused') OR
+                     (status='expired' AND reason='late_reminder'))""",
+                (identity["session_epoch"], identity["generation"], now_ms, now_ms,
+                 identity["robot_id"], identity["chat_id"], identity["persona_id"]))
 
     def invalidate_owner(self, identity, now_ms):
         with sqlite3.connect(self.path, timeout=5) as db:

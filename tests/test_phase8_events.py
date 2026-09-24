@@ -85,7 +85,9 @@ def test_event_realtime_isolation_and_waiting(tmp_path):
             assert rows[-1]["turn_id"] == a.turn_id
             assert sum(x["type"] == "response.create" for x in a.socket.outbound) == 1
             assert not any(x["type"] == "response.create" for x in b.socket.outbound)
-            assert "非用户发言" in a.robot.cached_turn(a.turn_id)["user_text"]
+            assert a.robot.cached_turn(a.turn_id)["user_text"] == ""
+            assert a.robot.cached_turn(a.turn_id)["turn_source"] == "external"
+            assert "非用户发言" in a.robot.cached_turn(a.turn_id)["external_prompt"]
             async def never_dispatch(*args, **kwargs):
                 raise AssertionError("external event reached the motor")
             a.actions = SimpleNamespace(enabled=True, request=never_dispatch)

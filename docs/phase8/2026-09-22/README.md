@@ -6,6 +6,13 @@
 - 8A 与 8B 软件功能已接入；真实设备、Room/云端和浏览器人工验收统一留待用户执行。**软件回归通过不等于 Phase 8 完整验收 PASS。**
 - 8B 采用规划中已有的“已确认到期提醒”场景：一个用户明确提交内容及秒数的单次提醒；这是此次软件验证的具体范围，不推断用户同意了任何其他复杂任务或自主定时行为。
 
+## 2026-09-23｜职责补充及对话提醒缺口
+
+- 旧8B仅实现React「创建提醒」→HTTP→LangGraph→SQLite→到期发声；Realtime Session未声明`create_reminder`工具，`_tool_call`也不处理提醒。故用户在聊天输入“两小时后提醒我取外卖”时，模型可以说“收到”，但没有任何真实任务产生。截图中8B列表空不是Graph丢失事件，而是对话请求未进入任务流程；「最近事件」显示的是8A传感器策略，并非Graph节点流。
+- 本轮补接`create_reminder` Function Calling（仅当前真实用户回合，文本/1..86400秒明确相对时长），按`robot/chat/persona/session_epoch/generation`校验并经已有ReminderService与LangGraph创建任务。返回`scheduled + task_id + due_ms`后才可作创建成功依据；外部事件不许自主创建提醒。当前仅有模型指令及工具回执约束，**尚无逐字流式输出承诺的强制拦截**；若模型跳过工具却仍答应，依旧必须判验收失败，不把修接线宣称为100%消灭假承诺。
+- Fake Qwen/SQLite回归覆盖Session工具声明、7200秒创建任务、重复call_id去重、跨机器人隔离、外部事件拒绝；另使用独立真实Qwen Realtime文字会话验证该输入返回`create_reminder`，参数`{"text":"取外卖","delay_seconds":7200}`且本轮未先输出文本。真实模型测试**未写入生产Runtime/SQLite或现场Room**，真实口语到期提醒与设备播放仍待验。
+- 8C作为已确认的**后续规划范围**：Runtime管理约60秒空闲、人物在场、取消/冷却/发声许可；LangGraph按需调用独立Qwen评估不说/自然切入/严格二次追问；Realtime普通聊天不经Graph。8C当前未实现，没有独立Qwen模型验收、稳定人物存在信号和真实场景/双头/延迟证据；不能误写为本次已交付。
+
 ## 8A 已实现的软件边界
 
 - 复用所属 Room 的 `main`（已启用 TTS 时复用现有监听连接）及 `visualdata` 文本事件，不推断消息内自称的目标机器人；仅通过已经验证的 Room/socket 绑定路由。无 Realtime 时不额外创建事件 WS，避免影响 Phase 2 原有纯 PCM 网关。
@@ -20,15 +27,29 @@
 - 使用现有 LangGraph `StateGraph` 完成 `prepare → scheduled → due_checked → result_prepared` 单次提醒流程；SQLite 任务表持久保存每个阶段返回的 graph state/checkpoint、结构化结果、session 身份及版本。当前**不是 LangGraph 原生 AsyncSqliteSaver**：Graph 节点是短暂确定性的，持久化与恢复由业务 SQLite CAS 驱动，不宣称恢复节点内部的任意指令进度。
 - GET/POST `/api/robots/{robot_id}/reminders`、POST `/reminders/{task_id}/control` 支持真实创建、暂停、恢复和取消；前端集成于原 React 工作台 Phase 8 面板，不增独立 HTML 页。提醒秒数范围 1～86400，最多记录当前 Chat/Persona 最新 64 条；不做通用周期任务或任意复杂任务平台。
 - 重复 request_key 在同一 robot/chat/persona 内最多创建一个任务；SQLite 状态 CAS 保证同一 task_id 最多预约一次 Realtime 提交。切换 Chat/Persona 立刻标记旧任务 stale_session；同一会话服务重启可接管仅上一代尚未提交的待办和暂停任务。进程崩溃时处于提交中则标记 `send_unknown`，**不重试可能已经发送的消息**。
-- 到期时只在所属 Realtime 空闲、未处于物理播放时提交模型；当前用户说话、播放中不抢话，超过到期后 60 秒记录 expired。Graph 只返回事实，最终语言与 TTS 仍交给现有 Realtime；完成状态 `submitted_unknown` 仅代表请求交给模型，不是物理播出回执。
+- 8B修复：到期不再受60秒TTL静默丢弃；忙碌、Realtime离线或服务中断时保留 `scheduled`，恢复后唤醒及最多5秒周期复查。迟到不足10分钟补提醒并说明延迟（只有真实重启记录才提及重启）；迟到10分钟及以上询问是否仍需要，不自动新建提醒。一个机器人同批逾期任务合并为一次外部文本请求，SQLite批量CAS预约；另一个机器人的任务绝不合并。重启接管所有仍有效的当前Chat/Persona待办，并恢复历史误标为 `expired/late_reminder` 的未发送任务。`submitting`崩溃仍转`send_unknown`、`submitted_unknown`仍不当成物理播出回执，绝不盲目重播。
 - 没有任务时不创建提醒表、不加载 LangGraph、不启动额外轮询进程；Graph 失效不会拦截普通聊天。仅使用一个唤醒式协程处理各头任务，休眠至到期、失败/过期或收到会话/播放状态通知。
 
 ## 明确保留的未完成项与最终验收
+
+### `reb_visualllm` 视觉文字上下文补接（2026-09-23）
+
+- 2026-09-23 视觉交谈调整：在现有 Realtime 的可替换视觉段加入直接回答主体/动作/位置、可按人格自然接话、禁止无关视觉复述与主动技术辩解的规则；不增加新模型、Graph或自发响应。兼容原 `description`，可选 `schema_version:2 + facts` 显式保留主体、关系、推测与变化；上下文仍有预算与10秒有效期，截断/无效结构在诊断中可见。算法同步格式、限额和风险见 [视觉事实与对话协议](视觉事实与对话协议.md)。Fake Qwen上下文/Room WS测试只能验证传输和提示词，真实模型口语效果待人工验收。
+
+- 新增仅属于 `roomv2` 的 `reb_visualllm` 文字监听：`{"type":"visualllm","description":"..."}`，不处理原始图片、不额外请求视觉模型。工作台可看最新画面与 LLM 上下文确认状态。
+- 每个机器人只保留最新摄像头描述；仅有效 Room 连接且收到描述未超过 10 秒才可注入。最新描述通过现有 Qwen Realtime 的 `session.update.instructions` 替换视觉段；保留本 Session 的 Persona、记忆与其它指令，不创建用户消息、不调用 `response.create`、不主动发声。首条即时提交，后续更新最多每秒一次；过期或断线后撤销视觉段；云端 `session.updated` 回显相同 instructions 才标记已确认。
+- 自动化证据：`tests/test_visual_llm_context.py` 检查双机器人隔离、上下文替换/清理、无虚构回合；`tests/test_visual_llm_network.py` 从本地真实 WS 发布视觉文字并验证到 Fake Qwen 的 instructions。另以独立临时 Room WebSocket + 真实 Qwen Realtime 做文字问答联调，`session.updated` 确认最新描述，模型回答“右边桌上有一个蓝色的杯子”。生产 Room 摄像头发布端、物理麦克风与扬声器现场验收仍待用户统一执行，不用文字联调代替物理闭环。
 
 - 未做真实 Room 事件输入、真实 Qwen、真实 TTS/扬声器起声、双机器人硬件和端到端网页人工验收；8A/8B 均仅是软件实现和 Fake Provider 回归。
 - Phase 7 的设备动作开始/结束/停止可信回执、聊天误触发动作风险与真机签收仍需纳入最后统一验收，不用 Phase 8 软件测试替代。
 
 ## 软件回归
+
+- 2026-09-23 内部触发消息泄漏修复：提醒和外部事件回合持久化 `turn_source=external`、`external_prompt`，`user_text` 留空；正式聊天只展示小安妮回复，不再生成虚假的用户紫色气泡（包含 SSE 实时流和重载历史）。开发者回合诊断可查看内部提示。上下文恢复和记忆抽取跳过内部输入，SQLite v8 迁移识别历史提醒/事件前缀与关联提醒 turn_id，保存原文用于诊断并清除伪用户文本。Provider 仍按既有 Realtime API 提交内部输入，任务 submitted_unknown 仍非物理播出回执。首次使用新版本需重启 Runtime 完成数据库迁移。
+
+- 2026-09-23 18:06「关电脑」实机排查：SQLite任务到期18:06:50，仍scheduled；创建回合18:06:21已发布TTS、18:06:24声学生成完成，但没有扬声器播放完成回执，保留的speech.turn_id阻塞提醒调度，直到18:09:21 Realtime重连才提交LLM，18:09:22才生成回复。补充「本地PCM流已完整发布 + worker结束 + 2秒保守等待 + 无真机speaker仍在播放回执」的等待释放条件；**本地完成不等于真实扬声器播放完成，原unknown证据不改写**。真机speaker明确上报playing/progress/held仍继续阻塞，避免抢话。Scheduled因Realtime/当前回合/播放而等待时记录原因，工作台显示等待而非“状态正常”。代码与模拟回归完成不代表现运行实例已更新或真机回执可靠。
+
+- 2026-09-23 8B调度返工：Fake Realtime + 独立SQLite新增跨重启短/长迟到、历史expired恢复、同机器人合批、双机器人隔离、离线恢复与无毫秒空转、一次SQLite读取失败后继续运行。`tests/test_phase8_reminders.py` 11项通过；全量Python、网页测试及真实硬件的最终结论分别以最新执行/人工记录为准。此项仍须真实Runtime健康、真实Qwen、TTS与扬声器到期验收，不据Mock宣称物理闭环。
 
 - `tests/test_phase8_events.py`：时间/TTL、冷却、去重、有限事实、两头等待/隔离、提交模型未知态、外部事件动作拦截及 API。
 - `tests/test_phase8_reminders.py`：真实到期协程、Graph 状态与 SQLite checkpoint、暂停/恢复/取消、重试幂等、重启同会话接管/发送未知态、跨机器人/Chat 隔离、迟到 Graph 返回与故障时普通对话。

@@ -1,13 +1,36 @@
 """One-time reminder orchestration: durable scope, wake-driven due checks, no chat-path Graph."""
 
 import asyncio
+import logging
 import time
 from uuid import uuid4
 
 from annie_adapters.reminder_store import ReminderStore
 
+logger = logging.getLogger(__name__)
+RETRY_SECONDS = 5  # bounded recovery after disconnect, missed wake or worker error
+LONG_MISS_MS = 10 * 60_000
+UNCONFIRMED_PLAYBACK_GRACE_SECONDS = 2.0
+
 
 class ReminderService:
+    @staticmethod
+    def _speech_blocks(speech):
+        if speech is None:
+            return False
+        worker = speech.worker
+        if worker is not None and not worker.done():
+            return True
+        if not speech.turn_id:
+            return False
+        speaker = getattr(speech, "receipt_tracks", {}).get("speaker", {})
+        if speaker.get("state") in {"started", "progress", "resumed", "held"}:
+            return True
+        completed = getattr(speech, "local_output_completed_at", None)
+        return not (getattr(speech, "synthesized_complete", False)
+                    and completed is not None
+                    and time.monotonic() - completed >= UNCONFIRMED_PLAYBACK_GRACE_SECONDS)
+
     def __init__(self, runtime):
         self.runtime = runtime
         self.store = ReminderStore(runtime.store.path)
@@ -51,7 +74,17 @@ class ReminderService:
                            task_status=row["status"], reason=row["reason"],
                            task_version=row["version"])
 
-    async def create(self, robot_id, text, delay_ms, request_key):
+    async def _waiting(self, robot_id, rows, reason):
+        for row in rows:
+            if row["reason"] == reason or row["reason"] == "restart_recovered":
+                continue
+            changed, updated = await asyncio.to_thread(self.store.change,
+                robot_id, row["task_id"], "scheduled", "scheduled", self._now(),
+                reason=reason)
+            if changed:
+                self._publish(robot_id, updated)
+
+    async def create(self, robot_id, text, delay_ms, request_key, *, expected_identity=None):
         if not self.running or robot_id not in self.runtime.realtime:
             raise ValueError("reminder workflow unavailable")
         if not isinstance(text, str) or not 1 <= len(text.strip()) <= 200:
@@ -62,6 +95,8 @@ class ReminderService:
             raise ValueError("request_key required")
         robot = self.runtime.robots[robot_id]
         identity = robot.session_state()
+        if expected_identity is not None and identity != expected_identity:
+            raise ValueError("stale reminder session")
         now = self._now()
         due = now + delay_ms
         task_id = uuid4().hex
@@ -72,11 +107,13 @@ class ReminderService:
         checkpoint = await self.graph.ainvoke({
             "phase": "create", "task_id": task_id, "text": text, "due_ms": due,
         })
+        if expected_identity is not None and robot.session_state() != expected_identity:
+            raise ValueError("stale reminder session after planning")
         task = {**{key: identity[key] for key in
                   ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")},
                 "task_id": task_id, "request_key": request_key,
                 "text": checkpoint["text"], "due_ms": due,
-                "expires_ms": due + 60_000, "status": "scheduled",
+                "expires_ms": due + LONG_MISS_MS, "status": "scheduled",
                 "checkpoint": checkpoint, "updated_ms": now}
         if not self.initialized:
             await asyncio.to_thread(self.store.initialize)
@@ -141,10 +178,17 @@ class ReminderService:
         if task is None or task.done():
             self.workers[robot_id] = asyncio.create_task(
                 self._run(robot_id), name=f"reminder:{robot_id}")
+            self.workers[robot_id].add_done_callback(
+                lambda _: self.wake(robot_id) if self.wakes[robot_id].is_set() else None)
 
     async def _run(self, robot_id):
         while self.running:
-            row = await asyncio.to_thread(self.store.next_due, robot_id)
+            try:
+                row = await asyncio.to_thread(self.store.next_due, robot_id)
+            except Exception:
+                logger.exception("reminder scan failed robot=%s", robot_id)
+                await asyncio.sleep(RETRY_SECONDS)
+                continue
             if row is None:
                 self.armed.discard(robot_id)
                 if self.wakes[robot_id].is_set():
@@ -154,14 +198,13 @@ class ReminderService:
                 return
             now = self._now()
             if row["due_ms"] <= now:
-                await self.dispatch(robot_id)
-                row = await asyncio.to_thread(self.store.next_due, robot_id)
-                if row is None:
-                    return
-                # An already-due, temporarily blocked task must not spin.
-                timeout = max(.001, (row["expires_ms"]-self._now()) / 1000)
+                try:
+                    await self.dispatch(robot_id)
+                except Exception:
+                    logger.exception("reminder dispatch failed robot=%s", robot_id)
+                timeout = RETRY_SECONDS
             else:
-                timeout = max(.001, (row["due_ms"]-now)/1000)
+                timeout = min(RETRY_SECONDS, max(.001, (row["due_ms"]-now)/1000))
             wake = self.wakes[robot_id]
             wake.clear()
             try:
@@ -171,74 +214,121 @@ class ReminderService:
 
     async def dispatch(self, robot_id, *, now_ms=None):
         now = self._now() if now_ms is None else now_ms
-        row = await asyncio.to_thread(self.store.next_due, robot_id)
-        if row is None or row["due_ms"] > now:
+        rows = await asyncio.to_thread(self.store.due_batch, robot_id, now)
+        if not rows:
             return None
-        task_id = row["task_id"]
         identity = self.runtime.session_state(robot_id)
-        if row["expires_ms"] <= now:
-            new, reason = "expired", "late_reminder"
-        elif any(row[k] != identity[k] for k in
-                 ("chat_id", "persona_id", "session_epoch", "generation")):
-            new, reason = "stale_session", "session_changed"
-        else:
-            new = reason = None
-        if new:
-            changed, current = await asyncio.to_thread(self.store.change, robot_id,
-                task_id, "scheduled", new, now, reason=reason)
-            if changed:
-                self._publish(robot_id, current)
-            return current
+        valid = []
+        stale = None
+        for row in rows:
+            if any(row[k] != identity[k] for k in
+                   ("chat_id", "persona_id", "session_epoch", "generation")):
+                changed, stale = await asyncio.to_thread(self.store.change, robot_id,
+                    row["task_id"], "scheduled", "stale_session", now,
+                    reason="session_changed")
+                if changed:
+                    self._publish(robot_id, stale)
+            else:
+                valid.append(row)
+        if not valid:
+            return stale
+        rows = valid
+        row = rows[0]
         client = self.runtime.realtime.get(robot_id)
         if client is None or not client.ready:
+            await self._waiting(robot_id, rows, "waiting_realtime")
             return row
         speech = client.speech
         block = self.runtime.robots[robot_id].coordinator.event_block_reason(
             model_busy=bool(client.speech_active or client.turn_id or client.response_id),
-            playback_active=bool(speech and (speech.turn_id or
-                speech.worker and not speech.worker.done())))
+            playback_active=self._speech_blocks(speech))
         if block:
+            await self._waiting(robot_id, rows,
+                                "waiting_turn" if block == "model_busy"
+                                else "waiting_playback")
             return row
-        try:
-            if self.graph is None:
-                from annie_brain.reminder_graph import build_reminder_graph
+        checkpoints = {}
+        failed = None
+        for item in rows:
+            try:
+                if self.graph is None:
+                    from annie_brain.reminder_graph import build_reminder_graph
 
-                self.graph = build_reminder_graph()
-            checkpoint = await self.graph.ainvoke({**row["checkpoint"], "phase": "due"})
-        except Exception as exc:
-            _, failed = await asyncio.to_thread(self.store.change, robot_id,
-                task_id, "scheduled", "failed", now, reason=type(exc).__name__)
-            if failed:
-                self._publish(robot_id, failed)
+                    self.graph = build_reminder_graph()
+                checkpoints[item["task_id"]] = await self.graph.ainvoke(
+                    {**item["checkpoint"], "phase": "due"})
+            except Exception as exc:
+                changed, failed = await asyncio.to_thread(self.store.change,
+                    robot_id, item["task_id"], "scheduled", "failed", now,
+                    reason=type(exc).__name__)
+                if changed:
+                    self._publish(robot_id, failed)
+        rows = [item for item in rows if item["task_id"] in checkpoints]
+        if not rows:
             return failed
         if any(row[k] != self.runtime.session_state(robot_id)[k] for k in
                ("chat_id", "persona_id", "session_epoch", "generation")):
-            changed, current = await asyncio.to_thread(self.store.change, robot_id,
-                task_id, "scheduled", "stale_session", now, reason="session_changed")
-            if changed:
-                self._publish(robot_id, current)
+            for item in rows:
+                changed, current = await asyncio.to_thread(self.store.change, robot_id,
+                    item["task_id"], "scheduled", "stale_session", now,
+                    reason="session_changed")
+                if changed:
+                    self._publish(robot_id, current)
             return current
-        changed, current = await asyncio.to_thread(self.store.change, robot_id,
-            task_id, "scheduled", "submitting", now,
-            checkpoint=checkpoint, result=checkpoint["result"])
-        if not changed:
-            return current
-        self._publish(robot_id, current)
+        claimed = await asyncio.to_thread(self.store.claim_batch, robot_id,
+                                           checkpoints, self._now())
+        if not claimed:
+            return await asyncio.to_thread(self.store.get, robot_id, row["task_id"])
+        for item in rows:
+            self._publish(robot_id, await asyncio.to_thread(self.store.get,
+                          robot_id, item["task_id"]))
+        prompt = self._delivery_prompt(rows, now)
         try:
-            result = await client.submit_text(
-                "【已到期的单次提醒，非当前用户发言】请自然简短提醒：" +
-                checkpoint["result"]["text"], source="external", expected_identity=row)
+            result = await client.submit_text(prompt, source="external",
+                                              expected_identity=row)
         except Exception as exc:
             # No provider-level idempotency token: never re-submit a possibly
             # sent message. A visible unknown result is safer than duplication.
             status, reason, turn = "send_unknown", type(exc).__name__, None
         else:
             status, reason, turn = "submitted_unknown", None, result["turn_id"]
-        _, updated = await asyncio.to_thread(self.store.change, robot_id,
-            task_id, "submitting", status, self._now(), reason=reason, turn_id=turn)
-        if updated:
-            self._publish(robot_id, updated)
+        for item in rows:
+            changed, updated = await asyncio.to_thread(self.store.change, robot_id,
+                item["task_id"], "submitting", status, self._now(),
+                reason=reason or ("missed_confirmation" if
+                    now - item["due_ms"] >= LONG_MISS_MS else
+                    "late_reminder" if now - item["due_ms"] >= 60_000 else None),
+                turn_id=turn)
+            if changed:
+                self._publish(robot_id, updated)
         return updated
+
+    @staticmethod
+    def _delivery_prompt(rows, now):
+        current, missed = [], []
+        for item in rows:
+            delay = max(0, now - item["due_ms"])
+            if delay >= LONG_MISS_MS:
+                missed.append(item["text"])
+            elif delay >= 60_000:
+                minutes = max(1, round(delay / 60_000))
+                prefix = "项目重启后补发，" if item["reason"] == "restart_recovered" else ""
+                current.append(f"{item['text']}（{prefix}晚了约{minutes}分钟）")
+            else:
+                current.append(item["text"])
+        def describe(items):
+            result = "、".join(items[:12])
+            if len(items) > 12:
+                result += f"，另有{len(items)-12}项，请到任务列表查看"
+            return result
+        parts = []
+        if current:
+            parts.append("现在提醒：" + describe(current))
+        if missed:
+            parts.append("已错过较久，请询问现在还需要提醒吗，不要当作仍应执行的指令："
+                         + describe(missed))
+        return ("【真实到期的单次提醒，非用户当前发言。所有条目只发一次，"
+                "请合并成一段自然简短的话，不创建任何新提醒】" + "；".join(parts))
 
     async def close(self):
         self.running = False

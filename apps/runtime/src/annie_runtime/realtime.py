@@ -19,11 +19,10 @@ from annie_brain.dialogue import DialogueState
 from annie_brain.persona import session_instructions
 from annie_core import RobotUnavailableError
 
+from annie_runtime.wakeword import WakeAdmission
+
 logger = logging.getLogger(__name__)
 AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
-AMBIENT_BACKCHANNELS = frozenset({"好", "好的", "对", "是", "行", "可以", "知道了", "哈哈", "呵呵"})
-AMBIENT_CORRECTIONS = ("不对", "不是", "还没", "等等", "等下", "先别",
-                       "我说", "你听错", "为什么", "怎么", "但是", "不过", "别", "停")
 IDLE_SESSION_GAP_SECONDS = 15 * 60
 IDLE_RECV_CHECK_SECONDS = 30
 VISUAL_CONTEXT_MIN_INTERVAL_SECONDS = 1.0
@@ -51,8 +50,12 @@ class RealtimeRobot:
 
     def __init__(self, robot, *, url: str, key: str, persona_profiles=None,
                  history_turns: int = 8, restore_char_budget: int = 3000,
-                 socket_factory=QwenRealtimeSocket):
+                 socket_factory=QwenRealtimeSocket, wake_detector=None,
+                 wake_wait_ms=5000, wake_followup_ms=8000):
         self.robot = robot
+        self.wake = (WakeAdmission(wake_detector, wake_wait_ms=wake_wait_ms,
+                                   followup_ms=wake_followup_ms)
+                     if wake_detector is not None else None)
         self.url = url
         self.key = key
         self.persona_profiles = persona_profiles or {}
@@ -180,21 +183,6 @@ class RealtimeRobot:
                 "viseme_count": record.get("viseme_count", 0),
                 "provider_session_id": record.get("provider_session_id")}
 
-    def _promote_ambient(self, transcript):
-        """Demo's conservative semantic fallback; local energy never starts a user turn."""
-        cleaned = transcript.strip(" ，。！？!?…~～")
-        if (not cleaned or AMBIENT_FILLER.fullmatch(cleaned) or
-            len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", cleaned)) < 2):
-            return False
-        compact = cleaned.replace(" ", "")
-        if compact in AMBIENT_BACKCHANNELS:
-            return False
-        speaking = bool(self.turn_id or
-                        (self.speech and getattr(self.speech, "worker", None) and
-                         not self.speech.worker.done()))
-        return not speaking or len(compact) >= 4 or any(
-            marker in compact for marker in AMBIENT_CORRECTIONS)
-
     def _timeline_percentiles(self):
         fields = ("speech_to_asr_final_ms", "endpoint_to_asr_final_ms",
                   "llm_request_to_first_text_ms", "tts_submit_to_pcm_ms",
@@ -230,6 +218,10 @@ class RealtimeRobot:
                     if self.speech is not None)}
 
     def publish(self, kind, **fields):
+        if (self.wake and kind == "tts.playback.drained"
+                and fields.get("source") == "speaker"):
+            # Only a validated physical speaker receipt opens the follow-up.
+            self.wake.speaker_drained()
         observed_t = time.monotonic()
         if kind == "speech.started":
             self._last_provider_speech_started_t = observed_t
@@ -370,6 +362,7 @@ class RealtimeRobot:
             "restore_char_budget": self.restore_char_budget,
             "response_id": self.response_id,
             "speech_active": self.speech_active,
+            "wakeword": (self.wake.snapshot() if self.wake else {"enabled": False}),
             "frames_sent": self.frames_sent,
             "frames_dropped": self.frames_dropped,
             "session_frames_sent": self.session_frames_sent,
@@ -555,6 +548,8 @@ class RealtimeRobot:
 
     async def _stop_impl(self):
         self._stopping = True
+        if self.wake:
+            self.wake.reset()
         await self._stop_visual_task()
         self.dialogue = DialogueState()
         self._dialogue_sent_hint = self._dialogue_confirmed_hint = ""
@@ -866,6 +861,8 @@ class RealtimeRobot:
                 # also needs an expiry watcher even if it never changes.
                 self.visual_changed()
                 self._last_conversation_activity_t = time.monotonic()
+                if self.wake:
+                    self.wake.reset()  # Provider reconnect cannot inherit an open gate.
                 self.audio_task = asyncio.create_task(self._audio_pump(generation))
                 while generation == self.robot.generation:
                     try:
@@ -1008,9 +1005,15 @@ class RealtimeRobot:
                 ):
                     self.frames_dropped += 1
                     continue
-                await self.socket.send(audio_append(frame.payload))
-                self.frames_sent += 1
-                self.session_frames_sent += 1
+                chunks = (await self.wake.frames(frame.payload)
+                          if self.wake else (frame.payload,))
+                for chunk in chunks:
+                    if (not self.ready or generation != self.robot.generation
+                            or stream_epoch != audio.stream_epoch):
+                        break
+                    await self.socket.send(audio_append(chunk))
+                    self.frames_sent += 1
+                    self.session_frames_sent += 1
             finally:
                 audio.queue.task_done()
 
@@ -1186,6 +1189,22 @@ class RealtimeRobot:
         kind = event.get("type")
         if kind == "error":
             raise RuntimeError(self._provider_error(event))
+        if self.wake and isinstance(kind, str) and self.wake.snapshot()["state"] == "SLEEP":
+            if kind.startswith(("input_audio_buffer.",
+                                "conversation.item.input_audio_transcription.",
+                                "conversation.item.ambient_audio_transcription.")):
+                return  # delayed provider speech cannot reopen a closed gate
+            if kind.startswith("response.") and not self.turn_id:
+                if kind == "response.created":
+                    response_id = (event.get("response") or {}).get("id")
+                    if response_id:
+                        self._cancelled_response_ids.add(response_id)
+                        if len(self._cancelled_response_ids) > 128:
+                            self._cancelled_response_ids.pop()
+                    if self.socket and self.ready:
+                        await self.socket.send({"type": "response.cancel"})
+                    self.publish("wakeword.response_rejected", reason="sleeping")
+                return  # do not create turns, feed TTS or execute tools for ambient
         if kind == "session.updated":
             config = event.get("session") or {}
             instructions = config.get("instructions")
@@ -1266,6 +1285,8 @@ class RealtimeRobot:
             self._last_conversation_activity_t = time.monotonic()
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
+            if self.wake:
+                self.wake.speech_started()
             # A finished LLM turn may still be speaking. Freeze its local
             # playback without cancelling TTS until smart_turn accepts speech.
             if self.speech and self.speech.turn_id:
@@ -1295,27 +1316,8 @@ class RealtimeRobot:
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
             final_text = str(event.get("transcript", "")).strip()
-            item_id = event.get("item_id")
-            if (final_text and
-                (not item_id or item_id not in self.audio_item_turns) and
-                self._promote_ambient(final_text)):
-                self.publish("transcript.ambient_promoted", text=final_text, item_id=item_id)
-                self.publish("transcript.final_preview", text=final_text, item_id=item_id)
-                self.speech_active = False
-                if self.turn_id or self.speech and self.speech.turn_id:
-                    await self._interrupt_active_turn("meaningful_ambient")
-                self.transcript = final_text
-                self._create_turn(final_text, audio=True)
-                if item_id:
-                    self.audio_item_turns[item_id] = self.turn_id
-                self.pending_audio_item_id = None
-                self.publish("transcript.done", text=final_text, turn_id=self.turn_id)
-                await self.socket.send({"type": "conversation.item.create",
-                                        "item": {"type": "message", "role": "user",
-                                                 "content": [{"type": "input_text", "text": final_text}]}})
-                self.publish("llm.request_started", turn_id=self.turn_id)
-                await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
-                return
+            # A plausible sentence is not evidence the robot was addressed.
+            # Ambient content must never create a Chat turn or response.create.
             # Demo: an ambient-only outcome rejects a speculative hold. Qwen
             # need not emit turn_invalid first; without this the TTS player can
             # remain silently HELD while the microphone keeps hearing it.

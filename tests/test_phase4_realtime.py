@@ -634,7 +634,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.socket.outbound), before)
         self.assertIsNone(client.turn_id)
 
-    async def test_demo_meaningful_ambient_promotes_without_replying_to_fillers(self):
+    async def test_ambient_never_promotes_even_when_it_looks_like_a_correction(self):
         client = self.runtime.realtime["annie-a"]
         generation = client.robot.generation
         await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
@@ -643,14 +643,9 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.events[-1]["kind"], "transcript.ambient")
         await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
                              "item_id": "correction", "transcript": "不是这个。"}, generation)
-        self.assertTrue(any(e["kind"] == "transcript.ambient_promoted" for e in client.events))
-        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "不是这个。")
-        original_turn = client.turn_id
-        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
-                             "item_id": "correction", "transcript": "不是这个。"}, generation)
-        self.assertEqual(client.turn_id, original_turn)
-        self.assertEqual(len([e for e in client.events if
-                              e["kind"] == "transcript.ambient_promoted"]), 1)
+        self.assertFalse(any(e["kind"] == "transcript.ambient_promoted" for e in client.events))
+        self.assertFalse(client.robot.turn_cache)
+        self.assertFalse(any(e["type"] == "response.create" for e in client.socket.outbound))
 
     async def test_final_asr_backfills_turn_started_before_transcription(self):
         client = self.runtime.realtime["annie-a"]
@@ -754,6 +749,50 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.01)
         self.assertEqual(self.runtime.realtime["annie-a"].frames_sent, 1)
         self.assertEqual(self.runtime.realtime["annie-b"].frames_sent, 0)
+
+    async def test_wake_model_is_shared_but_pcm_admission_isolated_per_robot(self):
+        from annie_adapters import VERIFIED_MIC_FORMAT
+        from annie_runtime.wakeword import WakeAdmission
+
+        class SharedDetector:
+            def __init__(self):
+                self.calls = 0
+                self.first_samples = []
+
+            async def detected(self, pcm):
+                self.calls += 1
+                self.first_samples.append(pcm[:4])
+                return pcm.startswith(b"\x02\x02")
+
+        detector = SharedDetector()
+        a, b = (self.runtime.realtime[key] for key in ("annie-a", "annie-b"))
+        a.wake = WakeAdmission(detector)
+        b.wake = WakeAdmission(detector)
+        await a.handle({"type": "input_audio_buffer.speech_started",
+                        "item_id": "stale"}, a.robot.generation)
+        await a.handle({"type": "response.created",
+                        "response": {"id": "unaddressed"}}, a.robot.generation)
+        self.assertIsNone(a.turn_id)
+        self.assertIn({"type": "response.cancel"}, a.socket.outbound)
+        for robot_id, sample in (("annie-a", 2), ("annie-b", 4)):
+            source = "room:" + self.runtime.robots[robot_id].config.room_id + ":reb_mic"
+            self.runtime.bind_input_source(source, [robot_id])
+            self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        for _ in range(100):
+            for robot_id, sample in (("annie-a", 2), ("annie-b", 4)):
+                source = "room:" + self.runtime.robots[robot_id].config.room_id + ":reb_mic"
+                self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes([sample]) * 640)
+                await asyncio.wait_for(self.runtime.robots[robot_id].audio.queue.join(), 1)
+        self.assertGreaterEqual(detector.calls, 2)
+        self.assertEqual(a.frames_sent, 12, detector.first_samples)
+        self.assertEqual(b.frames_sent, 0)
+        self.assertEqual(a.wake.state, "WAKE_WAIT")
+        self.assertEqual(b.wake.state, "SLEEP")
+        a.wake.speech_started()
+        a.publish("tts.playback.drained", source="browser_test")
+        self.assertEqual(a.wake.state, "ACTIVE")
+        a.publish("tts.playback.drained", source="speaker")
+        self.assertEqual(a.wake.state, "FOLLOWUP")
 
     async def test_audio_pump_waits_for_frame_without_polling(self):
         """An idle pump waits on get(), then sends promptly when put() wakes it."""

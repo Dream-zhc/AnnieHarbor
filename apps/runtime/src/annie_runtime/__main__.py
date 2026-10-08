@@ -169,6 +169,22 @@ def main():
         runtime_defaults = tomllib.load(file)
     with (root / "config/providers.toml").open("rb") as file:
         provider_defaults = tomllib.load(file)
+    wake_detector = None
+    if os.environ.get("ANNIE_WAKEWORD_ENABLED") == "1":
+        if not os.environ.get("DASHSCOPE_API_KEY"):
+            raise ValueError("wakeword requires an active Realtime provider")
+        model_file = os.environ.get("ANNIE_WAKEWORD_MODEL")
+        if not model_file:
+            raise ValueError("ANNIE_WAKEWORD_MODEL is required when wakeword is enabled")
+        from annie_runtime.wakeword import SharedWakeModel
+
+        model_path = Path(model_file).expanduser()
+        if not model_path.is_absolute():
+            model_path = root / model_path
+        wake_detector = SharedWakeModel(
+            model_path.resolve(),
+            threshold=float(os.environ.get("ANNIE_WAKEWORD_THRESHOLD", "0.5")),
+        )
     idle_enabled = os.environ.get("ANNIE_IDLE_ENABLED") == "1"
     if idle_enabled and (not os.environ.get("DASHSCOPE_API_KEY")
                          or os.environ.get("ANNIE_TTS_ENABLED") != "1"
@@ -207,6 +223,9 @@ def main():
         )),
         persona_profiles=load_personas(root / "config/personas.toml"),
         realtime_key=os.environ.get("DASHSCOPE_API_KEY") or None,
+        wake_detector=wake_detector,
+        wake_wait_ms=int(runtime_defaults["duplex"]["wake_wait_ms"]),
+        wake_followup_ms=int(runtime_defaults["duplex"]["followup_ms"]),
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]

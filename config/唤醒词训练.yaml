@@ -1,0 +1,13 @@
+# 独立训练机使用，不由 Runtime 读取；导出的 ONNX 放 var/models/。
+# 中文训练与评测尚未执行。生产参数须用真实场景录音校准。
+model_name: xiaoannie
+target_phrases:
+  - "小安妮"
+tts_backend: voxcpm
+n_samples: 10000
+n_samples_val: 2000
+model:
+  model_type: conv_attention
+  model_size: small
+steps: 50000
+target_fp_per_hour: 0.2

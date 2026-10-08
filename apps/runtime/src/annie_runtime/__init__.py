@@ -838,6 +838,9 @@ class HarborRuntime:
         realtime_key: str | None = None,
         realtime_url: str | None = None,
         realtime_socket_factory=None,
+        wake_detector=None,
+        wake_wait_ms: int = 5000,
+        wake_followup_ms: int = 8000,
         tts_voice: str | None = None,
         tts_url: str | None = None,
         tts_socket_factory=None,
@@ -928,6 +931,9 @@ class HarborRuntime:
                     restore_char_budget=realtime_restore_char_budget,
                     persona_profiles=self.persona_profiles,
                     socket_factory=realtime_socket_factory or QwenRealtimeSocket,
+                    wake_detector=wake_detector,
+                    wake_wait_ms=wake_wait_ms,
+                    wake_followup_ms=wake_followup_ms,
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }

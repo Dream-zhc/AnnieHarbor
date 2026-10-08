@@ -10,6 +10,7 @@ eye_enabled = true
 [duplex]
 enabled = false
 mode = "wake"
+wake_wait_ms = 5000
 followup_ms = 8000
 pcm_source = "web"
 

@@ -339,7 +339,7 @@ class Phase3HTTPTests(unittest.TestCase):
             [RobotConfig("annie-a", room_id="roomv2", fake_delay_ms=0)],
             Path(self.tmp.name) / "api.db",
         )
-        self.client = self.enterContext(TestClient(create_app(runtime, ROOT / "web/src", ROOT / "tests/html")))
+        self.client = self.enterContext(TestClient(create_app(runtime, ROOT / "web/src")))
 
     def test_frontend_session_list_load_context_and_explicit_delete_interfaces(self):
         health = self.client.get("/health").json()
@@ -375,10 +375,9 @@ class Phase3HTTPTests(unittest.TestCase):
             [],
         )
 
-    def test_phase3_html_is_served(self):
+    def test_phase3_temporary_page_is_removed(self):
         page = self.client.get("/phase-tests/phase3.html")
-        self.assertEqual(page.status_code, 200)
-        self.assertIn("Phase 3", page.text)
+        self.assertEqual(page.status_code, 404)
 
 
 if __name__ == "__main__":

@@ -292,7 +292,7 @@ def main():
             )
             raise SystemExit(2)
     uvicorn.run(
-        create_app(runtime, dashboard, root / "tests/html"),
+        create_app(runtime, dashboard),
         host=host,
         port=port,
     )

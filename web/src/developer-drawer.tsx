@@ -207,16 +207,6 @@ export function DeveloperDrawer({data,onClose,onFillText,onQuestionPressure,onCl
             <Block title="Room / PCM">
               <details><summary>输入与通道诊断</summary><pre>{pretty({inputs:pcm,routes})}</pre></details>
             </Block>
-            <Block title="独立阶段测试">
-              <div className="test-links">
-                <a href="/phase-tests/phase1.html">Phase 1 · Fake / 多头测试 ↗</a>
-                <a href="/phase-tests/phase2.html">Phase 2 · 测试 PCM / 麦克风 ↗</a>
-                <a href="/phase-tests/phase3.html">Phase 3 · Ledger / 模拟回执 ↗</a>
-                <a href="/phase-tests/phase4.html">Phase 4 · Realtime 验收 ↗</a>
-                <a href="/phase-tests/phase4c.html">Phase 4C · 工作台验收 ↗</a>
-                <a href="/phase-tests/phase5-context.html">Phase 5 · 短期上下文验收 ↗</a>
-              </div>
-            </Block>
           </div>
           </details>
         </div>

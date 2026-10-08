@@ -519,7 +519,7 @@ class Phase2HTTPTests(unittest.TestCase):
             Path(self.tmp.name) / "api.db",
         )
         self.client = self.enterContext(
-            TestClient(create_app(runtime, ROOT / "web/src", ROOT / "tests/html"))
+            TestClient(create_app(runtime, ROOT / "web/src"))
         )
 
     def test_health_and_binary_debug_ingress_are_explicit_about_no_live_room(self):
@@ -542,14 +542,9 @@ class Phase2HTTPTests(unittest.TestCase):
         )
         self.assertEqual(bad.status_code, 422)
 
-    def test_phase2_visual_acceptance_page_is_served(self):
+    def test_phase2_temporary_page_is_removed(self):
         page = self.client.get("/phase-tests/phase2.html")
-        self.assertEqual(page.status_code, 200)
-        self.assertIn("Phase 2", page.text)
-        self.assertIn("Room BinaryFrame", page.text)
-        self.assertIn("操作日志", page.text)
-        self.assertIn("真实麦克风", page.text)
-        self.assertIn("多房间隔离测试", page.text)
+        self.assertEqual(page.status_code, 404)
 
 
 if __name__ == "__main__":

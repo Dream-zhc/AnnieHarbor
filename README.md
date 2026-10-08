@@ -44,14 +44,14 @@
 - 当前产品模型固定为**一个机器人绑定一个Room**。`config/rooms.toml`保留该Room的`main/tts/mic/visualdata/vision/sam`六条完整地址；多个机器人通过不同`room_id`并发运行，Phase 2只启用各自`reb_mic`输入连接。
 - Runtime启动后自动连接每个监听机器人对应的`/{room_id}/reb_mic`，完成`WELCOME → SUBSCRIBE → ACK`后进入`subscribed`；首个合法`MIC_AUDIO`自动拉起该机器人的PCM stream，断线清旧队列并重连。
 - 已通过真实Java Room数据面回环：向roomv2发送3帧后`annie-a 0→3`且`annie-b=0`；再向roomv3发送4帧后`annie-b 0→4`且`annie-a`保持3，证明跨房间PCM隔离成立。
-- `tests/html/phase2.html`现在直接把浏览器麦克风或测试PCM发送到真实Room，再由Runtime收回；不再用HTTP伪注入作为主要验收。
+- 历史的`tests/html/phase2.html`测试入口已移除；后续统一在正式React工作台进行真实Room和麦克风验收，不再保留阶段独立网页。
 - 当前Brain仍为Fake；Realtime/TTS/Memory/真实Room输出均未接入。
 
 ## 当前下一步
 
 以[总计划“当前执行摘要”](docs/规划/小安妮V2后端开发总计划.md)和对应阶段README为准，不在这里维护另一份验收进度。Phase 3验收与进入Phase 4的门槛见[Phase 3记录](docs/phase3/2026-09-18/README.md)；本次增加React工作台规划，不代替用户验收或启动下一阶段。
 
-开发进度已进入Phase 9性能与诊断专项（软件诊断/本地压测已接线，真实设备/隐私验收待完成）；后续进入Phase 10统一复验。Phase 9暂不进行双头嘴型改造，现有单头ForcedAligner不删除；Phase 11再按实际效果评估复杂任务模型策略。较早阶段的细节为历史记录，不覆盖总计划当前执行摘要。
+**开发规划已收束，进入版本冻结/等待用户统一测试。** Phase 1–9软件阶段已按规划推进，具体功能仍以实际代码为准；真实设备、连续运行、浏览器人工验收尚未统一通过。**Phase 10、Phase 11及所有后续功能阶段暂时不做**，之后只按用户测试发现的Bug复现、修复、回归。保留Phase 9低频性能诊断与单头ForcedAligner，暂不改造双头嘴型。
 
 **目标架构（规划，未接线）：** Qwen-Audio 3.0 Realtime Flash负责ASR、smart_turn、对话、Persona和Function Calling；普通聊天不经过LangGraph。保留独立Qwen-Audio-3.0-TTS-Flash与ForcedAligner（同一PCM+文本对齐后生成嘴型）；动作/表情/简单工具走Function Calling。事件经Event Router、Speak Policy、TurnCoordinator决定是否/何时开口；LangGraph仅负责复杂任务与结构化结果，Realtime统一最终表达。
 
@@ -70,7 +70,7 @@ uv run --locked ruff check apps packages tests/test_phase1.py tests/test_phase2.
 
 Windows使用`start.bat`进入同一个Python入口。当前sidecar仍未多头化；Phase 2只完成Room PCM输入，不把后续TTS/动作/嘴型输出能力提前标为完成。
 
-可视化验收页：`/phase-tests/phase1.html`用于单进程多头并发回合验收；`/phase-tests/phase2.html`用于真实麦克风→Java Room→Runtime回环和多Room PCM隔离验收。Phase 1–5（含4B/4C）的阶段HTML统一放`tests/html/`；Phase 6及以后不新增独立HTML页，功能与网页验收直接进入现有React工作台。既有临时页按Phase 10最终整合安排、用户确认后清理，不提前删除。
+可视化验收统一使用正式React工作台；旧`/phase-tests/`及`tests/html/`已按用户确认移除，后续不恢复。保留`tests/`和`web/tests/`中的长期回归测试；一次性压力测试和手工探针已删除，不影响正式运行。
 
 配置优先级固定为：CLI参数 > 已导出的系统环境变量 > 根目录`.env` > `config/*.toml`。机器本地配置从`.env.example`复制为`.env`；`.env`不提交。
 

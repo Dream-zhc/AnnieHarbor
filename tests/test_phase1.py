@@ -508,7 +508,7 @@ class HTTPTests(unittest.TestCase):
             Path(self.tmp.name) / "api.db",
         )
         self.client = self.enterContext(
-            TestClient(create_app(runtime, ROOT / "web/src", ROOT / "tests/html"))
+            TestClient(create_app(runtime, ROOT / "web/src"))
         )
 
     def test_health_same_pid_two_heads(self):
@@ -544,11 +544,7 @@ class HTTPTests(unittest.TestCase):
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Annie Harbor", page.text)
-        phase_page = self.client.get("/phase-tests/phase1.html")
-        self.assertEqual(phase_page.status_code, 200)
-        self.assertIn("Phase 1", phase_page.text)
-        self.assertIn("操作日志", phase_page.text)
-        self.assertIn("并发向全部机器人头发送", phase_page.text)
+        self.assertEqual(self.client.get("/phase-tests/phase1.html").status_code, 404)
 
 
 if __name__ == "__main__":

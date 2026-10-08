@@ -12,14 +12,14 @@ from fastapi.testclient import TestClient
 
 
 class StaticWorkbenchTests(unittest.TestCase):
-    def test_python_serves_the_built_workbench_and_phase4c_instructions(self):
+    def test_python_serves_only_the_built_workbench(self):
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory(prefix="phase4c-http-", dir=root / "var") as path:
             runtime = HarborRuntime(
                 [RobotConfig("annie-a", room_id="roomv2", fake_delay_ms=0)],
                 Path(path) / "runtime.db",
             )
-            with TestClient(create_app(runtime, root / "web/dist", root / "tests/html")) as client:
+            with TestClient(create_app(runtime, root / "web/dist")) as client:
                 page = client.get("/")
                 self.assertEqual(page.status_code, 200)
                 self.assertIn('<div id="root"></div>', page.text)
@@ -28,9 +28,7 @@ class StaticWorkbenchTests(unittest.TestCase):
                 for asset in assets:
                     self.assertEqual(client.get(asset).status_code, 200)
                 self.assertEqual(client.get("/pcm-playback-processor.js").status_code, 404)
-                instructions = client.get("/phase-tests/phase4c.html")
-                self.assertEqual(instructions.status_code, 200)
-                self.assertIn("Phase 4C", instructions.text)
+                self.assertEqual(client.get("/phase-tests/phase4c.html").status_code, 404)
                 self.assertEqual(client.get("/phase-tests/phase4b.html").status_code, 404)
                 self.assertEqual(client.get("/health").json()["robots"][0]["robot_id"], "annie-a")
 

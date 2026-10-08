@@ -123,7 +123,7 @@ class MemoryForget(BaseModel):
     version: int = Field(ge=1)
 
 
-def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None) -> FastAPI:
+def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         await runtime.start()
@@ -523,7 +523,5 @@ def create_app(runtime, dashboard_dir: Path, phase_test_dir: Path | None = None)
             raise HTTPException(404, "unknown Fake control")
         return await operation(robot_id, action)
 
-    if phase_test_dir is not None and phase_test_dir.is_dir():
-        app.mount("/phase-tests", StaticFiles(directory=str(phase_test_dir), html=True), name="phase-tests")
     app.mount("/", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
     return app

@@ -188,7 +188,7 @@ test('React build is the only production page and serves local assets',async()=>
   assert.doesNotMatch(source,/cascade_llm|last_llm_input|llm_error/);
   assert.match(source,/last_stop_reason/);
   assert.match(source,/playback_evidence/);
-  assert.match(source,/phase4c\.html/);
+  assert.doesNotMatch(source,/phase4c\.html|\/phase-tests\//);
   assert.match(source,/item\.persona_revision/);
   assert.match(source,/className="top-robot-switch"/);
   assert.match(source,/aria-label="切换机器人"/);
@@ -223,14 +223,9 @@ test('React build is the only production page and serves local assets',async()=>
   assert.doesNotMatch(source,/\.innerHTML\s*=/);
 });
 
-test('remaining protocol fixtures stay separate from the production conversation',async()=>{
-  const htmlRoot=path.resolve(web,'../tests/html');
-  const [phase1,phase2,phase3]=await Promise.all(
-    ['phase1.html','phase2.html','phase3.html'].map(file=>readFile(path.join(htmlRoot,file),'utf8'))
-  );
-  assert.match(phase1,/concurrent-all/);
-  assert.match(phase2,/mic-start/);
-  assert.match(phase3,/simulated_partial/);
+test('production drawer has no obsolete phase test links',async()=>{
+  const drawer=await readFile(path.join(web,'src/developer-drawer.tsx'),'utf8');
+  assert.doesNotMatch(drawer,/\/phase-tests\//);
 });
 
 test('real conversation has an explicitly authorized browser microphone and no test PCM control',async()=>{

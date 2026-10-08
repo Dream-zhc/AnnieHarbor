@@ -502,19 +502,11 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
 
 
 class Phase5PageTests(unittest.TestCase):
-    def test_phase5_html_is_served_from_existing_workbench(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / "var", prefix="phase5-http-") as temp:
-            runtime = HarborRuntime([RobotConfig("annie-a")], Path(temp) / "db.sqlite")
-            with TestClient(create_app(runtime, ROOT / "web/dist", ROOT / "tests/html")) as client:
-                page = client.get("/phase-tests/phase5-context.html")
-                self.assertEqual(page.status_code, 200)
-                self.assertIn("Phase 5", page.text)
-
     def test_persona_catalog_is_real_runtime_configuration(self):
         with tempfile.TemporaryDirectory(dir=ROOT / "var", prefix="phase5-personas-") as temp:
             runtime = HarborRuntime([RobotConfig("annie-a")], Path(temp) / "db.sqlite",
                                     persona_profiles=PROFILES)
-            with TestClient(create_app(runtime, ROOT / "web/dist", ROOT / "tests/html")) as client:
+            with TestClient(create_app(runtime, ROOT / "web/dist")) as client:
                 response = client.get("/api/personas")
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual([p["persona_id"] for p in response.json()], list(PROFILES))

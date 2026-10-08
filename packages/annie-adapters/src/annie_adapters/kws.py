@@ -2,6 +2,7 @@
 
 import asyncio
 import math
+import time
 from pathlib import Path
 
 
@@ -54,8 +55,10 @@ class SherpaWakeStream:
         self.input_dbfs = None
         self.quiet_batches = 0
         self.last_keyword = None
+        self.last_decode_ms = None
 
     def _decode(self, pcm):
+        began = time.perf_counter()
         samples = (self.shared.numpy.frombuffer(pcm, dtype="<i2")
                    .astype(self.shared.numpy.float32) / 32768.0)
         # Measure exactly the PCM consumed by KWS, not the browser's meter.
@@ -67,14 +70,17 @@ class SherpaWakeStream:
         self.decoded_batches += 1
         self.stream.accept_waveform(16000, samples)
         engine = self.shared.engine
-        while engine.is_ready(self.stream):
-            engine.decode_stream(self.stream)
-            keyword = engine.get_result(self.stream)
-            if keyword:
-                self.last_keyword = str(keyword)
-                engine.reset_stream(self.stream)
-                return True
-        return False
+        try:
+            while engine.is_ready(self.stream):
+                engine.decode_stream(self.stream)
+                keyword = engine.get_result(self.stream)
+                if keyword:
+                    self.last_keyword = str(keyword)
+                    engine.reset_stream(self.stream)
+                    return True
+            return False
+        finally:
+            self.last_decode_ms = round((time.perf_counter() - began) * 1000, 2)
 
     async def detected(self, pcm):
         async with self.shared.lock:

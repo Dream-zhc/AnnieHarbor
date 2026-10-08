@@ -8,10 +8,10 @@ from annie_runtime.presence import DialoguePresence
 SAMPLE_RATE = 16000
 FRAME_BYTES = SAMPLE_RATE * 2 // 50  # Room contract: 20ms s16le mono
 WINDOW_BYTES = SAMPLE_RATE * 2 * 2  # simulation test window; not sherpa requirement
-PRE_ROLL_BYTES = FRAME_BYTES * 50   # last 1s preserves same-breath questions
+PRE_ROLL_BYTES = FRAME_BYTES * 4   # 80ms overlap; do not replay the whole wake phrase
 WAKE_WAIT_SECONDS = 5.0
 FOLLOWUP_SECONDS = 8.0
-STREAM_BATCH_BYTES = FRAME_BYTES * 5     # 100ms input for streaming model
+STREAM_BATCH_BYTES = FRAME_BYTES * 2     # 40ms input reduces detection batch wait
 STREAM_BACKLOG_LIMIT_BYTES = FRAME_BYTES * 25  # 500ms fail-closed backlog
 
 
@@ -35,6 +35,9 @@ class WakeAdmission:
         self.error = None
         self.authorized_turn_id = None
         self._was_awake = False
+        self.last_wake_at_ms = None
+        self.last_trigger_lag_ms = None
+        self._batch_started_at = None
 
     @property
     def state(self):
@@ -57,6 +60,7 @@ class WakeAdmission:
         self.authorized_turn_id = None
         self.error = None
         self._was_awake = False
+        self._batch_started_at = None
 
     async def frames(self, pcm: bytes) -> tuple[bytes, ...]:
         """Only locally buffer sleep audio; sherpa decoding runs in a task."""
@@ -81,12 +85,15 @@ class WakeAdmission:
             self.pending.extend(pcm)
             if self.task is not None and self.task.done():
                 task, self.task = self.task, None
+                batch_at, self._batch_started_at = self._batch_started_at, None
                 try:
                     triggered = task.result()
                 except Exception as exc:
                     self.error = type(exc).__name__
                     raise RuntimeError(f"sherpa KWS failed: {self.error}") from exc
                 if triggered:
+                    self.last_trigger_lag_ms = (round((self.clock() - batch_at) * 1000, 1)
+                                                if batch_at is not None else None)
                     return self._admit_wake()
             if len(self.pending) >= STREAM_BACKLOG_LIMIT_BYTES:
                 self.error = "stream_backlog"
@@ -94,6 +101,7 @@ class WakeAdmission:
             if self.task is None and len(self.pending) >= STREAM_BATCH_BYTES:
                 batch = bytes(self.pending)
                 self.pending.clear()
+                self._batch_started_at = self.clock()
                 self.task = asyncio.create_task(self.detector.detected(batch))
             return ()
         # Legacy 2s fake detector is retained only for current synthetic tests.
@@ -109,8 +117,10 @@ class WakeAdmission:
         if not self.presence.wake_detected():
             return ()
         self.wakes += 1
+        self.last_wake_at_ms = int(time.time() * 1000)
         self._was_awake = True
-        # Limit what Qwen hears before KWS. This cannot locate a word boundary.
+        # A tiny overlap protects the start of same-breath questions. Sherpa
+        # hits approximate keyword end, not a sample-accurate boundary.
         tail = bytes(self.recent[-PRE_ROLL_BYTES:])
         self.recent.clear()
         self.pending.clear()
@@ -156,4 +166,9 @@ class WakeAdmission:
             "last_keyword": getattr(self.detector, "last_keyword", None),
             "keywords_file": getattr(self.factory, "keywords_name", None),
             "global_threshold": getattr(self.factory, "threshold", None),
+            "batch_audio_ms": STREAM_BATCH_BYTES // FRAME_BYTES * 20,
+            "preroll_ms": PRE_ROLL_BYTES // FRAME_BYTES * 20,
+            "last_wake_at_ms": self.last_wake_at_ms,
+            "last_trigger_lag_ms": self.last_trigger_lag_ms,
+            "last_decode_ms": getattr(self.detector, "last_decode_ms", None),
         }

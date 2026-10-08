@@ -44,6 +44,15 @@ class SherpaKeywordConfigTests(unittest.TestCase):
         self.assertGreater(stream.decoded_batches, 0)
         self.assertGreater(stream.input_dbfs, -55)
         self.assertIsNotNone(stream.last_keyword)
+        self.assertIsNotNone(stream.last_decode_ms)
+
+        # A shorter streaming batch must still detect official positive audio.
+        fresh = model.new_stream()
+        triggered_40ms = any(
+            fresh._decode(pcm[i:i + 1280])
+            for i in range(0, len(pcm), 1280)
+        )
+        self.assertTrue(triggered_40ms)
 
 
 class Stream:
@@ -71,7 +80,7 @@ class Detector:
 
 
 class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
-    async def test_streaming_batches_are_100ms_and_pcm_isolation(self):
+    async def test_streaming_batches_are_40ms_and_pcm_isolation(self):
         detector = Detector()
         a = WakeAdmission(detector)
         b = WakeAdmission(detector)
@@ -87,7 +96,10 @@ class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(sent_a), PRE_ROLL_BYTES // FRAME_BYTES)
         self.assertLessEqual(len(sent_a), 65 + PRE_ROLL_BYTES // FRAME_BYTES)
         self.assertTrue(all(size % FRAME_BYTES == 0 for size in detector.streams[0].sizes))
-        self.assertTrue(all(size >= 5 * FRAME_BYTES for size in detector.streams[0].sizes))
+        self.assertTrue(all(size >= 2 * FRAME_BYTES for size in detector.streams[0].sizes))
+        self.assertEqual(a.snapshot()["batch_audio_ms"], 40)
+        self.assertEqual(a.snapshot()["preroll_ms"], 80)
+        self.assertLessEqual(PRE_ROLL_BYTES // FRAME_BYTES, 4)
         self.assertIsNot(detector.streams[0], detector.streams[1])
 
     async def test_disabled_robot_never_inherits_other_stream(self):

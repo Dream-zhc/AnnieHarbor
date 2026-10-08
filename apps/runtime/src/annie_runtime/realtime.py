@@ -1016,6 +1016,7 @@ class RealtimeRobot:
                     self.frames_dropped += 1
                     continue
                 try:
+                    was_sleeping = self.wake is not None and self.wake.state == "SLEEP"
                     chunks = (await self.wake.frames(frame.payload)
                               if self.wake else (frame.payload,))
                 except RuntimeError as exc:
@@ -1027,6 +1028,10 @@ class RealtimeRobot:
                     if self.socket:
                         await self.socket.close()
                     return
+                if was_sleeping and self.wake.state == "WAKE_WAIT":
+                    self.publish("wakeword.detected",
+                                 trigger_lag_ms=self.wake.last_trigger_lag_ms,
+                                 preroll_ms=self.wake.snapshot()["preroll_ms"])
                 if self.wake and self.wake.state == "SLEEP" and self._wake_held_events:
                     await self._reject_wake_response("window_expired")
                 for chunk in chunks:

@@ -10,6 +10,7 @@ import {ExternalEventsDialog} from './external-events';
 import {RoomObservationsBar} from './room-observations';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
+import {AnnieStatePod} from './annie-state-pod';
 
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
@@ -697,6 +698,9 @@ export function Workbench(){
 
     <main className="workspace cockpit-workspace">
       <div className={'chat-layout cockpit-layout '+(historyOpen?'history-open':'history-closed')}>
+        <AnnieStatePod key={robotId+'\u0000'+(session?.generation??'none')}
+          robotId={robotId} generation={session?.generation}
+          roomId={selectedRobot?.room_id??route?.room_id}/>
         <div className="cockpit-stage">
           <aside className="chat-sidebar">
             <div className="sidebar-top">

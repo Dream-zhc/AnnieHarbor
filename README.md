@@ -51,7 +51,7 @@
 
 以[总计划“当前执行摘要”](docs/规划/小安妮V2后端开发总计划.md)和对应阶段README为准，不在这里维护另一份验收进度。Phase 3验收与进入Phase 4的门槛见[Phase 3记录](docs/phase3/2026-09-18/README.md)；本次增加React工作台规划，不代替用户验收或启动下一阶段。
 
-开发进度已到Phase 8C（软件已接线，真实设备/隐私验收待完成）；后续按`9性能与诊断专项 → 10复验`规划。Phase 9暂不进行双头嘴型改造，现有单头ForcedAligner不删除；Phase 11再按实际效果评估复杂任务模型策略。较早阶段的细节为历史记录，不覆盖总计划当前执行摘要。
+开发进度已进入Phase 9性能与诊断专项（软件诊断/本地压测已接线，真实设备/隐私验收待完成）；后续进入Phase 10统一复验。Phase 9暂不进行双头嘴型改造，现有单头ForcedAligner不删除；Phase 11再按实际效果评估复杂任务模型策略。较早阶段的细节为历史记录，不覆盖总计划当前执行摘要。
 
 **目标架构（规划，未接线）：** Qwen-Audio 3.0 Realtime Flash负责ASR、smart_turn、对话、Persona和Function Calling；普通聊天不经过LangGraph。保留独立Qwen-Audio-3.0-TTS-Flash与ForcedAligner（同一PCM+文本对齐后生成嘴型）；动作/表情/简单工具走Function Calling。事件经Event Router、Speak Policy、TurnCoordinator决定是否/何时开口；LangGraph仅负责复杂任务与结构化结果，Realtime统一最终表达。
 

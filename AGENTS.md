@@ -6,7 +6,7 @@
 - 根目录只保留必要入口/规则文件（README.md、AGENTS.md、PROJECT_RULES.md 等）；规划、进度、发现、交接和评审类 Markdown 必须归档到 docs/ 对应中文目录，文件名优先中文。
 - 配置唯一规则：非敏感可提交配置进config/；机器本地覆盖/密钥进根.env（只提交.env.example）；Python/uv/pytest/ruff/SQLite/临时数据按PROJECT_RULES统一落位，禁止各模块自行发明目录。
 - 启动器必须真实拉起进程和HTTP验收；`start.sh/start.bat`遇到同一Annie Harbor旧实例时先终止旧PID再拉起新实例，其他程序占用必须明确报错且禁止误杀，禁止静默换端口。
-- 最新软件实施为Phase 8C；8A/8B/8C已有软件接线，8C视觉证据和提交竞态回归需核对；全部真实视觉、扬声器、隐私与浏览器现场证据仍待用户统一验收，不把软件测试标记为设备PASS。Phase 9用户已明确重定义为性能与诊断专项，**只规划、未开工；暂不进行双头嘴型改造**。各阶段实际证据以`docs/phase8/`和总计划第25节为准。
+- 当前已进入Phase 9性能与诊断专项；8A/8B/8C软件已接线，全部真实视觉、扬声器、隐私与浏览器现场证据仍待用户统一验收，不把软件测试标记为设备PASS。Phase 9仅做有界分轮时延与资源/队列观测及置于`tests/`的临时压测，**暂不进行双头嘴型改造**；实际结果见`docs/phase9/2026-10-08/README.md`。
 - V1外部配置资产已迁到config/与根.env：Provider/模型/Room/视觉/天气/动作等可直接作为后续接线输入；V1 `skills.json` 不迁入，能力在各阶段按最小契约重建；配置存在不代表能力已连接，禁止提前改health能力状态。
 - 旧代码只证明已有外部协议和行为，不决定新模块结构；信息不足标待确认，不猜wire字段，不搬RobotBridge。
 - apps/runtime负责未来bootstrap；annie-core无SDK/Graph依赖；LangGraph只进annie-brain；第三方SDK只通过annie-adapters接入。

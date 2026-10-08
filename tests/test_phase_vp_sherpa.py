@@ -98,8 +98,8 @@ class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(size % FRAME_BYTES == 0 for size in detector.streams[0].sizes))
         self.assertTrue(all(size >= 2 * FRAME_BYTES for size in detector.streams[0].sizes))
         self.assertEqual(a.snapshot()["batch_audio_ms"], 40)
-        self.assertEqual(a.snapshot()["preroll_ms"], 80)
-        self.assertLessEqual(PRE_ROLL_BYTES // FRAME_BYTES, 4)
+        self.assertEqual(a.snapshot()["preroll_ms"], 1600)
+        self.assertEqual(PRE_ROLL_BYTES // FRAME_BYTES, 80)
         self.assertIsNot(detector.streams[0], detector.streams[1])
 
     async def test_disabled_robot_never_inherits_other_stream(self):
@@ -115,6 +115,32 @@ class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a.wakes, 1)
         self.assertEqual(b.wakes, 0)
         self.assertEqual(b.state, "SLEEP")
+
+    async def test_same_breath_question_started_before_kws_hit_is_not_truncated(self):
+        class LateHitStream:
+            def __init__(self):
+                self.calls = 0
+
+            async def detected(self, _pcm):
+                self.calls += 1
+                await asyncio.sleep(0)
+                return self.calls == 15
+
+        class LateHitModel:
+            def new_stream(self):
+                return LateHitStream()
+
+        gate = WakeAdmission(LateHitModel())
+        forwarded = []
+        for i in range(45):
+            # The model may finish confirming the wake phrase after the user
+            # has started the next word. No VAD pause separates the two.
+            sample = (0x42 if 17 <= i < 27 else 0x11)
+            forwarded.extend(await gate.frames(bytes([sample]) * FRAME_BYTES))
+            await asyncio.sleep(0)
+        self.assertEqual(gate.state, "WAKE_WAIT")
+        self.assertIn(bytes([0x42]) * FRAME_BYTES, forwarded)
+        self.assertEqual(forwarded[0], bytes([0x11]) * FRAME_BYTES)
 
     async def test_stream_failure_is_fail_closed(self):
         detector = Detector()

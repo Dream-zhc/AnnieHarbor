@@ -8,7 +8,10 @@ from annie_runtime.presence import DialoguePresence
 SAMPLE_RATE = 16000
 FRAME_BYTES = SAMPLE_RATE * 2 // 50  # Room contract: 20ms s16le mono
 WINDOW_BYTES = SAMPLE_RATE * 2 * 2  # simulation test window; not sherpa requirement
-PRE_ROLL_BYTES = FRAME_BYTES * 4   # 80ms overlap; do not replay the whole wake phrase
+# Sherpa reports a keyword hit, not the sample where the keyword ended.
+# Its confirmation can lag behind the start of a same-breath question.
+# Retain 1.6s of bounded PCM: 800ms dropped early question words.
+PRE_ROLL_BYTES = FRAME_BYTES * 80
 WAKE_WAIT_SECONDS = 5.0
 FOLLOWUP_SECONDS = 8.0
 STREAM_BATCH_BYTES = FRAME_BYTES * 2     # 40ms input reduces detection batch wait
@@ -119,8 +122,8 @@ class WakeAdmission:
         self.wakes += 1
         self.last_wake_at_ms = int(time.time() * 1000)
         self._was_awake = True
-        # A tiny overlap protects the start of same-breath questions. Sherpa
-        # hits approximate keyword end, not a sample-accurate boundary.
+        # Sherpa does not expose an exact keyword-end sample. The overlap may
+        # contain some wake word; the response gate must reject wake-only ASR.
         tail = bytes(self.recent[-PRE_ROLL_BYTES:])
         self.recent.clear()
         self.pending.clear()

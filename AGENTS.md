@@ -6,7 +6,7 @@
 - 根目录只保留必要入口/规则文件（README.md、AGENTS.md、PROJECT_RULES.md 等）；规划、进度、发现、交接和评审类 Markdown 必须归档到 docs/ 对应中文目录，文件名优先中文。
 - 配置唯一规则：非敏感可提交配置进config/；机器本地覆盖/密钥进根.env（只提交.env.example）；Python/uv/pytest/ruff/SQLite/临时数据按PROJECT_RULES统一落位，禁止各模块自行发明目录。
 - 启动器必须真实拉起进程和HTTP验收；`start.sh/start.bat`遇到同一Annie Harbor旧实例时先终止旧PID再拉起新实例，其他程序占用必须明确报错且禁止误杀，禁止静默换端口。
-- 当前Phase 4B开发中（用户确认）；保持TTS/嘴型/打断实现继续。新增Phase 4C排在4B之后、Phase 5之前，完善网页基础、Phase 1–4B已有功能及布局/交互验收；不打断4B、不重做已有React工程、不倒填历史验收。Phase 4既有证据见`docs/phase4/2026-09-20/README.md`，4C任务卡见总计划第25节。
+- 最新软件实施为Phase 8C；8A/8B/8C已有软件接线，8C视觉证据和提交竞态回归需核对；全部真实视觉、扬声器、隐私与浏览器现场证据仍待用户统一验收，不把软件测试标记为设备PASS。Phase 9用户已明确重定义为性能与诊断专项，**只规划、未开工；暂不进行双头嘴型改造**。各阶段实际证据以`docs/phase8/`和总计划第25节为准。
 - V1外部配置资产已迁到config/与根.env：Provider/模型/Room/视觉/天气/动作等可直接作为后续接线输入；V1 `skills.json` 不迁入，能力在各阶段按最小契约重建；配置存在不代表能力已连接，禁止提前改health能力状态。
 - 旧代码只证明已有外部协议和行为，不决定新模块结构；信息不足标待确认，不猜wire字段，不搬RobotBridge。
 - apps/runtime负责未来bootstrap；annie-core无SDK/Graph依赖；LangGraph只进annie-brain；第三方SDK只通过annie-adapters接入。
@@ -18,7 +18,7 @@
 
 - 新架构：Room PCM → Audio Input Gate → Qwen-Audio 3.0 Realtime Flash（ASR/smart_turn/对话/Persona/Function Calling）→ 文本 → 独立Qwen-Audio-3.0-TTS-Flash → PCM；同一PCM+文本送ForcedAligner再映射嘴型。普通聊天禁止经过LangGraph；动作/表情/简单工具经Function Calling校验执行。
 - 事件走Event Router + Speak Policy；需要发声才提交SpeakRequest，由TurnCoordinator协调，Realtime最终表达。LangGraph仅负责按需多步骤任务/状态/工具与结构化结果；Persona按Session/revision加载，不每轮重发。
-- 后续以总计划为准：Phase 4先交付React工作台及现有会话/PCM功能，再验Realtime PCM输入/文本输出与工具契约，4B接独立TTS和最小ForcedAligner闭环，4C完成工作台基础/前序功能/布局整合，再增强Context/记忆；Phase 7完善真实动作/多设备，8接事件策略与按需LangGraph，9完善多头嘴型/观测。实时打断须同步外置TTS、嘴型与Realtime未播上下文。
+- 后续以总计划为准：Phase 4/4B/4C已接React/Realtime/独立TTS和最小ForcedAligner，Phase 5–8已迭代上下文/记忆/动作/事件及按需LangGraph；Phase 9仅完善分轮性能、资源、拥塞和证据诊断，不改造双头嘴型。实时打断仍须同步外置TTS、已有嘴型与Realtime未播上下文。
 
 - 验证产物按PROJECT_RULES第8条收尾：长期测试保留在tests/与web/tests/；一次性复核脚本/日志/测试库放var/tmp/<任务唯一标识>/，由执行者在任务完成前清理。未闭合或并行任务在用的证据只保留最小集合并注明清理条件；禁止删除整个tests/或扫空var/。
 

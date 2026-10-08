@@ -10,7 +10,7 @@
 
 **固定业务模型：一机器人一独立Room，一房间六通道、一路PCM。** A→roomv2，B→roomv3；每个Room只归属一个机器人，六通道不因当前只接mic而删除。本期不做同房间多机器人或多音源混流。
 
-## Phase 4C：正式工作台基础与功能整合（规划）
+## Phase 4C：正式工作台基础与功能整合（历史规划说明）
 
 复用现有React + TypeScript工程及Phase 4/4B接线；4B正在开发，新增4C专门完善网页基础、接齐Phase 1–4B已有功能并验收布局/交互。之后功能在同一工作台追加，不重做4B、不另建前端。范围见[总计划第22/25节](docs/规划/小安妮V2后端开发总计划.md)，4C当前为规划，不代填完成。
 
@@ -51,7 +51,7 @@
 
 以[总计划“当前执行摘要”](docs/规划/小安妮V2后端开发总计划.md)和对应阶段README为准，不在这里维护另一份验收进度。Phase 3验收与进入Phase 4的门槛见[Phase 3记录](docs/phase3/2026-09-18/README.md)；本次增加React工作台规划，不代替用户验收或启动下一阶段。
 
-后续按`4 React工作台+Realtime文字 → 4B独立TTS+最小嘴型 → 4C工作台基础/功能/布局整合 → 5上下文 → 6记忆 → 7真实工具 → 8事件/复杂工作流 → 9嘴型/观测 → 10复验`推进，均在同一正式工作台交付；Phase 11再评估复杂任务模型策略。
+开发进度已到Phase 8C（软件已接线，真实设备/隐私验收待完成）；后续按`9性能与诊断专项 → 10复验`规划。Phase 9暂不进行双头嘴型改造，现有单头ForcedAligner不删除；Phase 11再按实际效果评估复杂任务模型策略。较早阶段的细节为历史记录，不覆盖总计划当前执行摘要。
 
 **目标架构（规划，未接线）：** Qwen-Audio 3.0 Realtime Flash负责ASR、smart_turn、对话、Persona和Function Calling；普通聊天不经过LangGraph。保留独立Qwen-Audio-3.0-TTS-Flash与ForcedAligner（同一PCM+文本对齐后生成嘴型）；动作/表情/简单工具走Function Calling。事件经Event Router、Speak Policy、TurnCoordinator决定是否/何时开口；LangGraph仅负责复杂任务与结构化结果，Realtime统一最终表达。
 

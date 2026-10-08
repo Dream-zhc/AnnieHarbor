@@ -28,7 +28,7 @@ from annie_core import (
     RobotUnavailableError,
     TurnResult,
 )
-from annie_observability import Recorder, RuntimeEvent
+from annie_observability import ProcessProbe, Recorder, RuntimeEvent
 
 from annie_runtime.events import EventService
 from annie_runtime.idle import IdleService
@@ -873,6 +873,7 @@ class HarborRuntime:
             raise ValueError("realtime_restore_char_budget must be an integer between 1 and 12000")
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
+        self.process_probe = ProcessProbe()
         self.ledger = ConversationLedgerWriter(self.store)
         if memory_key or memory_model:
             from annie_brain.memory import CloudMemoryModel, MemoryService
@@ -1508,6 +1509,7 @@ class HarborRuntime:
         self.ledger.start()
         self.recorder.start()
         self.started = True
+        self.process_probe.start()
         if self.memory:
             await self.memory.start()
         for robot in self.robots.values():
@@ -1536,6 +1538,7 @@ class HarborRuntime:
         return all(connection.snapshot()["subscribed"] for connection in self.room_connections.values())
 
     async def close(self):
+        await self.process_probe.close()
         if self.started:
             self.started = False
             for task in tuple(self.smallbrain_tasks):
@@ -2014,10 +2017,13 @@ class HarborRuntime:
                 "schema_version": self.store.SCHEMA_VERSION,
                 "error": self.recorder.last_error,
                 "trace_dropped": self.recorder.dropped,
+                "trace_queue_depth": self.recorder.queue.qsize(),
+                "trace_queue_capacity": self.recorder.queue.maxsize,
                 "ledger_error": self.ledger.last_error,
                 "ledger_queue_depth": self.ledger.queue.qsize(),
                 "ledger_queue_capacity": self.ledger.queue.maxsize,
             },
+            "performance": self.process_probe.snapshot(),
             "memory": {
                 "configured": self.memory is not None,
                 "running": bool(self.memory and self.memory.running),

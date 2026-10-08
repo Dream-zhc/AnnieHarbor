@@ -130,6 +130,7 @@ class RealtimeRobot:
         self._open_done.set()
         self._lifecycle = asyncio.Lock()
         self.last_provider_stopped_ms = None
+        self._last_provider_stopped_t = None
         self._last_conversation_activity_t = time.monotonic()
         self._last_user_turn_at = None  # monotonic, not a wall clock or last external event
         self._last_user_turn_identity = None
@@ -138,13 +139,14 @@ class RealtimeRobot:
         self._idle_recycled = False
         self._turn_timelines = {}
         self._turn_prompt_snapshots = {}
-        self._timeline_order = deque(maxlen=32)
+        self._timeline_order = deque(maxlen=128)  # bounded 100+ turn performance window
 
     def _timeline_snapshot(self, turn_id):
         record = self._turn_timelines.get(turn_id)
         if record is None:
             return None
         times = dict(record["times"])
+        monotonic_times = record["monotonic_times"]
         pairs = {
             "speech_to_asr_final_ms": ("speech_started_ms", "asr_final_ms"),
             "endpoint_to_asr_final_ms": ("speech_stopped_ms", "asr_final_ms"),
@@ -152,13 +154,29 @@ class RealtimeRobot:
             "tts_submit_to_pcm_ms": ("tts_submit_ms", "tts_first_pcm_ms"),
             "room_to_speaker_start_ms": ("room_first_publish_ms", "speaker_started_ms"),
             "endpoint_to_speaker_start_ms": ("speech_stopped_ms", "speaker_started_ms"),
+            "first_pcm_to_room_ms": ("tts_first_pcm_ms", "room_first_publish_ms"),
+            "room_to_speaker_drained_ms": ("room_first_publish_ms", "speaker_drained_ms"),
         }
         durations = {}
+        duration_sources = {}
         for name, (start, end) in pairs.items():
             a, b = times.get(start), times.get(end)
-            durations[name] = b - a if a is not None and b is not None and b >= a else None
+            am, bm = monotonic_times.get(start), monotonic_times.get(end)
+            if am is not None and bm is not None and bm >= am:
+                durations[name] = round((bm - am) * 1000, 2)
+                duration_sources[name] = "local_monotonic"
+            elif a is not None and b is not None and b >= a:
+                durations[name] = b - a
+                duration_sources[name] = "local_wall_fallback"
+            else:
+                durations[name] = None
+                duration_sources[name] = "unobserved"
         return {"turn_id": turn_id, "user_text": record.get("user_text"),
                 "times": times, "durations": durations,
+                "duration_sources": duration_sources,
+                "turn_source": record.get("turn_source"),
+                "input_mode": record.get("input_mode"),
+                "status": record.get("status", "running"),
                 "viseme_count": record.get("viseme_count", 0),
                 "provider_session_id": record.get("provider_session_id")}
 
@@ -178,22 +196,43 @@ class RealtimeRobot:
             marker in compact for marker in AMBIENT_CORRECTIONS)
 
     def _timeline_percentiles(self):
-        fields = ("endpoint_to_speaker_start_ms", "llm_request_to_first_text_ms")
+        fields = ("speech_to_asr_final_ms", "endpoint_to_asr_final_ms",
+                  "llm_request_to_first_text_ms", "tts_submit_to_pcm_ms",
+                  "first_pcm_to_room_ms", "endpoint_to_speaker_start_ms",
+                  "room_to_speaker_drained_ms")
+        turns = [self._timeline_snapshot(turn) for turn in self._timeline_order]
         result = {}
         for field in fields:
-            values = sorted(value for turn in self._timeline_order
-                            if (value := (self._timeline_snapshot(turn) or {})
-                                .get("durations", {}).get(field)) is not None)
+            applicable = [turn for turn in turns if turn is not None and (
+                turn["input_mode"] == "audio" or not field.startswith((
+                    "speech_to_", "endpoint_to_asr_", "endpoint_to_speaker_")))]
+            values = sorted(turn["durations"][field] for turn in applicable
+                            if turn["durations"][field] is not None)
             result[field] = {
                 "samples": len(values),
                 "p50_ms": values[math.ceil(.50 * len(values)) - 1] if values else None,
                 "p95_ms": values[math.ceil(.95 * len(values)) - 1] if values else None,
+                "missing": len(applicable) - len(values),
             }
         return result
 
+    def _latency_window(self):
+        turns = [self._turn_timelines[turn] for turn in self._timeline_order
+                 if turn in self._turn_timelines]
+        statuses = {status: sum(t.get("status", "running") == status for t in turns)
+                    for status in ("running", "completed", "cancelled", "failed", "discarded")}
+        return {"turns": len(turns), "window_capacity": self._timeline_order.maxlen,
+                "by_input": {mode: sum(t.get("input_mode") == mode for t in turns)
+                             for mode in ("audio", "text", "external")},
+                "statuses": statuses,
+                "speaker_receipt_missing": sum(t.get("status") == "completed" and
+                    t["times"].get("speaker_drained_ms") is None for t in turns
+                    if self.speech is not None)}
+
     def publish(self, kind, **fields):
+        observed_t = time.monotonic()
         if kind == "speech.started":
-            self._last_provider_speech_started_t = time.monotonic()
+            self._last_provider_speech_started_t = observed_t
         if kind == "tts.playback.drained" and fields.get("source") == "speaker":
             self._unheard_output_ids.pop(fields.get("turn_id"), None)
             turn = self.robot.turn_cache.get(fields.get("turn_id"))
@@ -223,10 +262,24 @@ class RealtimeRobot:
             self._timeline_order.append(turn_id)
             if self.prompt_snapshot is not None:
                 self._turn_prompt_snapshots[turn_id] = dict(self.prompt_snapshot)
+            is_audio = fields.get("asr_final_ms") is not None
             self._turn_timelines[turn_id] = {"provider_session_id": self.session,
                                             "user_text": fields.get("user_text"),
+                                            "turn_source": fields.get("turn_source", "user"),
+                                            "input_mode": ("external" if fields.get("turn_source") == "external"
+                                                           else "audio" if is_audio else "text"),
+                                            "status": "running",
                                             "events": [], "viseme_count": 0,
                                             "viseme_samples": 0,
+                                            "monotonic_times": {
+                "speech_started_ms": (self._last_provider_speech_started_t
+                    if is_audio and fields.get("speech_started_ms") == self.last_provider_speech_ms
+                    else None),
+                "speech_stopped_ms": (self._last_provider_stopped_t
+                    if is_audio and fields.get("speech_stopped_ms") == self.last_provider_stopped_ms
+                    else None),
+                "asr_final_ms": observed_t if is_audio else None,
+            },
                                             "times": {
                 "speech_started_ms": fields.get("speech_started_ms"),
                 "speech_stopped_ms": fields.get("speech_stopped_ms"),
@@ -244,13 +297,19 @@ class RealtimeRobot:
                     else "browser_started_ms" if fields.get("source") == "browser_test"
                     else None
                 ),
+                "tts.playback.drained": (
+                    "speaker_drained_ms" if fields.get("source") == "speaker" else None
+                ),
             }.get(kind)
             turn_id = fields.get("turn_id")
             if slot and turn_id in self._turn_timelines and (
                 slot != "speaker_started_ms" or fields.get("source") == "speaker"
             ):
                 self._turn_timelines[turn_id]["times"].setdefault(slot, event["ts_ms"])
+                self._turn_timelines[turn_id]["monotonic_times"].setdefault(slot, observed_t)
             record = self._turn_timelines.get(turn_id)
+            if record and kind == "turn.done":
+                record["status"] = fields.get("status", "failed")
             if record and kind in {
                 "action.state", "viseme.aligned", "tts.first_audio",
                 "tts.first_published", "tts.playback.started",
@@ -330,6 +389,7 @@ class RealtimeRobot:
             "last_turn_timeline": self._timeline_snapshot(self._timeline_order[-1])
             if self._timeline_order else None,
             "latency_percentiles": self._timeline_percentiles(),
+            "latency_window": self._latency_window(),
         }
 
     def diagnostic_snapshot(self):
@@ -342,6 +402,8 @@ class RealtimeRobot:
             "dialogue_policy": self.dialogue_snapshot(),
             "provider_session_id": self.session,
             "prompt_snapshot": self.prompt_snapshot,
+            "latency_percentiles": self._timeline_percentiles(),
+            "latency_window": self._latency_window(),
             "prompt_history": list(self.prompt_history),
             "turn_prompt_refs": [
                 {"turn_id": ident,
@@ -1199,6 +1261,7 @@ class RealtimeRobot:
             self.pending_audio_item_id = new_item_id
             # Never attribute the previous utterance's stop time to this one.
             self.last_provider_stopped_ms = None
+            self._last_provider_stopped_t = None
             self.speech_started_count += 1
             self._last_conversation_activity_t = time.monotonic()
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
@@ -1218,8 +1281,10 @@ class RealtimeRobot:
                 self._candidate_playback_turn_id = None
                 self.invalid_turns += 1
                 self.last_provider_stopped_ms = None
+                self._last_provider_stopped_t = None
             else:
                 self.last_provider_stopped_ms = time.time_ns() // 1_000_000
+                self._last_provider_stopped_t = time.monotonic()
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
             if (invalid and not self._candidate_confirmed
                 and self.speech and self.speech.turn_id):

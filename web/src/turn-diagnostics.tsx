@@ -51,6 +51,12 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
     item.source==='browser_test');
   const latestBrowser=browserReceipts.at(-1);
   const duration=timeline?.times;
+  const latencyWindow=diagnostics?.latency_window;
+  const percentiles=diagnostics?.latency_percentiles;
+  const measured=(name:string,start:string,end:string)=>{
+    const value=timeline?.durations?.[name];
+    return value!=null?`${value} ms`:since(duration,start,end);
+  };
   const memoryEvidence=recall.flatMap(item=>{
     const result=item.result as {evidence?:unknown[]}|undefined;
     return Array.isArray(result?.evidence)?result.evidence:[];
@@ -82,6 +88,20 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
           />
         </label>
       </header>
+
+      {latencyWindow&&<details className="turn-diagnostic-section">
+        <summary>Phase 9 · 最近 {latencyWindow.turns}/{latencyWindow.window_capacity} 轮性能统计</summary>
+        <div className="turn-diagnostic-line"><span>语音 / 文字 / 外部</span>
+          <strong>{latencyWindow.by_input.audio??0} / {latencyWindow.by_input.text??0} / {latencyWindow.by_input.external??0}</strong></div>
+        <div className="turn-diagnostic-line"><span>完成 / 取消 / 失败 / 未结束</span>
+          <strong>{latencyWindow.statuses.completed??0} / {latencyWindow.statuses.cancelled??0} / {latencyWindow.statuses.failed??0} / {latencyWindow.statuses.running??0}</strong></div>
+        <div className="turn-diagnostic-line"><span>已生成但无真机播完回执</span>
+          <strong>{latencyWindow.speaker_receipt_missing} 轮（不等于设备未播放）</strong></div>
+        {Object.entries(percentiles??{}).map(([name,stats])=><div className="turn-diagnostic-line" key={name}>
+          <span>{name}</span><strong>n={stats.samples} · P50 {stats.p50_ms??'—'} / P95 {stats.p95_ms??'—'} ms · 缺失 {stats.missing??'—'}</strong>
+        </div>)}
+        <small>有界近128轮，未观测不按0ms计算；分位数只取有证据的样本，缺失和失败单列。</small>
+      </details>}
 
       {!turnId ? (
         <div className="turn-empty-state"><p>暂无回合数据</p></div>
@@ -236,17 +256,18 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
               <h4>本轮耗时</h4>
             </div>
             {([
-              ['起声 → ASR 最终','speech_started_ms','asr_final_ms'],
-              ['语音结束 → ASR 最终','speech_stopped_ms','asr_final_ms'],
-              ['LLM 请求 → 首文本','llm_request_ms','llm_first_text_ms'],
-              ['TTS 提交 → 首 PCM','tts_submit_ms','tts_first_pcm_ms'],
-              ['首 PCM → Room 首帧','tts_first_pcm_ms','room_first_publish_ms'],
-              ['Room 首帧 → 扬声器回执','room_first_publish_ms','speaker_started_ms'],
-              ['Room 首帧 → 网页试听开始','room_first_publish_ms','browser_started_ms'],
-            ] as const).map(([label,start,end])=>(
+              ['起声 → ASR 最终','speech_started_ms','asr_final_ms','speech_to_asr_final_ms'],
+              ['语音结束 → ASR 最终','speech_stopped_ms','asr_final_ms','endpoint_to_asr_final_ms'],
+              ['LLM 请求 → 首文本','llm_request_ms','llm_first_text_ms','llm_request_to_first_text_ms'],
+              ['TTS 提交 → 首 PCM','tts_submit_ms','tts_first_pcm_ms','tts_submit_to_pcm_ms'],
+              ['首 PCM → Room 首帧','tts_first_pcm_ms','room_first_publish_ms','first_pcm_to_room_ms'],
+              ['Room 首帧 → 扬声器回执','room_first_publish_ms','speaker_started_ms','room_to_speaker_start_ms'],
+              ['Room 首帧 → 扬声器播完','room_first_publish_ms','speaker_drained_ms','room_to_speaker_drained_ms'],
+              ['Room 首帧 → 网页试听开始','room_first_publish_ms','browser_started_ms',''],
+            ] as const).map(([label,start,end,name])=>(
               <div className="turn-diagnostic-metric" key={label}>
                 <span>{label}</span>
-                <strong>{since(duration,start,end)}</strong>
+                <strong>{measured(name,start,end)}</strong>
               </div>
             ))}
             {timeline&&<Detail label="原始时间戳 / 耗时" value={timeline}/>}

@@ -1,5 +1,5 @@
-import {useMemo,useState,type ReactNode} from 'react';
-import type {PersonaSnapshot,RealtimeDiagnostics,RealtimeEvent,RestoredContext,Robot,Session,SpeechStatus} from './api';
+import {useEffect,useMemo,useState,type ReactNode} from 'react';
+import {api,type Health,type PersonaSnapshot,type RealtimeDiagnostics,type RealtimeEvent,type RestoredContext,type Robot,type Session,type SpeechStatus} from './api';
 import {TurnDiagnostics} from './turn-diagnostics';
 
 type Turn={turn_id:string;user_text:string;assistant_spoken_text?:string|null;assistant_generated_text?:string|null;
@@ -62,6 +62,16 @@ export function DeveloperDrawer({data,onClose,onFillText,onQuestionPressure,onCl
     realtimeEvents,context,coordinator,pcm,routes,systemError}=data;
   const [checkIndex,setCheckIndex]=useState(0);
   const [checkStep,setCheckStep]=useState(0);
+  const [processHealth,setProcessHealth]=useState<Health|null>(null);
+  useEffect(()=>{
+    let closed=false;
+    const load=()=>{void api<Health>('/health').then(result=>{if(!closed)setProcessHealth(result);}).catch(()=>{
+      if(!closed)setProcessHealth(null);
+    });};
+    load();
+    const interval=setInterval(load,5000); // developer drawer only; no hot-path polling
+    return ()=>{closed=true;clearInterval(interval);};
+  },[]);
   const turns=history?.turns??[];
   const scenarioResults=useMemo(()=>{
     const prompts=conversationChecks[checkIndex].turns;
@@ -80,6 +90,15 @@ export function DeveloperDrawer({data,onClose,onFillText,onQuestionPressure,onCl
           <button className="quiet-button" type="button" onClick={()=>onClose()} aria-label="关闭开发者诊断">关闭 ✕</button>
         </div>
         <div className="drawer-content">
+          <details className="inspector-group inspector-panel">
+            <summary>Phase 9 · 进程与队列诊断</summary>
+            <div className="info-line"><span>CPU · 进程</span><strong>{processHealth?.performance?.cpu_percent==null?'未采样':`${processHealth.performance.cpu_percent}%`}</strong></div>
+            <div className="info-line"><span>峰值 RSS（非当前内存）</span><strong>{processHealth?.performance?.rss_peak_mb==null?'平台未提供':`${processHealth.performance.rss_peak_mb} MB`}</strong></div>
+            <div className="info-line"><span>事件循环延迟 / 最大</span><strong>{processHealth?.performance?.loop_lag_ms==null?'未采样':`${processHealth.performance.loop_lag_ms} / ${processHealth.performance.loop_lag_max_ms} ms`}</strong></div>
+            <div className="info-line"><span>Trace队列 / 丢弃</span><strong>{processHealth?.storage?`${processHealth.storage.trace_queue_depth}/${processHealth.storage.trace_queue_capacity} · ${processHealth.storage.trace_dropped}`:'未获取'}</strong></div>
+            <div className="info-line"><span>Ledger 队列</span><strong>{processHealth?.storage?`${processHealth.storage.ledger_queue_depth}/${processHealth.storage.ledger_queue_capacity}`:'未获取'}</strong></div>
+            <small>仅抽屉开启时每5秒读取健康快照；CPU为进程累计CPU时间差值，可能超过100%。Windows缺少峰值RSS数据时留空。</small>
+          </details>
           {systemError&&<div className="drawer-error-alert" role="alert">
             <div>
               <strong>⚠️ 系统异常 / 最近错误</strong>

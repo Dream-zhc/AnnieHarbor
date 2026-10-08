@@ -1,0 +1,73 @@
+"""Text input remains usable while the microphone's KWS gate sleeps."""
+
+import asyncio
+
+from annie_core import RobotConfig
+from annie_runtime import HarborRuntime
+from annie_runtime.wakeword import WakeAdmission
+
+
+class FakeRealtimeSocket:
+    def __init__(self, _url, _key):
+        self.outbound = []
+        self.inbound = asyncio.Queue()
+
+    async def open(self):
+        return self
+
+    async def send(self, packet):
+        self.outbound.append(packet)
+        if packet["type"] == "session.update":
+            await self.inbound.put({
+                "type": "session.updated",
+                "session": {"id": "wake-text-test", **packet["session"]},
+            })
+
+    async def recv(self):
+        return await self.inbound.get()
+
+    async def close(self):
+        pass
+
+
+def test_sleeping_kws_does_not_block_explicit_text_or_open_pcm(tmp_path):
+    async def run():
+        runtime = HarborRuntime(
+            [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+            tmp_path / "runtime.db",
+            realtime_key="fake-test-key",
+            realtime_socket_factory=FakeRealtimeSocket,
+        )
+        await runtime.start()
+        try:
+            client = runtime.realtime["annie-a"]
+            for _ in range(100):
+                if client.ready:
+                    break
+                await asyncio.sleep(.01)
+            assert client.ready
+
+            class Detector:
+                async def detected(self, _):
+                    return False
+
+            client.wake = WakeAdmission(Detector())
+            assert client.wake.state == "SLEEP"
+            response = await client.submit_text("北京今天什么天气？")
+            assert response["status"] == "accepted"
+            assert client.robot.turn_cache[client.turn_id]["user_text"] == "北京今天什么天气？"
+            assert client.wake.state == "SLEEP"
+            assert not client.wake.presence.permits_pcm()
+            assert any(packet["type"] == "response.create" for packet in client.socket.outbound)
+
+            generation = client.robot.generation
+            await client.handle({"type": "response.created",
+                                 "response": {"id": "typed-response"}}, generation)
+            await client.handle({"type": "response.text.delta", "response_id": "typed-response",
+                                 "delta": "晴天"}, generation)
+            assert client.text == "晴天"
+            assert client.wake.state == "SLEEP"
+        finally:
+            await runtime.close()
+
+    asyncio.run(run())

@@ -76,6 +76,64 @@ class RealtimeWireTests(unittest.TestCase):
 
 
 class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_response_cancel_observed_lifecycle_and_idempotence(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        # A completed provider response has no active cancellation target.
+        await client.handle({"type": "response.created",
+                             "response": {"id": "done"}}, gen)
+        await client.handle({"type": "response.done", "response": {
+            "id": "done", "status": "completed"}}, gen)
+        before = len(client.socket.outbound)
+        self.assertFalse(await client._request_response_cancel(expected_id="done"))
+        self.assertEqual(len(client.socket.outbound), before)
+
+        await client.handle({"type": "response.created",
+                             "response": {"id": "live"}}, gen)
+        self.assertFalse(await client._request_response_cancel(expected_id="other"))
+        self.assertTrue(await client._request_response_cancel(expected_id="live"))
+        self.assertFalse(await client._request_response_cancel(expected_id="live"))
+        cancels = [packet for packet in client.socket.outbound
+                   if packet["type"] == "response.cancel"]
+        self.assertEqual(len(cancels), 1)
+        event_id = cancels[0]["event_id"]
+        self.assertTrue(event_id.startswith("annie_cancel_"))
+        await client.handle({"type": "error", "event_id": "server-error-1", "error": {
+            "code": "invalid_value", "message": "Conversation has no active response.",
+            "event_id": event_id}}, gen)
+        self.assertTrue(client.ready)
+        self.assertTrue(any(e["kind"] == "response.cancel_race_ignored" for e in client.events))
+        # An unrelated provider error must never be suppressed.
+        with self.assertRaisesRegex(RuntimeError, "no active response"):
+            await client.handle({"type": "error", "event_id": "server-error-2", "error": {
+                "code": "invalid_value", "message": "Conversation has no active response.",
+                "event_id": event_id}}, gen)
+        with self.assertRaisesRegex(RuntimeError, "provider refused"):
+            await client.handle({"type": "error", "error": {
+                "code": "invalid_value", "message": "provider refused a tool"}}, gen)
+
+    async def test_wake_reject_does_not_cancel_already_finished_provider_response(self):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _):
+                return False
+
+        client = self.runtime.realtime["annie-a"]
+        client.wake = WakeAdmission(Detector())
+        client.wake.presence.wake_detected()
+        gen = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "wake-alone"}, gen)
+        await client.handle({"type": "response.created", "response": {"id": "fast"}}, gen)
+        await client.handle({"type": "response.done", "response": {
+            "id": "fast", "status": "completed"}}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "wake-alone", "transcript": "小安妮"}, gen)
+        self.assertFalse(any(x["type"] == "response.cancel" for x in client.socket.outbound))
+        self.assertEqual(client.wake.state, "WAKE_WAIT")
+        self.assertIsNone(client.turn_id)
+
     async def test_cancelled_response_events_cannot_finish_or_replace_next_turn(self):
         client = self.runtime.realtime["annie-a"]
         gen = client.robot.generation
@@ -84,7 +142,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await client.handle({"type": "response.created", "response": {"id": "old-response"}}, gen)
         await client.cancel()
         self.assertEqual(client.robot.turn_cache[old_turn]["status"], "cancelled")
-        self.assertIn({"type": "response.cancel"}, client.socket.outbound)
+        self.assertTrue(any(e["type"] == "response.cancel" for e in client.socket.outbound))
         await client.submit_text("新问题")
         new_turn = client.turn_id
         await client.handle({"type": "response.created", "response": {"id": "new-response"}}, gen)
@@ -773,7 +831,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await a.handle({"type": "response.created",
                         "response": {"id": "unaddressed"}}, a.robot.generation)
         self.assertIsNone(a.turn_id)
-        self.assertIn({"type": "response.cancel"}, a.socket.outbound)
+        self.assertTrue(any(e["type"] == "response.cancel" for e in a.socket.outbound))
         for robot_id, sample in (("annie-a", 2), ("annie-b", 4)):
             source = "room:" + self.runtime.robots[robot_id].config.room_id + ":reb_mic"
             self.runtime.bind_input_source(source, [robot_id])
@@ -824,7 +882,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                              "item_id": "wake-only", "transcript": "小安妮"},
                             generation)
         self.assertIsNone(client.turn_id)
-        self.assertIn({"type": "response.cancel"}, client.socket.outbound)
+        self.assertTrue(any(e["type"] == "response.cancel" for e in client.socket.outbound))
         self.assertFalse(any(evt["kind"] == "text.delta" for evt in client.events))
         await client.handle({"type": "response.output_item.added",
                              "response_id": "no-response",
@@ -873,7 +931,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                              "item_id": "wrong-language", "transcript": "А не. "}, generation)
         self.assertIsNone(client.turn_id)
         self.assertEqual(client.wake.state, "WAKE_WAIT")
-        self.assertIn({"type": "response.cancel"}, client.socket.outbound)
+        self.assertTrue(any(e["type"] == "response.cancel" for e in client.socket.outbound))
         self.assertIn({"type": "conversation.item.delete", "item_id": "wrong-language"},
                       client.socket.outbound)
         self.assertTrue(any(event["kind"] == "wakeword.transcript_ignored"

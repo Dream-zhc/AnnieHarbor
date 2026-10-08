@@ -77,6 +77,9 @@ class RealtimeRobot:
         self.tool_records = deque(maxlen=64)  # independent of chat/audio event volume
         self.event_subscribers = set()
         self.response_id = None
+        # Provider lifecycle differs from the local, admitted chat turn.
+        self._provider_active_response_id = None
+        self._pending_cancel_events = {}
         self._cancelled_response_ids = set()
         self._response_output_ids = {}
         self._unheard_output_ids = {}
@@ -658,8 +661,7 @@ class RealtimeRobot:
         if response_id:
             self._cancelled_response_ids.add(response_id)
             self.response_id = None
-            if self.socket and self.ready:
-                await self.socket.send({"type": "response.cancel"})
+            await self._request_response_cancel(expected_id=response_id)
         unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
                    if self.speech and self.speech.turn_id else set())
         if self.speech and self.speech.turn_id:
@@ -822,6 +824,8 @@ class RealtimeRobot:
                 self.audio_item_turns.clear()
                 self.superseded_audio_items.clear()
                 self._cancelled_response_ids.clear()
+                self._provider_active_response_id = None
+                self._pending_cancel_events.clear()
                 self._response_output_ids.clear()
                 self._unheard_output_ids.clear()
                 self.pending_audio_item_id = None
@@ -1133,6 +1137,46 @@ class RealtimeRobot:
         error = event.get("error") or {}
         return f"{error.get('code', 'provider_error')}: {str(error.get('message', 'error'))[:150]}"
 
+    async def _request_response_cancel(self, *, expected_id=None):
+        """Cancel only a provider response observed created but not done."""
+        active = self._provider_active_response_id
+        if not (active and self.socket and self.ready and
+                (expected_id is None or expected_id == active)):
+            self.publish("response.cancel_skipped", reason="not_active",
+                         expected_id=expected_id)
+            return False
+        self._provider_active_response_id = None  # revoke before any await
+        event_id = "annie_cancel_" + uuid4().hex
+        now = time.monotonic()
+        self._pending_cancel_events = {
+            key: stamp for key, stamp in self._pending_cancel_events.items()
+            if now - stamp < 10
+        }
+        self._pending_cancel_events[event_id] = now
+        await self.socket.send({"type": "response.cancel", "event_id": event_id})
+        self.publish("response.cancel_requested", response_id=active)
+        return True
+
+    def _expected_cancel_race(self, event):
+        error = event.get("error") or {}
+        if (error.get("code") != "invalid_value" or
+                "Conversation has no active response" not in str(error.get("message", ""))):
+            return False
+        now = time.monotonic()
+        # The outer event_id identifies the SERVER error event; only the
+        # nested error.event_id references our original client request.
+        event_id = error.get("event_id")
+        if event_id:
+            stamp = self._pending_cancel_events.pop(event_id, None)
+            return stamp is not None and now - stamp < 10
+        # DashScope sometimes omits event_id in error replies. Only allow
+        # the exact race immediately following a cancellation we sent.
+        for key, stamp in tuple(self._pending_cancel_events.items()):
+            if now - stamp < 2:
+                self._pending_cancel_events.pop(key, None)
+                return True
+        return False
+
     async def submit_text(self, text, *, source="user", expected_identity=None):
         if not self.ready or not self.socket:
             raise RobotUnavailableError("Realtime Session not ready")
@@ -1184,7 +1228,7 @@ class RealtimeRobot:
                 self._cancelled_response_ids.pop()
             self.response_id = None
         if self.socket and self.ready and cancelled_response:
-            await self.socket.send({"type": "response.cancel"})
+            await self._request_response_cancel(expected_id=cancelled_response)
         if self.speech:
             await self.speech.cancel("local_cancel")
         if self.socket and self.ready and completed_unheard:
@@ -1232,7 +1276,9 @@ class RealtimeRobot:
         completed = any(item.get("type") == "response.done" for item in events)
         if self.socket and self.ready:
             if response_ids and not completed:
-                await self.socket.send({"type": "response.cancel"})
+                active = self._provider_active_response_id
+                if active in response_ids:
+                    await self._request_response_cancel(expected_id=active)
             if outputs:
                 await self._delete_unheard_items(outputs)
         self.publish("wakeword.response_rejected", reason=reason, count=len(events))
@@ -1250,7 +1296,16 @@ class RealtimeRobot:
             return
         kind = event.get("type")
         if kind == "error":
+            if self._expected_cancel_race(event):
+                self.publish("response.cancel_race_ignored", reason="already_finished")
+                return
             raise RuntimeError(self._provider_error(event))
+        if kind == "response.created":
+            self._provider_active_response_id = (event.get("response") or {}).get("id")
+        elif kind == "response.done":
+            done_id = (event.get("response") or {}).get("id")
+            if done_id and done_id == self._provider_active_response_id:
+                self._provider_active_response_id = None
         if self.wake and isinstance(kind, str) and kind.startswith("response."):
             response_id = ((event.get("response") or {}).get("id")
                            if kind in {"response.created", "response.done"}
@@ -1287,8 +1342,7 @@ class RealtimeRobot:
                         self._cancelled_response_ids.add(response_id)
                         if len(self._cancelled_response_ids) > 128:
                             self._cancelled_response_ids.pop()
-                    if self.socket and self.ready:
-                        await self.socket.send({"type": "response.cancel"})
+                    await self._request_response_cancel(expected_id=response_id)
                     self.publish("wakeword.response_rejected", reason="sleeping")
                 return  # do not create turns, feed TTS or execute tools for ambient
         if kind == "session.updated":

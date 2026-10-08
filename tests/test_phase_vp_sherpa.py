@@ -93,8 +93,9 @@ class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(a.state, "WAKE_WAIT")
         self.assertEqual(b.state, "WAKE_WAIT")
         self.assertEqual(a.wakes, 1)
-        self.assertGreaterEqual(len(sent_a), PRE_ROLL_BYTES // FRAME_BYTES)
-        self.assertLessEqual(len(sent_a), 65 + PRE_ROLL_BYTES // FRAME_BYTES)
+        # A freshly started stream has only 65 frames; pre-roll never invents
+        # audio before capture began or replays the same frame twice.
+        self.assertEqual(len(sent_a), 65)
         self.assertTrue(all(size % FRAME_BYTES == 0 for size in detector.streams[0].sizes))
         self.assertTrue(all(size >= 2 * FRAME_BYTES for size in detector.streams[0].sizes))
         self.assertEqual(a.snapshot()["batch_audio_ms"], 40)
@@ -142,6 +143,35 @@ class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(bytes([0x42]) * FRAME_BYTES, forwarded)
         self.assertEqual(forwarded[0], bytes([0x11]) * FRAME_BYTES)
 
+    async def test_late_kws_confirmation_keeps_same_breath_question_beginning(self):
+        class LateStream:
+            def __init__(self):
+                self.calls = 0
+
+            async def detected(self, _pcm):
+                self.calls += 1
+                await asyncio.sleep(0)
+                return self.calls == 35
+
+        class LateModel:
+            def new_stream(self):
+                return LateStream()
+
+        gate = WakeAdmission(LateModel())
+        forwarded = []
+        # The wake phrase is confirmed after "北京" has already started.
+        # An 800ms pre-roll would lose frame 20.
+        for index in range(100):
+            packet = bytes([index]) * FRAME_BYTES
+            forwarded.extend(await gate.frames(packet))
+            await asyncio.sleep(0)
+        self.assertEqual(gate.wakes, 1)
+        self.assertIn(bytes([20]) * FRAME_BYTES, forwarded)
+        self.assertIn(bytes([30]) * FRAME_BYTES, forwarded)
+        self.assertIn(bytes([50]) * FRAME_BYTES, forwarded)
+        indices = [block[0] for block in forwarded]
+        self.assertEqual(indices, sorted(indices))
+
     async def test_stream_failure_is_fail_closed(self):
         detector = Detector()
         gate = WakeAdmission(detector)
@@ -158,6 +188,34 @@ class SherpaWakeGateTests(unittest.IsolatedAsyncioTestCase):
             await gate.frames(pcm)
         self.assertEqual(gate.state, "SLEEP")
         self.assertIsNotNone(gate.snapshot()["error"])
+
+    async def test_last_real_decode_evidence_survives_sleep_stream_reset(self):
+        class MonitoredStream:
+            def __init__(self):
+                self.last_decode_ms = None
+                self.last_keyword = None
+
+            async def detected(self, _pcm):
+                self.last_decode_ms = 2.7
+                self.last_keyword = "小安妮"
+                await asyncio.sleep(0)
+                return True
+
+        class Model:
+            def new_stream(self):
+                return MonitoredStream()
+
+        gate = WakeAdmission(Model())
+        for _ in range(5):
+            await gate.frames(bytes(FRAME_BYTES))
+            await asyncio.sleep(0)
+        self.assertEqual(gate.wakes, 1)
+        gate.presence.close()
+        await gate.frames(bytes(FRAME_BYTES))
+        status = gate.snapshot()
+        self.assertEqual(status["state"], "SLEEP")
+        self.assertEqual(status["last_decode_ms"], 2.7)
+        self.assertEqual(status["last_keyword"], "小安妮")
 
     async def test_expired_window_reinitializes_decoder_for_next_wake(self):
         class Clock:

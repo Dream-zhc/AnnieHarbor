@@ -810,7 +810,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_wake_model_is_shared_but_pcm_admission_isolated_per_robot(self):
         from annie_adapters import VERIFIED_MIC_FORMAT
-        from annie_runtime.wakeword import WakeAdmission
+        from annie_runtime.wakeword import FRAME_BYTES, PRE_ROLL_BYTES, WakeAdmission
 
         class SharedDetector:
             def __init__(self):
@@ -842,7 +842,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes([sample]) * 640)
                 await asyncio.wait_for(self.runtime.robots[robot_id].audio.queue.join(), 1)
         self.assertGreaterEqual(detector.calls, 2)
-        self.assertEqual(a.frames_sent, 4, detector.first_samples)
+        self.assertEqual(a.frames_sent, PRE_ROLL_BYTES // FRAME_BYTES, detector.first_samples)
         self.assertEqual(b.frames_sent, 0)
         self.assertEqual(a.wake.state, "WAKE_WAIT")
         self.assertEqual(b.wake.state, "SLEEP")

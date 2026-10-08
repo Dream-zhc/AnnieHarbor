@@ -10,7 +10,7 @@ FRAME_BYTES = SAMPLE_RATE * 2 // 50  # Room contract: 20ms s16le mono
 WINDOW_BYTES = SAMPLE_RATE * 2 * 2  # simulation test window; not sherpa requirement
 # Sherpa reports a keyword hit, not the sample where the keyword ended.
 # Its confirmation can lag behind the start of a same-breath question.
-# Retain 1.6s of bounded PCM: 800ms dropped early question words.
+# Retain 1.6s of bounded PCM: 800ms could omit early question words.
 PRE_ROLL_BYTES = FRAME_BYTES * 80
 WAKE_WAIT_SECONDS = 5.0
 FOLLOWUP_SECONDS = 8.0
@@ -40,6 +40,8 @@ class WakeAdmission:
         self._was_awake = False
         self.last_wake_at_ms = None
         self.last_trigger_lag_ms = None
+        self.last_completed_decode_ms = None
+        self.last_detected_keyword = None
         self._batch_started_at = None
 
     @property
@@ -94,6 +96,16 @@ class WakeAdmission:
                 except Exception as exc:
                     self.error = type(exc).__name__
                     raise RuntimeError(f"sherpa KWS failed: {self.error}") from exc
+                # Preserve last real detector evidence across the new stream
+                # created when returning to sleep. Otherwise the diagnostics
+                # misleadingly reset to None immediately after a wake.
+                decoded_ms = getattr(self.detector, "last_decode_ms", None)
+                if decoded_ms is not None:
+                    self.last_completed_decode_ms = decoded_ms
+                if triggered:
+                    self.last_detected_keyword = getattr(
+                        self.detector, "last_keyword", None
+                    )
                 if triggered:
                     self.last_trigger_lag_ms = (round((self.clock() - batch_at) * 1000, 1)
                                                 if batch_at is not None else None)
@@ -166,12 +178,15 @@ class WakeAdmission:
             "decoded_batches": getattr(self.detector, "decoded_batches", None),
             "input_dbfs": getattr(self.detector, "input_dbfs", None),
             "near_silence": getattr(self.detector, "quiet_batches", 0) >= 5,
-            "last_keyword": getattr(self.detector, "last_keyword", None),
+            "last_keyword": (getattr(self.detector, "last_keyword", None)
+                             or self.last_detected_keyword),
             "keywords_file": getattr(self.factory, "keywords_name", None),
             "global_threshold": getattr(self.factory, "threshold", None),
             "batch_audio_ms": STREAM_BATCH_BYTES // FRAME_BYTES * 20,
             "preroll_ms": PRE_ROLL_BYTES // FRAME_BYTES * 20,
             "last_wake_at_ms": self.last_wake_at_ms,
             "last_trigger_lag_ms": self.last_trigger_lag_ms,
-            "last_decode_ms": getattr(self.detector, "last_decode_ms", None),
+            "last_decode_ms": (getattr(self.detector, "last_decode_ms", None)
+                               if getattr(self.detector, "last_decode_ms", None) is not None
+                               else self.last_completed_decode_ms),
         }

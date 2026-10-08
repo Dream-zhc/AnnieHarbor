@@ -1,6 +1,7 @@
 """sherpa-onnx streaming Chinese keyword detector, model shared, stream per robot."""
 
 import asyncio
+import math
 from pathlib import Path
 
 
@@ -28,6 +29,8 @@ class SherpaWakeModel:
         except ImportError as exc:
             raise RuntimeError("sherpa wakeword requires installed sherpa-onnx") from exc
         self.numpy = np
+        self.threshold = threshold
+        self.keywords_name = keywords.name
         self.engine = sherpa_onnx.KeywordSpotter(
             tokens=str(tokens), encoder=str(encoder), decoder=str(decoder),
             joiner=str(joiner), keywords_file=str(keywords),
@@ -47,15 +50,28 @@ class SherpaWakeStream:
     def __init__(self, shared: SherpaWakeModel):
         self.shared = shared
         self.stream = shared.engine.create_stream()
+        self.decoded_batches = 0
+        self.input_dbfs = None
+        self.quiet_batches = 0
+        self.last_keyword = None
 
     def _decode(self, pcm):
         samples = (self.shared.numpy.frombuffer(pcm, dtype="<i2")
                    .astype(self.shared.numpy.float32) / 32768.0)
+        # Measure exactly the PCM consumed by KWS, not the browser's meter.
+        # The samples array already exists; once per 100ms is inexpensive.
+        if samples.size:
+            rms = math.sqrt(float(self.shared.numpy.mean(samples * samples)))
+            self.input_dbfs = round(20 * math.log10(max(rms, 1e-5)), 1)
+            self.quiet_batches = self.quiet_batches + 1 if self.input_dbfs < -55 else 0
+        self.decoded_batches += 1
         self.stream.accept_waveform(16000, samples)
         engine = self.shared.engine
         while engine.is_ready(self.stream):
             engine.decode_stream(self.stream)
-            if engine.get_result(self.stream):
+            keyword = engine.get_result(self.stream)
+            if keyword:
+                self.last_keyword = str(keyword)
                 engine.reset_stream(self.stream)
                 return True
         return False

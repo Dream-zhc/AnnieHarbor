@@ -150,4 +150,10 @@ class WakeAdmission:
             "enabled": True, "backend": "sherpa-onnx" if self.streaming else "fake",
             **self.presence.snapshot(), "wakes": self.wakes,
             "sleep_frames_rejected": self.rejected_frames, "error": self.error,
+            "decoded_batches": getattr(self.detector, "decoded_batches", None),
+            "input_dbfs": getattr(self.detector, "input_dbfs", None),
+            "near_silence": getattr(self.detector, "quiet_batches", 0) >= 5,
+            "last_keyword": getattr(self.detector, "last_keyword", None),
+            "keywords_file": getattr(self.factory, "keywords_name", None),
+            "global_threshold": getattr(self.factory, "threshold", None),
         }

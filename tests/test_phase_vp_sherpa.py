@@ -17,7 +17,7 @@ class SherpaKeywordConfigTests(unittest.TestCase):
         experimental = (ROOT / "config/小安妮唤醒词_宽松实验.tokens.txt").read_text(
             encoding="utf-8"
         ).splitlines()
-        self.assertEqual(default, ["x iǎo ān n ī @小安妮"])
+        self.assertEqual(default, ["x iǎo ān n ī :1.5 @小安妮"])
         self.assertEqual(len(experimental), 14)
         self.assertTrue(all(" #" in line and " @" in line and " :" in line
                             for line in experimental))
@@ -25,6 +25,25 @@ class SherpaKeywordConfigTests(unittest.TestCase):
         self.assertIn("ān n ǐ :2.4 #0.12 @安妮", experimental)
         # Short phrases and low thresholds are available only by explicit opt-in.
         self.assertFalse(any("#0.04" in line for line in default))
+
+    def test_real_model_reports_kws_audio_level_and_decoder_progress(self):
+        import wave
+
+        from annie_adapters.kws import SherpaWakeModel
+
+        root = ROOT / "var/models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+        if not (root / "test_wavs/zh_3.wav").is_file():
+            self.skipTest("optional official sherpa test fixture is not installed")
+        model = SherpaWakeModel(root, keywords=root / "test_wavs/keywords.txt")
+        stream = model.new_stream()
+        with wave.open(str(root / "test_wavs/zh_3.wav")) as wav:
+            pcm = wav.readframes(wav.getnframes())
+        triggered = any(stream._decode(pcm[i:i + 3200])
+                        for i in range(0, len(pcm), 3200))
+        self.assertTrue(triggered)
+        self.assertGreater(stream.decoded_batches, 0)
+        self.assertGreater(stream.input_dbfs, -55)
+        self.assertIsNotNone(stream.last_keyword)
 
 
 class Stream:

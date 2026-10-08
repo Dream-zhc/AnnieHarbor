@@ -2,6 +2,7 @@
 
 import unittest
 
+from annie_runtime.presence import DialoguePresence
 from annie_runtime.wakeword import (
     FOLLOWUP_SECONDS,
     FRAME_BYTES,
@@ -32,6 +33,29 @@ class Detector:
 
 
 class WakeAdmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_wake_only_asr_variants_are_not_user_commands(self):
+        for phrase in ("小安妮", "小爱你。", "小安尼！", "А не. ",
+                       "A не.", "Annie.", "Xiao An Ni"):
+            with self.subTest(phrase=phrase):
+                self.assertTrue(DialoguePresence.is_wake_only(phrase))
+                self.assertFalse(DialoguePresence.is_substantive(phrase))
+
+        # Do not suppress legitimate English or users expressing affection.
+        for phrase in ("Hello", "Good day.", "我爱你。", "小安妮，你好", "小爱你，今天天气如何"):
+            with self.subTest(phrase=phrase):
+                self.assertFalse(DialoguePresence.is_wake_only(phrase))
+                self.assertTrue(DialoguePresence.is_substantive(phrase))
+
+        gate = WakeAdmission(Detector())
+        gate.presence.wake_detected()
+        gate.speech_started("wake-item")
+        gate.speech_stopped("wake-item")
+        self.assertFalse(gate.transcript_accepted("А не.", "wake-item"))
+        self.assertEqual(gate.state, "WAKE_WAIT")
+        gate.speech_started("next-item")
+        gate.speech_stopped("next-item")
+        self.assertTrue(gate.transcript_accepted("我爱你。", "next-item"))
+
     async def _prime(self, gate, detector):
         packet = b"\x01\x00" * 320  # 20 ms at 16 kHz
         detector.trigger = True

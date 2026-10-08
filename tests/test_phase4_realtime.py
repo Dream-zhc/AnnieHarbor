@@ -852,6 +852,40 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "id": "response-for-question", "status": "completed"}}, generation)
         self.assertEqual(client.wake.state, "SLEEP")  # no physical speaker attached
 
+    async def test_foreign_script_wake_transcript_is_rejected_and_removed_from_provider(self):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _):
+                return False
+
+        client = self.runtime.realtime["annie-a"]
+        client.wake = WakeAdmission(Detector())
+        client.wake.presence.wake_detected()
+        generation = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "wrong-language"}, generation)
+        await client.handle({"type": "response.created",
+                             "response": {"id": "speculative"}}, generation)
+        await client.handle({"type": "response.text.delta", "response_id": "speculative",
+                             "delta": "我也爱你"}, generation)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "wrong-language", "transcript": "А не. "}, generation)
+        self.assertIsNone(client.turn_id)
+        self.assertEqual(client.wake.state, "WAKE_WAIT")
+        self.assertIn({"type": "response.cancel"}, client.socket.outbound)
+        self.assertIn({"type": "conversation.item.delete", "item_id": "wrong-language"},
+                      client.socket.outbound)
+        self.assertTrue(any(event["kind"] == "wakeword.transcript_ignored"
+                            for event in client.events))
+        self.assertFalse(any(event["kind"] == "transcript.done" for event in client.events))
+
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "actual-question"}, generation)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "actual-question", "transcript": "你好"}, generation)
+        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "你好")
+
     async def test_audio_pump_waits_for_frame_without_polling(self):
         """An idle pump waits on get(), then sends promptly when put() wakes it."""
         client = self.runtime.realtime["annie-a"]

@@ -2,9 +2,15 @@
 
 import re
 import time
+import unicodedata
 
 _PUNCTUATION = re.compile(r"[\s,，。！!？?、.：:~～…]+")
 _WAKE_ONLY = re.compile(r"^(?:小安妮)+$")
+_WAKE_ONLY_ASR_ALIASES = frozenset({
+    "小安尼", "小安你", "小爱你", "小爱妮",  # observed Mandarin homophones
+    "анне", "ане", "aне",  # Cyrillic/Latin-mixed decoding of Annie ("А не.")
+    "annie", "xiaoanni", "xiaoani", "ane",  # wake-name transliteration only
+})
 _BACKCHANNEL = frozenset({"嗯", "嗯嗯", "啊", "哦", "噢", "好", "好的", "对", "是", "呃"})
 _WAKE_FRAGMENTS = frozenset({"妮", "安妮", "小安", "小安尼"})
 ASR_GRACE_SECONDS = 10.0
@@ -87,10 +93,19 @@ class DialoguePresence:
         return True
 
     @staticmethod
+    def is_wake_only(text):
+        normalized = _PUNCTUATION.sub(
+            "", unicodedata.normalize("NFKC", str(text or ""))
+        ).strip().casefold()
+        return bool(normalized and (
+            _WAKE_ONLY.fullmatch(normalized) or normalized in _WAKE_ONLY_ASR_ALIASES
+        ))
+
+    @staticmethod
     def is_substantive(text):
         normalized = _PUNCTUATION.sub("", str(text or "")).strip().lower()
         rest = normalized.removeprefix("小安妮")
-        return bool(normalized and not _WAKE_ONLY.fullmatch(normalized)
+        return bool(normalized and not DialoguePresence.is_wake_only(text)
                     and normalized not in _WAKE_FRAGMENTS
                     and normalized not in _BACKCHANNEL
                     and rest not in _BACKCHANNEL)

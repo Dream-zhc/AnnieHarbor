@@ -1464,8 +1464,18 @@ class RealtimeRobot:
             self.transcript = event.get("transcript", "")
             final_text = self.transcript.strip()
             item_id = event.get("item_id")
+            wake_only_alias = bool(self.wake and self.wake.presence.is_wake_only(final_text))
             if self.wake and not self.wake.transcript_accepted(final_text, item_id):
                 await self._reject_wake_response("unadmitted_transcript")
+                if wake_only_alias:
+                    # The provider keeps input items even if we reject their
+                    # speculative response. Delete this false user turn too,
+                    # otherwise the next LLM answer can refer to its "love".
+                    if item_id and self.socket and self.ready:
+                        await self._delete_unheard_items({item_id})
+                    self.publish("wakeword.transcript_ignored", reason="wake_only_alias",
+                                 text=final_text, item_id=item_id)
+                self.transcript = ""
                 self.speech_active = False
                 self.pending_audio_item_id = None
                 return

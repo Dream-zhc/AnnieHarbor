@@ -1,10 +1,13 @@
 """Text input remains usable while the microphone's KWS gate sleeps."""
 
 import asyncio
+import time
 
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 from annie_runtime.wakeword import WakeAdmission
+from annie_web import create_app
+from fastapi.testclient import TestClient
 
 
 class FakeRealtimeSocket:
@@ -71,3 +74,29 @@ def test_sleeping_kws_does_not_block_explicit_text_or_open_pcm(tmp_path):
             await runtime.close()
 
     asyncio.run(run())
+
+
+def test_workbench_text_http_endpoint_returns_accepted_while_sleeping(tmp_path):
+    runtime = HarborRuntime(
+        [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+        tmp_path / "http.db",
+        realtime_key="fake-test-key",
+        realtime_socket_factory=FakeRealtimeSocket,
+    )
+
+    class Detector:
+        async def detected(self, _):
+            return False
+
+    with TestClient(create_app(runtime, tmp_path)) as client:
+        for _ in range(100):
+            if runtime.realtime["annie-a"].ready:
+                break
+            time.sleep(.01)
+        assert runtime.realtime["annie-a"].ready
+        runtime.realtime["annie-a"].wake = WakeAdmission(Detector())
+        result = client.post("/api/robots/annie-a/realtime/text",
+                             json={"text": "不唤醒也能发送文字"})
+        assert result.status_code == 200, result.text
+        assert result.json()["status"] == "accepted"
+        assert runtime.realtime["annie-a"].wake.state == "SLEEP"

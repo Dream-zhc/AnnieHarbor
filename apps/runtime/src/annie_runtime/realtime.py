@@ -1437,10 +1437,12 @@ class RealtimeRobot:
             if self.turn_id == self.external_turn_id and name in {
                 "perform_action", "set_expression", "preview_action",
                 "forget_memory", "correct_memory", "recall_memory", "create_reminder",
+                "get_weather",
             }:
                 raise ValueError("external_event_no_motion" if name in {
                     "perform_action", "set_expression", "preview_action"
                 } else "external_event_no_reminder" if name == "create_reminder"
+                else "external_event_no_tools" if name == "get_weather"
                 else "external_event_no_memory_write")
             if name == "create_reminder" and self.reminders is not None:
                 if set(args) != {"text", "delay_seconds"}:

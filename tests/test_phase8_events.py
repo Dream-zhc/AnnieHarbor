@@ -96,6 +96,12 @@ def test_event_realtime_isolation_and_waiting(tmp_path):
             output = next(x for x in a.socket.outbound if x["type"] == "conversation.item.create"
                           and x["item"].get("call_id") == "external-motion")
             assert json.loads(output["item"]["output"])["reason"] == "external_event_no_motion"
+            await a._tool_call({"call_id": "external-weather", "name": "get_weather",
+                                "arguments": json.dumps({"city": "西安"})})
+            weather_result = next(x for x in a.socket.outbound
+                                  if x.get("item", {}).get("call_id") == "external-weather")
+            assert json.loads(weather_result["item"]["output"])["reason"] == (
+                "external_event_no_tools")
             a.actions = None
             rt.dispatch_room_event("room:roomv2:main-event", touch())
             await asyncio.sleep(.02)

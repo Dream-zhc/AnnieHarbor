@@ -33,7 +33,8 @@ class IdleService:
         return {"identity": None, "last_user": None, "attempts": 0,
                 "previous": "", "last_spoke": None, "presence_at": None,
                 "presence_since": None, "presence_samples": 0,
-                "scene": "", "status": "idle", "reason": "waiting_user_turn",
+                "scene": "", "scene_since": None, "scene_samples": 0,
+                "status": "idle", "reason": "waiting_user_turn",
                 "first_scene": "", "turn_id": None,
                 "speaker_started": False, "speaker_drained": False,
                 "speaker_drained_at": None,
@@ -87,18 +88,22 @@ class IdleService:
         subjects = facts.get("subjects") if isinstance(facts, dict) else None
         if not isinstance(subjects, list):
             row.update(presence_since=None, presence_at=None, presence_samples=0,
-                       presence_subject_id=None, scene="")
+                       presence_subject_id=None, scene="", scene_since=None,
+                       scene_samples=0)
             return
         valid = [item for item in subjects if isinstance(item, dict)
                  and item.get("kind") in PERSON_KINDS
+                 and isinstance(item.get("id"), str)
+                 and 1 <= len(item["id"].strip()) <= 128
                  and type(item.get("confidence")) in (float, int)
-                 and item["confidence"] >= .8]
+                 and .8 <= item["confidence"] <= 1]
         if len(valid) != 1 or sum(
             isinstance(item, dict) and item.get("kind") in PERSON_KINDS
             for item in subjects
         ) != 1:
             row.update(presence_since=None, presence_at=None, presence_samples=0,
-                       presence_subject_id=None, scene="")
+                       presence_subject_id=None, scene="", scene_since=None,
+                       scene_samples=0)
             return
         now = time.monotonic()
         subject_id = valid[0].get("id")
@@ -111,7 +116,12 @@ class IdleService:
         row["presence_at"] = now
         kinds = [item.get("kind") for item in subjects if isinstance(item, dict)
                  and item.get("kind") in PUBLIC_KINDS]
-        row["scene"] = "现场有人。可见物品：" + "、".join(kinds[:5]) if kinds else "现场有人。"
+        scene = "现场有人。可见物品：" + "、".join(kinds[:5]) if kinds else "现场有人。"
+        if scene != row["scene"]:
+            row["scene_since"] = now
+            row["scene_samples"] = 0
+        row["scene"] = scene
+        row["scene_samples"] += 1
 
     def _status(self, robot_id, status, reason=None, decision=None):
         row = self.rows[robot_id]
@@ -134,13 +144,15 @@ class IdleService:
             same_identity = row["identity"] == identity
             previous_presence = (row["presence_at"], row["presence_since"],
                                  row["presence_samples"], row["scene"],
-                                 row["presence_subject_id"])
+                                 row["presence_subject_id"], row["scene_since"],
+                                 row["scene_samples"])
             row.update(self._new_row())
             row["identity"], row["last_user"] = dict(identity), client._last_user_turn_at
             if same_identity:
                 (row["presence_at"], row["presence_since"],
                  row["presence_samples"], row["scene"],
-                 row["presence_subject_id"]) = previous_presence
+                 row["presence_subject_id"], row["scene_since"],
+                 row["scene_samples"]) = previous_presence
         if client._last_user_turn_at is None:
             return "waiting_user_turn"
         if getattr(client, "_last_user_turn_identity", identity) != identity:
@@ -159,7 +171,7 @@ class IdleService:
             return "visual_missing_or_disconnected"
         if (row["presence_at"] is None or now - row["presence_at"] > self.presence_ttl
                 or row["presence_since"] is None or
-                now - row["presence_since"] < self.presence_seconds or
+                row["presence_at"] - row["presence_since"] < self.presence_seconds or
                 row["presence_samples"] < 2):
             return "person_unconfirmed"
         if (client.speech_active or client.turn_id or client.response_id or
@@ -176,7 +188,10 @@ class IdleService:
         if (row["attempts"] == 1 and row["speaker_drained_at"] is not None
                 and now - row["speaker_drained_at"] < self.second_seconds):
             return "second_cooldown"
-        if row["attempts"] == 1 and row["scene"] == row["first_scene"]:
+        if (row["attempts"] == 1 and
+                (row["scene"] == row["first_scene"] or
+                 row["scene_samples"] < 2 or row["scene_since"] is None or
+                 row["presence_at"] - row["scene_since"] < self.presence_seconds)):
             return "second_no_new_evidence"
         return None
 
@@ -244,6 +259,15 @@ class IdleService:
                 "不要求回答，不调用动作或工具。话题：" + topic,
                 source="external", expected_identity=identity,
             )
+            # speech.started can race with the second socket send. The user
+            # owns the channel now; never re-arm or report a clean submission.
+            if (row["identity"] != identity or row["last_user"] != last_user):
+                return
+            if (row["reason"] == "speech_preempted" or
+                    getattr(client, "_last_provider_speech_started_t", None) != speech_at):
+                row["attempts"] = 2
+                self._status(robot_id, "suppressed", "speech_preempted")
+                return
             row["attempts"] = attempt
             row["last_spoke"] = time.monotonic()
             row["previous"] = topic

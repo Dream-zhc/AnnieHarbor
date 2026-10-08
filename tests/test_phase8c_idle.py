@@ -159,6 +159,7 @@ def test_second_requires_new_topic_and_never_third_until_user_replies():
         assert len(model.calls) == 1  # same visual scene is not new value
         assert service.snapshot("a")["reason"] == "second_no_new_evidence"
         service.observe_visual("a", person(("cup",)))
+        service.observe_visual("a", person(("cup",)))
         await settle(service, "a")
         assert model.calls[-1]["attempt"] == 2
         assert model.calls[-1]["previous"] == "喝茶"
@@ -184,6 +185,7 @@ def test_second_requires_explicit_new_value_even_with_new_scene():
                                "source": "speaker", **identity("a")})
         service.on_event("a", {"kind": "tts.playback.drained", "turn_id": "fake",
                                "source": "speaker", **identity("a")})
+        service.observe_visual("a", person(("cup",)))
         await settle(service, "a")
         assert len(model.calls) == 2
         assert len(clients["a"].messages) == 1
@@ -204,6 +206,7 @@ def test_second_speaks_only_after_verified_playback_new_scene_and_cooldown():
         service.on_event("a", {"kind": "tts.playback.drained", "turn_id": "fake",
                                "source": "speaker", **identity("a")})
         service.second_seconds = 120
+        service.observe_visual("a", person(("cup",)))
         service.observe_visual("a", person(("cup",)))
         await settle(service, "a")
         assert service.snapshot("a")["reason"] == "second_cooldown"
@@ -411,4 +414,93 @@ def test_runtime_idle_submission_is_internal_and_scoped_to_own_robot(tmp_path):
         finally:
             await rt.close()
 
+    asyncio.run(run())
+
+
+def test_missing_or_invalid_person_id_cannot_count_as_presence():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "公共话题"}, robots=("a",))
+        for bad_id in (None, "", "  ", "x" * 129):
+            bad = person()
+            bad["facts"]["subjects"][0]["id"] = bad_id
+            service.observe_visual("a", bad)
+            service.observe_visual("a", bad)
+            await service.tick()
+            assert service.snapshot("a")["presence_samples"] == 0
+        assert model.calls == clients["a"].messages == []
+    asyncio.run(run())
+
+
+def test_presence_requires_spaced_observations_not_only_idle_time():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "公共话题"}, robots=("a",))
+        service.presence_seconds = 1
+        service.observe_visual("a", person(("book",)))
+        service.observe_visual("a", person(("book",)))
+        row = service.rows["a"]
+        row["presence_since"] = row["presence_at"] - .05
+        await service.tick()
+        assert service.snapshot("a")["reason"] == "person_unconfirmed"
+        assert model.calls == []
+        row["presence_since"] = row["presence_at"] - 1.1
+        await settle(service, "a")
+        assert len(clients["a"].messages) == 1
+    asyncio.run(run())
+
+
+def test_second_scene_change_requires_two_spaced_observations():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "看书"},
+            {"decision": "SPEAK", "topic": "喝茶", "new_value": True}, robots=("a",))
+        service.presence_seconds = 1
+        service.observe_visual("a", person(("book",)))
+        service.observe_visual("a", person(("book",)))
+        row = service.rows["a"]
+        row["presence_since"] = row["presence_at"] - 1.1
+        row["scene_since"] = row["presence_at"] - 1.1
+        await settle(service, "a")
+        service.on_event("a", {"kind": "tts.playback.started", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        service.on_event("a", {"kind": "tts.playback.drained", "turn_id": "fake",
+                               "source": "speaker", **identity("a")})
+        service.observe_visual("a", person(("cup",)))
+        await settle(service, "a")
+        assert service.snapshot("a")["reason"] == "second_no_new_evidence"
+        service.observe_visual("a", person(("cup",)))
+        await settle(service, "a")
+        assert service.snapshot("a")["reason"] == "second_no_new_evidence"
+        row["scene_since"] = row["presence_at"] - 1.1
+        await settle(service, "a")
+        assert len(model.calls) == len(clients["a"].messages) == 2
+    asyncio.run(run())
+
+
+def test_speech_preemption_during_submit_does_not_rearm_followup():
+    async def run():
+        service, clients, _, _, model = setup(
+            {"decision": "SPEAK", "topic": "看书"}, robots=("a",))
+        client = clients["a"]
+        gate = asyncio.Event()
+        submitted = asyncio.Event()
+
+        async def slow_submit(text, *, source, expected_identity):
+            submitted.set()
+            await gate.wait()
+            return {"status": "accepted", "turn_id": "fake"}
+
+        client.submit_text = slow_submit
+        service.observe_visual("a", person())
+        service.observe_visual("a", person())
+        await service.tick()
+        await submitted.wait()
+        service.on_event("a", {"kind": "speech.started", **identity("a")})
+        gate.set()
+        await service.tasks["a"]
+        assert service.snapshot("a")["attempts"] == 2
+        assert service.snapshot("a")["reason"] == "speech_preempted"
+        await service.tick()
+        assert len(model.calls) == 1
     asyncio.run(run())

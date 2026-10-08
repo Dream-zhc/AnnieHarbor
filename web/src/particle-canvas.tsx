@@ -146,9 +146,17 @@ export function ParticleCanvas({
     }
 
     let time = 0;
+    let lastPaintAt = 0;
 
-    const render = () => {
+    const render = (now = 0) => {
       if (!ctx || width === 0 || height === 0) return;
+      // Workbench microphone WebSocket uses the browser main thread. Never
+      // compete with 50 PCM sends/s for a decorative particle animation.
+      if (now && now - lastPaintAt < 1000 / 15) {
+        if (!prefersReducedMotion && !micActive) animId = requestAnimationFrame(render);
+        return;
+      }
+      lastPaintAt = now;
       ctx.clearRect(0, 0, width, height);
 
       const colors = getColors();
@@ -256,12 +264,12 @@ export function ParticleCanvas({
         }
       }
 
-      if (!prefersReducedMotion) {
+      if (!prefersReducedMotion && !micActive) {
         animId = requestAnimationFrame(render);
       }
     };
 
-    if (prefersReducedMotion) {
+    if (prefersReducedMotion || micActive) {
       render();
     } else {
       animId = requestAnimationFrame(render);
@@ -270,7 +278,7 @@ export function ParticleCanvas({
     const handleVisibility = () => {
       if (document.hidden) {
         if (animId) cancelAnimationFrame(animId);
-      } else if (!prefersReducedMotion) {
+      } else if (!prefersReducedMotion && !micActive) {
         animId = requestAnimationFrame(render);
       }
     };

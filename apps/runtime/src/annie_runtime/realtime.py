@@ -56,6 +56,8 @@ class RealtimeRobot:
         self.wake = (WakeAdmission(wake_detector, wake_wait_ms=wake_wait_ms,
                                    followup_ms=wake_followup_ms)
                      if wake_detector is not None else None)
+        self._wake_held_events = []
+        self._wake_candidate_pending = False
         self.url = url
         self.key = key
         self.persona_profiles = persona_profiles or {}
@@ -221,7 +223,7 @@ class RealtimeRobot:
         if (self.wake and kind == "tts.playback.drained"
                 and fields.get("source") == "speaker"):
             # Only a validated physical speaker receipt opens the follow-up.
-            self.wake.speaker_drained()
+            self.wake.speaker_drained(fields.get("turn_id"))
         observed_t = time.monotonic()
         if kind == "speech.started":
             self._last_provider_speech_started_t = observed_t
@@ -550,6 +552,8 @@ class RealtimeRobot:
         self._stopping = True
         if self.wake:
             self.wake.reset()
+        self._wake_held_events.clear()
+        self._wake_candidate_pending = False
         await self._stop_visual_task()
         self.dialogue = DialogueState()
         self._dialogue_sent_hint = self._dialogue_confirmed_hint = ""
@@ -863,6 +867,8 @@ class RealtimeRobot:
                 self._last_conversation_activity_t = time.monotonic()
                 if self.wake:
                     self.wake.reset()  # Provider reconnect cannot inherit an open gate.
+                    self._wake_held_events.clear()
+                    self._wake_candidate_pending = False
                 self.audio_task = asyncio.create_task(self._audio_pump(generation))
                 while generation == self.robot.generation:
                     try:
@@ -1005,8 +1011,20 @@ class RealtimeRobot:
                 ):
                     self.frames_dropped += 1
                     continue
-                chunks = (await self.wake.frames(frame.payload)
-                          if self.wake else (frame.payload,))
+                try:
+                    chunks = (await self.wake.frames(frame.payload)
+                              if self.wake else (frame.payload,))
+                except RuntimeError as exc:
+                    self.error = str(exc)
+                    self.publish("wakeword.error", error=self.error)
+                    # KWS failure may not become an implicit open microphone.
+                    self._stopping = True
+                    self.ready = False
+                    if self.socket:
+                        await self.socket.close()
+                    return
+                if self.wake and self.wake.state == "SLEEP" and self._wake_held_events:
+                    await self._reject_wake_response("window_expired")
                 for chunk in chunks:
                     if (not self.ready or generation != self.robot.generation
                             or stream_epoch != audio.stream_epoch):
@@ -1046,6 +1064,8 @@ class RealtimeRobot:
         self.turn_id = turn_id
         if audio:
             self.audio_turn_id = turn_id
+            if self.wake:
+                self.wake.authorized_turn_id = turn_id
         self.turn_identity = identity
         if source == "user":
             changed = self.dialogue.observe_user(turn_id, user_text)
@@ -1183,12 +1203,78 @@ class RealtimeRobot:
         self.publish("context.unheard_delete_requested", count=len(item_ids),
                      provider_confirmed=False)
 
+    async def _reject_wake_response(self, reason):
+        """Fail closed for provider replies emitted before authoritative ASR."""
+        events, self._wake_held_events = self._wake_held_events, []
+        self._wake_candidate_pending = False
+        if not events:
+            return
+        response_ids = {
+            (item.get("response") or {}).get("id")
+            for item in events if item.get("type") == "response.created"
+        }
+        response_ids.discard(None)
+        self._cancelled_response_ids.update(response_ids)
+        if len(self._cancelled_response_ids) > 128:
+            self._cancelled_response_ids = set(list(self._cancelled_response_ids)[-128:])
+        outputs = {
+            (item.get("item") or {}).get("id") for item in events
+            if item.get("type") == "response.output_item.added"
+            and (item.get("item") or {}).get("type") == "message"
+        }
+        outputs.update(
+            row.get("id")
+            for item in events if item.get("type") == "response.done"
+            for row in (item.get("response") or {}).get("output", [])
+            if isinstance(row, dict) and row.get("role") == "assistant"
+        )
+        outputs.discard(None)
+        completed = any(item.get("type") == "response.done" for item in events)
+        if self.socket and self.ready:
+            if response_ids and not completed:
+                await self.socket.send({"type": "response.cancel"})
+            if outputs:
+                await self._delete_unheard_items(outputs)
+        self.publish("wakeword.response_rejected", reason=reason, count=len(events))
+
+    async def _release_wake_response(self, generation):
+        events, self._wake_held_events = self._wake_held_events, []
+        self._wake_candidate_pending = False
+        for buffered in events:
+            if generation != self.robot.generation or not self.wake.reply_allowed():
+                return
+            await self.handle(buffered, generation)
+
     async def handle(self, event, generation):
         if generation != self.robot.generation:
             return
         kind = event.get("type")
         if kind == "error":
             raise RuntimeError(self._provider_error(event))
+        if self.wake and isinstance(kind, str) and kind.startswith("response."):
+            response_id = ((event.get("response") or {}).get("id")
+                           if kind in {"response.created", "response.done"}
+                           else event.get("response_id"))
+            if response_id in self._cancelled_response_ids and response_id is not None:
+                if kind == "response.output_item.added":
+                    item = event.get("item") or {}
+                    if item.get("id") and item.get("type") == "message":
+                        await self._delete_unheard_items({item["id"]})
+                return
+        if (self.wake and isinstance(kind, str) and kind.startswith("response.")
+                and not (self.turn_id and self.audio_turn_id != self.turn_id)
+                and not (kind != "response.created"
+                         and self.response_id is not None
+                         and response_id == self.response_id)
+                and (self._wake_candidate_pending or self.wake.state in {"WAKE_WAIT", "FOLLOWUP"})):
+            # Qwen smart_turn can reply BEFORE final ASR. Until the user turn
+            # is confirmed, store no Chat, emit no TTS and execute no Tool.
+            self._wake_held_events.append(event)
+            if len(self._wake_held_events) > 128 or sum(
+                len(str(item)) for item in self._wake_held_events
+            ) > 32768:
+                await self._reject_wake_response("buffer_limit")
+            return
         if self.wake and isinstance(kind, str) and self.wake.snapshot()["state"] == "SLEEP":
             if kind.startswith(("input_audio_buffer.",
                                 "conversation.item.input_audio_transcription.",
@@ -1286,7 +1372,7 @@ class RealtimeRobot:
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
             if self.wake:
-                self.wake.speech_started()
+                self._wake_candidate_pending = self.wake.speech_started(new_item_id)
             # A finished LLM turn may still be speaking. Freeze its local
             # playback without cancelling TTS until smart_turn accepts speech.
             if self.speech and self.speech.turn_id:
@@ -1297,6 +1383,10 @@ class RealtimeRobot:
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
             invalid = event.get("reason") == "turn_invalid"
+            if self.wake:
+                self.wake.speech_stopped(event.get("item_id"), invalid=invalid)
+                if invalid:
+                    await self._reject_wake_response("turn_invalid")
             if invalid:
                 self.speech_active = False
                 self._candidate_playback_turn_id = None
@@ -1316,6 +1406,8 @@ class RealtimeRobot:
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
             final_text = str(event.get("transcript", "")).strip()
+            if self.wake:
+                await self._reject_wake_response("ambient_audio")
             # A plausible sentence is not evidence the robot was addressed.
             # Ambient content must never create a Chat turn or response.create.
             # Demo: an ambient-only outcome rejects a speculative hold. Qwen
@@ -1352,6 +1444,8 @@ class RealtimeRobot:
             # Demo v1.7 confirms an interruption from the stable text only,
             # never speculative stash or local microphone energy.
             meaningful = len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", stable)) >= 3
+            if self.wake and not self.wake.presence.is_substantive(stable):
+                meaningful = False
             if (meaningful and not AMBIENT_FILLER.fullmatch(stable)
                 and not self._candidate_confirmed and self.speech
                 and self.speech.turn_id and getattr(self.speech, "control_state", "") in {
@@ -1370,6 +1464,11 @@ class RealtimeRobot:
             self.transcript = event.get("transcript", "")
             final_text = self.transcript.strip()
             item_id = event.get("item_id")
+            if self.wake and not self.wake.transcript_accepted(final_text, item_id):
+                await self._reject_wake_response("unadmitted_transcript")
+                self.speech_active = False
+                self.pending_audio_item_id = None
+                return
             if item_id and item_id in self.audio_item_turns:
                 self.publish("transcript.duplicate", item_id=item_id)
                 return
@@ -1410,6 +1509,8 @@ class RealtimeRobot:
                 self.audio_item_turns[item_id] = target
                 if len(self.audio_item_turns) > 128:
                     self.audio_item_turns.pop(next(iter(self.audio_item_turns)))
+            if self.wake:
+                await self._release_wake_response(generation)
         elif kind == "response.created":
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
@@ -1456,6 +1557,8 @@ class RealtimeRobot:
                         await self.speech.cancel("response_failed")
                 self._finish(status if status in {"completed", "cancelled"} else "failed",
                              cancel_source=(response.get("status_details") or {}).get("reason"))
+                if self.wake and status == "completed":
+                    self.wake.reply_finished(has_speaker=self.speech is not None)
             else:
                 self._reset_turn()
 

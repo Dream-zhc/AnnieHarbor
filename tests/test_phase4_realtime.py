@@ -784,15 +784,73 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes([sample]) * 640)
                 await asyncio.wait_for(self.runtime.robots[robot_id].audio.queue.join(), 1)
         self.assertGreaterEqual(detector.calls, 2)
-        self.assertEqual(a.frames_sent, 12, detector.first_samples)
+        self.assertEqual(a.frames_sent, 50, detector.first_samples)
         self.assertEqual(b.frames_sent, 0)
         self.assertEqual(a.wake.state, "WAKE_WAIT")
         self.assertEqual(b.wake.state, "SLEEP")
-        a.wake.speech_started()
+        a.wake.speech_started("spoken")
+        a.wake.speech_stopped("spoken")
+        a.wake.transcript_accepted("今天天气怎么样", "spoken")
+        a.wake.authorized_turn_id = "turn1"
         a.publish("tts.playback.drained", source="browser_test")
         self.assertEqual(a.wake.state, "ACTIVE")
-        a.publish("tts.playback.drained", source="speaker")
+        a.publish("tts.playback.drained", source="speaker", turn_id="turn1")
         self.assertEqual(a.wake.state, "FOLLOWUP")
+
+    async def test_sherpa_wake_blocks_early_qwen_response_until_valid_asr(self):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _):
+                return False
+
+        client = self.runtime.realtime["annie-a"]
+        client.wake = WakeAdmission(Detector())
+        client.wake.presence.wake_detected()
+        generation = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "wake-only"}, generation)
+        for event in (
+            {"type": "response.created", "response": {"id": "no-response"}},
+            {"type": "response.text.delta", "response_id": "no-response", "delta": "我在呢"},
+            {"type": "response.function_call_arguments.done", "response_id": "no-response",
+             "call_id": "unwanted", "name": "preview_action",
+             "arguments": '{"description":"乱动作"}'},
+        ):
+            await client.handle(event, generation)
+        self.assertIsNone(client.turn_id)
+        self.assertFalse(any(evt["kind"] == "tool.called" for evt in client.events))
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "wake-only", "transcript": "小安妮"},
+                            generation)
+        self.assertIsNone(client.turn_id)
+        self.assertIn({"type": "response.cancel"}, client.socket.outbound)
+        self.assertFalse(any(evt["kind"] == "text.delta" for evt in client.events))
+        await client.handle({"type": "response.output_item.added",
+                             "response_id": "no-response",
+                             "item": {"id": "unheard-wake", "type": "message",
+                                      "role": "assistant"}}, generation)
+        self.assertIn({"type": "conversation.item.delete", "item_id": "unheard-wake"},
+                      client.socket.outbound)
+
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "valid-question"}, generation)
+        await client.handle({"type": "response.created",
+                             "response": {"id": "response-for-question"}}, generation)
+        await client.handle({"type": "response.text.delta",
+                             "response_id": "response-for-question",
+                             "delta": "今天天气不错"}, generation)
+        self.assertIsNone(client.turn_id)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "valid-question", "transcript": "今天天气怎么样"},
+                            generation)
+        self.assertIsNotNone(client.turn_id)
+        self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "今天天气怎么样")
+        self.assertEqual(client.text, "今天天气不错")
+        self.assertEqual(client.wake.state, "ACTIVE")
+        await client.handle({"type": "response.done", "response": {
+            "id": "response-for-question", "status": "completed"}}, generation)
+        self.assertEqual(client.wake.state, "SLEEP")  # no physical speaker attached
 
     async def test_audio_pump_waits_for_frame_without_polling(self):
         """An idle pump waits on get(), then sends promptly when put() wakes it."""

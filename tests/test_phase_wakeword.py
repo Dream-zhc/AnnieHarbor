@@ -3,7 +3,6 @@
 import unittest
 
 from annie_runtime.wakeword import (
-    ACTIVE_WATCHDOG_SECONDS,
     FOLLOWUP_SECONDS,
     FRAME_BYTES,
     PRE_ROLL_BYTES,
@@ -58,19 +57,23 @@ class WakeAdmissionTests(unittest.IsolatedAsyncioTestCase):
         clock, detector = Clock(), Detector()
         gate = WakeAdmission(detector, clock=clock)
         packet = await self._prime(gate, detector)
-        gate.speech_started()
+        gate.speech_started("u1")
+        self.assertEqual(gate.state, "WAKE_WAIT")
+        gate.speech_stopped("u1")
+        self.assertTrue(gate.transcript_accepted("今天怎么样", "u1"))
         self.assertEqual(gate.state, "ACTIVE")
         clock.now += 3
         self.assertEqual(await gate.frames(packet), (packet,))
         self.assertEqual(gate.state, "ACTIVE")
-        gate.speaker_drained()
+        gate.authorized_turn_id = "turn1"
+        gate.speaker_drained("turn1")
         self.assertEqual(gate.state, "FOLLOWUP")
         clock.now += FOLLOWUP_SECONDS - 0.1
-        gate.speech_started()
+        gate.speech_started("u2")
+        clock.now += 35
+        self.assertEqual(await gate.frames(packet), (packet,))
+        self.assertTrue(gate.transcript_accepted("继续刚才的话题", "u2"))
         self.assertEqual(gate.state, "ACTIVE")
-        clock.now += ACTIVE_WATCHDOG_SECONDS + 0.1
-        detector.trigger = False
-        self.assertEqual(await gate.frames(packet), ())
 
     async def test_two_robots_share_detector_but_never_share_gate_state(self):
         clock, detector = Clock(), Detector()

@@ -173,17 +173,18 @@ def main():
     if os.environ.get("ANNIE_WAKEWORD_ENABLED") == "1":
         if not os.environ.get("DASHSCOPE_API_KEY"):
             raise ValueError("wakeword requires an active Realtime provider")
-        model_file = os.environ.get("ANNIE_WAKEWORD_MODEL")
-        if not model_file:
-            raise ValueError("ANNIE_WAKEWORD_MODEL is required when wakeword is enabled")
-        from annie_runtime.wakeword import SharedWakeModel
+        from annie_adapters.kws import SherpaWakeModel
 
-        model_path = Path(model_file).expanduser()
-        if not model_path.is_absolute():
-            model_path = root / model_path
-        wake_detector = SharedWakeModel(
-            model_path.resolve(),
-            threshold=float(os.environ.get("ANNIE_WAKEWORD_THRESHOLD", "0.5")),
+        def asset_path(env_name, default):
+            asset = Path(os.environ.get(env_name, default)).expanduser()
+            return (asset if asset.is_absolute() else root / asset).resolve()
+
+        wake_detector = SherpaWakeModel(
+            asset_path("ANNIE_WAKEWORD_MODEL",
+                       "var/models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"),
+            keywords=asset_path("ANNIE_WAKEWORD_KEYWORDS",
+                                "config/小安妮唤醒词.tokens.txt"),
+            threshold=float(os.environ.get("ANNIE_WAKEWORD_THRESHOLD", "0.35")),
         )
     idle_enabled = os.environ.get("ANNIE_IDLE_ENABLED") == "1"
     if idle_enabled and (not os.environ.get("DASHSCOPE_API_KEY")

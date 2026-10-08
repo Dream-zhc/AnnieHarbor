@@ -2,8 +2,29 @@
 
 import asyncio
 import unittest
+from pathlib import Path
 
 from annie_runtime.wakeword import FRAME_BYTES, PRE_ROLL_BYTES, WakeAdmission
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class SherpaKeywordConfigTests(unittest.TestCase):
+    def test_default_and_experimental_files_remain_separate(self):
+        default = (ROOT / "config/小安妮唤醒词.tokens.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        experimental = (ROOT / "config/小安妮唤醒词_宽松实验.tokens.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        self.assertEqual(default, ["x iǎo ān n ī @小安妮"])
+        self.assertEqual(len(experimental), 14)
+        self.assertTrue(all(" #" in line and " @" in line and " :" in line
+                            for line in experimental))
+        self.assertIn("x iǎo ān n ī :3.0 #0.04 @小妮", experimental)
+        self.assertIn("ān n ǐ :2.4 #0.12 @安妮", experimental)
+        # Short phrases and low thresholds are available only by explicit opt-in.
+        self.assertFalse(any("#0.04" in line for line in default))
 
 
 class Stream:

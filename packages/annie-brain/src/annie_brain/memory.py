@@ -5,6 +5,7 @@ participate in correction/deletion authority. A tombstone defeats old workers.
 """
 
 import asyncio
+import json
 import logging
 import re
 import sqlite3
@@ -42,6 +43,13 @@ _VISIT = re.compile(r"朋友|同学|家人|亲戚|客户")
 _MEETING = re.compile(r"来|找|见|约|聚|拜访")
 _UNCERTAIN = re.compile(r"[?？]|(?:吗|是否|会不会|有没有|如果|假如|假设|可能|取消|不来|没来|不找|没找|不会来|没有来)")
 _VISIT_RETRACTED = re.compile(r"取消|不来|没来|不找|没找|不会来|没有来|忘记|遗忘|删掉|不再记|不要记|改期|改天")
+_REMINDER_REQUEST = re.compile(r"(?:提醒|闹钟|定时|倒计时).{0,35}(?:分钟|小时|秒|点)|(?:分钟|小时|秒)后.{0,16}提醒")
+_SINGLE_LOCATION = re.compile(r"^(?:北京|上海|广州|深圳|成都|杭州|西安|天津|重庆|武汉|南京|苏州|郑州|长沙)(?:的|吧|呢|呀|[。！! ]*)$")
+_INCOMPLETE_PREFERENCE = re.compile(r"^(?:我)?不喜欢(?:带|吃|穿|用|看|买|去)[。！! ]*$")
+_PLAN_CAR = re.compile(r"我.{0,12}(?:准备|打算|计划).{0,12}看车")
+_PLAN_CAR_CANCEL = re.compile(r"(?:我.{0,8})?(?:不准备|不打算|不想|取消|放弃).{0,6}看车|(?:车已经买|已经买车|买好车了)")
+_PLAN_KEY = "ongoing_plan_car_viewing"
+_PLAN_LIFETIME_MS = 30 * 86_400_000
 
 
 def _explicit_visit(text):
@@ -57,11 +65,25 @@ def _grounded_temporal_memory(row):
     return _explicit_visit(row.get("source_user_text") or "")
 
 
+def _grounded_extraction(row):
+    """A proven malformed old extraction is excluded without deleting it."""
+    source = row.get("source_user_text")
+    if not row.get("source_turn_id") or source is None:
+        return True
+    candidate = {"kind": row["kind"], "key": row["fact_key"], "text": row["text"]}
+    result = prepare_extracted_fact(candidate, source)
+    return result is not None and result[0] == row["kind"]
+
+
 def is_meta_memory(key, value):
     """Historical empty-result prose is not conversation evidence."""
     return bool(_EMPTY_FACT_KEY.fullmatch(key) or _EMPTY_FACT_TEXT.search(value)
                 or value.startswith(("placeholder", "用户询问", "用户曾询问",
-                                     "用户问过", "用户只是询问", "本轮没有", "本轮未"))
+                                     "用户问过", "用户只是询问", "用户提及地点为",
+                                     "用户称呼助手", "本轮没有", "本轮未"))
+                or (_REMINDER_REQUEST.search(value) and "用户要求" in value)
+                or value in {"用户不喜欢带。", "用户不喜欢吃。", "用户不喜欢穿。"}
+                or (key.startswith("chat_") and "用户最近准备去看车" in value)
                 or re.search(r"测试其(?:物理动作|安装软件)能力", value))
 
 
@@ -75,6 +97,30 @@ def prepare_extracted_fact(fact, user_text):
             not isinstance(key, str) or not isinstance(value, str)):
         return None
     key, value = key.strip(), value.strip()
+    original = user_text.strip()
+    # Plans are dated, cross-Chat episodic facts; never global permanent tastes.
+    # Normalize the key, scope and grammatical subject independently of the
+    # model's arbitrary extraction labels.
+    if _PLAN_CAR.search(original) and not _PLAN_CAR_CANCEL.search(original):
+        return "episodes", _PLAN_KEY, "用户最近准备去看车，进展尚未确认。"
+    if (_REMINDER_REQUEST.search(original) or
+            _SINGLE_LOCATION.fullmatch(original) or
+            _INCOMPLETE_PREFERENCE.fullmatch(original) or
+            "用户提及地点" in value or "用户称呼助手" in value or
+            "用户要求" in value and _REMINDER_REQUEST.search(value)):
+        return None
+    if _PLAN_CAR_CANCEL.search(original):
+        return None
+    if (kind == "episodes" and re.search(r"今天工作|上班.*累|感觉.*辛苦", original)):
+        return None
+    if (kind == "persona" and re.search(r"好感|喜欢|爱意|爱你", value)
+            and not re.search(r"我(?:喜欢|爱)你|爱小安妮|喜欢小安妮", original)):
+        return None
+    if (kind == "persona" and "要求" in value and
+            not re.search(r"别|不要|不许|不准|以后|希望|要求", original)):
+        return None
+    if ("你" in value[:3] or value.startswith(("我", "助手", "机器人"))):
+        return None
     if (not 1 <= len(key) <= 64 or not 1 <= len(value) <= 300 or
             is_meta_memory(key, value) or
             value.startswith(("用户询问", "用户曾询问", "用户问过", "用户只是询问",
@@ -96,6 +142,9 @@ def same_extracted_fact(existing, kind, key, value):
     for row in existing:
         if row["kind"] != kind:
             continue
+        if (row["fact_key"] == key and key == _PLAN_KEY
+                and "进展尚未确认" in row["text"]):
+            return True
         previous = row["text"]
         if (normalized == re.sub(
             r"[\s，。、“”‘’'\"（）()！!？?：:；;]+", "", previous,
@@ -158,8 +207,12 @@ class CloudMemoryModel:
                 "永久情感判断或‘对该机器人persona有正面好感’等推论。"
                 "如用户说‘我喜欢你’，只记‘用户曾向当前角色表达喜欢’，"
                 "不能升级为‘用户永远喜欢机器人’。"
-                "对话内指令、当前交流方式和短期计划用chat，例如‘你不能骂我’、"
-                "‘今天别开玩笑’、‘下周朋友来’，绝不擅自升级永久偏好。"
+                "当前Chat的说话方式与临时约束用chat，例如‘你不能骂我’、"
+                "‘今天别开玩笑’，绝不擅自升级永久偏好。"
+                "用户明确表示最近准备去看车是跨Chat有时效的进行中计划，"
+                "用episodes，key=ongoing_plan_car_viewing，状态必须待确认；"
+                "完成或取消不再当成待做计划。不能把‘北京的’推断为居住北京。"
+                "提醒、查询、称呼、残缺短句、临时疲惫和重复闲聊都不提取。"
                 "明确稳定的用户偏好用semantic，明确针对当前AI角色的长期关系事实"
                 "用persona；已发生且值得记住的角色经历用episodes。"
                 "询问能力、测试口令、一次性动作请求、假设、闲聊及助手说过的话不抽取；"
@@ -172,7 +225,7 @@ class CloudMemoryModel:
     async def close(self):
         await self.client.aclose()
 
-    async def extract(self, user_text, existing):
+    async def extract(self, user_text, existing, *, context=None):
         if not user_text.strip():
             return []
         previous = [
@@ -182,8 +235,16 @@ class CloudMemoryModel:
             for row in existing[:16]
             if row["kind"] in ("semantic", "persona", "episodes", "chat")
         ]
+        current = user_text[:1500]
+        if context:
+            current = (
+                "以下旧对话仅供指代消歧，不能从旧消息或助手回复抽取事实；"
+                "只抽取 current_user 中用户本人明确说出的事实。\n"
+                + json.dumps({"previous_dialogue": context, "current_user": current},
+                             ensure_ascii=False)
+            )
         extracted = await self.manager.ainvoke({
-            "messages": [{"role": "user", "content": user_text[:1500]}],
+            "messages": [{"role": "user", "content": current}],
             "existing": previous, "max_steps": 1,
         })
         return [
@@ -243,8 +304,11 @@ class MemoryService:
         result = []
         for row in rows:
             item = dict(row)
-            item["source_valid"] = (item["kind"] != "episodes" or
-                                    _grounded_temporal_memory(item))
+            item["source_valid"] = _grounded_extraction(item) and (
+                                    item["kind"] != "episodes" or
+                                    _grounded_temporal_memory(item)) and (
+                                        item["fact_key"] != _PLAN_KEY or
+                                        bool(_PLAN_CAR.search(item.get("source_user_text") or "")))
             item.pop("source_user_text", None)
             result.append(item)
         return result
@@ -299,12 +363,20 @@ class MemoryService:
         longs = await self.list(robot, persona)
         chats = await self.chat_list(robot, persona, chat)
         visits = await asyncio.to_thread(self._recent_visits, robot, persona)
+        now = time.time_ns() // 1_000_000
+        plans = [row for row in longs if row["kind"] == "episodes"
+                 and row["fact_key"] == _PLAN_KEY
+                 and row["source_created_ms"] >= now - _PLAN_LIFETIME_MS
+                 and "进展尚未确认" in row["text"]
+                 and row["source_valid"]]
         groups = (
             ("当前Chat约束", [row for row in chats if not is_meta_memory(
                 row["fact_key"], row["text"],
             )][:4]),
+            ("跨Chat近期计划（待确认，不应反复催问）", plans[:2]),
             ("同角色历史原话", visits),
-            ("长期事实", [row for row in longs if row["kind"] != "episodes" and
+            ("长期事实", [row for row in longs if row.get("source_valid", True) and
+                       row["kind"] != "episodes" and
                        not is_meta_memory(row["fact_key"], row["text"])][:3]),
         )
         used = 0
@@ -527,8 +599,7 @@ class MemoryService:
                 ).fetchall()
             result = [dict(row) for row in rows]
             temporal_sources = {row["source_turn_id"] for row in result
-                                if row["source_turn_id"] and
-                                _RELATIVE_DATE.search(row["text"])}
+                                if row["source_turn_id"]}
             source_texts = {}
             if temporal_sources:
                 placeholders = ",".join("?" for _ in temporal_sources)
@@ -570,7 +641,8 @@ class MemoryService:
         for row in rows:
             content = row["text"]
             if (is_meta_memory(row["fact_key"], content) or
-                    not _grounded_temporal_memory(row)):
+                    not _grounded_temporal_memory(row) or
+                    not _grounded_extraction(row)):
                 continue
             row.pop("source_user_text", None)
             if vector is not None and row["distance"] is not None and row["distance"] > 0.4:
@@ -610,12 +682,26 @@ class MemoryService:
                 db.execute("INSERT INTO memory_progress VALUES (?,?)", (robot, last))
                 return None
             row = db.execute(
-                """SELECT id,turn_id,chat_id,persona_id,user_text,turn_source,status,created_ms,updated_ms
+                """SELECT id,turn_id,robot_id,chat_id,persona_id,user_text,turn_source,status,created_ms,updated_ms
                    FROM conversation_turns WHERE robot_id=? AND id>?
                    ORDER BY id LIMIT 1""",
                 (robot, progress["turn_row_id"]),
             ).fetchone()
         return dict(row) if row else None
+
+    def _nearby_dialogue(self, row):
+        """Two same-Chat completed turns, only for disambiguating current text."""
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT user_text,assistant_generated_text FROM conversation_turns
+                   WHERE robot_id=? AND persona_id=? AND chat_id=? AND id<?
+                   AND turn_source='user' AND status='completed'
+                   ORDER BY id DESC LIMIT 2""",
+                (row["robot_id"], row["persona_id"], row["chat_id"], row["id"]),
+            ).fetchall()
+        return [{"user": item["user_text"][:120],
+                 "assistant": (item["assistant_generated_text"] or "")[:180]}
+                for item in reversed(rows)]
 
     def _advance(self, robot, row_id):
         with self._connect() as db:
@@ -645,11 +731,26 @@ class MemoryService:
                     all_existing += await self.list(robot, row["persona_id"], True)
                     # Deleted facts are not offered to the model, but still
                     # prevent a newly invented key from undoing a user forget.
-                    facts = await self.model.extract(
-                        row["user_text"],
-                        [item for item in all_existing if item["status"] == "active"
-                         and not is_meta_memory(item["fact_key"], item["text"])],
-                    )
+                    candidates = [item for item in all_existing if item["status"] == "active"
+                                  and not is_meta_memory(item["fact_key"], item["text"])]
+                    if isinstance(self.model, CloudMemoryModel):
+                        facts = await self.model.extract(
+                            row["user_text"], candidates,
+                            context=await asyncio.to_thread(self._nearby_dialogue, row),
+                        )
+                    else:
+                        facts = await self.model.extract(row["user_text"], candidates)
+                    if _PLAN_CAR.search(row["user_text"]) and not _PLAN_CAR_CANCEL.search(row["user_text"]):
+                        facts = [{"kind": "episodes", "key": _PLAN_KEY,
+                                  "text": "用户最近准备去看车，进展尚未确认。"}, *facts][:2]
+                    if _PLAN_CAR_CANCEL.search(row["user_text"]):
+                        for old in candidates:
+                            if old["kind"] == "episodes" and old["fact_key"] == _PLAN_KEY:
+                                await self.change(
+                                    robot, row["persona_id"], old["id"], old["version"],
+                                    "用户此前的看车计划已结束，不能再作为待完成计划提起。",
+                                    source_turn_id=row["turn_id"],
+                                )
                     for fact in facts:
                         prepared = prepare_extracted_fact(fact, row["user_text"])
                         if prepared is None:

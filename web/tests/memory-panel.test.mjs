@@ -43,8 +43,10 @@ test('human-facing text stays factual and canonical storage remains untouched',(
   assert.equal(memoryText('用户提到下周有朋友来找他。'),'你提到下周有朋友来找你。');
   assert.equal(memoryText('用户要求当前AI助手不要骂他。'),'你要求当前角色不要骂你。');
   assert.equal(memoryText('用户曾向当前 Persona 表达喜欢。'),'你曾向当前角色表达喜欢。');
+  assert.equal(memoryText('用户最近准备去看车，进展尚未确认。'),'你最近准备去看车，进展尚未确认。');
   assert.equal(memoryText('用户曾向当前 Persona 表达喜欢，后来更正不喜欢。'),
     '你曾向当前角色表达喜欢，后来更正不喜欢。');
   assert.equal(memoryType(row('persona','')), '关系');
   assert.equal(memoryType(row('episodes','')), '经历');
+  assert.equal(memoryType({...row('episodes','用户最近准备去看车。'),fact_key:'ongoing_plan_car_viewing'}),'近期计划');
 });

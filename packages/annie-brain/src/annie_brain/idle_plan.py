@@ -11,6 +11,7 @@ class IdleState(TypedDict, total=False):
     mode: str
     user_text: str
     assistant_text: str
+    recent_plan: str
     attempt: int
     scene: str
     previous: str

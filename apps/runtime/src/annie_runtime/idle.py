@@ -174,9 +174,28 @@ class ShortContinuation:
         speech_at = getattr(client, "_last_provider_speech_started_t", None)
         try:
             started = time.monotonic()
+            recent_plan = ""
+            # An unattended speaker cannot disclose cross-Chat plans.
+            # Only explicit topic-seeking in a visible private text turn opts in.
+            if (row["channel"] == "text" and
+                    re.search(r"无聊|聊什么|聊点什么|聊点啥|不知道聊|找个话题|随便聊聊",
+                              row["user_text"]) and
+                    self.runtime.memory is not None):
+                facts = await self.runtime.memory.list(
+                    robot_id, identity["persona_id"])
+                plans = [item for item in facts
+                         if item.get("kind") == "episodes" and
+                         item.get("fact_key") == "ongoing_plan_car_viewing" and
+                         item.get("source_valid", True) and
+                         item.get("source_created_ms", 0) >=
+                         time.time_ns() // 1_000_000 - 30 * 86_400_000 and
+                         "进展尚未确认" in item["text"]]
+                if plans:
+                    recent_plan = plans[0]["text"][:100]
             result = await asyncio.wait_for(self.graph.ainvoke({
                 "mode": "continuation", "user_text": row["user_text"],
                 "assistant_text": row["assistant_text"],
+                "recent_plan": recent_plan,
             }), self.timeout)
             if (row["turn_id"] != turn_id or row["identity"] != identity or
                     row["user_at"] != user_at):

@@ -30,6 +30,8 @@ class QwenIdleModel:
                 "没有继续开口不等于要求你催促。上一句已经追问时，不得催答或再次连环问，"
                 "可以补一条相关但不同的新观察、轻幽默或简短陪伴语，不要重复上一个问题；"
                 "如果只是任务结论、明显要求结束、短答敷衍，或确实没有新意，就NO_SPEAK。"
+                "用户明确表示不知道聊什么、想随便聊聊且给出recent_plan时，"
+                "可以轻松问该计划的进展，不假装已完成，不追问敏感细节；"
                 "不得复述旧任务、追讨答案、重复刚才的回复，"
                 "不要提供个人数据或隐私细节，不要调用工具。"
                 "返回JSON：decision=NO_SPEAK或SPEAK，topic=不超过70字的简短续聊意图，"
@@ -38,6 +40,8 @@ class QwenIdleModel:
             user_input = json.dumps({
                 "user_text": state["user_text"][:180],
                 "assistant_text": state["assistant_text"][:180],
+                **({"recent_plan": state["recent_plan"][:100]}
+                   if state.get("recent_plan") else {}),
             }, ensure_ascii=False)
         else:
             system = (

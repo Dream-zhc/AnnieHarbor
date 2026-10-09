@@ -15,14 +15,15 @@ export const visibleMemory=(item:MemoryFact,scope:MemoryScope,now:number)=>
   (scope==='chat'?item.kind==='chat':scope==='shared'?item.kind==='semantic':
     item.kind==='persona'||item.kind==='episodes');
 
-export const memoryType=(item:MemoryFact)=>item.kind==='episodes'?'经历':
+export const memoryType=(item:MemoryFact)=>item.fact_key.startsWith('ongoing_plan_')?'近期计划':
+  item.kind==='episodes'?'经历':
   item.kind==='persona'?'关系':item.kind==='chat'?'会话约定':'偏好与事实';
 
 export const memoryText=(value:string)=>{
   if(/用户曾(?:对当前AI助手|向当前 Persona|向当前AI助手).{0,15}(?:表示|表达)喜欢/.test(value)&&
      !/(后来|更正|不再|不喜欢|已不|并非)/.test(value))
     return '你曾向当前角色表达喜欢。';
-  return value.replace(/^用户(?=曾|提到|说过|喜欢|不喜欢|希望|要求|偏好|习惯|计划|有|会|要|对)/,'你')
+  return value.replace(/^用户(?=曾|最近|此前|明确|现在|提到|说过|喜欢|不喜欢|希望|要求|偏好|习惯|计划|有|会|要|对)/,'你')
     .replace(/当前(?:AI助手| Persona|Persona|机器人)\s*/g,'当前角色')
     .replace(/(来找|联系|见到)他([。！!，,]|$)/g,'$1你$2')
     .replace(/不要骂他/g,'不要骂你');

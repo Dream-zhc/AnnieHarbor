@@ -1947,6 +1947,11 @@ class HarborRuntime:
         if robot_id not in self.realtime:
             return {**self.session_state(robot_id), "ready": False, "state": "not_configured"}
         return self.realtime[robot_id].snapshot()
+    def viewed_text_turn(self, robot_id: str, turn_id: str, identity: dict):
+        if robot_id not in self.realtime:
+            raise RobotUnavailableError("Realtime is not configured")
+        return self.idle.short.viewed_text(robot_id, turn_id, identity)
+
 
     def realtime_diagnostics(self, robot_id: str):
         if robot_id not in self.realtime:

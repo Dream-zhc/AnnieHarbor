@@ -35,13 +35,15 @@ class Client:
         self.response_id = None
         self.speech = object()
         self.robot = SimpleNamespace(turn_cache={})
+        self._turn_timelines = {}
+        self._last_user_turn_id = None
         self.persona_snapshot = {"question_pressure": "active"}
         self._last_user_turn_at = time.monotonic() - 2
         self._last_provider_speech_started_t = None
         self.messages = []
 
-    async def submit_text(self, text, *, source, expected_identity):
-        self.messages.append((text, source, dict(expected_identity)))
+    async def submit_text(self, text, *, source, expected_identity, text_only=False):
+        self.messages.append((text, source, dict(expected_identity), text_only))
         return {"turn_id": "out", "status": "accepted"}
 
 
@@ -112,14 +114,14 @@ def test_no_chasing_an_existing_question_or_stop_request():
         service, clients, _, planner = build(robots=("a",))
         drain(service, clients["a"], text="喜欢哪一部分呢？")
         await settle(service)
-        assert service.snapshot("a")["reason"] == "already_asked"
+        assert service.snapshot("a")["status"] == "submitted_unknown"
         service.on_event("a", {"kind": "turn.started", "turn_source": "user"})
         clients["a"]._last_user_turn_at = time.monotonic()
         drain(service, clients["a"], text="这本书听着真不错。",
               turn_id="turn-b", user_text="小安妮退下，别说了")
         await settle(service)
         assert service.snapshot("a")["reason"] == "no_open_topic"
-        assert planner.calls == []
+        assert len(planner.calls) == 1
         await service.close()
 
     asyncio.run(run())
@@ -184,6 +186,69 @@ def test_disabled_short_continuation_is_inert():
         await settle(service)
         assert not planner.calls
         assert service.snapshot("a")["enabled"] is False
+        await service.close()
+
+    asyncio.run(run())
+
+
+def test_visible_web_text_can_trigger_silent_continuation_without_speaker_receipt():
+    async def run():
+        service, clients, identities, planner = build(robots=("a",), delay=15)
+        client = clients["a"]
+        client._last_user_turn_id = "web-turn"
+        client._turn_timelines["web-turn"] = {"input_mode": "text"}
+        client.robot.turn_cache["web-turn"] = {
+            "turn_id": "web-turn", "turn_source": "user",
+            "user_text": "我昨天看了个特别有意思的电影",
+            "assistant_generated_text": "听起来挺有趣，里面哪一段最打动你？",
+            "updated_ms": time.time_ns() // 1_000_000, "status": "completed",
+        }
+        assert not service.viewed_text("a", "web-turn", {**identities["a"], "chat_id": "bad"})
+        assert service.viewed_text("a", "web-turn", dict(identities["a"]))
+        assert service.snapshot("a")["channel"] == "text"
+        await settle(service)
+        assert not planner.calls
+        assert service.rows["a"]["reason"] == "cooldown"
+        service.rows["a"]["drained_at"] -= 16
+        assert service.viewed_text("a", "web-turn", dict(identities["a"]))
+        await settle(service)
+        assert len(planner.calls) == 1
+        assert len(client.messages) == 1
+        assert client.messages[0][-1] is True
+        await settle(service)
+        assert len(planner.calls) == 1
+        await service.close()
+
+    asyncio.run(run())
+
+
+def test_hidden_webpage_and_new_user_preempt_web_continuation():
+    async def run():
+        service, clients, identities, planner = build(robots=("a",))
+        client = clients["a"]
+        client._last_user_turn_id = "web-turn"
+        client._turn_timelines["web-turn"] = {"input_mode": "text"}
+        client.robot.turn_cache["web-turn"] = {
+            "turn_id": "web-turn", "turn_source": "user",
+            "user_text": "今天工作太累了真的想聊聊",
+            "assistant_generated_text": "听起来不轻松，最近挺辛苦。",
+            "updated_ms": time.time_ns() // 1_000_000, "status": "completed",
+        }
+        assert service.viewed_text("a", "web-turn", dict(identities["a"]))
+        service.rows["a"]["drained_at"] -= 17
+        service.rows["a"]["visible_at"] -= 9
+        await settle(service)
+        assert service.snapshot("a")["reason"] == "web_not_visible"
+        assert not planner.calls
+        assert service.viewed_text("a", "web-turn", dict(identities["a"]))
+        planner.gate = asyncio.Event()
+        await service.tick()
+        await asyncio.sleep(0)
+        service.on_event("a", {"kind": "turn.started", "turn_source": "user"})
+        client._last_user_turn_at = time.monotonic()
+        planner.gate.set()
+        await service.tasks["a"]
+        assert client.messages == []
         await service.close()
 
     asyncio.run(run())

@@ -151,6 +151,8 @@ class RealtimeRobot:
 
     def _timeline_snapshot(self, turn_id):
         record = self._turn_timelines.get(turn_id)
+        self._last_user_turn_id = None
+        self._external_text_only = False
         if record is None:
             return None
         times = dict(record["times"])
@@ -743,6 +745,7 @@ class RealtimeRobot:
                         "set_expression仍仅响应当前轮明确请求；"
                         "否定或取消的本轮不能调用动作。"
                         "本项目的动作完成口径是成功发送至所属Room即算已执行，无须等待硬件回执。"
+        self._external_text_only = False
                         "awaiting_audio_anchor/queued仍在排队，不要说已执行；"
                         "published_unknown按项目口径算执行；send_unknown发送不确定，不能宣称成功。"
                         "动作工具返回的状态、Room、发送、发布、指令、通道等是内部信息，"
@@ -1116,10 +1119,11 @@ class RealtimeRobot:
         if status == "completed" and turn is not None and self.turn_identity == self.robot.session_state():
             # With external speech, generated != heard. Only a speaker receipt
             # of full drain can promote this turn into conversational context.
-            self.robot._cache_context_turn(turn, allow_generated=self.speech is None)
+            self.robot._cache_context_turn(
+                turn, allow_generated=self.speech is None or self._external_text_only)
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
-            if self.speech is None:
+            if self.speech is None or self._external_text_only:
                 changed = self.dialogue.observe_delivered(self.turn_id, self.text)
                 if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                     self._dialogue_changed()
@@ -1182,7 +1186,10 @@ class RealtimeRobot:
                 return True
         return False
 
-    async def submit_text(self, text, *, source="user", expected_identity=None):
+    async def submit_text(self, text, *, source="user", expected_identity=None,
+                          text_only=False):
+        if text_only and source != "external":
+            raise ValueError("text-only output is only for internal external turns")
         if not self.ready or not self.socket:
             raise RobotUnavailableError("Realtime Session not ready")
         if expected_identity is not None and any(
@@ -1214,6 +1221,7 @@ class RealtimeRobot:
             self.publish("llm.request_started", turn_id=self.turn_id)
             await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
         except Exception:
+            self._last_user_turn_id = turn_id
             if self.turn_id == owned_turn:
                 self._finish("failed", cancel_source="send_failed")
             raise
@@ -1360,6 +1368,7 @@ class RealtimeRobot:
                 self._visual_confirmed_text = self._visual_sent_text
                 self._visual_confirmed_seq = self._visual_sent_seq
                 self._dialogue_confirmed_hint = self._dialogue_sent_hint
+        self._external_text_only = text_only
                 if self.prompt_snapshot is not None:
                     # Preserve older turn/session evidence; do not rewrite the
                     # instruction snapshot under already-finished turns.
@@ -1599,11 +1608,12 @@ class RealtimeRobot:
             if self.first_text_ms is None and self.began is not None:
                 self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
             self.publish("text.delta", turn_id=self.turn_id, delta=chunk, text=self.text)
-            if self.speech and chunk:
+            if self.speech and chunk and not self._external_text_only:
                 await self.speech.feed(self.turn_id, self.turn_identity, chunk)
         elif kind == "response.text.done":
             complete = event.get("text", self.text)
-            if self.speech and not self.text and complete and self.turn_id:
+            if (self.speech and not self._external_text_only
+                    and not self.text and complete and self.turn_id):
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)
             self.text = complete
             self.publish("text.done", turn_id=self.turn_id, text=self.text)
@@ -1619,7 +1629,7 @@ class RealtimeRobot:
                 self.publish("tool.followup")
                 return
             if self.turn_id:
-                if self.speech:
+                if self.speech and not self._external_text_only:
                     if status == "completed":
                         await self.speech.finish(self.turn_id)
                     else:

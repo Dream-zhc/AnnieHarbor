@@ -659,6 +659,39 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(e["kind"] == "turn.started" for e in other.events))
         sock = client.socket
         self.assertEqual(sock.outbound[-2]["item"]["role"], "user")
+    async def test_silent_external_continuation_does_not_enqueue_room_tts(self):
+        class FakeSpeech:
+            def __init__(self):
+                self.calls = []
+
+            async def feed(self, *args):
+                self.calls.append(("feed", args))
+
+            async def finish(self, *args):
+                self.calls.append(("finish", args))
+
+        client = self.runtime.realtime["annie-a"]
+        before = client.speech
+        fake = FakeSpeech()
+        client.speech = fake
+        try:
+            generation = client.robot.generation
+            with self.assertRaises(ValueError):
+                await client.submit_text("普通用户消息", text_only=True)
+            await client.submit_text("内部续聊提示", source="external",
+                                     text_only=True)
+            turn_id = client.turn_id
+            await client.handle({"type": "response.text.delta",
+                                 "delta": "刚才那个话题，我还想到一个有趣的角度。"}, generation)
+            await client.handle({"type": "response.done",
+                                 "response": {"status": "completed"}}, generation)
+            self.assertEqual(fake.calls, [])
+            self.assertEqual(client.robot.turn_cache[turn_id]["status"], "completed")
+            self.assertEqual(client.robot.turn_cache[turn_id]["turn_source"], "external")
+            self.assertFalse(client._external_text_only)
+        finally:
+            client.speech = before
+
         self.assertEqual(sock.outbound[-1]["type"], "response.create")
         await client.handle({"type": "response.created", "response": {"id": "resp-a"}}, client.robot.generation)
         await client.handle({"type": "response.text.delta", "delta": "你"}, client.robot.generation)

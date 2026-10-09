@@ -26,6 +26,7 @@ class ShortContinuation:
     def _blank():
         return {"turn_id": None, "identity": None, "user_at": None,
                 "drained_at": None, "user_text": "", "assistant_text": "",
+                "channel": None, "visible_at": None,
                 "attempted": False, "status": "waiting", "reason": "waiting_speaker",
                 "decision": None, "model_ms": None}
 
@@ -34,7 +35,41 @@ class ShortContinuation:
         return {"enabled": self.graph is not None,
                 "delay_seconds": self.delay, "status": row["status"],
                 "reason": row["reason"], "decision": row["decision"],
-                "turn_id": row["turn_id"], "model_ms": row["model_ms"]}
+                "turn_id": row["turn_id"], "model_ms": row["model_ms"],
+                "channel": row["channel"]}
+
+    def viewed_text(self, robot_id, turn_id, identity):
+        """Visible workbench heartbeat; never pretend a browser is a speaker."""
+        client = self.runtime.realtime.get(robot_id)
+        if self.graph is None or client is None or not client.ready:
+            return False
+        if any(self.runtime.session_state(robot_id).get(k) != identity.get(k)
+               for k in IDENTITY):
+            return False
+        turn = client.robot.turn_cache.get(turn_id)
+        timeline = client._turn_timelines.get(turn_id, {})
+        if (not turn or turn.get("turn_source") != "user" or
+                turn.get("status") != "completed" or
+                not turn.get("assistant_generated_text") or
+                timeline.get("input_mode") != "text" or
+                getattr(client, "_last_user_turn_id", None) != turn_id or
+                (time.time_ns() // 1_000_000 -
+                 turn.get("updated_ms", 0)) > 60000):
+            return False
+        row = self.rows[robot_id]
+        if row["turn_id"] == turn_id:
+            if row["channel"] == "text":
+                row["visible_at"] = time.monotonic()
+            return True
+        row.update(self._blank())
+        row.update(turn_id=turn_id, channel="text",
+                   identity=dict(self.runtime.session_state(robot_id)),
+                   user_at=client._last_user_turn_at,
+                   drained_at=time.monotonic(), visible_at=time.monotonic(),
+                   user_text=str(turn["user_text"])[:180],
+                   assistant_text=str(turn["assistant_generated_text"])[:180],
+                   reason="cooldown")
+        return True
 
     def on_event(self, robot_id, event):
         row = self.rows[robot_id]
@@ -66,7 +101,8 @@ class ShortContinuation:
         if not user or not assistant:
             return
         row.update(self._blank())
-        row.update(turn_id=turn_id, identity=dict(self.runtime.session_state(robot_id)),
+        row.update(turn_id=turn_id, channel="speaker",
+                   identity=dict(self.runtime.session_state(robot_id)),
                    user_at=client._last_user_turn_at, drained_at=time.monotonic(),
                    user_text=user[:180], assistant_text=assistant[:180],
                    reason="cooldown")
@@ -78,8 +114,10 @@ class ShortContinuation:
         if row["turn_id"] is None:
             return "waiting_speaker"
         client = self.runtime.realtime.get(robot_id)
-        if not client or not client.ready or client.speech is None:
+        if not client or not client.ready:
             return "realtime_unavailable"
+        if row["channel"] == "speaker" and client.speech is None:
+            return "tts_unavailable"
         if (row["identity"] != self.runtime.session_state(robot_id)
                 or row["user_at"] != client._last_user_turn_at):
             return "new_user_or_session"
@@ -92,8 +130,9 @@ class ShortContinuation:
                 any(word in row["user_text"] for word in
                     ("退下", "闭嘴", "安静", "别说", "不想聊", "不用回答", "停止"))):
             return "no_open_topic"
-        if row["assistant_text"].rstrip().endswith(("?", "？")):
-            return "already_asked"
+        if row["channel"] == "text" and (
+                row["visible_at"] is None or now - row["visible_at"] > 8):
+            return "web_not_visible"
         if getattr(client, "dialogue", None) and (
                 client.dialogue.snapshot()["followup"] == "avoid"):
             return "dialogue_declined"
@@ -157,8 +196,10 @@ class ShortContinuation:
             row.update(status="submitting", reason=None)
             await client.submit_text(
                 "【内部短时续聊规划，非用户发言】仅在刚刚的话题上自然补一句新观察或一个"
-                "不催促的简短问题；不重复上句，不执行旧任务，不调用工具。续聊方向：" + topic,
-                source="external", expected_identity=identity)
+                "不催促的简短问题；如果刚才已经问过，不要催促回答，也不要再重复提问。"
+                "不重复上句，不执行旧任务，不调用工具。续聊方向：" + topic,
+                source="external", expected_identity=identity,
+                text_only=row["channel"] == "text")
             if (row["turn_id"] != turn_id or row["identity"] != identity or
                     getattr(client, "_last_provider_speech_started_t", None) != speech_at):
                 return

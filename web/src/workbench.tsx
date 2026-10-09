@@ -251,6 +251,30 @@ export function Workbench(){
   const personaForSession=persona&&session&&persona.robot_id===session.robot_id&&persona.chat_id===session.chat_id&&persona.persona_id===session.persona_id&&persona.session_epoch===session.session_epoch&&persona.generation===session.generation&&persona.provider_session_id===realtime?.provider_session_id?persona:null;
   const savedPreference=social.question_pressure?.source==='user_setting'&&['active','normal','low','none'].includes(String(social.question_pressure.value))?String(social.question_pressure.value):'normal';
   const savedStyle=social.persona_style?.source==='user_setting'&&profiles.some(item=>item.persona_id===social.persona_style.value)
+  const lastVisibleTurn=history?.turns.at(-1);
+  useEffect(()=>{
+    if(!session||!robotId||!realtime?.ready||savedPreference!=='active'||
+        !lastVisibleTurn||lastVisibleTurn.turn_source==='external'||
+        lastVisibleTurn.status!=='completed'||!lastVisibleTurn.assistant_generated_text||
+        !lastVisibleTurn.updated_ms)return;
+    const {turn_id,updated_ms}=lastVisibleTurn;
+    const robot=robotId,identity={
+      chat_id:session.chat_id,persona_id:session.persona_id,
+      session_epoch:session.session_epoch,generation:session.generation,
+    };
+    const heartbeat=()=>{
+      if(document.visibilityState!=='visible'||!followLatest.current||
+          Date.now()-updated_ms>60000)return;
+      // A visible text bubble is NOT a speaker receipt; backend submits text only.
+      void api(robotPath(robot)+'/turns/'+encodeURIComponent(turn_id)+'/viewed',
+        'POST',identity).catch(()=>{});
+    };
+    heartbeat();
+    const timer=window.setInterval(heartbeat,4000);
+    return()=>window.clearInterval(timer);
+  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,
+      session?.generation,realtime?.ready,savedPreference,
+      lastVisibleTurn?.turn_id,lastVisibleTurn?.updated_ms,lastVisibleTurn?.status]);
     ?String(social.persona_style.value):profiles.some(item=>item.persona_id===session?.persona_id)
       ?session?.persona_id??'annie':'annie';
   const styleApplied=!!realtime?.ready&&!!personaForSession&&personaForSession.style_id===savedStyle;

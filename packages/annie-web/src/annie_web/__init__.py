@@ -31,6 +31,14 @@ class TurnInput(BaseModel):
 class SessionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     chat_id: str = Field(min_length=1, max_length=128)
+class TextViewedInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chat_id: str = Field(min_length=1, max_length=128)
+    persona_id: str = Field(min_length=1, max_length=128)
+    session_epoch: int = Field(ge=0)
+    generation: int = Field(ge=0)
+
+
     persona_id: str = Field(min_length=1, max_length=128)
     persona_revision: int = Field(default=1, ge=1)
     style_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -511,6 +519,18 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
                 body.fields,
                 source=body.source,
                 generation=body.generation,
+    @app.post("/api/robots/{robot_id}/turns/{turn_id}/viewed")
+    async def text_turn_viewed(robot_id: str, turn_id: str, body: TextViewedInput):
+        require_robot(robot_id)
+        identity = {"robot_id": robot_id, "chat_id": body.chat_id,
+                    "persona_id": body.persona_id,
+                    "session_epoch": body.session_epoch, "generation": body.generation}
+        try:
+            accepted = runtime.viewed_text_turn(robot_id, turn_id, identity)
+        except RobotUnavailableError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"accepted": accepted, "evidence": "web_text_visible_only"}
+
                 source_turn_id=body.source_turn_id,
                 ttl_ms=body.ttl_ms,
             )

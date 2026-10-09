@@ -100,3 +100,48 @@ def test_workbench_text_http_endpoint_returns_accepted_while_sleeping(tmp_path):
         assert result.status_code == 200, result.text
         assert result.json()["status"] == "accepted"
         assert runtime.realtime["annie-a"].wake.state == "SLEEP"
+
+
+def test_workbench_text_view_receipt_is_scoped_not_speaker_evidence(tmp_path):
+    class Planner:
+        async def plan(self, _state):
+            return {"decision": "NO_SPEAK", "topic": "", "new_value": False}
+
+    runtime = HarborRuntime(
+        [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+        tmp_path / "visible.db",
+        realtime_key="fake-test-key", realtime_socket_factory=FakeRealtimeSocket,
+        idle_model=Planner(), continuation_enabled=True,
+    )
+    with TestClient(create_app(runtime, tmp_path)) as web:
+        client = runtime.realtime["annie-a"]
+        for _ in range(100):
+            if client.ready:
+                break
+            time.sleep(.01)
+        assert client.ready
+        turn_id = "visible-web-turn"
+        identity = runtime.session_state("annie-a")
+        client._last_user_turn_id = turn_id
+        client._last_user_turn_at = time.monotonic()
+        client._turn_timelines[turn_id] = {"input_mode": "text"}
+        client.robot.turn_cache[turn_id] = {
+            "turn_id": turn_id, "turn_source": "user", "status": "completed",
+            "user_text": "今天工作好累，特别想放松一下",
+            "assistant_generated_text": "那你先休息一下，别太拼了。",
+            "updated_ms": time.time_ns() // 1_000_000,
+        }
+        route = f"/api/robots/annie-a/turns/{turn_id}/viewed"
+        body = {k: identity[k] for k in
+                ("chat_id", "persona_id", "session_epoch", "generation")}
+        result = web.post(route, json={**body, "generation": body["generation"] + 1})
+        assert result.status_code == 200 and result.json()["accepted"] is False
+        assert web.post(route, json=body).json() == {
+            "accepted": True, "evidence": "web_text_visible_only",
+        }
+        snap = runtime.idle.short.snapshot("annie-a")
+        assert snap["channel"] == "text"
+        assert runtime.idle.snapshot("annie-a")["speaker_drained"] is False
+        client._turn_timelines[turn_id]["input_mode"] = "audio"
+        client._last_user_turn_id = "newer-turn"
+        assert web.post(route, json=body).json()["accepted"] is False

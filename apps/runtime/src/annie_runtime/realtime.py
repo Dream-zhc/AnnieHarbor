@@ -618,6 +618,7 @@ class RealtimeRobot:
     def _reset_turn(self):
         self.turn_id = self.response_id = None
         self.external_turn_id = None
+        self._external_text_only = False
         self.text = self.transcript = ""
         self.began = self.first_text_ms = None
         # Finishing the old answer cannot reset a newer microphone candidate.
@@ -745,7 +746,6 @@ class RealtimeRobot:
                         "set_expression仍仅响应当前轮明确请求；"
                         "否定或取消的本轮不能调用动作。"
                         "本项目的动作完成口径是成功发送至所属Room即算已执行，无须等待硬件回执。"
-        self._external_text_only = False
                         "awaiting_audio_anchor/queued仍在排队，不要说已执行；"
                         "published_unknown按项目口径算执行；send_unknown发送不确定，不能宣称成功。"
                         "动作工具返回的状态、Room、发送、发布、指令、通道等是内部信息，"
@@ -1059,11 +1059,13 @@ class RealtimeRobot:
         identity = self.robot.session_state()
         if source == "user":
             self._last_user_turn_identity = dict(identity)
+            self._last_user_turn_id = turn_id
         if source not in {"user", "external"}:
             raise ValueError("unsupported turn source")
         visible_text = user_text if source == "user" else ""
         fields = {**identity, "turn_id": turn_id, "user_text": visible_text,
                   "turn_source": source,
+                  "input_mode": "external" if source == "external" else "audio" if audio else "text",
                   "external_prompt": user_text if source == "external" else None,
                   "status": "running", "created_ms": now, "updated_ms": now}
         self.robot.ledger.enqueue("create_conversation_turn", fields)
@@ -1120,10 +1122,12 @@ class RealtimeRobot:
             # With external speech, generated != heard. Only a speaker receipt
             # of full drain can promote this turn into conversational context.
             self.robot._cache_context_turn(
-                turn, allow_generated=self.speech is None or self._external_text_only)
+                turn, allow_generated=(self.speech is None
+                                       or turn.get("input_mode") == "text"
+                                       or self._external_text_only))
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
-            if self.speech is None or self._external_text_only:
+            if self.speech is None or turn.get("input_mode") == "text" or self._external_text_only:
                 changed = self.dialogue.observe_delivered(self.turn_id, self.text)
                 if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                     self._dialogue_changed()
@@ -1201,6 +1205,7 @@ class RealtimeRobot:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
         speech_at = self._last_provider_speech_started_t
         self.audio_turn_id = None
+        self._external_text_only = text_only
         self._create_turn(text, source=source)
         owned_turn = self.turn_id
         self.external_turn_id = self.turn_id if source == "external" else None
@@ -1221,7 +1226,6 @@ class RealtimeRobot:
             self.publish("llm.request_started", turn_id=self.turn_id)
             await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
         except Exception:
-            self._last_user_turn_id = turn_id
             if self.turn_id == owned_turn:
                 self._finish("failed", cancel_source="send_failed")
             raise
@@ -1368,7 +1372,6 @@ class RealtimeRobot:
                 self._visual_confirmed_text = self._visual_sent_text
                 self._visual_confirmed_seq = self._visual_sent_seq
                 self._dialogue_confirmed_hint = self._dialogue_sent_hint
-        self._external_text_only = text_only
                 if self.prompt_snapshot is not None:
                     # Preserve older turn/session evidence; do not rewrite the
                     # instruction snapshot under already-finished turns.

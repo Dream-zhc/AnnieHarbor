@@ -40,6 +40,14 @@ test('memory panel separates public, persona-only and current-chat records',asyn
   assert.doesNotMatch(source,/memory-key-badge/);
 });
 
+test('memory management remains reachable in the active workbench',async()=>{
+  const source=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  assert.match(source,/import \{MemoryPanel\} from '\.\/memory-panel'/);
+  assert.match(source,/onClick=\{\(\)=>setMemoryOpen\(true\)\}/);
+  assert.match(source,/memoryOpen&&session&&<MemoryPanel/);
+  assert.match(source,/chatId=\{session\.chat_id\} generation=\{session\.generation\}/);
+});
+
 test('robot and session routing preserves all isolation dimensions',()=>{
   assert.equal(robotPath('annie/b'),'/api/robots/annie%2Fb');
   const a={robot_id:'a',chat_id:'same',persona_id:'same',session_epoch:4,generation:5};

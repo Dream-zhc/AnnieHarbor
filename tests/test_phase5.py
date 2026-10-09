@@ -138,6 +138,18 @@ class ContextSelectionTests(unittest.TestCase):
         history[0]["playback_evidence_status"] = "speaker_reported_drained"
         packet = select_restorable_context(history, speech_enabled=True)
         self.assertEqual(packet["turns"][0]["assistant_text"], "已经说过的承诺")
+        # A typed reply is visible even when the robot's TTS feature is on.
+        paired = select_restorable_context([
+            row("t1", "彻底放松一下呀", "你平时喜欢怎么放松？", input_mode="text"),
+            row("v1", "今天还有工作", "还有什么打算？", input_mode="audio"),
+        ], speech_enabled=True)
+        self.assertEqual([r["assistant_source"] for r in paired["turns"]],
+                         ["typed_completed", "user_only_no_speaker_drain"])
+        self.assertEqual(paired["turns"][0]["assistant_text"], "你平时喜欢怎么放松？")
+        self.assertEqual(paired["turns"][1]["assistant_text"], "")
+        legacy = row("legacy", "旧消息", "播音状态不明", input_mode="unknown")
+        self.assertEqual(select_restorable_context([legacy], speech_enabled=True)[
+            "turns"][0]["assistant_text"], "")
 
     def test_unheard_history_does_not_restore_twenty_unanswered_old_topics(self):
         turns = [row(str(i), f"旧问句{i}", "模型生成了却没有扬声器回执") for i in range(20)]
@@ -314,7 +326,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
         a = self.runtime.realtime["annie-a"]
         a.speech = object()  # selection only: never start an audio task
         try:
-            a._create_turn("不要再问我")
+            a._create_turn("不要再问我", audio=True)
             a.text = "我保证不再问了"
             a._finish("completed")
             self.assertEqual(a.robot.recent_context()[0]["assistant_context_text"], None)
@@ -331,6 +343,31 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(a.restored_context["turns"][0]["assistant_text"], "")
             self.assertEqual(a.restored_context["turns"][0]["provider_delivery"],
                              "instructions_history_only")
+        finally:
+            a.speech = None
+
+    async def test_typed_reply_survives_reconnect_with_tts_configured(self):
+        a = self.runtime.realtime["annie-a"]
+        a.speech = object()  # Only context selection: no actual output.
+        try:
+            a._create_turn("彻底放松一下呀")
+            turn_id = a.turn_id
+            a.text = "你平时喜欢怎么放松？"
+            a._finish("completed")
+            self.assertEqual(a.robot.recent_context()[0]["input_mode"], "text")
+            await self.runtime.ledger.flush()
+            await a.robot._load_context_cache()
+            saved = a.robot.recent_context()[0]
+            self.assertEqual(saved["input_mode"], "text")
+            self.assertEqual(saved["assistant_generated_text"], "你平时喜欢怎么放松？")
+            before = len(a.socket.outbound)
+            await a._restore_context()
+            items = [e["item"] for e in a.socket.outbound[before:]
+                     if e["type"] == "conversation.item.create"]
+            self.assertEqual([i["role"] for i in items], ["user", "assistant"])
+            self.assertEqual(items[-1]["content"][0]["text"], "你平时喜欢怎么放松？")
+            self.assertEqual(a.restored_context["turns"][0]["turn_id"], turn_id)
+            self.assertEqual(a.restored_context["turns"][0]["assistant_source"], "typed_completed")
         finally:
             a.speech = None
 

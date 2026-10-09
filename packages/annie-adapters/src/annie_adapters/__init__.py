@@ -540,7 +540,7 @@ def resolve_database(root: Path, value: str) -> Path:
 
 
 class RuntimeStore:
-    SCHEMA_VERSION = 8
+    SCHEMA_VERSION = 9
 
     def __init__(self, path: Path):
         self.path = path
@@ -621,6 +621,7 @@ class RuntimeStore:
                 generation INTEGER NOT NULL,
                 user_text TEXT NOT NULL,
                 turn_source TEXT NOT NULL DEFAULT 'user',
+                input_mode TEXT NOT NULL DEFAULT 'unknown',
                 external_prompt TEXT,
                 assistant_planned_text TEXT,
                 assistant_generated_text TEXT,
@@ -636,6 +637,9 @@ class RuntimeStore:
             turn_columns = {row[1] for row in db.execute("PRAGMA table_info(conversation_turns)")}
             if "turn_source" not in turn_columns:
                 db.execute("ALTER TABLE conversation_turns ADD COLUMN turn_source TEXT NOT NULL DEFAULT 'user'")
+            if "input_mode" not in turn_columns:
+                # Legacy rows cannot be proved text or audio: do not guess.
+                db.execute("ALTER TABLE conversation_turns ADD COLUMN input_mode TEXT NOT NULL DEFAULT 'unknown'")
             if "external_prompt" not in turn_columns:
                 db.execute("ALTER TABLE conversation_turns ADD COLUMN external_prompt TEXT")
             # Repair previously persisted internal input, preserving the real
@@ -944,9 +948,9 @@ class RuntimeStore:
             db.execute(
                 """INSERT INTO conversation_turns
                 (turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,turn_source,external_prompt,
+                session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 status,created_ms,updated_ms)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     turn["turn_id"],
                     turn["robot_id"],
@@ -958,6 +962,7 @@ class RuntimeStore:
                     turn["generation"],
                     turn["user_text"],
                     turn.get("turn_source", "user"),
+                    turn.get("input_mode", "unknown"),
                     turn.get("external_prompt"),
                     turn["status"],
                     turn["created_ms"],
@@ -1046,6 +1051,7 @@ class RuntimeStore:
             "generation",
             "user_text",
             "turn_source",
+            "input_mode",
             "external_prompt",
             "assistant_planned_text",
             "assistant_generated_text",
@@ -1068,7 +1074,7 @@ class RuntimeStore:
         with self.connect() as db:
             row = db.execute(
                 """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,turn_source,external_prompt,
+                session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
                 interrupted,cancelled,cancel_source,created_ms,updated_ms
@@ -1081,7 +1087,7 @@ class RuntimeStore:
         with self.connect() as db:
             rows = db.execute(
                 """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,turn_source,external_prompt,
+                session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
                 interrupted,cancelled,cancel_source,created_ms,updated_ms
@@ -1121,7 +1127,7 @@ class RuntimeStore:
         with self.connect() as db:
             rows = db.execute(
                 """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
-                session_epoch,generation,user_text,turn_source,external_prompt,
+                session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
                 interrupted,cancelled,cancel_source,created_ms,updated_ms

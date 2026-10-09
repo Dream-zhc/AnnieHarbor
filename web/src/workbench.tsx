@@ -7,6 +7,7 @@ import {MicrophoneControls,RoomSpeakerPanel} from './audio-panels';
 import {LatencyHud} from './latency-hud';
 import {ActionPanel} from './action-panel';
 import {ExternalEventsDialog} from './external-events';
+import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
@@ -164,6 +165,7 @@ export function Workbench(){
   developerOpenRef.current=developerOpen;
   const [historyOpen,setHistoryOpen]=useState(false);
   const [actionOpen,setActionOpen]=useState(false);
+  const [memoryOpen,setMemoryOpen]=useState(false);
   const [eventsOpen,setEventsOpen]=useState(false);
   const [preferenceOpen,setPreferenceOpen]=useState(false);
   const [micActive,setMicActive]=useState(false);
@@ -491,8 +493,9 @@ export function Workbench(){
   useEffect(()=>{
     const onKey=(event:KeyboardEvent)=>{
       if(event.key==='Escape'){
-        if(createOpen||deleteOpen||developerOpen||preferenceOpen){
+        if(createOpen||deleteOpen||developerOpen||preferenceOpen||memoryOpen){
           setCreateOpen(false);setDeleteOpen(false);setDeveloperOpen(false);setPreferenceOpen(false);
+          setMemoryOpen(false);
         }else if(historyOpen){
           setHistoryOpen(false);
         }
@@ -504,7 +507,7 @@ export function Workbench(){
     };
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
-  },[createOpen,deleteOpen,developerOpen,preferenceOpen,historyOpen]);
+  },[createOpen,deleteOpen,developerOpen,preferenceOpen,memoryOpen,historyOpen]);
 
   function choose(id:string){
     if(id===robotId)return;
@@ -512,7 +515,7 @@ export function Workbench(){
     setShowJump(false);
     setRobotId(id);setSession(null);setConversations([]);setHistory(null);setContext(null);setActionRequests([]);
     setPcm(null);setRoutes([]);setCoordinator(null);setSocial({});
-    setLiveText('');setRealtimeEvents([]);dismissError();setCreateOpen(false);setDeleteOpen(false);
+    setLiveText('');setRealtimeEvents([]);dismissError();setCreateOpen(false);setDeleteOpen(false);setMemoryOpen(false);
   }
 
   async function switchSession(item:Conversation){
@@ -696,6 +699,11 @@ export function Workbench(){
         </button>
         <button className="action-pill" type="button" onClick={()=>setActionOpen(true)} disabled={!robotId}>
           动作
+        </button>
+        <button className={'action-pill '+(memoryOpen?'active':'')} type="button"
+          onClick={()=>setMemoryOpen(true)} disabled={!session}
+          aria-haspopup="dialog" aria-expanded={memoryOpen} title="会话与长期记忆管理">
+          记忆
         </button>
         <button className={'action-pill '+(eventsOpen?'active':'')} type="button"
           onClick={()=>setEventsOpen(true)} disabled={!robotId} title="定时提醒与事件">
@@ -950,6 +958,12 @@ export function Workbench(){
       session={session}
       events={realtimeEvents}
       onClose={()=>setEventsOpen(false)}/>}
+
+    {memoryOpen&&session&&<MemoryPanel
+      key={[session.robot_id,session.chat_id,session.persona_id,session.generation].join(':')}
+      robotId={session.robot_id} personaId={session.persona_id}
+      chatId={session.chat_id} generation={session.generation}
+      onClose={()=>setMemoryOpen(false)}/>}
 
     {preferenceOpen&&<div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPreferenceOpen(false);}}>
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="preference-title">

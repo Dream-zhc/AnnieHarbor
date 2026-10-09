@@ -19,8 +19,9 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
                               max_turns: int = 20, char_budget: int = CONTEXT_CHAR_BUDGET) -> dict:
     """Keep a contiguous newest-first suffix; never truncate a user's correction.
 
-    With TTS enabled, generated/published output is not evidence of playback.
-    Restore the user's completed input, but the assistant only after speaker drain.
+    With TTS enabled, generated audio output is not playback evidence.
+    Completed typed turns are visible text and can be restored as text.
+    Old turns with unknown input_mode remain conservative.
     """
     if max_turns < 1 or char_budget < 1:
         raise ValueError("context bounds must be positive")
@@ -43,6 +44,9 @@ def select_restorable_context(rows: list[dict], *, speech_enabled: bool,
         if interrupted_user:
             reply = ""
             source = "interrupted_user_only"
+        elif turn.get("input_mode") == "text":
+            reply = (turn.get("assistant_generated_text") or "")
+            source = "typed_completed" if reply else "user_only"
         elif speech_enabled:
             reply = (spoken if turn.get("playback_evidence_status") == "speaker_reported_drained"
                      and isinstance(spoken, str) else "")

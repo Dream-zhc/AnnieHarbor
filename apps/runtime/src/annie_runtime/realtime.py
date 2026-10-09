@@ -16,10 +16,10 @@ from annie_brain.context import (
     select_restorable_context,
 )
 from annie_brain.dialogue import DialogueState
-from annie_brain.persona import session_instructions
+from annie_brain.persona import session_instructions, social_instruction_hint
 from annie_core import RobotUnavailableError
 
-from annie_runtime.wakeword import WakeAdmission
+from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
 
 logger = logging.getLogger(__name__)
 AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
@@ -95,6 +95,11 @@ class RealtimeRobot:
         self.calls = set()
         self.call_count = 0
         self.followup_needed = False
+        self._tool_queue = deque()
+        self._pending_tool_ids = set()
+        self._tool_worker = None
+        self._tool_done_event = None
+        self._tool_epoch = 0
         self.first_text_ms = None
         self.began = None
         self.frames_sent = 0
@@ -128,6 +133,10 @@ class RealtimeRobot:
         self._visual_sent_seq = 0
         self._visual_confirmed_seq = 0
         self._visual_last_send_at = 0.0
+        self._memory_bootstrap = ""
+        self._memory_expires_at_ms = None
+        self._memory_task = None
+        self._memory_revision = 0
         self.memory = None  # attached only by HarborRuntime when configured
         self.reminders = None  # explicit user reminder tool; no idle Graph in chat path
         self.actions = None  # physical dispatch only if operator explicitly enables it
@@ -142,6 +151,8 @@ class RealtimeRobot:
         self._last_conversation_activity_t = time.monotonic()
         self._last_user_turn_at = None  # monotonic, not a wall clock or last external event
         self._last_user_turn_identity = None
+        self._last_user_turn_id = None
+        self._external_text_only = False
         self._last_provider_speech_started_t = None
         self.idle_observer = None
         self._idle_recycled = False
@@ -151,8 +162,6 @@ class RealtimeRobot:
 
     def _timeline_snapshot(self, turn_id):
         record = self._turn_timelines.get(turn_id)
-        self._last_user_turn_id = None
-        self._external_text_only = False
         if record is None:
             return None
         times = dict(record["times"])
@@ -338,6 +347,10 @@ class RealtimeRobot:
             self.tool_records.append(event)
         if kind == "tts.first_published" and self.actions is not None:
             self.actions.on_first_pcm(event)
+        # Word actions are delivered on the first real matching text delta.
+        # Viseme alignment stays device-owned on reb_sam, not a Room action gate.
+        if kind == "turn.started" and self.actions is not None:
+            self.actions.on_turn_started(event)
         for queue in tuple(self.event_subscribers):
             if queue.full():
                 queue.get_nowait()
@@ -458,9 +471,121 @@ class RealtimeRobot:
         self.visual_changed()
 
     def _combined_instructions(self, description):
+        now = time.time_ns() // 1_000_000
+        if self._memory_expires_at_ms is not None and now >= self._memory_expires_at_ms:
+            self.memory_changed()  # remove expired evidence before the asynchronous reload
+        social = {key: value for key, value in self.social_state.items()
+                  if value.get("generation", self.robot.generation) == self.robot.generation}
         return visual_instructions(
-            self._visual_base_instructions + self.dialogue.instruction_hint(), description,
+            self._visual_base_instructions + self._memory_bootstrap
+            + (WAKE_ADDRESS_INSTRUCTIONS if self.wake else "")
+            + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now), description,
         )
+
+    def memory_changed(self):
+        """Canonical mutation invalidates old evidence immediately; reload off the hot path."""
+        if not self.memory or self._stopping:
+            return
+        self._memory_revision += 1
+        self._memory_bootstrap = ""
+        self._memory_expires_at_ms = None
+        if not self.ready:
+            return  # handshake reconciles this revision before admitting PCM
+        self.visual_changed()
+        if self._memory_task is None or self._memory_task.done():
+            self._memory_task = asyncio.create_task(
+                self._refresh_memory(), name=f"memory-context:{self.robot.config.robot_id}",
+            )
+
+    async def _read_memory_snapshot(self):
+        args = (self.robot.config.robot_id, self.robot.persona_id, self.robot.chat_id)
+        if hasattr(self.memory, "bootstrap_snapshot"):
+            return await self.memory.bootstrap_snapshot(*args)
+        return {"text": await self.memory.bootstrap(*args), "expires_at_ms": None}
+
+    async def _refresh_memory(self):
+        socket, identity = self.socket, self.robot.session_state()
+        try:
+            while self.ready and not self._stopping:
+                revision = self._memory_revision
+                async with asyncio.timeout(3):
+                    snapshot = await self._read_memory_snapshot()
+                if self.socket is not socket or identity != self.robot.session_state():
+                    return
+                if revision != self._memory_revision:
+                    continue  # a newer correction invalidated this read
+                self._memory_bootstrap = snapshot["text"]
+                self._memory_expires_at_ms = snapshot["expires_at_ms"]
+                self.visual_changed()
+                self.publish("memory.context.changed")
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("memory.context.failed", reason=type(exc).__name__)
+            self.visual_changed()  # stale facts stay excluded, never silently resurrected
+        finally:
+            self._memory_task = None
+
+    async def _stop_memory_task(self):
+        task, self._memory_task = self._memory_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        self._memory_bootstrap = ""
+        self._memory_expires_at_ms = None
+
+    def _queue_tool_call(self, event):
+        call_id = event.get("call_id")
+        if not call_id:
+            return
+        if call_id in self._pending_tool_ids or call_id in self.calls:
+            self.publish("tool.duplicate", call_id=call_id)
+            return
+        if len(self._pending_tool_ids) >= 4:
+            raise RuntimeError("pending tool call limit exceeded")
+        self._pending_tool_ids.add(call_id)
+        owner = (self.socket, self.robot.session_state(), self.turn_id, self._tool_epoch)
+        self._tool_queue.append((dict(event), owner))
+        if self._tool_worker is None:
+            self._tool_worker = asyncio.create_task(
+                self._run_tool_queue(self._tool_epoch), name=f"tools:{self.robot.config.robot_id}",
+            )
+
+    async def _run_tool_queue(self, epoch):
+        try:
+            while epoch == self._tool_epoch:
+                if self._tool_queue:
+                    event, owner = self._tool_queue.popleft()
+                    await self._tool_call(event, owner=owner)
+                    self._pending_tool_ids.discard(event.get("call_id"))
+                    continue
+                done, self._tool_done_event = self._tool_done_event, None
+                if done is not None:
+                    # Retain worker ownership across response.create's await:
+                    # a fast next response can already enqueue another tool.
+                    await self.handle(done, self.robot.generation)
+                    continue
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("tool.transport.failed", reason=type(exc).__name__)
+            if self.socket:
+                await self.socket.close()
+        finally:
+            if epoch == self._tool_epoch:
+                self._tool_worker = None
+
+    async def _cancel_tools(self):
+        self._tool_epoch += 1
+        self._tool_queue.clear()
+        self._pending_tool_ids.clear()
+        self._tool_done_event = None
+        task, self._tool_worker = self._tool_worker, None
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     def visual_context_snapshot(self):
         if not self.visual_observer:
@@ -509,8 +634,9 @@ class RealtimeRobot:
                         continue  # choose the newest scene after the wait
                     sent_hint = self.dialogue.instruction_hint()
                     try:
-                        await socket.send({"type": "session.update",
-                                           "session": {"instructions": instructions}})
+                        async with asyncio.timeout(2):
+                            await socket.send({"type": "session.update",
+                                               "session": {"instructions": instructions}})
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
@@ -530,7 +656,11 @@ class RealtimeRobot:
                                      provider_session_id=self.session)
                     if changed_dialogue:
                         self.publish("dialogue.policy.sent", **self.dialogue.snapshot())
-                if description is None:
+                now_ms = time.time_ns() // 1_000_000
+                has_expiring_social = any(type(row.get("expires_at_ms")) is int
+                                          and row["expires_at_ms"] > now_ms
+                                          for row in self.social_state.values())
+                if description is None and self._memory_expires_at_ms is None and not has_expiring_social:
                     return
                 # Check Room disconnect and scene expiry even when no new
                 # message arrives; do not leave a stale scene in instructions.
@@ -559,6 +689,8 @@ class RealtimeRobot:
             self.wake.reset()
         self._wake_held_events.clear()
         self._wake_candidate_pending = False
+        await self._cancel_tools()
+        await self._stop_memory_task()
         await self._stop_visual_task()
         self.dialogue = DialogueState()
         self._dialogue_sent_hint = self._dialogue_confirmed_hint = ""
@@ -649,6 +781,7 @@ class RealtimeRobot:
         return stale
 
     async def _interrupt_active_turn(self, reason):
+        await self._cancel_tools()
         # response.done can precede the end of independent TTS playback.
         # A confirmed barge-in must retire that finished-but-unheard output,
         # even when _finish() already cleared self.turn_id.
@@ -707,8 +840,10 @@ class RealtimeRobot:
                     self.robot.store.get_persona_name,
                     self.robot.config.robot_id, self.robot.persona_id,
                 )
+                physical = bool(self.actions and self.actions.enabled and self.speech)
                 instructions, persona_snapshot = session_instructions(
                     self.robot.persona_id, self.persona_profiles, social, role_name,
+                    physical_actions=physical,
                 )
                 restore = select_restorable_context(
                     self.robot.recent_context(), speech_enabled=self.speech is not None,
@@ -720,12 +855,12 @@ class RealtimeRobot:
                 # bounded evidence in initial instructions, before ready.
                 instructions += historical_user_evidence(restore)
                 memory_bootstrap = ""
+                memory_revision = self._memory_revision
                 if self.memory is not None:
-                    memory_bootstrap = await self.memory.bootstrap(
-                        self.robot.config.robot_id,
-                        self.robot.persona_id, self.robot.chat_id,
-                    )
-                    instructions += memory_bootstrap
+                    memory_snapshot = await self._read_memory_snapshot()
+                    memory_bootstrap = memory_snapshot["text"]
+                    self._memory_bootstrap = memory_bootstrap
+                    self._memory_expires_at_ms = memory_snapshot["expires_at_ms"]
                     instructions += (
                         "\n仅当用户询问此前的偏好/经历而当前对话无证据时，"
                         "调用recall_memory；无结果、超时或检索故障时不要编造。"
@@ -745,22 +880,33 @@ class RealtimeRobot:
                         "用户难过、严肃交谈或明确不愿意时不要自主使用夸张动作；"
                         "set_expression仍仅响应当前轮明确请求；"
                         "否定或取消的本轮不能调用动作。"
-                        "本项目的动作完成口径是成功发送至所属Room即算已执行，无须等待硬件回执。"
-                        "awaiting_audio_anchor/queued仍在排队，不要说已执行；"
-                        "published_unknown按项目口径算执行；send_unknown发送不确定，不能宣称成功。"
+                        "动作调用成功受理后，一旦实际回复文本包含锚点字词便提前向Room发布一次，"
+                        "由嵌入式订阅独立音素流确定采样位置并执行，不阻塞你生成自然回复，"
+                        "不必等嵌入式消费或电机完成；云端发布到所属Room即完成下发职责。"
+                        "工具accepted仅表示已受理，不表示Room已经发布；"
+                        "已发布也不等于电机完成，不虚构物理执行证据。"
+                        "只有工具明确rejected或unavailable才说明当前动作无法受理；"
+                        "其它中间状态及后续设备消费进度不向用户口播。"
                         "动作工具返回的状态、Room、发送、发布、指令、通道等是内部信息，"
                         "不要把‘动作已发出/已发送/指令已下发/动作已执行’当作给用户的回复。"
                         "只用当轮人格自然简短接话，例如‘眨两下眼’答‘好嘞，眨两下～’，"
                         "‘点个头’答‘好，点头～’；无须解释动作如何传输或重复报告执行状态。"
-                        "若动作被拒绝或失败，简短说明没做成，不假装已经执行；"
+                        "不要根据中间状态或以前的助手猜测，编造‘卡壳、没发出去、"
+                        "还没落地、心意到位、设备未执行’等故障或不确定性旁白；"
+                        "若已受理，直接自然展示当轮人物反应，例如‘瞧好了！’；"
                         "不要将上轮动作留给新一轮。"
+                        "surprise、smirk、proud、skeptical、shy五种动作必须填写anchor_text，"
+                        "包括用户明确要求时；选随后自然口语中会原样说出的词或字；"
+                        "重复词用anchor_occurrence指定从1开始的非重叠出现次序，默认首次。"
+                        "不可自填毫秒或采样数；未说出锚点不下发指令，"
+                        "音素缺失或迟到由设备丢弃，语音照常，不补做，不把这些字段说给用户。"
                     )
                 if self.weather is not None:
                     instructions += (
                         "\n当前用户明确询问指定城市的实时天气，必须先调用get_weather再回答；"
                         "未提供城市先询问，接口失败或未配置不能编造天气。"
                         "接口返回非ok时直说暂时无法取得实时天气，不要把故障归因于系统卡顿，"
-                        "更不要用天气或用户所在地开嘲讽玩笑。"
+                        "不猜天气，不主动岔到旧话题或无关记忆，更不要拿所在地开玩笑。"
                     )
                 else:
                     instructions += (
@@ -864,6 +1010,32 @@ class RealtimeRobot:
                     self.restored_context["omitted_older_turns"]
                     if self.restored_context else 0
                 )
+                # A mutation during the initial Provider handshake cannot
+                # promote its earlier bootstrap into a ready live Session.
+                while self.memory is not None and memory_revision != self._memory_revision:
+                    memory_revision = self._memory_revision
+                    async with asyncio.timeout(3):
+                        memory_snapshot = await self._read_memory_snapshot()
+                    if memory_revision != self._memory_revision:
+                        continue
+                    self._memory_bootstrap = memory_snapshot["text"]
+                    self._memory_expires_at_ms = memory_snapshot["expires_at_ms"]
+                    configured_instructions = self._combined_instructions(self._fresh_visual())
+                    self._visual_sent_instructions = configured_instructions
+                    await self.socket.send({"type": "session.update", "session": {
+                        "instructions": configured_instructions}})
+                    async with asyncio.timeout(8):
+                        while True:
+                            confirmation = await self.socket.recv()
+                            if confirmation.get("type") == "error":
+                                raise RuntimeError(self._provider_error(confirmation))
+                            if (confirmation.get("type") == "session.updated" and
+                                    (confirmation.get("session") or {}).get("instructions") == configured_instructions):
+                                break
+                    self.prompt_snapshot = {**self.prompt_snapshot,
+                        "instructions": configured_instructions,
+                        "bootstrap_text": self._memory_bootstrap,
+                        "bootstrap_count": sum(line.startswith("[") for line in self._memory_bootstrap.splitlines())}
                 self.ready = True
                 self.error = None
                 retry = 1
@@ -890,7 +1062,7 @@ class RealtimeRobot:
                                          threshold_minutes=IDLE_SESSION_GAP_SECONDS // 60)
                             break
                         continue
-                    await self.handle(event, generation)
+                    await self.handle(event, generation, background_tools=True)
                 if not idle_recycle:
                     raise ConnectionError("session generation changed")
             except asyncio.CancelledError:
@@ -902,6 +1074,8 @@ class RealtimeRobot:
                 self.publish("session.error", error=self.error)
             finally:
                 self.ready = False
+                await self._cancel_tools()
+                await self._stop_memory_task()
                 await self._stop_visual_task()
                 self._visual_base_instructions = None
                 self.restored_context = None
@@ -1119,8 +1293,8 @@ class RealtimeRobot:
                         assistant_planned_text=self.text or None, updated_ms=now,
                         cancelled=interrupted, interrupted=interrupted, cancel_source=cancel_source)
         if status == "completed" and turn is not None and self.turn_identity == self.robot.session_state():
-            # With external speech, generated != heard. Only a speaker receipt
-            # of full drain can promote this turn into conversational context.
+            # A completed typed reply is already visible text; an audio reply
+            # still requires a genuine speaker receipt before restoration.
             self.robot._cache_context_turn(
                 turn, allow_generated=(self.speech is None
                                        or turn.get("input_mode") == "text"
@@ -1201,6 +1375,14 @@ class RealtimeRobot:
             for key in ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
         ):
             raise RobotUnavailableError("stale external session")
+        if source == "user" and self.wake:
+            # Text is an explicit addressed user message, independent of the
+            # microphone's KWS admission gate. Do not change the wake state:
+            # SLEEP must continue to block ambient PCM after this text turn.
+            if self.wake.presence.is_sleep_command(text):
+                await self._enter_sleep("text")
+                return {"status": "sleeping", "turn_id": None,
+                        **self.robot.session_state()}
         if self.speech_active or self.turn_id or self.response_id:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
         speech_at = self._last_provider_speech_started_t
@@ -1232,11 +1414,10 @@ class RealtimeRobot:
         return {"status": "accepted", "turn_id": owned_turn, **self.robot.session_state()}
 
     async def cancel(self):
-        # Mark ownership before any await: a late response.done must not
-        # complete the next turn while the speaker is stopping.
+        # Retire the response before tool cancellation (which may await network
+        # cleanup). A late response.done cannot promote this turn to completed.
         cancelled_response = self.response_id
-        if self.actions is not None:
-            await self.actions.cancel_pending(self.robot.config.robot_id)
+        owned_turn, socket, identity = self.turn_id, self.socket, self.robot.session_state()
         completed_unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
                              if self.speech and self.speech.turn_id else set())
         if cancelled_response:
@@ -1244,13 +1425,29 @@ class RealtimeRobot:
             if len(self._cancelled_response_ids) > 128:
                 self._cancelled_response_ids.pop()
             self.response_id = None
-        if self.socket and self.ready and cancelled_response:
+
+        def still_owned():
+            return (socket is self.socket and identity == self.robot.session_state()
+                    and self.turn_id == owned_turn)
+
+        await self._cancel_tools()
+        if not still_owned():
+            return self.snapshot()
+        if self.actions is not None:
+            await self.actions.cancel_pending(self.robot.config.robot_id)
+        if not still_owned():
+            return self.snapshot()
+        if socket and self.ready and cancelled_response:
             await self._request_response_cancel(expected_id=cancelled_response)
+        if not still_owned():
+            return self.snapshot()
         if self.speech:
             await self.speech.cancel("local_cancel")
-        if self.socket and self.ready and completed_unheard:
+        if not still_owned():
+            return self.snapshot()
+        if socket and self.ready and completed_unheard:
             await self._delete_unheard_items(completed_unheard)
-        if self.turn_id:
+        if still_owned() and owned_turn:
             self._finish("cancelled", cancel_source="local")
         self.publish("turn.cancel_requested")
         return self.snapshot()
@@ -1263,6 +1460,24 @@ class RealtimeRobot:
             await self.socket.send({"type": "conversation.item.delete", "item_id": item_id})
         self.publish("context.unheard_delete_requested", count=len(item_ids),
                      provider_confirmed=False)
+
+    async def _enter_sleep(self, source, *, item_id=None):
+        """Revoke PCM and reply grants before waiting for remote cancellation."""
+        if not self.wake:
+            return
+        self.wake.reset()
+        self._wake_candidate_pending = False
+        self.speech_active = False
+        self.pending_audio_item_id = None
+        self._candidate_playback_turn_id = None
+        self._candidate_confirmed = False
+        self.audio_turn_id = None
+        await self._reject_wake_response("sleep_command")
+        await self._interrupt_active_turn("sleep_command")
+        if item_id and self.socket and self.ready:
+            await self._delete_unheard_items({item_id})
+        self.transcript = ""
+        self.publish("wakeword.sleep_command", source=source)
 
     async def _reject_wake_response(self, reason):
         """Fail closed for provider replies emitted before authoritative ASR."""
@@ -1300,15 +1515,15 @@ class RealtimeRobot:
                 await self._delete_unheard_items(outputs)
         self.publish("wakeword.response_rejected", reason=reason, count=len(events))
 
-    async def _release_wake_response(self, generation):
+    async def _release_wake_response(self, generation, *, background_tools=False):
         events, self._wake_held_events = self._wake_held_events, []
         self._wake_candidate_pending = False
         for buffered in events:
             if generation != self.robot.generation or not self.wake.reply_allowed():
                 return
-            await self.handle(buffered, generation)
+            await self.handle(buffered, generation, background_tools=background_tools)
 
-    async def handle(self, event, generation):
+    async def handle(self, event, generation, *, background_tools=False):
         if generation != self.robot.generation:
             return
         kind = event.get("type")
@@ -1412,6 +1627,15 @@ class RealtimeRobot:
                                 response_id != self.response_id):
                 self.publish("response.stale", response_id=response_id, event_kind=kind)
                 return
+        if kind == "response.done" and background_tools and (self._pending_tool_ids or self.followup_needed):
+            if (event.get("response") or {}).get("status") == "completed":
+                self._tool_done_event = dict(event)
+                if self._tool_worker is None:
+                    self._tool_worker = asyncio.create_task(
+                        self._run_tool_queue(self._tool_epoch), name=f"tools:{self.robot.config.robot_id}",
+                    )
+                return
+            await self._cancel_tools()
         if kind == "input_audio_buffer.speech_started":
             new_item_id = event.get("item_id")
             if new_item_id and new_item_id == self.pending_audio_item_id and self.speech_active:
@@ -1478,6 +1702,7 @@ class RealtimeRobot:
                 return
             final_text = str(event.get("transcript", "")).strip()
             if self.wake:
+                self.wake.speech_stopped(event.get("item_id"), invalid=True)
                 await self._reject_wake_response("ambient_audio")
             # A plausible sentence is not evidence the robot was addressed.
             # Ambient content must never create a Chat turn or response.create.
@@ -1515,8 +1740,15 @@ class RealtimeRobot:
             # Demo v1.7 confirms an interruption from the stable text only,
             # never speculative stash or local microphone energy.
             meaningful = len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", stable)) >= 3
-            if self.wake and not self.wake.presence.is_substantive(stable):
+            if self.wake and (self.wake.presence.is_wake_transcript(stable)
+                              or not self.wake.presence.is_substantive(stable)):
                 meaningful = False
+            if (meaningful and not AMBIENT_FILLER.fullmatch(stable)
+                    and not self._candidate_confirmed and self._tool_worker is not None
+                    and self.turn_id and self.audio_turn_id != self.turn_id):
+                self._candidate_confirmed = True
+                await self._interrupt_active_turn("stable_asr_prefix")
+                self.speech_active = True
             if (meaningful and not AMBIENT_FILLER.fullmatch(stable)
                 and not self._candidate_confirmed and self.speech
                 and self.speech.turn_id and getattr(self.speech, "control_state", "") in {
@@ -1535,8 +1767,12 @@ class RealtimeRobot:
             self.transcript = event.get("transcript", "")
             final_text = self.transcript.strip()
             item_id = event.get("item_id")
-            wake_only_alias = bool(self.wake and self.wake.presence.is_wake_only(final_text))
-            if self.wake and not self.wake.transcript_accepted(final_text, item_id):
+            wake_only_alias = bool(self.wake and self.wake.presence.is_wake_transcript(final_text))
+            admitted = self.wake.transcript_accepted(final_text, item_id) if self.wake else True
+            if self.wake and admitted and self.wake.presence.is_sleep_command(final_text):
+                await self._enter_sleep("asr", item_id=item_id)
+                return
+            if self.wake and not admitted:
                 await self._reject_wake_response("unadmitted_transcript")
                 if wake_only_alias:
                     # The provider keeps input items even if we reject their
@@ -1553,6 +1789,12 @@ class RealtimeRobot:
             if item_id and item_id in self.audio_item_turns:
                 self.publish("transcript.duplicate", item_id=item_id)
                 return
+            if (final_text and self._tool_worker is not None and self.turn_id
+                    and self.audio_turn_id != self.turn_id and not self._candidate_confirmed):
+                self._candidate_confirmed = True
+                await self._interrupt_active_turn("valid_smart_turn")
+                self.transcript = final_text
+                self.audio_turn_id = None
             if (final_text and self.speech and self.speech.turn_id
                     and self.speech.turn_id == self._candidate_playback_turn_id
                     and not self._candidate_confirmed):
@@ -1591,7 +1833,7 @@ class RealtimeRobot:
                 if len(self.audio_item_turns) > 128:
                     self.audio_item_turns.pop(next(iter(self.audio_item_turns)))
             if self.wake:
-                await self._release_wake_response(generation)
+                await self._release_wake_response(generation, background_tools=background_tools)
         elif kind == "response.created":
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
@@ -1613,15 +1855,24 @@ class RealtimeRobot:
             self.publish("text.delta", turn_id=self.turn_id, delta=chunk, text=self.text)
             if self.speech and chunk and not self._external_text_only:
                 await self.speech.feed(self.turn_id, self.turn_identity, chunk)
+                if self.actions is not None:
+                    self.actions.on_text_ready({"robot_id": self.robot.config.robot_id,
+                                                "turn_id": self.turn_id})
         elif kind == "response.text.done":
             complete = event.get("text", self.text)
             if (self.speech and not self._external_text_only
                     and not self.text and complete and self.turn_id):
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)
+                if self.actions is not None:
+                    self.actions.on_text_ready({"robot_id": self.robot.config.robot_id,
+                                                "turn_id": self.turn_id})
             self.text = complete
             self.publish("text.done", turn_id=self.turn_id, text=self.text)
         elif kind == "response.function_call_arguments.done":
-            await self._tool_call(event)
+            if background_tools:
+                self._queue_tool_call(event)
+            else:
+                await self._tool_call(event)
         elif kind == "response.done":
             response = event.get("response") or {}
             status = response.get("status", "failed")
@@ -1644,7 +1895,7 @@ class RealtimeRobot:
             else:
                 self._reset_turn()
 
-    async def _tool_call(self, event):
+    async def _tool_call(self, event, *, owner=None):
         if self.socket is None or not self.ready:
             return
         call_id, name = event.get("call_id"), event.get("name")
@@ -1653,11 +1904,17 @@ class RealtimeRobot:
         if call_id in self.calls:
             self.publish("tool.duplicate", call_id=call_id)
             return
+        socket, identity, turn_id, epoch = owner or (
+            self.socket, self.robot.session_state(), self.turn_id, self._tool_epoch,
+        )
+        if (socket is not self.socket or identity != self.robot.session_state()
+                or epoch != self._tool_epoch or turn_id is not None and turn_id != self.turn_id):
+            return
         arguments = event.get("arguments", "")
         started = time.perf_counter()
         self.publish("tool.called", turn_id=self.turn_id, call_id=call_id,
                      name=name, arguments=arguments, provider_session_id=self.session)
-        if self.turn_id is None:
+        if turn_id is None:
             # The provider may deliver a function call BEFORE final ASR. Never
             # execute an unowned motion or silently drop its required output.
             # This response can retry only after a confirmed current turn.
@@ -1673,7 +1930,8 @@ class RealtimeRobot:
                 "item": {"type": "function_call_output", "call_id": call_id,
                          "output": json.dumps(result, ensure_ascii=False)},
             })
-            self.followup_needed = True
+            if self.turn_id == turn_id:
+                self.followup_needed = True
             return
         self.calls.add(call_id)
         self.call_count += 1
@@ -1731,8 +1989,18 @@ class RealtimeRobot:
             elif name in {"perform_action", "set_expression"} and self.actions is not None:
                 is_action = name != "set_expression"
                 expected = {"script_id"} if is_action else {"expression"}
-                if set(args) != expected:
+                optional = {"anchor_text", "anchor_occurrence"} if is_action else set()
+                if not expected <= set(args) or not set(args) <= expected | optional:
                     raise ValueError("invalid physical tool arguments")
+                if "anchor_occurrence" in args and "anchor_text" not in args:
+                    raise ValueError("anchor_occurrence requires anchor_text")
+                if "anchor_text" in args and (
+                    not isinstance(args["anchor_text"], str) or not args["anchor_text"].strip()
+                    or len(args["anchor_text"]) > 80
+                    or type(args.get("anchor_occurrence", 1)) is not int
+                    or not 1 <= args.get("anchor_occurrence", 1) <= 8000
+                ):
+                    raise ValueError("invalid speech anchor")
                 if self.turn_identity != self.robot.session_state():
                     raise ValueError("stale physical tool request")
                 cached = self.robot.turn_cache.get(self.turn_id) or {}
@@ -1743,6 +2011,9 @@ class RealtimeRobot:
                     args["script_id"] if is_action else args["expression"],
                     speech=self.speech,
                     user_text=cached.get("user_text") or self.transcript,
+                    **({"anchor_text": args["anchor_text"],
+                        "anchor_occurrence": args.get("anchor_occurrence", 1)}
+                       if "anchor_text" in args else {}),
                 )
             elif name == "recall_memory" and self.memory is not None:
                 if set(args) != {"query"}:
@@ -1797,16 +2068,33 @@ class RealtimeRobot:
             logger.exception("memory/tool operation failed name=%s", name)
             result = {"status": "unavailable", "reason": type(exc).__name__}
             valid = False
-        self.publish("tool.result", turn_id=self.turn_id, call_id=call_id,
+        if (self.socket is not socket or identity != self.robot.session_state()
+                or self.turn_id != turn_id or epoch != self._tool_epoch or not self.ready):
+            return  # late I/O belongs to the retired turn, never the new conversation
+        self.publish("tool.result", turn_id=turn_id, call_id=call_id,
                      name=name, arguments=arguments, result=result, valid=valid,
                      provider_session_id=self.session,
                      duration_ms=round((time.perf_counter()-started)*1000, 2),
                      evidence_count=(len(result.get("evidence", []))
                                      if name == "recall_memory" and isinstance(result, dict)
                                      else None))
+        # The Provider does not control the async Room delivery or know the
+        # speaker cursor. Preserve exact statuses above for diagnostics; the
+        # model only needs acceptance to continue speaking without falsely
+        # narrating hardware uncertainty or waiting for playback receipts.
+        model_result = result
+        if name in {"perform_action", "set_expression"} and isinstance(result, dict):
+            status = str(result.get("status", "")).removeprefix("duplicate_")
+            if status in {"awaiting_audio_anchor", "awaiting_text_anchor", "queued",
+                          "reserved", "published_unknown"}:
+                model_result = {"status": "accepted"}
+            elif status == "send_unknown":
+                model_result = {"status": "delivery_unconfirmed"}
+            # Rejections keep their actual reason so callers and the LLM can
+            # distinguish a prohibited request from an asynchronous wait.
         await self.socket.send({
             "type": "conversation.item.create",
             "item": {"type": "function_call_output", "call_id": call_id,
-                     "output": json.dumps(result, ensure_ascii=False)},
+                     "output": json.dumps(model_result, ensure_ascii=False)},
         })
         self.followup_needed = True

@@ -1523,6 +1523,8 @@ class SegmentState:
     turn_id: str
     authoritative_text: str = ""
     text_prefix: str = ""
+    char_index_offset: Optional[int] = None
+    sample_cursor_timing: bool = False
     prons: Optional[List[Pron]] = None
     prons_text: str = ""
     pcm_buf: bytearray = field(default_factory=bytearray)
@@ -2474,23 +2476,34 @@ class VisemeEngine:
 
             seq = seq_start + next_ordinal
 
-            events.append(
-                make_mouth_event(
-                    stream_id=conv.stream_id,
-                    seq=seq,
-                    pron=pron,
-                    at_sample=start_sample,
-                    end_sample=end_sample,
-                    sample_rate=sr,
-                    send_wall=send_wall,
-                    first_pcm_wall=first_pcm_wall,
-                    timing_source=(
-                        "qwen3_forced_aligner_final"
-                        if flush
-                        else "qwen3_forced_aligner_online"
-                    ),
-                )
+            event = make_mouth_event(
+                stream_id=conv.stream_id,
+                seq=seq,
+                pron=pron,
+                at_sample=start_sample,
+                end_sample=end_sample,
+                sample_rate=sr,
+                send_wall=send_wall,
+                first_pcm_wall=first_pcm_wall,
+                timing_source=(
+                    "qwen3_forced_aligner_final"
+                    if flush
+                    else "qwen3_forced_aligner_online"
+                ),
             )
+            if (
+                segment.char_index_offset is not None
+                and type(pron.index) is int
+                and 0 <= pron.index < len(text)
+                and text[pron.index] == pron.char
+            ):
+                # Pron.index is a raw-text codepoint index, not a syllable ordinal.
+                event["char_index"] = segment.char_index_offset + pron.index
+            if conv.stream_epoch is not None:
+                event["stream_epoch"] = conv.stream_epoch
+                if segment.sample_cursor_timing:
+                    event["timing_mode"] = "speech_sample_v1"
+            events.append(event)
             aligner.emitted_indexes.add(pron.index)
             aligner.last_at_sample = start_sample
             aligner.last_end_sample = max(aligner.last_end_sample, end_sample)
@@ -2522,6 +2535,16 @@ class VisemeEngine:
                 or msg_type.endswith(".clear")
                 or msg_type.endswith(".cleared")
             ):
+                with self.lock:
+                    current = self.conversations.get(cid)
+                    # The output pacer is shared by this one robot. An old or
+                    # unidentified stop must not clear the active stream's queue.
+                    if not cid or cid != self._active_cid or current is None or current.cleared:
+                        return
+                    if current is not None and current.stream_epoch is not None:
+                        control_epoch = data.get("stream_epoch")
+                        if type(control_epoch) is not int or control_epoch != current.stream_epoch:
+                            return
                 self.reset_conversation(cid, msg_type if not data.get("stop") else "stop")
             return
         if not self.emit_enabled:
@@ -2537,11 +2560,10 @@ class VisemeEngine:
             seq = int(data.get("seq") or 0)
         except (TypeError, ValueError):
             seq = 0
-        try:
-            epoch = data.get("stream_epoch")
-            epoch_i = int(epoch) if epoch is not None and str(epoch) != "" else None
-        except (TypeError, ValueError):
-            epoch_i = None
+        epoch_i = data.get("stream_epoch")
+        if "stream_epoch" in data and (type(epoch_i) is not int or epoch_i <= 0):
+            log("TTS_DROP", "invalid stream_epoch")
+            return
 
         pcm, sample_rate, channels = decode_tts_pcm(data)
         samples = pcm_sample_count(pcm, channels)
@@ -2562,16 +2584,30 @@ class VisemeEngine:
         pending: List[Tuple[ConversationState, SegmentState, bool]] = []
         with self.lock:
             incoming_cid = cid or turn_id or "unknown"
-            if self._active_cid and incoming_cid != self._active_cid:
-                prev_cid = self._active_cid
-                self.reset_conversation(prev_cid, "conversation_change")
+            active = self.conversations.get(self._active_cid or "")
+            if (
+                active is not None and not active.cleared
+                and incoming_cid != active.conversation_id
+                and active.stream_epoch is not None
+                and (epoch_i is None or epoch_i <= active.stream_epoch)
+            ):
+                log("TTS_DROP", f"old stream cannot replace active conv={incoming_cid[:8]}")
+                return
             conv = self.conversation(incoming_cid)
             if conv.cleared:
                 return
+            if conv.stream_epoch is not None and (
+                epoch_i is None or epoch_i < conv.stream_epoch
+            ):
+                log("TTS_DROP", f"stale or missing stream_epoch conv={incoming_cid[:8]}")
+                return
+            if self._active_cid and incoming_cid != self._active_cid:
+                prev_cid = self._active_cid
+                self.reset_conversation(prev_cid, "conversation_change")
             if (
                 epoch_i is not None
-                and conv.stream_epoch is not None
                 and epoch_i != conv.stream_epoch
+                and (conv.stream_epoch is not None or conv.sample_cursor)
             ):
                 self.reset_conversation(incoming_cid, "stream_epoch_change", reopen=True)
                 conv = self.conversation(incoming_cid)
@@ -2599,6 +2635,7 @@ class VisemeEngine:
                         sample_rate=sample_rate,
                         channels=channels,
                         text_prefix=conv.last_tts_text,
+                        sample_cursor_timing=data.get("playback_protocol") == "sample_cursor_v1",
                     )
                     conv.segments[segment.turn_id] = segment
                     conv.active_turn_id = segment.turn_id
@@ -2614,6 +2651,9 @@ class VisemeEngine:
                     segment.authoritative_text = extract_segment_text(
                         text, segment.text_prefix
                     )
+                    segment.char_index_offset = (
+                        len(segment.text_prefix) if text.startswith(segment.text_prefix) else None
+                    )
                 if not segment.emitted and segment.authoritative_text:
                     pending.append((conv, segment, final))
                     if final:
@@ -2626,6 +2666,9 @@ class VisemeEngine:
                     if text:
                         active.authoritative_text = extract_segment_text(
                             text, active.text_prefix
+                        )
+                        active.char_index_offset = (
+                            len(active.text_prefix) if text.startswith(active.text_prefix) else None
                         )
                     active.final = True
                     active.emitted = True
@@ -2855,7 +2898,7 @@ class ReconnectingRoom:
 
 
 class MouthSendPacer:
-    """Release one mouth_script at a time on the at_sample timeline."""
+    """Pace legacy mouths; promptly release device-owned sample timing."""
 
     def __init__(
         self,
@@ -2969,6 +3012,14 @@ class MouthSendPacer:
         return stream_id, seq
 
     def _mouth_due(self, event: Dict[str, Any], now: float) -> float:
+        if (
+            event.get("timing_mode") == "speech_sample_v1"
+            and type(event.get("stream_epoch")) is int
+            and event["stream_epoch"] > 0
+        ):
+            # The device owns this clock. Release alignment as soon as it exists
+            # so Runtime can reserve word actions before the speaker reaches it.
+            return now
         sr = max(1, int(event.get("sample_rate") or SAMPLE_RATE))
         at_sample = max(
             0,
@@ -3106,6 +3157,48 @@ class BrainVisemeObserver:
                 last_health_sent = now
 
 
+def connect_mouth_output(
+    engine: VisemeEngine,
+    outgoing: "queue.Queue[str]",
+    observer: BrainVisemeObserver,
+) -> MouthSendPacer:
+    """Wire the production mouth sink, pacing, observation and cancellation."""
+    def deliver_mouth(event: Dict[str, Any]) -> None:
+        timing_source = str(event.get("timing_source") or "").strip().lower()
+        if not timing_source.startswith("qwen3_forced_aligner"):
+            log(
+                "MOUTH_DROP",
+                f"reject non-authoritative timing seq={event.get('seq')} "
+                f"source={timing_source or '-'}",
+            )
+            return
+        payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+        try:
+            outgoing.put_nowait(payload)
+        except queue.Full:
+            log("MOUTH_DROP", f"seq={event.get('seq')} outgoing full")
+        observer.publish(event)
+
+    pacer = MouthSendPacer(deliver_mouth)
+
+    def drop_pending_mouth() -> None:
+        dropped = pacer.drop()
+        while True:
+            try:
+                outgoing.get_nowait()
+                dropped += 1
+            except queue.Empty:
+                break
+        if dropped:
+            log("MOUTH_DROP", f"cleared pending={dropped}")
+
+    engine.send_mouth = pacer.enqueue
+    engine.mouth_replacement_enabled = True
+    engine.drop_pending_mouth = drop_pending_mouth
+    engine.drop_pending_mouth_from_seq = pacer.drop_stream_from_seq
+    return pacer
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Listen reb_sam + reb_tts and prepare viseme state"
@@ -3193,38 +3286,6 @@ def main() -> int:
     if observer.url:
         viseme_log(f"observe {observer.url}")
 
-    def _deliver_mouth(event: Dict[str, Any]) -> None:
-        timing_source = str(event.get("timing_source") or "").strip().lower()
-        if not timing_source.startswith("qwen3_forced_aligner"):
-            log(
-                "MOUTH_DROP",
-                f"reject non-authoritative timing seq={event.get('seq')} "
-                f"source={timing_source or '-'}",
-            )
-            return
-        payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-        try:
-            outgoing.put_nowait(payload)
-        except queue.Full:
-            log("MOUTH_DROP", f"seq={event.get('seq')} outgoing full")
-        observer.publish(event)
-
-    pacer = MouthSendPacer(_deliver_mouth)
-
-    def enqueue_mouth(event: Dict[str, Any]) -> bool:
-        return pacer.enqueue(event)
-
-    def drop_pending_mouth() -> None:
-        dropped = pacer.drop()
-        while True:
-            try:
-                outgoing.get_nowait()
-                dropped += 1
-            except queue.Empty:
-                break
-        if dropped:
-            log("MOUTH_DROP", f"cleared pending={dropped}")
-
     forced_aligner = QwenForcedAlignerRuntime()
     observer.set_health("starting", reason="loading_forced_aligner")
     viseme_log("loading Qwen3-ForcedAligner-0.6B...")
@@ -3238,12 +3299,9 @@ def main() -> int:
 
     engine = VisemeEngine(
         resolver,
-        send_mouth=enqueue_mouth,
         forced_aligner=forced_aligner,
     )
-    engine.mouth_replacement_enabled = True
-    engine.drop_pending_mouth = drop_pending_mouth
-    engine.drop_pending_mouth_from_seq = pacer.drop_stream_from_seq
+    pacer = connect_mouth_output(engine, outgoing, observer)
     # Pypinyin already handles the real-time pronunciation path. Loading a
     # second neural model on every robot is unnecessary for basic visemes.
     worker = None

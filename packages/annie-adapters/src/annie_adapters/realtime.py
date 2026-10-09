@@ -111,11 +111,24 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "without an explicit command. Do not infer an action from earlier "
                     "turns, force one every turn, or use playful expressions for distress, "
                     "serious news, negation or cancellation. shy is a different facial "
-                    "script from shy_retract. awaiting_audio_anchor is queued until "
-                    "the first TTS PCM; do not say it has been sent yet. "
-                    "This project's execution criterion is successful publication "
-                    "to its Room; no motor completion receipt is required. "
-                    "Do not tell the user the device is awaiting execution. "
+                    "script from shy_retract. All five expressive scripts MUST include "
+                    "anchor_text, even when explicitly requested, or the tool will reject "
+                    "them. Choose an exact word you will speak in your subsequent reply. "
+                    "Other scripts may omit anchor_text to use the legacy first-PCM "
+                    "trigger; when supplied, the Runtime sends ONE indexed "
+                    "action_prepare as soon as your real spoken reply contains the "
+                    "exact anchor. The device independently listens to reb_sam for "
+                    "acoustic timing; do not wait for a ForcedAligner result. "
+                    "anchor_occurrence selects its nonoverlapping occurrence from 1. "
+                    "Never guess milliseconds or samples, and never speak tool fields. "
+                    "If you choose a word not spoken in your reply, no action is "
+                    "sent; a late audio trigger is dropped by the device. "
+                    "An accepted tool result means the command is scheduled for async "
+                    "publication; immediately respond naturally without waiting for "
+                    "device playback or a motor receipt. Successful Room publication "
+                    "completes cloud dispatch, not physical execution. Do not narrate "
+                    "delivery, hardware uncertainty, past imagined failures or "
+                    "unfinished movement. Do not claim the motor completed either. "
                     "Enabled catalog: " +
                     "; ".join(
                         f"{script_id}: {(action_descriptions or {}).get(script_id, script_id)}"
@@ -124,7 +137,13 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 ),
                 "parameters": {
                     "type": "object",
-                    "properties": {"script_id": {"type": "string", "enum": list(actions)}},
+                    "properties": {
+                        "script_id": {"type": "string", "enum": list(actions)},
+                        "anchor_text": {"type": "string", "minLength": 1, "maxLength": 80,
+                                        "description": "Required for surprise/smirk/proud/skeptical/shy. Exact word in your subsequent spoken reply, original spelling and whitespace."},
+                        "anchor_occurrence": {"type": "integer", "minimum": 1, "maximum": 8000,
+                                              "description": "1-based nonoverlapping occurrence in the original reply; only with anchor_text, default 1."},
+                    },
                     "required": ["script_id"],
                 },
             },
@@ -136,8 +155,9 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "name": "set_expression",
                 "description": (
                     "ONLY when explicitly asked to show a facial expression. "
-                    "Queued means awaiting Room publication; successful publication "
-                    "counts as executed for this project's user-facing action status."
+                    "An accepted tool request is handled asynchronously. "
+                    "Respond naturally without waiting for device acknowledgement "
+                    "or narrating transport, hardware uncertainty or motor completion."
                 ),
                 "parameters": {
                     "type": "object",

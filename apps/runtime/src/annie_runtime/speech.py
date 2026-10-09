@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 FRAME_BYTES = 960  # 20ms, 24kHz, S16LE, mono; not the 16kHz MIC_AUDIO format.
 SENTENCE_END = frozenset("。！？!?；;\n")
 CLAUSE_END = frozenset("，,、")
+MAX_TTS_TEXT_CHARS = 8000  # matches bounded playback text fields
 PCM_LEAD_SECONDS = 0.24  # publish ahead of the sample clock to absorb network jitter
 
 
@@ -18,8 +19,14 @@ class SpeechOutput:
     """One bounded text queue and one synthesis/publisher owner per robot."""
 
     def __init__(self, robot, publisher, *, url, key, voice, socket_factory=QwenTtsSocket,
-                 first_chars=10, max_chars=48, first_wait_ms=360, event=None,
+                 first_chars=10, min_chars=None, max_chars=48, first_wait_ms=360, event=None,
                  voice_publisher=None):
+        min_chars = first_chars if min_chars is None else min_chars
+        if any(type(value) is not int or value <= 0
+               for value in (first_chars, min_chars, max_chars)):
+            raise ValueError("TTS chars thresholds must be positive integers")
+        if first_chars > max_chars or min_chars > max_chars:
+            raise ValueError("TTS first/min chars must not exceed max chars")
         self.robot = robot
         self.publisher = publisher
         self.voice_publisher = voice_publisher  # control/status; PCM stays reb_tts
@@ -28,6 +35,7 @@ class SpeechOutput:
         self.voice = voice
         self.socket_factory = socket_factory
         self.first_chars = first_chars
+        self.min_chars = min_chars
         self.max_chars = max_chars
         self.first_wait_ms = first_wait_ms
         self.event = event or (lambda *_args, **_kw: None)
@@ -51,10 +59,13 @@ class SpeechOutput:
         self.finished = False
         self.published_text = ""
         self.submitted_text = ""
+        self.generated_text = ""  # actual Realtime text before PCM/alignment
         self.last_published_segment = None
         self.started_at = None
         self.next_pcm_at = None
         self.failed_turn = None
+        self.received_chars = 0
+        self.failure_cleanup = None
 
         self.stream_epoch = 0
         self.playback_id = self.playback_source = None
@@ -72,6 +83,7 @@ class SpeechOutput:
         self.local_output_completed_at = None  # monotonic; NOT a speaker receipt
         self.viseme_events = 0
         self.viseme_seen = set()
+        self.alignment_points = {}  # original char index -> validated current-epoch sample
         self.viseme_state = "not_connected"
         self.control_task = None
         self.control_seq = 0
@@ -153,10 +165,12 @@ class SpeechOutput:
         self.error = self.first_audio_ms = self.first_publish_ms = None
         self.published_text = ""
         self.submitted_text = ""
+        self.generated_text = ""
         self.last_published_segment = None
         self.started_at = time.perf_counter()
         self.next_pcm_at = None
         self.failed_turn = None
+        self.received_chars = 0
         self.playback_id = self.playback_source = None
         self.receipt_tracks.clear()
         self.played_samples = self.receipt_seq = self.viseme_events = 0
@@ -168,6 +182,7 @@ class SpeechOutput:
         self.local_output_completed_at = None
         self.viseme_state = "not_connected"
         self.viseme_seen.clear()
+        self.alignment_points.clear()
         self.control_seq = 0
         self.pending_controls.clear()
         self.control_state = "unknown"
@@ -193,8 +208,9 @@ class SpeechOutput:
         """Nonblocking coalescing: slow TTS must not stall Realtime reception."""
         while self.pending and not self.queue.full():
             head = self.pending[:self.max_chars]
+            sentence_min = self.first_chars if self.segment == 0 else self.min_chars
             cut = next((i + 1 for i, char in enumerate(head)
-                        if char in SENTENCE_END and i + 1 >= self.first_chars), None)
+                        if char in SENTENCE_END and i + 1 >= sentence_min), None)
             if cut is None and len(self.pending) >= 24:
                 cut = next((i + 1 for i, char in enumerate(head)
                             if char in CLAUSE_END and i + 1 >= 12), None)
@@ -211,6 +227,15 @@ class SpeechOutput:
             if cut is None:
                 return
             segment = self.pending[:cut]
+            if not segment.strip():
+                first_text = next((i for i, char in enumerate(self.pending)
+                                   if not char.isspace()), None)
+                if first_text is None:
+                    if force and self.finished:
+                        self.pending = ""  # no spoken word exists to anchor
+                    return
+                cut = min(len(self.pending), first_text + self.max_chars)
+                segment = self.pending[:cut]
             if not self._enqueue(segment):
                 return
             self.pending = self.pending[cut:]
@@ -221,6 +246,27 @@ class SpeechOutput:
         await self._begin(turn_id, identity)
         if self.finished or not self._current(turn_id, identity):
             return
+        if self.received_chars + len(delta) > MAX_TTS_TEXT_CHARS:
+            self.failed_turn = turn_id
+            self.error = f"tts_text_limit: exceeded {MAX_TTS_TEXT_CHARS} chars"
+            self.cancelled = True
+            self.pending = ""
+            if self.worker:
+                self.worker.cancel()
+            if self.flush_timer:
+                self.flush_timer.cancel()
+            while not self.queue.empty():
+                self.queue.get_nowait()
+                self.queue.task_done()
+            self._emit("tts.error", error=self.error, reason="tts_text_limit")
+            # Immediate admission failure is local. Room stop/transport cleanup
+            # must not hold Realtime's receive loop behind network publication.
+            self.failure_cleanup = asyncio.create_task(
+                self.cancel("tts_text_limit"), name=f"tts-limit:{turn_id}",
+            )
+            return
+        self.received_chars += len(delta)
+        self.generated_text += delta
         self.pending += delta
         self._drain_pending()
         if self.pending and not self.flush_timer:
@@ -259,6 +305,11 @@ class SpeechOutput:
                 pass
 
     async def cancel(self, reason="cancel"):
+        if self.failure_cleanup and self.failure_cleanup is not asyncio.current_task():
+            # Serialize a subsequent turn/close with the old Room stop. A late
+            # cleanup must never clear a newly opened turn or stop its audio.
+            await asyncio.gather(self.failure_cleanup, return_exceptions=True)
+            self.failure_cleanup = None
         was_active = self.turn_id is not None
         self.cancelled = True
         if self.control_task:
@@ -309,7 +360,10 @@ class SpeechOutput:
                          } else "runtime"},
             })
             try:
-                await self.publisher.publish(self._packet(b"", "", final=True, stop=True, reason=reason))
+                async with asyncio.timeout(2 if reason == "tts_text_limit" else None):
+                    await self.publisher.publish(
+                        self._packet(b"", "", final=True, stop=True, reason=reason),
+                    )
                 self.stop_published_at = time.time_ns() // 1_000_000
                 self._emit("tts.stop_published", reason=reason, device_stopped="unknown",
                            stop_published_ms=self.stop_published_at)
@@ -699,7 +753,8 @@ class SpeechOutput:
             return False
         if event.get("conversation_id") != self.turn_id:
             return False
-        if event.get("stream_epoch", self.stream_epoch) != self.stream_epoch:
+        epoch = event.get("stream_epoch")
+        if epoch is not None and (type(epoch) is not int or epoch != self.stream_epoch):
             return False
         if not str(event.get("timing_source", "")).startswith("qwen3_forced_aligner"):
             return False
@@ -708,16 +763,34 @@ class SpeechOutput:
             return False
         if end > self.samples:
             return False
-        if start < self.played_samples:
+        rich = event.get("timing_mode") == "speech_sample_v1"
+        if not rich and start < self.played_samples:
             return False
+        if rich:
+            index, rate, char = event.get("char_index"), event.get("sample_rate"), event.get("char")
+            if (type(epoch) is not int or type(index) is not int or type(rate) is not int
+                    or event.get("timing_mode") != "speech_sample_v1"
+                    or rate != 24000 or not 0 <= index < len(self.submitted_text)
+                    or self.submitted_text[index] != char
+                    or not self.submitted_text.startswith(self.published_text)):
+                return False
         marker = (event.get("stream_id"), event.get("seq"))
         if marker in self.viseme_seen:
             return False
         self.viseme_seen.add(marker)
         self.viseme_state = "aligner_reporting"
         self.viseme_events += 1
-        self._emit("viseme.aligned", conversation_id=self.turn_id,
-                   stream_epoch=self.stream_epoch, start_sample=start,
-                   end_sample=end, viseme=event.get("viseme"), char=event.get("char"),
-                   timing_source=event["timing_source"])
+        fields = dict(conversation_id=self.turn_id, start_sample=start,
+                      end_sample=end, viseme=event.get("viseme"), char=event.get("char"),
+                      timing_source=event["timing_source"])
+        # Never upgrade legacy packets to strict word-action evidence by
+        # inventing an epoch, character index, or sample rate.
+        if epoch is not None:
+            fields["stream_epoch"] = epoch
+        if rich:
+            fields.update(char_index=index, sample_rate=rate, timing_mode="speech_sample_v1")
+            self.alignment_points[index] = {
+                **self.identity, "turn_id": self.turn_id, **fields,
+            }
+        self._emit("viseme.aligned", **fields)
         return True

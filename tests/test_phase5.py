@@ -78,26 +78,24 @@ class ContextSelectionTests(unittest.TestCase):
         for text in instructions:
             self.assertIn("你是小安妮", text)
             self.assertIn("最新明确更正", text)
-            self.assertIn("当前用户输入是本轮唯一待回应的问题", text)
-            self.assertIn("历史只用于理解指代和更正", text)
-            self.assertIn("不要描述没有发生的动作", text)
-            self.assertIn("一次性要求在当轮执行后即结束", text)
-            self.assertIn("用户再次开口或换话题时", text)
-            self.assertIn("回复长度由当轮需要决定", text)
-            self.assertIn("不问也能自然收住", text)
-            self.assertIn("上一轮是否已经问过", text)
-            self.assertIn("连续简短应答", text)
-            self.assertIn("只问一个对方刚提到的未展开细节", text)
-            self.assertIn("绝不牺牲本轮答案去制造下轮话题", text)
-            self.assertIn("不为短而漏掉重点", text)
+            self.assertIn("只回应当前用户意图", text)
+            self.assertIn("历史用于理解指代而不是续答旧任务", text)
+            self.assertIn("不虚构亲身经历、共同回忆、实体动作或设备能力", text)
+            self.assertIn("复杂问题完整解释", text)
+            self.assertIn("不靠反问", text)
+            self.assertIn("不为简短省略重点", text)
+            self.assertIn("当前性格决定措辞、节奏、幽默和反应", text)
+            self.assertIn("【工具边界】", text)
+            self.assertNotIn("退下由Runtime门控负责", text)
+            self.assertNotIn("不能用一句口头答应代替状态变更", text)
             self.assertNotIn("普通闲聊通常一到三句", text)
         self.assertIn("有主见的熟人", instructions[0])
         self.assertIn("知心朋友", instructions[1])
         self.assertIn("反差、双关或荒诞", instructions[2])
-        self.assertIn("有来有回的损友", instructions[3])
-        self.assertIn("不人身评价", instructions[3])
-        self.assertIn("邀请你怼也不是允许辱骂", instructions[3])
-        self.assertIn("工作焦虑后", instructions[3])
+        self.assertIn("嘴上不饶人的损友", instructions[3])
+        self.assertIn("先接住请求，再顺手反击", instructions[3])
+        self.assertIn("不评价对方智商", instructions[3])
+        self.assertIn("焦虑", instructions[3])
         self.assertNotIn("温和", session_instructions("unknown", PROFILES, {})[0])
         self.assertFalse(session_instructions("unknown", PROFILES, {})[1]["configured"])
         text, snapshot = session_instructions("annie", PROFILES, {
@@ -115,7 +113,7 @@ class ContextSelectionTests(unittest.TestCase):
         none, _ = session_instructions("annie", PROFILES, {
             "question_pressure": {"source": "user_setting", "value": "none"},
         })
-        self.assertIn("确有新细节且对方愿意展开", normal)
+        self.assertIn("不靠反问", normal)
         self.assertIn("默认不主动用问题续话", low)
         self.assertIn("不要用问句续话", none)
 
@@ -138,6 +136,8 @@ class ContextSelectionTests(unittest.TestCase):
         history[0]["playback_evidence_status"] = "speaker_reported_drained"
         packet = select_restorable_context(history, speech_enabled=True)
         self.assertEqual(packet["turns"][0]["assistant_text"], "已经说过的承诺")
+
+    def test_unheard_history_does_not_restore_twenty_unanswered_old_topics(self):
         # A typed reply is visible even when the robot's TTS feature is on.
         paired = select_restorable_context([
             row("t1", "彻底放松一下呀", "你平时喜欢怎么放松？", input_mode="text"),
@@ -150,8 +150,6 @@ class ContextSelectionTests(unittest.TestCase):
         legacy = row("legacy", "旧消息", "播音状态不明", input_mode="unknown")
         self.assertEqual(select_restorable_context([legacy], speech_enabled=True)[
             "turns"][0]["assistant_text"], "")
-
-    def test_unheard_history_does_not_restore_twenty_unanswered_old_topics(self):
         turns = [row(str(i), f"旧问句{i}", "模型生成了却没有扬声器回执") for i in range(20)]
         packet = select_restorable_context(turns, speech_enabled=True)
         self.assertEqual([t["user_text"] for t in packet["turns"]],
@@ -542,7 +540,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(.01)
         self.assertEqual(a.persona_snapshot["label"], "机灵互怼")
-        self.assertIn("邀请你怼也不是允许辱骂", a.socket.outbound[0]["session"]["instructions"])
+        self.assertIn("先接住请求，再顺手反击", a.socket.outbound[0]["session"]["instructions"])
         self.assertEqual(b.persona_snapshot["style_id"], "annie")
         self.assertEqual((await self.runtime.load_conversation(
             "annie-a", original["chat_id"], original["persona_id"]))["turns"], earlier["turns"])

@@ -132,6 +132,8 @@ def test_no_speak_and_provider_error_do_not_retry_in_same_silence():
             assert clients["a"].messages == []
             assert service.snapshot("a")["attempts"] == 2
             assert any(event[1]["reason"] == reason for event in clients["a"].events)
+            assert len(service.snapshot("a")["recent"]) == 1
+            assert service.snapshot("a")["recent"][0]["reason"] == reason
     asyncio.run(run())
 
 

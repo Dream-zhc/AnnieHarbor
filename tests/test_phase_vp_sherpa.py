@@ -17,7 +17,17 @@ class SherpaKeywordConfigTests(unittest.TestCase):
         experimental = (ROOT / "config/小安妮唤醒词_宽松实验.tokens.txt").read_text(
             encoding="utf-8"
         ).splitlines()
-        self.assertEqual(default, ["x iǎo ān n ī :1.5 @小安妮"])
+        self.assertEqual(default, [
+            "x iǎo ān n ī :1.5 @小安妮",
+            "x iǎo ài n ǐ :1.5 #0.25 @小安妮",
+        ])
+        original = (ROOT / "config/小安妮唤醒词原文.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        self.assertEqual(original, [
+            "小安妮 :1.5 @小安妮",
+            "小爱你 :1.5 #0.25 @小安妮",
+        ])
         self.assertEqual(len(experimental), 14)
         self.assertTrue(all(" #" in line and " @" in line and " :" in line
                             for line in experimental))
@@ -45,6 +55,13 @@ class SherpaKeywordConfigTests(unittest.TestCase):
         self.assertGreater(stream.input_dbfs, -55)
         self.assertIsNotNone(stream.last_keyword)
         self.assertIsNotNone(stream.last_decode_ms)
+        self.assertTrue(stream.last_keyword_tokens)
+        self.assertEqual(len(stream.last_keyword_tokens),
+                         len(stream.last_keyword_token_times_ms))
+        self.assertEqual(stream.last_keyword_token_times_ms,
+                         sorted(stream.last_keyword_token_times_ms))
+        # Token emissions are decoder evidence, not a certified acoustic end.
+        self.assertIsNone(stream.last_keyword_end_sample)
 
         # A shorter streaming batch must still detect official positive audio.
         fresh = model.new_stream()

@@ -234,12 +234,20 @@ def main():
         wake_detector=wake_detector,
         wake_wait_ms=int(runtime_defaults["duplex"]["wake_wait_ms"]),
         wake_followup_ms=int(runtime_defaults["duplex"]["followup_ms"]),
+        cloud_aec_robots=(tuple(item.strip() for item in os.environ.get(
+            "ANNIE_CLOUD_AEC_ROBOTS", "annie-a").split(",") if item.strip())
+            if os.environ.get("ANNIE_CLOUD_AEC_ENABLED") == "1" else ()),
+        cloud_aec_sync_offset_ms=int(os.environ.get("ANNIE_CLOUD_AEC_SYNC_OFFSET_MS", "80")),
+        cloud_aec_delay_ms=int(os.environ.get("ANNIE_CLOUD_AEC_DELAY_MS", "0")),
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]
             if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
         ),
         tts_url=os.environ.get("ANNIE_TTS_URL") or None,
+        tts_first_chars=provider_defaults["tts"]["first_min_chars"],
+        tts_min_chars=provider_defaults["tts"]["sentence_min_chars"],
+        tts_max_chars=provider_defaults["tts"]["sentence_max_chars"],
         viseme_root=root if os.environ.get("ANNIE_VISEME_ENABLED") == "1" else None,
         viseme_python=os.environ.get("ANNIE_VISEME_PYTHON") or None,
         memory_key=(
@@ -254,6 +262,8 @@ def main():
         memory_embedding_dimensions=provider_defaults["memory"]["embedding_dimensions"],
         action_catalog=root / "config/action_scripts.json",
         idle_model=idle_model,
+        continuation_enabled=continuation_enabled,
+        continuation_seconds=float(os.environ.get("ANNIE_CONTINUATION_SECONDS", "15")),
         actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
         action_allowlist=tuple(
             item.strip() for item in os.environ.get(
@@ -262,8 +272,6 @@ def main():
                 "surprise,smirk,proud,skeptical,shy",
             ).split(",") if item.strip()
         ),
-        continuation_enabled=continuation_enabled,
-        continuation_seconds=float(os.environ.get("ANNIE_CONTINUATION_SECONDS", "15")),
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
         weather_timeout_ms=int(provider_defaults["weather"]["amap"]["timeout_ms"]),
         weather_cache_sec=int(provider_defaults["weather"]["amap"]["live_cache_sec"]),

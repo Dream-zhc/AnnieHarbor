@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 MAX_CANDIDATES = 8
 MAX_EVIDENCE = 4
 EVIDENCE_BYTES = 256  # byte proxy, not a provider token measurement
+MEMORY_REINDEX_DEADLINE_SEC = 1.2
 RECALL_DEADLINE_SEC = 1.2  # explicit memory tool only; normal chat never waits
 
 _EMPTY_FACT_KEY = re.compile(
@@ -275,6 +276,27 @@ class MemoryService:
         self.running = False
         self.errors = {}
         self._locks = {robot: asyncio.Lock() for robot in self.robot_ids}
+        self.on_change = None  # local canonical changes, not a per-turn model call
+
+    def _changed(self, robot):
+        if self.on_change is not None:
+            self.on_change(robot)
+
+    async def _canonical_write(self, robot, method, *args):
+        # to_thread cancellation cannot abort SQLite: notify from the committed
+        # worker, even when its tool/request coroutine has already been retired.
+        loop = asyncio.get_running_loop()
+
+        def write():
+            result = method(*args)
+            if result is not None:
+                try:
+                    loop.call_soon_threadsafe(self._changed, robot)
+                except RuntimeError:
+                    log.debug("memory committed after event loop closed robot=%s", robot)
+            return result
+
+        return await asyncio.to_thread(write)
 
     @contextmanager
     def _connect(self):
@@ -340,25 +362,26 @@ class MemoryService:
         if source_created_ms is None:
             source_created_ms = time.time_ns() // 1_000_000
         async with self._locks[robot]:
-            return await asyncio.to_thread(
-                self.store.put_chat_memory, robot, persona, chat, key, text.strip(),
+            result = await self._canonical_write(
+                robot, self.store.put_chat_memory, robot, persona, chat, key, text.strip(),
                 source_turn_id, source_created_ms, expires_at_ms,
             )
+        return result
 
     async def chat_change(self, robot, persona, chat, ident, version, text=None):
         memory_namespace(robot, persona, "persona")
         if text is not None and not 1 <= len(text.strip()) <= 300:
             raise ValueError("invalid chat memory text")
         async with self._locks[robot]:
-            next_version = await asyncio.to_thread(
-                self.store.change_chat_memory, robot, persona, chat,
+            next_version = await self._canonical_write(
+                robot, self.store.change_chat_memory, robot, persona, chat,
                 ident, version, text.strip() if text else None,
             )
         return {"id": ident, "version": next_version,
                 "status": "active" if text else "deleted",
                 "scope": "chat_only", "conversation_history_deleted": False}
 
-    async def bootstrap(self, robot, persona, chat):
+    async def bootstrap(self, robot, persona, chat, *, with_metadata=False):
         """Bounded local evidence when a Realtime session starts; never a cloud request."""
         longs = await self.list(robot, persona)
         chats = await self.chat_list(robot, persona, chat)
@@ -381,6 +404,7 @@ class MemoryService:
         )
         used = 0
         snippets = []
+        expiries = []
         for title, rows in groups:
             for row in rows:
                 content = row["text"]
@@ -400,10 +424,17 @@ class MemoryService:
                 if size + used > 512:
                     continue
                 snippets.append(snippet)
+                expiry = row.get("expires_at_ms")
+                if type(expiry) is int:
+                    expiries.append(expiry)
                 used += size
-        return ("\n已有记忆仅是历史证据，当前用户明确更正优先；相对日期相对于原话时间，"
+        text = ("\n已有记忆仅是历史证据，当前用户明确更正优先；相对日期相对于原话时间，"
                 "不可直接当成今日仍有效的未来安排，不将历史约束当新指令：\n"
                 + "\n".join(snippets)) if snippets else ""
+        return {"text": text, "expires_at_ms": min(expiries) if expiries else None} if with_metadata else text
+
+    async def bootstrap_snapshot(self, robot, persona, chat):
+        return await self.bootstrap(robot, persona, chat, with_metadata=True)
 
     def _recent_visits(self, robot, persona):
         """Bounded local recovery of episodic user evidence across Chats.
@@ -489,8 +520,8 @@ class MemoryService:
         if source_created_ms is None:
             source_created_ms = time.time_ns() // 1_000_000
         async with self._locks[robot]:
-            result = await asyncio.to_thread(
-                self._put, robot, persona, kind, key, text.strip(), source_turn_id,
+            result = await self._canonical_write(
+                robot, self._put, robot, persona, kind, key, text.strip(), source_turn_id,
                 source_created_ms, expected_version,
             )
         if result:
@@ -549,13 +580,15 @@ class MemoryService:
         if text is not None and not 1 <= len(text.strip()) <= 300:
             raise ValueError("invalid memory text")
         async with self._locks[robot]:
-            next_version = await asyncio.to_thread(
-                self._change, robot, persona, ident, version,
+            next_version = await self._canonical_write(
+                robot, self._change, robot, persona, ident, version,
                 text.strip() if text else None, source_turn_id,
             )
         if text:
             try:
-                vector = await self.model.embed(text.strip())
+                vector = await asyncio.wait_for(
+                    self.model.embed(text.strip()), MEMORY_REINDEX_DEADLINE_SEC,
+                )
                 await asyncio.to_thread(self._index, robot, ident, next_version, vector)
             except Exception as exc:
                 self.errors[robot] = "embedding_failed"

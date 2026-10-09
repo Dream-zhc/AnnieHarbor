@@ -88,6 +88,11 @@ async def result_from_call(client, call_id, name, arguments):
                if item["type"] == "conversation.item.create"
                and item["item"]["type"] == "function_call_output"
                and item["item"]["call_id"] == call_id]
+    if name in {"perform_action", "set_expression"}:
+        # Transport-facing statuses live in Runtime evidence; Provider output
+        # deliberately contains only a neutral async-action acknowledgement.
+        return [item["result"] for item in client.events
+                if item["kind"] == "tool.result" and item.get("call_id") == call_id]
     return [json.loads(item["item"]["output"]) for item in outputs]
 
 
@@ -113,6 +118,15 @@ def test_realtime_tool_action_and_expression_only_a_changes(tmp_path):
             first = await result_from_call(a, "motion", "perform_action",
                                            {"script_id": "agree_micro_nod"})
             assert first[0]["status"] == "awaiting_audio_anchor"
+            provider_output = next(item for item in a.socket.outbound
+                                   if item["type"] == "conversation.item.create"
+                                   and item["item"].get("call_id") == "motion")
+            ack = json.loads(provider_output["item"]["output"])
+            assert ack == {"status": "accepted"}
+            assert "awaiting_audio_anchor" not in provider_output["item"]["output"]
+            # The model must not convert an unneeded device ACK into
+            # hedging language. The Room ledger retains the actual state.
+            assert "physical_execution" not in provider_output["item"]["output"]
             repeat = await result_from_call(a, "motion", "perform_action",
                                             {"script_id": "agree_micro_nod"})
             assert repeat == [first[0]]
@@ -157,7 +171,7 @@ def test_realtime_tool_action_and_expression_only_a_changes(tmp_path):
     ("surprise", 1600), ("smirk", 1500), ("proud", 1950),
     ("skeptical", 1600), ("shy", 2000),
 ])
-def test_expressive_script_tool_to_own_room_after_first_pcm(tmp_path, script_id, duration_ms):
+def test_expressive_script_sends_indexed_intent_before_alignment(tmp_path, script_id, duration_ms):
     async def exercise():
         rt = runtime(tmp_path)
         await ready(rt)
@@ -172,28 +186,90 @@ def test_expressive_script_tool_to_own_room_after_first_pcm(tmp_path, script_id,
             assert script_id in session["instructions"]
             a._create_turn("刚才真是意想不到，太有意思了")
             turn_id = a.turn_id
-            result = await result_from_call(
-                a, "expressive", "perform_action", {"script_id": script_id},
+            missing = await result_from_call(
+                a, "missing-anchor", "perform_action", {"script_id": script_id},
             )
-            assert result[0]["status"] == "awaiting_audio_anchor"
+            assert missing[0]["status"] == "rejected"
+            assert "requires anchor_text" in missing[0]["reason"]
+            result = await result_from_call(
+                a, "expressive", "perform_action",
+                {"script_id": script_id, "anchor_text": "意想不到"},
+            )
+            assert result[0]["status"] == "awaiting_text_anchor"
+            ack = next(item for item in a.socket.outbound
+                       if item["type"] == "conversation.item.create"
+                       and item["item"].get("call_id") == "expressive")
+            assert json.loads(ack["item"]["output"]) == {"status": "accepted"}
+            assert "awaiting_text_anchor" not in ack["item"]["output"]
             assert Publisher.instances["roomv2", "main"].messages == []
             assert Publisher.instances["roomv3", "main"].messages == []
             a.publish("tts.first_published", turn_id=turn_id,
                       robot_id="a", generation=a.robot.generation)
-            for _ in range(100):
+            await asyncio.sleep(.02)
+            # Legacy first PCM is never sufficient for expressive scripts.
+            assert Publisher.instances["roomv2", "main"].messages == []
+            assert Publisher.instances["roomv3", "main"].messages == []
+            # The generated text, not the ForcedAligner event, releases the
+            # single Room reservation. No PCM/sample estimate is supplied.
+            speech = a.speech
+            speech.turn_id = turn_id
+            speech.identity = dict(a.turn_identity)
+            speech.stream_epoch += 1
+            speech.generated_text = "哇，意想不到！"
+            a.actions.on_text_ready({"robot_id": "a", "turn_id": turn_id})
+            for _ in range(70):
                 if Publisher.instances["roomv2", "main"].messages:
                     break
                 await asyncio.sleep(.01)
             messages = Publisher.instances["roomv2", "main"].messages
             assert len(messages) == 1
-            assert messages[0]["type"] == "action_trigger"
+            assert messages[0]["type"] == "action_prepare"
             assert messages[0]["data"]["script_id"] == script_id
-            assert messages[0]["data"]["conversation_id"] == turn_id
+            assert messages[0]["data"]["anchor_char_index"] == 2
+            assert messages[0]["data"]["timing_mode"] == "phoneme_anchor_v1"
+            assert "at_sample" not in messages[0]["data"]
             assert Publisher.instances["roomv3", "main"].messages == []
             assert (await rt.action_list("a"))["requests"][0]["duration_ms"] == duration_ms
         finally:
             await rt.close()
 
+    asyncio.run(exercise())
+
+
+def test_actual_realtime_delta_releases_one_intent_without_waiting_for_pcm(tmp_path):
+    async def exercise():
+        rt = runtime(tmp_path)
+        await ready(rt)
+        try:
+            client = rt.realtime["a"]
+            client._create_turn("来一个惊讶")
+
+            async def block_synthesis(_turn_id, _identity):
+                await asyncio.Event().wait()
+
+            client.speech._synthesize_stream = block_synthesis
+            result = await result_from_call(client, "call-live", "perform_action",
+                                            {"script_id": "surprise", "anchor_text": "意想不到"})
+            assert result[0]["status"] == "awaiting_text_anchor"
+            await client.handle({"type": "response.text.delta", "delta": "哇，意想"},
+                                client.robot.generation)
+            await asyncio.sleep(.02)
+            assert Publisher.instances["roomv2", "main"].messages == []
+            await client.handle({"type": "response.text.delta", "delta": "不到！"},
+                                client.robot.generation)
+            for _ in range(70):
+                if Publisher.instances["roomv2", "main"].messages:
+                    break
+                await asyncio.sleep(.01)
+            events = Publisher.instances["roomv2", "main"].messages
+            assert len(events) == 1
+            assert events[0]["type"] == "action_prepare"
+            assert events[0]["data"]["anchor_char_index"] == 2
+            assert "at_sample" not in events[0]["data"]
+            assert client.speech.frames == 0
+            assert Publisher.instances["roomv3", "main"].messages == []
+        finally:
+            await rt.close()
     asyncio.run(exercise())
 
 

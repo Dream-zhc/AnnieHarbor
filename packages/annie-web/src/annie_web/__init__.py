@@ -12,6 +12,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from annie_web.exhibit import exhibit_snapshot
+from annie_web.exhibit_video import ExhibitLiveKit
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,9 +31,6 @@ class TurnInput(BaseModel):
         return value
 
 
-class SessionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    chat_id: str = Field(min_length=1, max_length=128)
 class TextViewedInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     chat_id: str = Field(min_length=1, max_length=128)
@@ -39,6 +39,9 @@ class TextViewedInput(BaseModel):
     generation: int = Field(ge=0)
 
 
+class SessionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chat_id: str = Field(min_length=1, max_length=128)
     persona_id: str = Field(min_length=1, max_length=128)
     persona_revision: int = Field(default=1, ge=1)
     style_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -141,6 +144,39 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
             await runtime.close()
 
     app = FastAPI(title="Annie Harbor — Phase 3 Session Control", lifespan=lifespan)
+    exhibit_video = ExhibitLiveKit()
+
+    @app.middleware("http")
+    async def same_origin_mutations(request: Request, call_next):
+        # The intranet UI uses the existing same-origin API over HTTP or HTTPS.
+        if request.url.path.startswith("/api/") and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            origin = request.headers.get("origin")
+            if origin and origin != str(request.base_url).rstrip("/"):
+                return JSONResponse({"detail": "origin_mismatch"}, status_code=403)
+        return await call_next(request)
+
+    @app.get("/api/exhibit/session")
+    async def exhibit_session():
+        # Keep the response compatible with already-open older front-end tabs.
+        return {"configured": True, "role": "operator", "access_mode": "intranet"}
+
+    @app.get("/api/exhibit/robots")
+    async def exhibit_robots():
+        return [{"robot_id": k, "room_id": v.config.room_id}
+                for k, v in runtime.robots.items()]
+
+    @app.get("/api/exhibit/robots/{robot_id}/snapshot")
+    async def exhibit_robot_snapshot(robot_id: str):
+        require_robot(robot_id)
+        return await exhibit_snapshot(runtime, robot_id)
+
+    @app.get("/api/exhibit/robots/{robot_id}/video-config")
+    async def exhibit_video_config(robot_id: str):
+        require_robot(robot_id)
+        result = exhibit_video.config(robot_id)
+        if result is None:
+            raise HTTPException(503, "livekit_not_configured")
+        return result
 
     def require_robot(robot_id: str):
         if robot_id not in runtime.robots:
@@ -230,6 +266,19 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     async def realtime_state(robot_id: str):
         require_robot(robot_id)
         return runtime.realtime_state(robot_id)
+
+    @app.get("/api/robots/{robot_id}/wakeword")
+    async def wakeword_state(robot_id: str):
+        """Cheap state-machine view for the selected workbench robot only."""
+        require_robot(robot_id)
+        client = runtime.realtime.get(robot_id)
+        return {
+            "robot_id": robot_id,
+            "generation": runtime.robots[robot_id].generation,
+            "ready": bool(client and client.ready),
+            "wakeword": (client.wake.snapshot() if client and client.wake
+                         else {"enabled": False}),
+        }
 
     @app.get("/api/robots/{robot_id}/diagnostics")
     async def realtime_diagnostics(robot_id: str):
@@ -470,6 +519,18 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "unknown turn_id") from exc
 
+    @app.post("/api/robots/{robot_id}/turns/{turn_id}/viewed")
+    async def text_turn_viewed(robot_id: str, turn_id: str, body: TextViewedInput):
+        require_robot(robot_id)
+        identity = {"robot_id": robot_id, "chat_id": body.chat_id,
+                    "persona_id": body.persona_id,
+                    "session_epoch": body.session_epoch, "generation": body.generation}
+        try:
+            accepted = runtime.viewed_text_turn(robot_id, turn_id, identity)
+        except RobotUnavailableError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"accepted": accepted, "evidence": "web_text_visible_only"}
+
     @app.post("/api/robots/{robot_id}/turns/{turn_id}/playback")
     async def playback(robot_id: str, turn_id: str, body: PlaybackInput):
         require_robot(robot_id)
@@ -519,18 +580,6 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
                 body.fields,
                 source=body.source,
                 generation=body.generation,
-    @app.post("/api/robots/{robot_id}/turns/{turn_id}/viewed")
-    async def text_turn_viewed(robot_id: str, turn_id: str, body: TextViewedInput):
-        require_robot(robot_id)
-        identity = {"robot_id": robot_id, "chat_id": body.chat_id,
-                    "persona_id": body.persona_id,
-                    "session_epoch": body.session_epoch, "generation": body.generation}
-        try:
-            accepted = runtime.viewed_text_turn(robot_id, turn_id, identity)
-        except RobotUnavailableError as exc:
-            raise HTTPException(409, str(exc)) from exc
-        return {"accepted": accepted, "evidence": "web_text_visible_only"}
-
                 source_turn_id=body.source_turn_id,
                 ttl_ms=body.ttl_ms,
             )

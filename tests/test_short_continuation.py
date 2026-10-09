@@ -165,6 +165,12 @@ def test_cooldown_expiration_busy_and_no_speak_are_bounded():
         planner.result = {"decision": "NO_SPEAK", "topic": "", "new_value": False}
         await settle(service)
         assert service.snapshot("a")["status"] == "model_no_speak"
+        evidence = service.snapshot("a")["recent"]
+        assert len(evidence) == 1
+        assert evidence[0]["source_turn_id"] == "turn-a"
+        assert evidence[0]["mode"] == "short_continuation"
+        assert evidence[0]["decision"] == "NO_SPEAK"
+        assert evidence[0]["model_ms"] is not None
         await settle(service)
         assert len(planner.calls) == 1
         service.on_event("a", {"kind": "turn.started", "turn_source": "user"})

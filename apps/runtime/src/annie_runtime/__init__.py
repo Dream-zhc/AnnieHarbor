@@ -841,10 +841,16 @@ class HarborRuntime:
         wake_detector=None,
         wake_wait_ms: int = 5000,
         wake_followup_ms: int = 8000,
+        cloud_aec_robots: tuple[str, ...] = (),
+        cloud_aec_sync_offset_ms: int = 80,
+        cloud_aec_delay_ms: int = 0,
         tts_voice: str | None = None,
         tts_url: str | None = None,
         tts_socket_factory=None,
         room_tts_factory=None,
+        tts_first_chars: int = 10,
+        tts_min_chars: int | None = None,
+        tts_max_chars: int = 48,
         viseme_root: Path | None = None,
         viseme_python: str | None = None,
         memory_key: str | None = None,
@@ -913,6 +919,15 @@ class HarborRuntime:
         self.room_server = room_server
         self.room_connections = {}
         self.room_sources = {}
+        self.cloud_aec = {}
+        self.cloud_aec_robots = tuple(cloud_aec_robots)
+        self.cloud_aec_sync_offset_ms = cloud_aec_sync_offset_ms
+        self.cloud_aec_delay_ms = cloud_aec_delay_ms
+        if self.cloud_aec_robots and (not realtime_key or not tts_voice or room_server is None):
+            raise ValueError("cloud AEC requires Realtime, active TTS and a configured Room")
+        if any(robot_id not in self.robots or not self.robots[robot_id].config.listen_enabled
+               for robot_id in self.cloud_aec_robots):
+            raise ValueError("cloud AEC robot must have a configured listening Room")
         self.playback_listeners = {}
         self.voice_publishers = {}
         self.voice_tasks = set()
@@ -968,14 +983,31 @@ class HarborRuntime:
             from annie_adapters.tts import DEFAULT_URL as TTS_DEFAULT_URL
             from annie_adapters.tts import QwenTtsSocket, RoomTtsPublisher, validate_url
 
+            if self.cloud_aec_robots:
+                from annie_runtime.cloud_aec import CloudAec
+
+                for robot_id in self.cloud_aec_robots:
+                    self.cloud_aec[robot_id] = CloudAec(
+                        None,  # current asyncio loop is bound in start()
+                        lambda pcm, received_at, robot_id=robot_id: self._accept_aec_pcm(
+                            robot_id, pcm, received_at),
+                        sync_offset_ms=self.cloud_aec_sync_offset_ms,
+                        delay_ms=self.cloud_aec_delay_ms,
+                    )
+
             url = validate_url(tts_url or TTS_DEFAULT_URL)
             for robot_id, client in self.realtime.items():
                 publisher = (room_tts_factory or RoomTtsPublisher)(
                     room_server, client.robot.config.room_id,
                 )
+                if robot_id in self.cloud_aec:
+                    from annie_runtime.cloud_aec import AecTtsPublisher
+
+                    publisher = AecTtsPublisher(publisher, self.cloud_aec[robot_id])
                 client.speech = SpeechOutput(
                     client.robot, publisher, url=url, key=realtime_key,
                     voice=tts_voice, socket_factory=tts_socket_factory or QwenTtsSocket,
+                    first_chars=tts_first_chars, min_chars=tts_min_chars, max_chars=tts_max_chars,
                     event=client.publish,
                     voice_publisher=self.voice_publishers.get(robot_id),
                 )
@@ -1034,7 +1066,10 @@ class HarborRuntime:
             )
             for client in self.realtime.values():
                 client.weather = self.weather
+        if self.memory is not None:
+            self.memory.on_change = self._memory_changed
         self.started = False
+        self.start_time = time.time()
         self.events = EventService(self)
         self.reminders = ReminderService(self)
         self.idle = IdleService(self, idle_model, idle_seconds=idle_seconds,
@@ -1265,6 +1300,8 @@ class HarborRuntime:
             last_event_kind=robot.snapshot.last_event_kind,
             last_input_source=robot.snapshot.last_input_source,
         )
+        if robot_id in self.cloud_aec:
+            stats["aec"] = self.cloud_aec[robot_id].snapshot()
         return stats
 
     def debug_ingest_room_pcm(self, robot_id: str, source_id: str, frame: bytes):
@@ -1293,6 +1330,13 @@ class HarborRuntime:
             )
             return
         robot = self.robots[robot_id]
+        aec = self.cloud_aec.get(robot_id)
+        if aec is not None:
+            # Native DSP never executes in the websocket reader. The worker
+            # alone forwards cleaned PCM into the existing Room input gate.
+            if not aec.feed_mic(decoded[1]):
+                robot.record("cloud_aec_overloaded", source=source_id)
+            return
         try:
             if robot.audio.source_id != source_id:
                 self.start_pcm_stream(
@@ -1304,9 +1348,28 @@ class HarborRuntime:
         except InputRejectedError as exc:
             robot.record("room_pcm_rejected", error=exc.reason, source=source_id)
 
+    def _accept_aec_pcm(self, robot_id, pcm, received_at):
+        if not self.started:
+            return
+        source_id = self.room_sources[robot_id]
+        try:
+            if self.robots[robot_id].audio.source_id != source_id:
+                self.start_pcm_stream(source_id, VERIFIED_MIC_FORMAT,
+                                      target_robot_id=robot_id)
+            name = b"MIC_AUDIO"
+            frame = len(name).to_bytes(2, "big") + name + pcm
+            self.ingest_pcm(source_id, frame, target_robot_id=robot_id,
+                            received_at=received_at)
+        except InputRejectedError as exc:
+            self.robots[robot_id].record("room_pcm_rejected", error=exc.reason,
+                                         source=source_id)
+
     def _room_input_disconnected(self, source_id: str):
         if not self.started:
             return
+        for robot_id in self.input_bindings.get(source_id, ()):
+            if robot_id in self.cloud_aec:
+                self.cloud_aec[robot_id].reset()
         try:
             self.reconnect_input_source(source_id)
             for robot_id in self.input_bindings.get(source_id, ()):
@@ -1368,6 +1431,9 @@ class HarborRuntime:
         try:
             if not client.speech.on_playback_receipt(message):
                 client.publish("tts.playback.rejected", reason="stale_or_invalid_state")
+            elif (robot_id in self.cloud_aec and
+                  (message.get("data") or {}).get("source") == "speaker"):
+                self.cloud_aec[robot_id].feed_receipt(message)
         except ValueError as exc:
             client.publish("tts.playback.rejected", reason=str(exc)[:120])
 
@@ -1513,9 +1579,17 @@ class HarborRuntime:
         if self.viseme_sidecars is not None:
             self.viseme_sidecars.preflight()
 
+    def _memory_changed(self, robot_id):
+        client = self.realtime.get(robot_id)
+        if client is not None:
+            client.memory_changed()
+
     async def start(self):
         if self.started:
             return
+        for aec in self.cloud_aec.values():
+            aec.loop = asyncio.get_running_loop()
+            aec.start()
         await asyncio.to_thread(self.store.migrate)
         if self.actions is not None:
             await self.actions.start()
@@ -1552,6 +1626,8 @@ class HarborRuntime:
 
     async def close(self):
         await self.process_probe.close()
+        for aec in self.cloud_aec.values():
+            aec.close()
         if self.started:
             self.started = False
             for task in tuple(self.smallbrain_tasks):
@@ -1641,6 +1717,8 @@ class HarborRuntime:
                 updated_ms=time.time_ns() // 1_000_000,
             )
         if result != previous:
+            if robot_id in self.cloud_aec:
+                self.cloud_aec[robot_id].reset()
             try:
                 await self.reminders.invalidate_previous(previous)
             except Exception:
@@ -1806,14 +1884,17 @@ class HarborRuntime:
                 raise ValueError("Realtime busy; set conversation preference after current turn")
         if ttl_ms is not None and (type(ttl_ms) is not int or not 1 <= ttl_ms <= 86_400_000):
             raise ValueError("ttl_ms must be between 1 and 86400000")
+        identity = robot.session_state()
         now_ms = time.time_ns() // 1_000_000
+        if source != "user_setting" and ttl_ms is None:
+            ttl_ms = 120_000  # observed interaction cues are not permanent user preferences
         expires_at_ms = None if ttl_ms is None else now_ms + ttl_ms
         for key, value in fields.items():
             await asyncio.to_thread(
                 self.store.upsert_social_state,
                 robot_id,
-                robot.chat_id,
-                robot.persona_id,
+                identity["chat_id"],
+                identity["persona_id"],
                 key,
                 value,
                 source=source,
@@ -1822,6 +1903,14 @@ class HarborRuntime:
                 expires_at_ms=expires_at_ms,
                 updated_ms=now_ms,
             )
+        if identity != robot.session_state():
+            raise ValueError("session changed while updating social state")
+        if source != "user_setting" and robot_id in self.realtime:
+            client = self.realtime[robot_id]
+            social = await self.social_state(robot_id)
+            if identity == robot.session_state():
+                client.social_state = social
+                client.visual_changed()
         if source == "user_setting" and robot_id in self.realtime:
             # User-initiated setting, not a per-turn SocialState update. Apply
             # on a newly created Session without injecting full Persona midturn.
@@ -1839,6 +1928,8 @@ class HarborRuntime:
         )
 
     async def stop_robot(self, robot_id):
+        if robot_id in self.cloud_aec:
+            self.cloud_aec[robot_id].reset()
         if robot_id in self.realtime:
             await self.realtime[robot_id].stop()
         return await self.robots[robot_id].stop()
@@ -1855,6 +1946,11 @@ class HarborRuntime:
         if robot_id not in self.realtime:
             raise RobotUnavailableError("Realtime is not configured; set DASHSCOPE_API_KEY")
         return await self.realtime[robot_id].submit_text(text)
+
+    def viewed_text_turn(self, robot_id: str, turn_id: str, identity: dict):
+        if robot_id not in self.realtime:
+            raise RobotUnavailableError("Realtime is not configured")
+        return self.idle.short.viewed_text(robot_id, turn_id, identity)
 
     async def action_list(self, robot_id: str):
         if robot_id not in self.robots:
@@ -1947,18 +2043,15 @@ class HarborRuntime:
         if robot_id not in self.realtime:
             return {**self.session_state(robot_id), "ready": False, "state": "not_configured"}
         return self.realtime[robot_id].snapshot()
-    def viewed_text_turn(self, robot_id: str, turn_id: str, identity: dict):
-        if robot_id not in self.realtime:
-            raise RobotUnavailableError("Realtime is not configured")
-        return self.idle.short.viewed_text(robot_id, turn_id, identity)
-
 
     def realtime_diagnostics(self, robot_id: str):
         if robot_id not in self.realtime:
             return {**self.session_state(robot_id), "ready": False,
                     "prompt_snapshot": None, "prompt_history": [],
-                    "turn_prompt_refs": [], "tool_history": []}
-        return self.realtime[robot_id].diagnostic_snapshot()
+                    "turn_prompt_refs": [], "tool_history": [],
+                    "idle_planning": self.idle.snapshot(robot_id)}
+        return {**self.realtime[robot_id].diagnostic_snapshot(),
+                "idle_planning": self.idle.snapshot(robot_id)}
 
     def realtime_events(self, robot_id: str, after: int):
         if robot_id not in self.realtime:

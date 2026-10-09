@@ -11,11 +11,21 @@ WINDOW_BYTES = SAMPLE_RATE * 2 * 2  # simulation test window; not sherpa require
 # Sherpa reports a keyword hit, not the sample where the keyword ended.
 # Its confirmation can lag behind the start of a same-breath question.
 # Retain 1.6s of bounded PCM: 800ms could omit early question words.
-PRE_ROLL_BYTES = FRAME_BYTES * 80
+PRE_ROLL_BYTES = FRAME_BYTES * 80  # 1600ms accommodates late keyword confirmation
 WAKE_WAIT_SECONDS = 5.0
 FOLLOWUP_SECONDS = 8.0
 STREAM_BATCH_BYTES = FRAME_BYTES * 2     # 40ms input reduces detection batch wait
 STREAM_BACKLOG_LIMIT_BYTES = FRAME_BYTES * 25  # 500ms fail-closed backlog
+WAKE_ADDRESS_INSTRUCTIONS = (
+    "\n【本地唤醒称呼】语音入口使用本地唤醒词“小安妮”。"
+    "语音句首的“小安妮”及其近音转写“小爱你/小安尼/小安你/小爱妮”，"
+    "在紧接问候或请求时只是呼叫称呼，不是表白或独立话题。"
+    "直接回应后面的问候或请求，不要围绕称呼打趣、复述“小爱你”或推断爱意，"
+    "也不要沿用历史中由这些误识别引出的表白梗。"
+    "仅有唤醒称呼不构成聊天问题，等待后续提问。"
+    "用户明确讨论词义或真实表达“我爱你”等情感时保留原意；"
+    "本规则只解释语音呼叫，不改写文字输入或用户的真实表达。"
+)
 
 
 class WakeAdmission:
@@ -42,6 +52,8 @@ class WakeAdmission:
         self.last_trigger_lag_ms = None
         self.last_completed_decode_ms = None
         self.last_detected_keyword = None
+        self.last_keyword_tokens = []
+        self.last_keyword_token_times_ms = []
         self._batch_started_at = None
 
     @property
@@ -106,6 +118,12 @@ class WakeAdmission:
                     self.last_detected_keyword = getattr(
                         self.detector, "last_keyword", None
                     )
+                    self.last_keyword_tokens = list(getattr(
+                        self.detector, "last_keyword_tokens", []
+                    ))
+                    self.last_keyword_token_times_ms = list(getattr(
+                        self.detector, "last_keyword_token_times_ms", []
+                    ))
                 if triggered:
                     self.last_trigger_lag_ms = (round((self.clock() - batch_at) * 1000, 1)
                                                 if batch_at is not None else None)
@@ -180,6 +198,11 @@ class WakeAdmission:
             "near_silence": getattr(self.detector, "quiet_batches", 0) >= 5,
             "last_keyword": (getattr(self.detector, "last_keyword", None)
                              or self.last_detected_keyword),
+            "last_keyword_tokens": list(self.last_keyword_tokens),
+            "last_keyword_token_times_ms": list(self.last_keyword_token_times_ms),
+            "keyword_time_basis": "decoder_relative_token_emission",
+            "keyword_end_sample": None,
+            "preroll_policy": "preserve_question_unverified_keyword_end",
             "keywords_file": getattr(self.factory, "keywords_name", None),
             "global_threshold": getattr(self.factory, "threshold", None),
             "batch_audio_ms": STREAM_BATCH_BYTES // FRAME_BYTES * 20,

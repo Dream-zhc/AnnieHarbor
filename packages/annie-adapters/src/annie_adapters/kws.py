@@ -55,6 +55,10 @@ class SherpaWakeStream:
         self.input_dbfs = None
         self.quiet_batches = 0
         self.last_keyword = None
+        self.last_keyword_tokens = []
+        self.last_keyword_token_times_ms = []
+        # Token emission times are not an acoustic end-of-keyword boundary.
+        self.last_keyword_end_sample = None
         self.last_decode_ms = None
 
     def _decode(self, pcm):
@@ -73,9 +77,16 @@ class SherpaWakeStream:
         try:
             while engine.is_ready(self.stream):
                 engine.decode_stream(self.stream)
-                keyword = engine.get_result(self.stream)
+                # Read native result ONCE: get_result consumes the hit. Calling
+                # the wrapper's get_result then timestamps loses the metadata.
+                result = engine.keyword_spotter.get_result(self.stream)
+                keyword = result.keyword.strip()
                 if keyword:
                     self.last_keyword = str(keyword)
+                    self.last_keyword_tokens = list(result.tokens)
+                    self.last_keyword_token_times_ms = [
+                        round(float(stamp) * 1000, 2) for stamp in result.timestamps
+                    ]
                     engine.reset_stream(self.stream)
                     return True
             return False

@@ -1,6 +1,8 @@
 """Phase 7: one-robot, one-Room action dispatch with durable idempotency.
 
-An action_trigger is tied to the first published PCM, not a wall-clock guess.
+Legacy actions use the first published PCM; word actions publish an indexed
+intent as soon as the real reply contains the requested word. The embedded
+speaker resolves the sample from reb_sam and its own playback cursor.
 The historical wire has no action completion receipt; published is UNKNOWN,
 never a claim that the embedded motor finished.
 """
@@ -12,6 +14,7 @@ import time
 from annie_brain.action_catalog import resolve_action
 
 EXPRESSIONS = frozenset({"喜", "怒", "哀", "乐", "中"})
+WORD_REQUIRED_SCRIPTS = frozenset({"surprise", "smirk", "proud", "skeptical", "shy"})
 ANCHOR_TIMEOUT = 15
 
 
@@ -43,6 +46,9 @@ class ActionCoordinator:
         self.enabled = enabled
         self.allowlist = tuple(allowlist)
         self.pending = {}  # (robot_id,turn_id) -> (call_id,session identity)
+        self.word_anchors = {}  # same key -> bounded, current speech/word identity
+        self.word_sends = {}  # (robot_id,call_id) -> (turn_id, cancellable anchor)
+        self.word_turns = {}  # robot -> current authoritative turn.started identity
         self.pending_expressions = {}  # (robot_id,call_id) -> turn_id
         self.tasks = set()
         self.connection_errors = {}
@@ -80,7 +86,7 @@ class ActionCoordinator:
         )
 
     async def request(self, robot_id, call_id, turn_id, generation, kind, value, *,
-                      speech, user_text):
+                      speech, user_text, anchor_text=None, anchor_occurrence=1):
         if not self.enabled:
             return {"status": "not_configured", "real_device_executed": False}
         if robot_id not in self.robots or speech is None or robot_id not in self.main_publishers:
@@ -101,13 +107,51 @@ class ActionCoordinator:
             cooldown = 0
         else:
             raise ValueError("unknown expression/action kind")
+        if anchor_text is not None and (
+            kind != "action" or not isinstance(anchor_text, str)
+            or not anchor_text.strip() or len(anchor_text) > 80
+            or type(anchor_occurrence) is not int or not 1 <= anchor_occurrence <= 8000
+        ):
+            raise ValueError("invalid speech anchor")
+        if anchor_text is None and anchor_occurrence != 1:
+            raise ValueError("anchor_occurrence requires anchor_text")
+        # All five expressive scripts require true acoustic word timing. The
+        # Runtime cannot reliably distinguish an explicit request from an
+        # autonomous suggestion; do not fall back to first-PCM in either case.
+        if kind == "action" and value in WORD_REQUIRED_SCRIPTS and anchor_text is None:
+            raise ValueError("expressive action requires anchor_text")
+        waiting_status = "awaiting_text_anchor" if anchor_text is not None else "awaiting_audio_anchor"
         robot = self.robots[robot_id]
         if generation != robot.generation:
             raise ValueError("stale_generation")
         async with self.locks[robot_id]:
+            # turn.started revokes synchronously, while durable cleanup is
+            # asynchronous. Finish that cleanup here if a new tool wins the lock.
+            retired = [key for key, anchor in self.word_anchors.items()
+                       if key[0] == robot_id and anchor["cancelled"]]
+            for key in retired:
+                self.word_anchors.pop(key, None)
+                pending = self.pending.pop(key, None)
+                if pending is not None:
+                    changed = await asyncio.to_thread(
+                        self.store.set_action_status, robot_id, pending[0],
+                        "awaiting_text_anchor", "cancelled_before_send",
+                    )
+                    if changed:
+                        self.emit(robot_id, "action.state", turn_id=key[1], call_id=pending[0],
+                                  status="cancelled_before_send", real_device_executed=False,
+                                  device_completion="unknown")
+            if kind == "action":
+                # One script per turn even after its physical cooldown elapsed.
+                previous = await asyncio.to_thread(self.store.list_actions, robot_id, 100)
+                if any(item["turn_id"] == turn_id and item["kind"] == "action"
+                       and item["call_id"] != call_id and item["value"] != value
+                       for item in previous):
+                    return {"status": "conflict_or_cooldown", "real_device_executed": False}
             row, duplicate = await asyncio.to_thread(
                 self.store.reserve_action, robot_id, call_id, turn_id, generation,
                 robot.config.room_id, kind, value, cooldown,
+                word_aligned=anchor_text is not None,
             )
             if row is None:
                 return {"status": "conflict_or_cooldown", "real_device_executed": False}
@@ -116,19 +160,40 @@ class ActionCoordinator:
                 return {"status": "duplicate_" + row["status"],
                         "real_device_executed": False}
             self._event(row)
+            if anchor_text is not None and self.word_turns.get(robot_id, turn_id) != turn_id:
+                await asyncio.to_thread(
+                    self.store.set_action_status, robot_id, call_id,
+                    waiting_status, "cancelled_before_send",
+                )
+                self._event(row, status="cancelled_before_send")
+                return {"status": "cancelled_before_send", "real_device_executed": False}
             if kind == "action":
-                if speech.turn_id == turn_id and (
+                if anchor_text is None and speech.turn_id == turn_id and (
                     speech.frames or getattr(speech, "inflight_end", 0)
                 ):
                     await asyncio.to_thread(
-                        self.store.set_action_status, robot_id, call_id, "awaiting_audio_anchor",
+                        self.store.set_action_status, robot_id, call_id, waiting_status,
                         "rejected_late",
                     )
                     self._event(row, status="rejected_late")
                     return {"status": "rejected_late", "real_device_executed": False}
-                self.pending[(robot_id, turn_id)] = (call_id, generation)
+                key = robot_id, turn_id
+                self.pending[key] = (call_id, generation)
+                if anchor_text is not None:
+                    self.word_anchors[key] = {
+                        "speech": speech, "identity": dict(robot.session_state()),
+                        "epoch": speech.stream_epoch + (speech.turn_id != turn_id),
+                        "text": anchor_text, "occurrence": anchor_occurrence, "cancelled": False,
+                    }
+                    # Realtime may have delivered the text before the tool
+                    # call. Dispatch immediately when the exact word exists.
+                    if (self._word_active(robot_id, turn_id, generation,
+                                          self.word_anchors[key]) and
+                            self._anchor_position(self.word_anchors[key]) is not None):
+                        self._schedule(self._dispatch_text(robot_id, turn_id, call_id,
+                                                           generation, self.word_anchors[key]))
                 self._schedule(self._expire(robot_id, turn_id, call_id, generation))
-                return {"status": "awaiting_audio_anchor", "script_id": value,
+                return {"status": waiting_status, "script_id": value,
                         "room_id": robot.config.room_id,
                         "real_device_executed": False}
             # Expression goes out ahead of its corresponding first PCM, on
@@ -224,24 +289,136 @@ class ActionCoordinator:
             return
         async with self.locks[robot_id]:
             if self.pending.pop((robot_id, turn_id), None) == (call_id, generation):
+                word = self.word_anchors.pop((robot_id, turn_id), None)
+                expiry = "expired_no_text_anchor" if word is not None else "expired_no_pcm"
+                before = "awaiting_text_anchor" if word is not None else "awaiting_audio_anchor"
                 changed = await asyncio.to_thread(
-                    self.store.set_action_status, robot_id, call_id, "awaiting_audio_anchor",
-                    "expired_no_pcm",
+                    self.store.set_action_status, robot_id, call_id, before,
+                    expiry,
                 )
                 if changed:
                     self.emit(robot_id, "action.state", turn_id=turn_id,
-                              call_id=call_id, status="expired_no_pcm",
+                              call_id=call_id, status=expiry,
                               real_device_executed=False)
 
     def on_first_pcm(self, event):
         key = event["robot_id"], event.get("turn_id")
         pending = self.pending.get(key)
-        if pending and pending[1] == event.get("generation"):
+        if pending and key not in self.word_anchors and pending[1] == event.get("generation"):
             self._schedule(self._dispatch(*key, *pending))
+
+    @staticmethod
+    def _anchor_position(anchor):
+        speech = anchor["speech"]
+        submitted = getattr(speech, "generated_text", "")
+        # Index in the exact generated text, including spaces/punctuation;
+        # never compute from audio durations or fabricate a future suffix.
+        if not isinstance(submitted, str):
+            return None
+        offset = 0
+        for _ in range(anchor["occurrence"]):
+            position = submitted.find(anchor["text"], offset)
+            if position < 0:
+                return None
+            offset = position + len(anchor["text"])
+        return position
+
+    def _word_active(self, robot_id, turn_id, generation, anchor):
+        speech = anchor["speech"]
+        robot = self.robots[robot_id]
+        speaker = getattr(speech, "receipt_tracks", {}).get("speaker")
+        return (
+            generation == robot.generation and not speech.cancelled and not anchor["cancelled"]
+            and self.word_turns.get(robot_id, turn_id) == turn_id
+            and not getattr(speech, "error", None)
+            and (speaker is None or speaker.get("state") not in {"stopped", "drained"})
+            and speech.turn_id == turn_id and speech.stream_epoch == anchor["epoch"]
+            and speech.identity == anchor["identity"]
+            and robot.session_state() == anchor["identity"]
+        )
+
+    def on_turn_started(self, event):
+        """Revoke old word work before this turn has produced text or PCM."""
+        robot_id, turn_id = event.get("robot_id"), event.get("turn_id")
+        if robot_id not in self.locks or not isinstance(turn_id, str) or not turn_id:
+            return
+        self.word_turns[robot_id] = turn_id
+        for key, anchor in self.word_anchors.items():
+            if key[0] == robot_id and key[1] != turn_id:
+                anchor["cancelled"] = True
+                self._schedule(self.cancel_pending(robot_id, key[1]))
+        for key, (pending_turn, anchor) in self.word_sends.items():
+            if key[0] == robot_id and pending_turn != turn_id:
+                anchor["cancelled"] = True
+
+    def on_text_ready(self, event):
+        key = event.get("robot_id"), event.get("turn_id")
+        pending, anchor = self.pending.get(key), self.word_anchors.get(key)
+        if (pending and anchor is not None and
+                self._word_active(*key, pending[1], anchor) and
+                self._anchor_position(anchor) is not None):
+            self._schedule(self._dispatch_text(*key, *pending, anchor))
+
+    async def _dispatch_text(self, robot_id, turn_id, call_id, generation, anchor):
+        key = robot_id, turn_id
+        sending_key = robot_id, call_id
+        owns_send = False
+        try:
+            async with self.locks[robot_id]:
+                if self.pending.get(key) != (call_id, generation) or self.word_anchors.get(key) is not anchor:
+                    return
+                valid = self._word_active(robot_id, turn_id, generation, anchor)
+                position = self._anchor_position(anchor) if valid else None
+                after = "send_unknown" if position is not None else "cancelled_before_send"
+                # Move the token atomically before the first durable-state await.
+                # turn.started is synchronous and must see it even while SQLite
+                # is transitioning awaiting_text_anchor -> send_unknown.
+                if after == "send_unknown":
+                    self.word_sends[sending_key] = turn_id, anchor
+                    owns_send = True
+                self.pending.pop(key, None)
+                self.word_anchors.pop(key, None)
+                changed = await asyncio.to_thread(
+                    self.store.set_action_status, robot_id, call_id, "awaiting_text_anchor", after,
+                )
+                row = await asyncio.to_thread(self.store.get_action, robot_id, call_id)
+                if not changed or row is None:
+                    return
+                self._event(row, status=after)
+                if after != "send_unknown":
+                    return
+                text = anchor["speech"].generated_text
+                before = text[max(0, position - 6):position]
+                after_text = text[position + len(anchor["text"]):
+                                  position + len(anchor["text"]) + 6]
+                packet = {
+                    "type": "action_prepare", "ts": time.time_ns() // 1_000_000,
+                    "data": {"script_id": row["value"],
+                             "conversation_id": turn_id, "anchor_source": "robot_main_brain",
+                             "timing_mode": "phoneme_anchor_v1", "stream_epoch": anchor["epoch"],
+                             "anchor_text": anchor["text"], "anchor_char_index": position,
+                             "anchor_occurrence": anchor["occurrence"],
+                             "context_before": before, "context_after": after_text,
+                             "action_id": call_id, "late_policy": "drop"},
+                }
+
+            def current_and_valid():
+                return (self._word_active(robot_id, turn_id, generation, anchor)
+                        and self._anchor_position(anchor) == position)
+
+            await self._publish_action(
+                row, packet, guard=current_and_valid,
+                rejected=lambda: "cancelled_before_send",
+            )
+        finally:
+            # A duplicate dispatch must not remove another task's live token.
+            if owns_send and self.word_sends.get(sending_key, (None, None))[1] is anchor:
+                self.word_sends.pop(sending_key, None)
 
     async def _dispatch(self, robot_id, turn_id, call_id, generation):
         async with self.locks[robot_id]:
-            if self.pending.get((robot_id, turn_id)) != (call_id, generation):
+            if ((robot_id, turn_id) in self.word_anchors
+                    or self.pending.get((robot_id, turn_id)) != (call_id, generation)):
                 return
             self.pending.pop((robot_id, turn_id), None)
             robot = self.robots[robot_id]
@@ -262,10 +439,21 @@ class ActionCoordinator:
                 "data": {"script_id": row["value"], "offset_ms": 0,
                          "conversation_id": turn_id, "anchor_source": "robot_main_brain"},
             }
+        await self._publish_action(row, packet)
+
+    async def _publish_action(self, row, packet, *, guard=None, rejected=None):
+        robot_id, call_id = row["robot_id"], row["call_id"]
         # The DB now says send_unknown. A cancel racing this publish cannot
         # assert "not executed": the transport may already have accepted it.
         try:
-            await asyncio.wait_for(self.main_publishers[robot_id].publish(packet), 6)
+            publisher = self.main_publishers[robot_id]
+            if guard is not None and hasattr(publisher, "publish_if"):
+                sent = await asyncio.wait_for(publisher.publish_if(packet, guard), 6)
+            elif guard is None or guard():
+                await asyncio.wait_for(publisher.publish(packet), 6)
+                sent = True
+            else:
+                sent = False
         except Exception as exc:
             await asyncio.to_thread(
                 self.store.set_action_status, robot_id, call_id, "send_unknown", "send_unknown",
@@ -273,15 +461,22 @@ class ActionCoordinator:
             )
             self._event(row, status="send_unknown", error=type(exc).__name__)
             return
+        after = "published_unknown" if sent else rejected()
         await asyncio.to_thread(
-            self.store.set_action_status, robot_id, call_id, "send_unknown", "published_unknown",
+            self.store.set_action_status, robot_id, call_id, "send_unknown", after,
         )
-        self._event(row, status="published_unknown")
+        self._event(row, status=after)
 
     async def cancel_pending(self, robot_id, turn_id=None):
         if robot_id not in self.locks:
             return
         async with self.locks[robot_id]:
+            # Keep a revocable token through the final transport predicate.
+            # Once the transport actually writes, cancellation still cannot
+            # assert that the device did not receive the action.
+            for key, (pending_turn, anchor) in self.word_sends.items():
+                if key[0] == robot_id and (turn_id is None or pending_turn == turn_id):
+                    anchor["cancelled"] = True
             expressions = [
                 (key, pending_turn) for key, pending_turn in self.pending_expressions.items()
                 if key[0] == robot_id and (turn_id is None or pending_turn == turn_id)
@@ -300,8 +495,10 @@ class ActionCoordinator:
                     if key[0] == robot_id and (turn_id is None or key[1] == turn_id)]
             for key in keys:
                 call_id, _generation = self.pending.pop(key)
+                word = self.word_anchors.pop(key, None)
                 changed = await asyncio.to_thread(
-                    self.store.set_action_status, robot_id, call_id, "awaiting_audio_anchor",
+                    self.store.set_action_status, robot_id, call_id,
+                    "awaiting_text_anchor" if word is not None else "awaiting_audio_anchor",
                     "cancelled_before_send",
                 )
                 if changed:

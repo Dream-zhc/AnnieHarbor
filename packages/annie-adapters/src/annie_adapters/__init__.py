@@ -742,6 +742,17 @@ class RuntimeStore:
                    WHERE status='awaiting_audio_anchor'""", (now,),
             )
             db.execute(
+                """UPDATE action_requests SET status='expired_no_text_anchor',
+                   error='process_restarted',updated_ms=?
+                   WHERE status='awaiting_text_anchor'""", (now,),
+            )
+            # Retire reservations left by an older acoustic-gated binary.
+            db.execute(
+                """UPDATE action_requests SET status='expired_no_alignment',
+                   error='process_restarted',updated_ms=?
+                   WHERE status='awaiting_word_alignment'""", (now,),
+            )
+            db.execute(
                 """UPDATE action_requests SET status='cancelled_before_send',
                    error='process_restarted',updated_ms=?
                    WHERE status='reserved'""", (now,),
@@ -765,7 +776,7 @@ class RuntimeStore:
             return dict(row) if row else None
 
     def reserve_action(self, robot_id, call_id, turn_id, generation, room_id,
-                       kind, value, cooldown_ms):
+                       kind, value, cooldown_ms, *, word_aligned=False):
         now = time.time_ns() // 1_000_000
         with self.connect() as db:
             db.row_factory = sqlite3.Row
@@ -791,7 +802,7 @@ class RuntimeStore:
                     (robot_id,),
                 ).fetchone()
                 if last and (
-                    last["status"] == "awaiting_audio_anchor"
+                    last["status"] in {"awaiting_audio_anchor", "awaiting_text_anchor"}
                     or last["status"] in {"published_unknown", "send_unknown"}
                     and now - last["updated_ms"] < max(
                         cooldown_ms, last["duration_ms"],
@@ -804,7 +815,8 @@ class RuntimeStore:
                     status,error,ts_ms,updated_ms,duration_ms)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (robot_id, call_id, turn_id, generation, room_id, kind, value,
-                 "awaiting_audio_anchor" if kind == "action" else "reserved",
+                 ("awaiting_text_anchor" if word_aligned else "awaiting_audio_anchor")
+                 if kind == "action" else "reserved",
                  None, now, now, cooldown_ms),
             )
             row = db.execute(

@@ -10,6 +10,7 @@ from pathlib import Path
 from annie_adapters.realtime import MODEL, QwenRealtimeSocket, audio_append, realtime_url, session_update
 from annie_core import RobotConfig, RobotUnavailableError
 from annie_runtime import HarborRuntime
+from annie_runtime.presence import DialoguePresence
 from annie_runtime.realtime import RealtimeRobot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,14 @@ class FakeSocket:
 
 
 class RealtimeWireTests(unittest.TestCase):
+    def test_sleep_command_requires_an_explicit_direct_instruction(self):
+        for phrase in ("退下吧。", "小安妮，闭嘴！", "先退下", "不要说话了", "退下退下",
+                       "退下退下别说了。"):
+            self.assertTrue(DialoguePresence.is_sleep_command(phrase), phrase)
+        for phrase in ("退下？", "闭嘴？", "我没让你退下", "不要闭嘴", "别退下", "你为什么退下了", "怎么让你闭嘴",
+                       "退下是什么意思", "讲个故事，里面有人说退下", "结束这个话题"):
+            self.assertFalse(DialoguePresence.is_sleep_command(phrase), phrase)
+
     def test_audio_pump_has_no_idle_sleep_or_nowait_polling(self):
         source = inspect.getsource(RealtimeRobot._audio_pump)
         self.assertIn("await audio.next_frame()", source)
@@ -650,15 +659,6 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(voice.messages[0]["data"]["item_id"], "win-mic-speech")
         self.assertEqual(self.runtime.realtime["annie-b"].voice_event, None)
 
-    async def test_per_robot_text_delta_ledger_and_generation(self):
-        client = self.runtime.realtime["annie-a"]
-        other = self.runtime.realtime["annie-b"]
-        self.assertNotEqual(client.session, other.session)
-        submitted = await self.runtime.realtime_text("annie-a", "你好")
-        self.assertEqual(submitted["status"], "accepted")
-        self.assertFalse(any(e["kind"] == "turn.started" for e in other.events))
-        sock = client.socket
-        self.assertEqual(sock.outbound[-2]["item"]["role"], "user")
     async def test_silent_external_continuation_does_not_enqueue_room_tts(self):
         class FakeSpeech:
             def __init__(self):
@@ -692,6 +692,15 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             client.speech = before
 
+    async def test_per_robot_text_delta_ledger_and_generation(self):
+        client = self.runtime.realtime["annie-a"]
+        other = self.runtime.realtime["annie-b"]
+        self.assertNotEqual(client.session, other.session)
+        submitted = await self.runtime.realtime_text("annie-a", "你好")
+        self.assertEqual(submitted["status"], "accepted")
+        self.assertFalse(any(e["kind"] == "turn.started" for e in other.events))
+        sock = client.socket
+        self.assertEqual(sock.outbound[-2]["item"]["role"], "user")
         self.assertEqual(sock.outbound[-1]["type"], "response.create")
         await client.handle({"type": "response.created", "response": {"id": "resp-a"}}, client.robot.generation)
         await client.handle({"type": "response.text.delta", "delta": "你"}, client.robot.generation)
@@ -976,6 +985,67 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await client.handle({"type": "conversation.item.input_audio_transcription.completed",
                              "item_id": "actual-question", "transcript": "你好"}, generation)
         self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "你好")
+
+    async def test_clear_voice_exit_immediately_closes_gate_and_discards_speculation(self):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _):
+                return False
+
+        a = self.runtime.realtime["annie-a"]
+        b = self.runtime.realtime["annie-b"]
+        a.wake = WakeAdmission(Detector())
+        b.wake = WakeAdmission(Detector())
+        a.wake.presence.wake_detected()
+        gen = a.robot.generation
+        await a.handle({"type": "input_audio_buffer.speech_started", "item_id": "leave"}, gen)
+        await a.handle({"type": "response.created", "response": {"id": "speculative"}}, gen)
+        await a.handle({"type": "response.text.delta", "response_id": "speculative",
+                        "delta": "好，我退下"}, gen)
+        await a.handle({"type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": "leave", "transcript": "退下吧。"}, gen)
+        self.assertEqual(a.wake.state, "SLEEP")
+        self.assertEqual(b.wake.state, "SLEEP")
+        self.assertIsNone(a.turn_id)
+        self.assertFalse(a.wake.reply_allowed())
+        self.assertTrue(any(e["type"] == "response.cancel" for e in a.socket.outbound))
+        self.assertIn({"type": "conversation.item.delete", "item_id": "leave"},
+                      a.socket.outbound)
+        self.assertFalse(any(evt["kind"] == "text.delta" for evt in a.events))
+        self.assertTrue(any(evt["kind"] == "wakeword.sleep_command" for evt in a.events))
+        await a.handle({"type": "input_audio_buffer.speech_started", "item_id": "after"}, gen)
+        self.assertEqual(a.wake.state, "SLEEP")
+        self.assertFalse(a.speech_active)
+
+    async def test_text_submission_does_not_depend_on_audio_wake(self):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _):
+                return False
+
+        a = self.runtime.realtime["annie-a"]
+        a.wake = WakeAdmission(Detector())
+        a.wake.presence.wake_detected()
+        answer = await a.submit_text("闭嘴！")
+        self.assertEqual(answer["status"], "sleeping")
+        self.assertEqual(a.wake.state, "SLEEP")
+        self.assertFalse(any(msg["type"] == "response.create" for msg in a.socket.outbound))
+        answer = await a.submit_text("我没让你退下")
+        self.assertEqual(answer["status"], "accepted")
+        self.assertEqual(a.wake.state, "SLEEP")
+        self.assertEqual(a.robot.turn_cache[a.turn_id]["user_text"], "我没让你退下")
+        self.assertIn({"type": "response.create", "response": {"modalities": ["text"]}},
+                      a.socket.outbound)
+        gen = a.robot.generation
+        await a.handle({"type": "response.created", "response": {"id": "text-1"}}, gen)
+        self.assertFalse(any(evt["kind"] == "wakeword.response_rejected"
+                             for evt in a.events if evt.get("reason") == "sleeping"))
+        await a.handle({"type": "response.text.delta", "response_id": "text-1",
+                        "delta": "你好"}, gen)
+        self.assertEqual(a.text, "你好")
+        self.assertEqual(a.wake.state, "SLEEP")  # user text must not open microphone
 
     async def test_audio_pump_waits_for_frame_without_polling(self):
         """An idle pump waits on get(), then sends promptly when put() wakes it."""

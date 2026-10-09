@@ -13,6 +13,11 @@ _WAKE_ONLY_ASR_ALIASES = frozenset({
 })
 _BACKCHANNEL = frozenset({"嗯", "嗯嗯", "啊", "哦", "噢", "好", "好的", "对", "是", "呃"})
 _WAKE_FRAGMENTS = frozenset({"妮", "安妮", "小安", "小安尼"})
+_SLEEP_COMMAND = re.compile(
+    r"^(?:小安妮|安妮)?(?:请|现在|先|马上|立刻|赶紧|你)?"
+    r"(?:退下(?:退下)?(?:别说了)?|闭嘴|别说话|不要说话|别说了|停止聊天|结束对话)"
+    r"(?:吧|了|一下)?$"
+)
 ASR_GRACE_SECONDS = 10.0
 
 
@@ -37,6 +42,7 @@ class DialoguePresence:
         self._candidate = False
         self._candidate_item_id = None
         self._reply_admitted = False
+        self._first_wake_transcript = False
         self.expirations = 0
 
     def close(self):
@@ -48,6 +54,7 @@ class DialoguePresence:
         self._candidate = False
         self._candidate_item_id = None
         self._reply_admitted = False
+        self._first_wake_transcript = False
 
     def _expire(self):
         if self.deadline is not None and self.clock() >= self.deadline:
@@ -60,6 +67,7 @@ class DialoguePresence:
             return False  # A second wake hit must not extend the window.
         self.epoch += 1
         self.state = "WAKE_WAIT"
+        self._first_wake_transcript = True
         self.deadline = self.clock() + self.wake_wait_seconds
         self._window_deadline = self.deadline
         return True
@@ -68,6 +76,10 @@ class DialoguePresence:
         self._expire()
         if self.state not in {"WAKE_WAIT", "FOLLOWUP", "ACTIVE"}:
             return False
+        if (self._candidate and
+                (item_id is None or item_id != self._candidate_item_id)):
+            # A replacement item retires the initial utterance, not a duplicate.
+            self._first_wake_transcript = False
         self._candidate = True
         self._candidate_item_id = item_id
         if self.state in {"WAKE_WAIT", "FOLLOWUP"}:
@@ -82,6 +94,7 @@ class DialoguePresence:
                                     and item_id != self._candidate_item_id):
             return False
         if invalid:
+            self._first_wake_transcript = False
             self._candidate = False
             self._candidate_item_id = None
             if self.state in {"WAKE_WAIT", "FOLLOWUP"}:
@@ -102,6 +115,28 @@ class DialoguePresence:
         ))
 
     @staticmethod
+    def is_sleep_command(text):
+        source = unicodedata.normalize("NFKC", str(text or ""))
+        if "?" in source or "？" in source:
+            return False  # A question about leaving is not an explicit command.
+        normalized = _PUNCTUATION.sub("", source).strip()
+        return bool(_SLEEP_COMMAND.fullmatch(normalized))
+
+    def is_wake_transcript(self, text):
+        """One observed misdecode, only on the first utterance after KWS.
+
+        Do not globally classify expressions of affection as wake names or
+        fuzzy-match longer utterances: wake + question must remain intact.
+        """
+        if self.is_wake_only(text):
+            return True
+        normalized = _PUNCTUATION.sub(
+            "", unicodedata.normalize("NFKC", str(text or ""))
+        ).strip()
+        return (self.state == "WAKE_WAIT" and self._first_wake_transcript
+                and normalized == "想爱你")
+
+    @staticmethod
     def is_substantive(text):
         normalized = _PUNCTUATION.sub("", str(text or "")).strip().lower()
         rest = normalized.removeprefix("小安妮")
@@ -116,9 +151,11 @@ class DialoguePresence:
                 (self._candidate_item_id is not None and item_id is not None
                  and self._candidate_item_id != item_id)):
             return False
+        wake_only = self.is_wake_transcript(text)
+        self._first_wake_transcript = False
         self._candidate = False
         self._candidate_item_id = None
-        if not self.is_substantive(text):
+        if wake_only or not self.is_substantive(text):
             if self.state in {"WAKE_WAIT", "FOLLOWUP"}:
                 self.deadline = self._window_deadline
             self._expire()

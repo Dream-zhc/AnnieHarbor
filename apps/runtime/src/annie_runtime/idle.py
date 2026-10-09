@@ -9,9 +9,180 @@ PUBLIC_KINDS = {"cup", "book", "cat", "dog", "plant", "tea", "杯子", "书", "�
 IDENTITY = ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
 
 
+class ShortContinuation:
+    """One private, consented follow-up per freshly delivered user reply."""
+
+    def __init__(self, runtime, graph, *, enabled=False, delay=15, window=35,
+                 timeout=12):
+        self.runtime = runtime
+        self.graph = graph if enabled else None
+        self.delay = delay
+        self.window = window
+        self.timeout = timeout
+        self.rows = {rid: self._blank() for rid in runtime.robots}
+        self.tasks = {}
+
+    @staticmethod
+    def _blank():
+        return {"turn_id": None, "identity": None, "user_at": None,
+                "drained_at": None, "user_text": "", "assistant_text": "",
+                "attempted": False, "status": "waiting", "reason": "waiting_speaker",
+                "decision": None, "model_ms": None}
+
+    def snapshot(self, robot_id):
+        row = self.rows[robot_id]
+        return {"enabled": self.graph is not None,
+                "delay_seconds": self.delay, "status": row["status"],
+                "reason": row["reason"], "decision": row["decision"],
+                "turn_id": row["turn_id"], "model_ms": row["model_ms"]}
+
+    def on_event(self, robot_id, event):
+        row = self.rows[robot_id]
+        if (event["kind"] == "turn.started" and
+                event.get("turn_source") == "external" and
+                row["status"] == "submitting"):
+            # Our own accepted external turn is the intended continuation.
+            return
+        if event["kind"] in {"speech.started", "turn.started", "session.replaced"}:
+            # Even speech without a final ASR must cancel an in-flight plan.
+            row.update(self._blank())
+            return
+        if event["kind"] != "tts.playback.drained" or event.get("source") != "speaker":
+            return
+        client = self.runtime.realtime.get(robot_id)
+        if client is None or self.graph is None:
+            return
+        turn_id = event.get("turn_id")
+        if row["turn_id"] == turn_id and row["identity"] == self.runtime.session_state(robot_id):
+            return  # a repeated or late speaker receipt cannot re-arm the same turn
+        turn = client.robot.turn_cache.get(turn_id)
+        if (not turn or turn.get("turn_source") != "user" or
+                turn.get("status") != "completed" or
+                any(event.get(k) != self.runtime.session_state(robot_id).get(k)
+                    for k in IDENTITY)):
+            return
+        user = str(turn.get("user_text") or "").strip()
+        assistant = str(turn.get("assistant_generated_text") or "").strip()
+        if not user or not assistant:
+            return
+        row.update(self._blank())
+        row.update(turn_id=turn_id, identity=dict(self.runtime.session_state(robot_id)),
+                   user_at=client._last_user_turn_at, drained_at=time.monotonic(),
+                   user_text=user[:180], assistant_text=assistant[:180],
+                   reason="cooldown")
+
+    def _eligible(self, robot_id, now):
+        row = self.rows[robot_id]
+        if self.graph is None:
+            return "disabled"
+        if row["turn_id"] is None:
+            return "waiting_speaker"
+        client = self.runtime.realtime.get(robot_id)
+        if not client or not client.ready or client.speech is None:
+            return "realtime_unavailable"
+        if (row["identity"] != self.runtime.session_state(robot_id)
+                or row["user_at"] != client._last_user_turn_at):
+            return "new_user_or_session"
+        pressure = (client.persona_snapshot or {}).get("question_pressure")
+        if pressure != "active":
+            return "not_opted_in"
+        if row["attempted"]:
+            return "already_attempted"
+        if (len(row["user_text"]) < 7 or
+                any(word in row["user_text"] for word in
+                    ("退下", "闭嘴", "安静", "别说", "不想聊", "不用回答", "停止"))):
+            return "no_open_topic"
+        if row["assistant_text"].rstrip().endswith(("?", "？")):
+            return "already_asked"
+        if getattr(client, "dialogue", None) and (
+                client.dialogue.snapshot()["followup"] == "avoid"):
+            return "dialogue_declined"
+        if (client.speech_active or client.turn_id or client.response_id or
+                self.runtime.reminders._speech_blocks(client.speech)):
+            return "conversation_busy"
+        if self.runtime.robots[robot_id].coordinator.playback_state in {"playing", "unknown"}:
+            return "playback_active"
+        events = getattr(self.runtime, "events", None)
+        if events is not None and events.pending.get(robot_id):
+            return "external_event_pending"
+        elapsed = now - row["drained_at"]
+        if elapsed > self.window:
+            return "window_expired"
+        if elapsed < self.delay:
+            return "cooldown"
+        return None
+
+    async def tick(self):
+        if self.graph is None or not self.runtime.started:
+            return
+        now = time.monotonic()
+        for robot_id, row in self.rows.items():
+            if (task := self.tasks.get(robot_id)) and not task.done():
+                continue
+            reason = self._eligible(robot_id, now)
+            if reason:
+                if row["status"] not in {"submitted_unknown", "model_no_speak"}:
+                    row.update(status="suppressed", reason=reason)
+                continue
+            row.update(status="planning", reason=None)
+            self.tasks[robot_id] = asyncio.create_task(
+                self._plan(robot_id), name=f"short-continuation:{robot_id}")
+
+    async def _plan(self, robot_id):
+        row = self.rows[robot_id]
+        turn_id, identity, user_at = row["turn_id"], dict(row["identity"]), row["user_at"]
+        client = self.runtime.realtime[robot_id]
+        speech_at = getattr(client, "_last_provider_speech_started_t", None)
+        try:
+            started = time.monotonic()
+            result = await asyncio.wait_for(self.graph.ainvoke({
+                "mode": "continuation", "user_text": row["user_text"],
+                "assistant_text": row["assistant_text"],
+            }), self.timeout)
+            if (row["turn_id"] != turn_id or row["identity"] != identity or
+                    row["user_at"] != user_at):
+                return
+            reason = self._eligible(robot_id, time.monotonic())
+            if reason or getattr(client, "_last_provider_speech_started_t", None) != speech_at:
+                row.update(status="suppressed", reason=reason or "speech_preempted",
+                           attempted=True)
+                return
+            row["model_ms"] = round((time.monotonic() - started) * 1000)
+            row["decision"] = result["decision"]
+            row["attempted"] = True
+            if result["decision"] != "SPEAK" or not result["topic"].strip():
+                row.update(status="model_no_speak", reason="model_no_speak")
+                return
+            topic = result["topic"].strip()
+            row.update(status="submitting", reason=None)
+            await client.submit_text(
+                "【内部短时续聊规划，非用户发言】仅在刚刚的话题上自然补一句新观察或一个"
+                "不催促的简短问题；不重复上句，不执行旧任务，不调用工具。续聊方向：" + topic,
+                source="external", expected_identity=identity)
+            if (row["turn_id"] != turn_id or row["identity"] != identity or
+                    getattr(client, "_last_provider_speech_started_t", None) != speech_at):
+                return
+            row.update(status="submitted_unknown", reason=None)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if row["turn_id"] == turn_id and row["identity"] == identity:
+                row.update(status="suppressed", reason=type(exc).__name__,
+                           attempted=True)
+
+    async def close(self):
+        tasks = list(self.tasks.values())
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self.tasks.clear()
+
+
 class IdleService:
     def __init__(self, runtime, model=None, *, idle_seconds=60, second_seconds=120,
-                 presence_seconds=1, presence_ttl=10, timeout=12):
+                 presence_seconds=1, presence_ttl=10, timeout=12,
+                 continuation_enabled=False, continuation_seconds=15):
         self.runtime = runtime
         self.model = model
         self.graph = None
@@ -19,6 +190,10 @@ class IdleService:
             from annie_brain.idle_plan import build_idle_graph
 
             self.graph = build_idle_graph(model)
+        self.short = ShortContinuation(
+            runtime, self.graph, enabled=continuation_enabled,
+            delay=continuation_seconds, timeout=timeout,
+        )
         self.idle_seconds = idle_seconds
         self.second_seconds = second_seconds
         self.presence_seconds = presence_seconds
@@ -46,6 +221,7 @@ class IdleService:
     def snapshot(self, robot_id):
         row = self.rows[robot_id]
         return {**self.runtime.session_state(robot_id),
+                "continuation": self.short.snapshot(robot_id),
                 "enabled": self.graph is not None,
                 "model": getattr(self.model, "model", None),
                 "thinking_enabled": getattr(self.model, "enable_thinking", False),
@@ -65,6 +241,7 @@ class IdleService:
 
     def on_event(self, robot_id, event):
         """Speaker evidence only; browser playback and model completion are not receipts."""
+        self.short.on_event(robot_id, event)
         row = self.rows[robot_id]
         if (event["kind"] == "speech.started" and row["identity"] is not None
                 and all(row["identity"].get(k) == event.get(k) for k in IDENTITY)):
@@ -198,6 +375,7 @@ class IdleService:
         return None
 
     async def tick(self):
+        await self.short.tick()
         if self.graph is None or not self.runtime.started:
             return
         now = time.monotonic()
@@ -297,6 +475,7 @@ class IdleService:
             self.worker = asyncio.create_task(self._run(), name="idle-planner")
 
     async def close(self):
+        await self.short.close()
         tasks = list(self.tasks.values())
         if self.worker is not None:
             tasks.append(self.worker)

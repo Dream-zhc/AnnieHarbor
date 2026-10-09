@@ -7,6 +7,7 @@ import {MicrophoneControls,RoomSpeakerPanel} from './audio-panels';
 import {LatencyHud} from './latency-hud';
 import {ActionPanel} from './action-panel';
 import {ExternalEventsDialog} from './external-events';
+import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
@@ -843,7 +844,9 @@ export function Workbench(){
                       })}
                       {turn.updated_ms&&<time className="message-timestamp"> · {formatTimestamp(turn.updated_ms)}</time>}
                     </span>
-                    {reply&&<div className="bubble agent-bubble">{reply}</div>}
+                    {reply&&(streaming?[reply]:splitReplyBubbles(reply)).map((part,index)=>
+                      <div className="bubble agent-bubble" style={index?{marginTop:8}:undefined}
+                        key={index}>{part}</div>)}
                     <span className="message-foot">
                       {streaming&&<i className="streaming-pulse-dot" aria-hidden="true"/>}
                       {streaming?'正在生成':playbackLabel(turn,speech?.state==='not_configured')}

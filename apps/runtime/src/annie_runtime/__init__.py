@@ -864,6 +864,8 @@ class HarborRuntime:
         idle_model=None,
         idle_seconds: float = 60,
         idle_second_seconds: float = 120,
+        continuation_enabled: bool = False,
+        continuation_seconds: float = 15,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -874,6 +876,9 @@ class HarborRuntime:
         if (type(realtime_restore_char_budget) is not int or
                 not 1 <= realtime_restore_char_budget <= 12000):
             raise ValueError("realtime_restore_char_budget must be an integer between 1 and 12000")
+        if continuation_enabled and (idle_model is None or
+                                     not 8 <= continuation_seconds <= 25):
+            raise ValueError("short continuation requires idle model and delay from 8 to 25 seconds")
         self.store = RuntimeStore(database)
         self.recorder = Recorder(self.store.write_batch)
         self.process_probe = ProcessProbe()
@@ -1033,7 +1038,9 @@ class HarborRuntime:
         self.events = EventService(self)
         self.reminders = ReminderService(self)
         self.idle = IdleService(self, idle_model, idle_seconds=idle_seconds,
-                                second_seconds=idle_second_seconds)
+                                second_seconds=idle_second_seconds,
+                                continuation_enabled=continuation_enabled,
+                                continuation_seconds=continuation_seconds)
         for robot_id, client in self.realtime.items():
             client.idle_observer = (
                 lambda event, robot_id=robot_id: self.idle.on_event(robot_id, event)

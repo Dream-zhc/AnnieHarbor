@@ -7,6 +7,8 @@ type EventRow={kind:string;event_id:string|null;decision:string;status:string;
 type EventSnapshot={facts:unknown[];events:EventRow[];pending_count:number;
   complex_task:string;chat_id:string;persona_id:string;generation:number;
   idle?:{enabled:boolean;status:string;reason:string|null;decision:string|null;
+    continuation?:{enabled:boolean;delay_seconds:number;status:string;reason:string|null;
+      decision:string|null;turn_id:string|null;model_ms:number|null};
     last_model_decision:string|null;last_topic:string;
     model:string|null;model_ms:number|null;thinking_enabled?:boolean;graph_ready?:boolean;turn_id:string|null;
     speaker_started:boolean;speaker_drained:boolean;
@@ -34,6 +36,11 @@ const idleReason:Record<string,string>={
   speech_preempted:'用户插话，已取消',model_no_speak:'模型决定不说',
   repeated_or_empty:'无新的话题价值',realtime_unavailable:'实时模型未就绪',
   tts_unavailable:'TTS未就绪',
+  waiting_speaker:'等待真人回合播完',disabled:'未启用',
+  cooldown:'等待短时续聊时机',not_opted_in:'当前会话未选择积极追问',
+  already_asked:'上一句已经提问',no_open_topic:'缺少适合延续的话题',
+  dialogue_declined:'近期不适合追问',window_expired:'续聊窗口已过',
+  new_user_or_session:'用户或会话已切换',already_attempted:'本轮已决策',
 };
 
 export function ExternalEvents({robotId,session,events}:{robotId:string;session:Session|null;events:RealtimeEvent[]}){
@@ -129,6 +136,13 @@ export function ExternalEvents({robotId,session,events}:{robotId:string;session:
         </div>)}
       </div>:<p className="empty-copy">暂无定时提醒任务</p>}
       <div className="events-facts-section">
+        <div className="info-line"><span>短时续聊</span>
+          <strong>{!snapshot.idle?.continuation?.enabled?'未启用':
+            (snapshot.idle.continuation.status==='submitted_unknown'?'已提交（待播报）':
+              snapshot.idle.continuation.status==='planning'?'规划中':
+              snapshot.idle.continuation.status==='model_no_speak'?'模型决定保持安静':
+              idleReason[snapshot.idle.continuation.reason??'']??
+              snapshot.idle.continuation.reason??'等待触发')}</strong></div>
         <div className="info-line"><span>8C 主动交谈</span><strong>{!snapshot.idle?.enabled?'未启用':
           snapshot.idle.status+' · '+(idleReason[snapshot.idle.reason??'']??snapshot.idle.reason??snapshot.idle.decision??'候选')}</strong></div>
         {snapshot.idle?.enabled&&<div className="info-line"><span>现场人物证据</span>

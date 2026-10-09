@@ -187,6 +187,11 @@ def main():
             threshold=float(os.environ.get("ANNIE_WAKEWORD_THRESHOLD", "0.35")),
         )
     idle_enabled = os.environ.get("ANNIE_IDLE_ENABLED") == "1"
+    continuation_enabled = os.environ.get("ANNIE_CONTINUATION_ENABLED") == "1"
+    if continuation_enabled and not idle_enabled:
+        raise ValueError("short continuation requires ANNIE_IDLE_ENABLED=1")
+    if continuation_enabled and os.environ.get("ANNIE_IDLE_TRUSTED_ROOM") != "1":
+        raise ValueError("short continuation requires explicit private-room consent")
     if idle_enabled and (not os.environ.get("DASHSCOPE_API_KEY")
                          or os.environ.get("ANNIE_TTS_ENABLED") != "1"
                          or os.environ.get("ANNIE_IDLE_TRUSTED_ROOM") != "1"):
@@ -257,6 +262,8 @@ def main():
                 "surprise,smirk,proud,skeptical,shy",
             ).split(",") if item.strip()
         ),
+        continuation_enabled=continuation_enabled,
+        continuation_seconds=float(os.environ.get("ANNIE_CONTINUATION_SECONDS", "15")),
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
         weather_timeout_ms=int(provider_defaults["weather"]["amap"]["timeout_ms"]),
         weather_cache_sec=int(provider_defaults["weather"]["amap"]["live_cache_sec"]),

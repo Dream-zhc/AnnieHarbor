@@ -8,6 +8,9 @@ from typing_extensions import TypedDict
 
 
 class IdleState(TypedDict, total=False):
+    mode: str
+    user_text: str
+    assistant_text: str
     attempt: int
     scene: str
     previous: str

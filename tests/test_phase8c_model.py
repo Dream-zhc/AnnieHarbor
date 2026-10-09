@@ -68,6 +68,37 @@ def test_planning_thinking_mode_follows_config_without_changing_anonymous_input(
     asyncio.run(run())
 
 
+def test_short_continuation_sends_only_current_bounded_turn_and_uses_same_graph():
+    async def run():
+        def respond(request):
+            payload = json.loads(request.content)
+            system = payload["messages"][0]["content"]
+            assert "短时续聊规划器" in system
+            assert "现场人物身份未知" not in system
+            user = json.loads(payload["messages"][1]["content"])
+            assert user == {"user_text": "今天看完了一本挺有趣的书",
+                            "assistant_text": "确实可以聊聊读书。"}
+            assert "scene" not in user and "history" not in user
+            return httpx.Response(200, json={"choices": [{"message": {
+                "content": '{"decision":"SPEAK","topic":"问问最喜欢的桥段","new_value":false}',
+            }}]})
+
+        model = QwenIdleModel("fake", "https://example.test/v1",
+                              transport=httpx.MockTransport(respond))
+        try:
+            result = await build_idle_graph(model).ainvoke({
+                "mode": "continuation",
+                "user_text": "今天看完了一本挺有趣的书",
+                "assistant_text": "确实可以聊聊读书。",
+            })
+            assert result["decision"] == "SPEAK"
+            assert result["topic"] == "问问最喜欢的桥段"
+        finally:
+            await model.close()
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("content", [
     "not-json", "[]", "{}",
     '{"decision":"SPEAK","topic":"","new_value":true}',

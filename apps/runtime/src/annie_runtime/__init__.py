@@ -1785,12 +1785,12 @@ class HarborRuntime:
             if len(fields) != 1 or not (
                 (set(fields) == {"question_pressure"} and
                  isinstance(fields["question_pressure"], str) and
-                 fields["question_pressure"] in {"normal", "low", "none"})
+                 fields["question_pressure"] in {"active", "normal", "low", "none"})
                 or (set(fields) == {"persona_style"} and
                     isinstance(fields["persona_style"], str) and
                     fields["persona_style"] in self.persona_profiles)
             ):
-                raise ValueError("user_setting requires a configured persona_style or normal/low/none question_pressure")
+                raise ValueError("user_setting requires a configured persona_style or active/normal/low/none question_pressure")
             if ttl_ms is not None:
                 raise ValueError("user_setting cannot expire")
             client = self.realtime.get(robot_id)

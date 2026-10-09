@@ -398,6 +398,21 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
         finally:
             a.speech = None
 
+    async def test_active_question_preference_rebuilds_current_session_only(self):
+        a, b = self.runtime.realtime["annie-a"], self.runtime.realtime["annie-b"]
+        session = self.runtime.session_state("annie-a")
+        await self.runtime.update_social_state(
+            "annie-a", {"question_pressure": "active"},
+            source="user_setting", generation=session["generation"],
+        )
+        for _ in range(100):
+            if a.ready and a.persona_snapshot and a.persona_snapshot["question_pressure"] == "active":
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(a.persona_snapshot["question_pressure"], "active")
+        self.assertEqual(b.persona_snapshot["question_pressure"], "normal")
+        self.assertIn("积极交谈", a.socket.outbound[0]["session"]["instructions"])
+
     async def test_persona_switch_and_user_preference_rebuild_are_scoped(self):
         a, b = self.runtime.realtime["annie-a"], self.runtime.realtime["annie-b"]
         self.assertEqual(a.persona_snapshot["label"], "自然陪伴")

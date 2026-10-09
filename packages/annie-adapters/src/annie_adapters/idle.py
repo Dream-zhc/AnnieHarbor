@@ -9,8 +9,10 @@ class QwenIdleModel:
     """Only ambient, anonymous visual context; never transmit chat or memory."""
 
     def __init__(self, key, base_url, model="qwen3.8-max-0902", timeout=12,
-                 transport=None):
+                 transport=None, *, enable_thinking=False, reasoning_effort="low"):
         self.model = model
+        self.enable_thinking = enable_thinking
+        self.reasoning_effort = reasoning_effort
         self.url = base_url.rstrip("/") + "/chat/completions"
         self.client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {key}"},
@@ -20,7 +22,7 @@ class QwenIdleModel:
         )
 
     async def plan(self, state):
-        response = await self.client.post(self.url, json={
+        payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": (
@@ -35,8 +37,11 @@ class QwenIdleModel:
                     "previous": state["previous"][:70],
                 }, ensure_ascii=False)},
             ], "response_format": {"type": "json_object"},
-            "max_tokens": 180, "enable_thinking": False,
-        })
+            "max_tokens": 180, "enable_thinking": self.enable_thinking,
+        }
+        if self.enable_thinking:
+            payload["reasoning_effort"] = self.reasoning_effort
+        response = await self.client.post(self.url, json=payload)
         response.raise_for_status()
         body = response.json()
         content = body["choices"][0]["message"]["content"]

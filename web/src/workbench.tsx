@@ -248,7 +248,7 @@ export function Workbench(){
   const restoredForSession=restored&&session&&restored.robot_id===session.robot_id&&restored.chat_id===session.chat_id&&restored.persona_id===session.persona_id&&restored.session_epoch===session.session_epoch&&restored.generation===session.generation?restored:null;
   const persona=realtime?.persona_snapshot;
   const personaForSession=persona&&session&&persona.robot_id===session.robot_id&&persona.chat_id===session.chat_id&&persona.persona_id===session.persona_id&&persona.session_epoch===session.session_epoch&&persona.generation===session.generation&&persona.provider_session_id===realtime?.provider_session_id?persona:null;
-  const savedPreference=social.question_pressure?.source==='user_setting'&&['normal','low','none'].includes(String(social.question_pressure.value))?String(social.question_pressure.value):'normal';
+  const savedPreference=social.question_pressure?.source==='user_setting'&&['active','normal','low','none'].includes(String(social.question_pressure.value))?String(social.question_pressure.value):'normal';
   const savedStyle=social.persona_style?.source==='user_setting'&&profiles.some(item=>item.persona_id===social.persona_style.value)
     ?String(social.persona_style.value):profiles.some(item=>item.persona_id===session?.persona_id)
       ?session?.persona_id??'annie':'annie';
@@ -563,7 +563,7 @@ export function Workbench(){
     }catch(error){if(ticket===selection.current)notify('取消请求失败：'+errorText(error),'error');}
   }
 
-  async function setQuestionPressure(value:'normal'|'low'|'none'){
+  async function setQuestionPressure(value:'active'|'normal'|'low'|'none'){
     if(!session||!robotId||settingPreference||pending||!realtime?.ready)return;
     const id=robotId,ticket=selection.current;
     setSettingPreference(true);dismissError();
@@ -932,7 +932,7 @@ export function Workbench(){
           <div className="info-line"><span>当前 Persona</span><strong>{session?.persona_id??'—'}</strong></div>
           <div className="info-line"><span>当前性格</span><strong>{styleApplied?personaForSession?.label:'切换中 / 等待模型连接'}</strong></div>
           <div className="info-line"><span>Persona 版本</span><strong>{session?.persona_revision??'—'}</strong></div>
-          <div className="info-line"><span>当前模型生效</span><strong>{personaForSession?.question_pressure==='none'?'不主动追问':personaForSession?.question_pressure==='low'?'少追问':personaForSession?.question_pressure==='normal'?'自然追问':'等待 Session 就绪'}</strong></div>
+          <div className="info-line"><span>当前模型生效</span><strong>{personaForSession?.question_pressure==='active'?'积极追问':personaForSession?.question_pressure==='none'?'不主动追问':personaForSession?.question_pressure==='low'?'少追问':personaForSession?.question_pressure==='normal'?'自然追问':'等待 Session 就绪'}</strong></div>
         </div>
         <label className="quality-setting">当前会话性格
           <CustomSelect ariaLabel="设定当前会话性格" value={savedStyle}
@@ -946,8 +946,9 @@ export function Workbench(){
         <label className="quality-setting">追问偏好
           <CustomSelect ariaLabel="追问偏好" value={savedPreference}
             disabled={!session||!realtime?.ready||!!realtime?.response_id||pending||settingPreference}
-            onChange={val=>void setQuestionPressure(val as 'normal'|'low'|'none')}
+            onChange={val=>void setQuestionPressure(val as 'active'|'normal'|'low'|'none')}
             options={[
+              {value:'active', label:'积极追问'},
               {value:'normal', label:'自然追问'},
               {value:'low', label:'少追问'},
               {value:'none', label:'不主动追问'},

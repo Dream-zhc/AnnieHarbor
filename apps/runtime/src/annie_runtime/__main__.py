@@ -200,6 +200,8 @@ def main():
             os.environ["DASHSCOPE_API_KEY"], inquiry["base_url"],
             model=os.environ.get("ANNIE_IDLE_MODEL", inquiry["model"]),
             timeout=float(inquiry["timeout_sec"]),
+            enable_thinking=inquiry.get("enable_thinking", False),
+            reasoning_effort=inquiry.get("reasoning_effort", "low"),
         )
     logging.basicConfig(
         level=resolve_log_level(os.environ.get("ANNIE_LOG_LEVEL", config["app"].get("log_level", "INFO"))),

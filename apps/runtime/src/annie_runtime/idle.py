@@ -48,6 +48,8 @@ class IdleService:
         return {**self.runtime.session_state(robot_id),
                 "enabled": self.graph is not None,
                 "model": getattr(self.model, "model", None),
+                "thinking_enabled": getattr(self.model, "enable_thinking", False),
+                "graph_ready": self.graph is not None,
                 "status": row["status"], "reason": row["reason"],
                 "decision": row["decision"], "attempts": row["attempts"],
                 "last_model_decision": row["last_model_decision"],

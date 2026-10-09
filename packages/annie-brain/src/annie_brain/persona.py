@@ -3,7 +3,7 @@
 import tomllib
 from pathlib import Path
 
-QUESTION_PRESSURE = {"normal", "low", "none"}
+QUESTION_PRESSURE = {"active", "normal", "low", "none"}
 
 
 def load_personas(path: Path) -> dict[str, dict[str, str]]:
@@ -67,7 +67,15 @@ def session_instructions(persona_id: str, profiles: dict, social: dict,
             "优先回应本轮真实输入，避免固定开场与复述风格中的原句。"
             f"仅在表达方式上遵循当前人格：{profile['style']}"
         )
-    if pressure == "low":
+    if pressure == "active":
+        instructions += (
+            "当前追问偏好是积极交谈：在自然闲聊、分享经历或表达兴趣时，先给具体回应、观察或观点，"
+            "然后主动抓住对方刚提到且值得延续的细节，适时提出一个简短、自然、开放的问题。"
+            "不要等对方每次先问，也不要每轮固定问句结尾；对方已经回答你的问题时先接住新信息，"
+            "不要接连盘问或重复旧话题。明确任务、事实查询先完整解决；"
+            "连续简短回答、有效打断、明确退下或表示不想继续时，停止主动发问。"
+        )
+    elif pressure == "low":
         instructions += "用户明确偏好少追问：默认不主动用问题续话；仅缺少完成当前请求的必要信息时问一个关键问题。"
     elif pressure == "none":
         instructions += "用户明确要求不主动追问：不要用问句续话；仅缺少任务必需信息时简短请求澄清。"

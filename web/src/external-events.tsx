@@ -8,7 +8,7 @@ type EventSnapshot={facts:unknown[];events:EventRow[];pending_count:number;
   complex_task:string;chat_id:string;persona_id:string;generation:number;
   idle?:{enabled:boolean;status:string;reason:string|null;decision:string|null;
     last_model_decision:string|null;last_topic:string;
-    model:string|null;model_ms:number|null;turn_id:string|null;
+    model:string|null;model_ms:number|null;thinking_enabled?:boolean;graph_ready?:boolean;turn_id:string|null;
     speaker_started:boolean;speaker_drained:boolean;
     attempts:number;presence_samples:number;presence_age_ms:number|null;updated_ms:number}};
 type Reminder={task_id:string;text:string;status:string;reason:string|null;
@@ -134,7 +134,7 @@ export function ExternalEvents({robotId,session,events}:{robotId:string;session:
         {snapshot.idle?.enabled&&<div className="info-line"><span>现场人物证据</span>
           <strong>{snapshot.idle.presence_samples} 帧 · 第 {snapshot.idle.attempts}/2 次</strong></div>}
         {snapshot.idle?.enabled&&<div className="info-line"><span>独立规划模型</span>
-          <strong>{snapshot.idle.model??'待配置'} · {snapshot.idle.model_ms===null?'未请求':snapshot.idle.model_ms+'ms'}</strong></div>}
+          <strong>{snapshot.idle.graph_ready?'LangGraph 就绪':'LangGraph 未就绪'} · {snapshot.idle.model??'待配置'} · {snapshot.idle.thinking_enabled?'思考开启':'思考关闭'} · {snapshot.idle.model_ms===null?'未触发':snapshot.idle.model_ms+'ms'}</strong></div>}
         {snapshot.idle?.turn_id&&<div className="info-line"><span>真机播放回执</span>
           <strong>{snapshot.idle.speaker_drained?'已播完':snapshot.idle.speaker_started?'已起声':'未确认起声'}</strong></div>}
         {snapshot.idle?.last_model_decision&&<div className="info-line"><span>最近规划</span>

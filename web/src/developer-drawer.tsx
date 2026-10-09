@@ -17,7 +17,7 @@ type DrawerData={
   context:unknown;coordinator:unknown;pcm:unknown;routes:unknown[];
   systemError?:string|null;
 };
-type Preference='normal'|'low'|'none';
+type Preference='active'|'normal'|'low'|'none';
 
 const conversationChecks=[
   {label:'改口 · 茶与咖啡',turns:['我喜欢喝茶。','不是茶，是咖啡。','我刚才更正喜欢喝什么？']},
@@ -130,11 +130,11 @@ export function DeveloperDrawer({data,onClose,onFillText,onQuestionPressure,onCl
             <div className="info-line"><span>历史回合</span><strong>{history?.turns.length??'—'}</strong></div>
             <div className="info-line"><span>表达风格</span><strong>{personaForSession?.configured?personaForSession.label:'未配置预设或待就绪'}</strong></div>
             <label className="quality-setting">追问偏好
-              <select aria-label="追问偏好" value={savedPreference} disabled={!session||!realtime?.ready||!!realtime?.response_id||pending||settingPreference} onChange={event=>void onQuestionPressure(event.target.value as 'normal'|'low'|'none')}>
-                <option value="normal">自然追问</option><option value="low">少追问</option><option value="none">不主动追问</option>
+              <select aria-label="追问偏好" value={savedPreference} disabled={!session||!realtime?.ready||!!realtime?.response_id||pending||settingPreference} onChange={event=>void onQuestionPressure(event.target.value as Preference)}>
+                <option value="active">积极追问</option><option value="normal">自然追问</option><option value="low">少追问</option><option value="none">不主动追问</option>
               </select>
             </label>
-            <small>当前模型生效：{personaForSession?.question_pressure==='none'?'不主动追问':personaForSession?.question_pressure==='low'?'少追问':personaForSession?.question_pressure==='normal'?'自然追问':'等待 Session 就绪'}</small>
+            <small>当前模型生效：{personaForSession?.question_pressure==='active'?'积极追问':personaForSession?.question_pressure==='none'?'不主动追问':personaForSession?.question_pressure==='low'?'少追问':personaForSession?.question_pressure==='normal'?'自然追问':'等待 Session 就绪'}</small>
             {diagnostics?.dialogue_policy&&<>
               <div className="info-line"><span>近期应答 / 已播放追问</span><strong>{diagnostics.dialogue_policy.short_reply_streak} / {diagnostics.dialogue_policy.delivered_question_streak}</strong></div>
               <div className="info-line"><span>追问策略</span><strong>{diagnostics.dialogue_policy.followup==='avoid'?'暂缓主动追问':'视当前语境决定'}</strong></div>

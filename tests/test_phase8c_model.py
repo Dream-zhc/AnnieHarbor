@@ -43,6 +43,31 @@ def test_max_snapshot_payload_is_anonymous_bounded_and_structured():
     asyncio.run(run())
 
 
+def test_planning_thinking_mode_follows_config_without_changing_anonymous_input():
+    async def run():
+        def respond(request):
+            payload = json.loads(request.content)
+            assert payload["enable_thinking"] is True
+            assert payload["reasoning_effort"] == "low"
+            assert payload["response_format"] == {"type": "json_object"}
+            assert "聊天" not in payload["messages"][1]["content"]
+            return httpx.Response(200, json={"choices": [{"message": {
+                "reasoning_content": "内部推理不进入话题",
+                "content": '{"decision":"NO_SPEAK","topic":"","new_value":false}',
+            }}]})
+
+        model = QwenIdleModel("fake", "https://example.test/v1",
+                              enable_thinking=True, reasoning_effort="low",
+                              transport=httpx.MockTransport(respond))
+        try:
+            result = await model.plan({"attempt": 1, "scene": "有人", "previous": ""})
+            assert result == {"decision": "NO_SPEAK", "topic": "", "new_value": False}
+        finally:
+            await model.close()
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("content", [
     "not-json", "[]", "{}",
     '{"decision":"SPEAK","topic":"","new_value":true}',

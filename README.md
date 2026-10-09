@@ -1,92 +1,66 @@
-# Annie Harbor（安妮港）— 小安妮 Brain V2
+# Annie Harbor（安妮港）
 
-当前独立开发根：`/Users/dream/Documents/zhc/python/brainv2`。
+小安妮机器人实时陪伴项目。一个 Python Runtime 管理多个独立机器人，React 工作台与数据大屏共用同一后端。
 
-**当前状态以[总计划执行摘要](docs/规划/小安妮V2后端开发总计划.md)及对应阶段验收记录为准；本页不重复维护阶段通过/待验结论。** 原目录继续冻结，只读参考，不回写。
+**当前状态：软件阶段规划已收束，等待统一实测；Phase 10/11及后续阶段暂停。** 软件接线、自动化通过、真实设备验收分开记录，后续只按具体 Bug 最小修复。
 
-## 先看阶段目标
+## 启动
 
-[总计划开头的“业务边界与阶段效果”](docs/规划/小安妮V2后端开发总计划.md)先解释做完能看到什么；第25节是Phase 2–11逐阶段任务卡（目标、输入输出、必须做/保留、不做、验收、必须先问、交付），第32节是AI开工模板。阶段README只记录实际证据，不定义另一套目标。
-
-**固定业务模型：一机器人一独立Room，一房间六通道、一路PCM。** A→roomv2，B→roomv3；每个Room只归属一个机器人，六通道不因当前只接mic而删除。本期不做同房间多机器人或多音源混流。
-
-## Phase 4C：正式工作台基础与功能整合（历史规划说明）
-
-复用现有React + TypeScript工程及Phase 4/4B接线；4B正在开发，新增4C专门完善网页基础、接齐Phase 1–4B已有功能并验收布局/交互。之后功能在同一工作台追加，不重做4B、不另建前端。范围见[总计划第22/25节](docs/规划/小安妮V2后端开发总计划.md)，4C当前为规划，不代填完成。
-
-## 开发前阅读
-
-1. [文档入口与优先级](docs/README.md)
-2. [项目规则](PROJECT_RULES.md)
-3. [后端开发总计划](docs/规划/小安妮V2后端开发总计划.md)
-4. [项目结构与配置规范](docs/规范/项目结构与配置规范.md)
-
-只有处理外部协议/兼容问题时再读Phase 0；需要核对已完成骨架时再读Phase 1验收记录。不要默认扫描全部`docs/`。
-
-## Phase 1 已完成
-
-- Python 3.11 + `uv` workspace，成员仅`apps/runtime`与五个`annie-*`包；sidecar不进入workspace，第三方源码目录只在真实需要时创建。
-- `start.sh`与`start.bat`统一进入`uv run --locked python -m annie_runtime`。
-- Phase 1建立`runtime_snapshots` + `runtime_events`和WAL/幂等migration；Phase 2当前schema v2仅新增输入`source`与`queue_wait_ms`，仍未创建Ledger/Memory/Graph表。
-- 一个Python进程内承载配置中的全部机器人头；当前示例配置为`annie-a`、`annie-b`。每个`robot_id`拥有独立queue/worker/current turn/cancel状态，但所有头由同一项目进程并发调度；自动化测试额外覆盖3头并发，证明实现不写死为两个头。
-- `/health`、本地Fake控制API和最小Dashboard；Phase 2已接入Room PCM输入，LLM/TTS/长期记忆/嘴型仍未接入。
-- 自动化测试证明停止、取消、FakeBrain异常与A队列积压不会破坏B。
-- V1 可复用配置资产已提前迁入：阿里/DashScope、Qwen TTS、MiniCPM视觉地址、Java Room六个WS地址、天气、动作/attention/嘴型配置；Phase 2当前只接线各机器人Room的`reb_mic`输入，其余通道仍作为后续阶段配置资产。V1 `skills.json` 不迁入。
-- 根目录`.env`自动加载；非敏感配置统一在`config/`，运行数据/SQLite/测试与ruff缓存统一在`var/`。
-- 启动前检查端口：`start.sh/start.bat`发现目标端口已有Annie Harbor时自动终止旧实例并拉起新实例；如果占用者不是Annie Harbor则拒绝误杀并明确报错，不随机换端口。
-
-项目显示名定为 **Annie Harbor（安妮港）**；目录和既有`annie-*`包名不为命名再做无价值重构。
-
-## Phase 2 当前状态
-
-- 已按Phase 0 fixtures实现Room BinaryFrame、兼容`mic.start`严格解析、ASR/传感器/视觉/robot_event归一和cancel身份匹配；live `reb_mic` catalog未登记`mic.start`，因此PCM Gate已与该wire消息解耦，transport直接以已验证16kHz/mono/S16LE/20ms/640B格式启动。
-- 每个`robot_id`有独立Audio Input Gate与有界PCM队列；默认容量25帧、最大排队年龄500ms，满队列丢最旧帧保新鲜度。
-- 当前产品模型固定为**一个机器人绑定一个Room**。`config/rooms.toml`保留该Room的`main/tts/mic/visualdata/vision/sam`六条完整地址；多个机器人通过不同`room_id`并发运行，Phase 2只启用各自`reb_mic`输入连接。
-- Runtime启动后自动连接每个监听机器人对应的`/{room_id}/reb_mic`，完成`WELCOME → SUBSCRIBE → ACK`后进入`subscribed`；首个合法`MIC_AUDIO`自动拉起该机器人的PCM stream，断线清旧队列并重连。
-- 已通过真实Java Room数据面回环：向roomv2发送3帧后`annie-a 0→3`且`annie-b=0`；再向roomv3发送4帧后`annie-b 0→4`且`annie-a`保持3，证明跨房间PCM隔离成立。
-- 历史的`tests/html/phase2.html`测试入口已移除；后续统一在正式React工作台进行真实Room和麦克风验收，不再保留阶段独立网页。
-- 当前Brain仍为Fake；Realtime/TTS/Memory/真实Room输出均未接入。
-
-## 当前下一步
-
-以[总计划“当前执行摘要”](docs/规划/小安妮V2后端开发总计划.md)和对应阶段README为准，不在这里维护另一份验收进度。Phase 3验收与进入Phase 4的门槛见[Phase 3记录](docs/phase3/2026-09-18/README.md)；本次增加React工作台规划，不代替用户验收或启动下一阶段。
-
-**开发规划已收束，进入版本冻结/等待用户统一测试。** Phase 1–9软件阶段已按规划推进，具体功能仍以实际代码为准；真实设备、连续运行、浏览器人工验收尚未统一通过。**Phase 10、Phase 11及所有后续功能阶段暂时不做**，之后只按用户测试发现的Bug复现、修复、回归。保留Phase 9低频性能诊断与单头ForcedAligner，暂不改造双头嘴型。
-
-**目标架构（规划，未接线）：** Qwen-Audio 3.0 Realtime Flash负责ASR、smart_turn、对话、Persona和Function Calling；普通聊天不经过LangGraph。保留独立Qwen-Audio-3.0-TTS-Flash与ForcedAligner（同一PCM+文本对齐后生成嘴型）；动作/表情/简单工具走Function Calling。事件经Event Router、Speak Policy、TurnCoordinator决定是否/何时开口；LangGraph仅负责复杂任务与结构化结果，Realtime统一最终表达。
-
-## 启动与核验
-
-从本项目根执行：
+在项目根目录执行：
 
 ```sh
-./start.sh --check
-./start.sh
-uv run --locked pytest -q
-node --test web/tests/dashboard.test.mjs
-uv lock --check
-uv run --locked ruff check apps packages tests/test_phase1.py tests/test_phase2.py
+sh start.sh
 ```
 
-Windows使用`start.bat`进入同一个Python入口。当前sidecar仍未多头化；Phase 2只完成Room PCM输入，不把后续TTS/动作/嘴型输出能力提前标为完成。
+Windows 使用 `start.bat`。默认端口 `8780`：
 
-可视化验收统一使用正式React工作台；旧`/phase-tests/`及`tests/html/`已按用户确认移除，后续不恢复。保留`tests/`和`web/tests/`中的长期回归测试；一次性压力测试和手工探针已删除，不影响正式运行。
+- 数据大屏：`http://localhost:8780/?view=cockpit`（默认视图）
+- 交互工作台：`http://localhost:8780/?view=workbench`
+- 健康状态：`http://localhost:8780/health`
 
-配置优先级固定为：CLI参数 > 已导出的系统环境变量 > 根目录`.env` > `config/*.toml`。机器本地配置从`.env.example`复制为`.env`；`.env`不提交。
+非敏感配置在 `config/`；机器差异与密钥在根 `.env`，模板为 `.env.example`。同项目旧实例由启动器验证后替换，其他程序占用端口时明确报错，不静默换端口。
 
-## 后续AI任务提示词
+## 目录一览
+
+| 目录 | 职责 |
+| --- | --- |
+| `apps/runtime/` | 统一启动、机器人生命周期、音频准入与回合协调 |
+| `packages/` | 核心类型、对话/记忆、外部适配、诊断和 Web API |
+| `web/` | 唯一 React + TypeScript 前端，工作台与大屏共享构建 |
+| `config/` | 可提交的配置资产，不存真实密钥 |
+| `scripts/` | 中文唤醒模型下载、展厅访问初始化等运维工具 |
+| `sidecars/tts_viseme/` | 独立 ForcedAligner/嘴型服务，当前保留单头方案 |
+| `tests/`、`web/tests/` | 长期回归测试，不是临时探针 |
+| `docs/` | 当前边界、规范、协议及实际验收证据 |
+| `var/` | 本机数据库、日志、缓存和模型，不参与源码发布 |
+
+## 先读什么
+
+1. [文档导航](docs/README.md)：按问题找到当前真源。
+2. [项目规则](PROJECT_RULES.md)：工程与业务硬约束。
+3. [收束总览](docs/规划/小安妮V2后端开发总计划.md)：架构、阶段摘要和待验项。
+4. [目录与配置规范](docs/规范/项目结构与配置规范.md)。
+
+当前链路方向是 `Room PCM → Realtime 文本 → 独立 TTS → Room PCM`，同一 PCM/文本送 ForcedAligner。普通聊天不走 LangGraph；复杂任务才按需编排。A→roomv2、B→roomv3，每机器人独占一个 Room，原六通道全保留，每 Room 只有一路 PCM 输入。配置存在不等于能力已连接。
+
+## 开发检查
+
+```sh
+uv run --locked pytest -q
+npm --prefix web test
+npm --prefix web run typecheck
+uv lock --check
+uv run --locked ruff check apps packages tests
+```
+
+发布前端修改时再执行 `npm --prefix web run build`，由 Python 提供 `web/dist/`。启动改动另做真实进程与 HTTP 验收；自动化通过不代替浏览器、真实麦克风或设备实播验收。临时 HTML 验收页已删除，不恢复。
+
+## 后续任务提示词
 
 ```text
-只在/Users/dream/Documents/zhc/python/brainv2开发。
-先读AGENTS.md、docs/README.md、PROJECT_RULES.md和后端总计划；不要默认扫描历史阶段资料。
-Phase 1骨架与本机审查收尾已经完成；Phase 2内部协议/PCM Gate已实现，不重复造Gateway。
-实际当前阶段与验收缺项按总计划执行摘要和对应阶段README核实，不从历史Phase 2说明推导当前进度。
-保留Phase 4/4B既有React与业务接线；Phase 4C统一补齐网页基础、前序功能和布局验收，之后持续追加。
-旧版只证明协议与行为，不决定V2结构；禁止运行时依赖父目录或robot_brain。
-当前Runtime只有Fake Brain；Room PCM输入已真实连接，Realtime/TTS/长期记忆/嘴型均未连接。
-目标热链是Room PCM → Realtime纯文本 → 独立TTS/ForcedAligner，正常聊天禁止经过LangGraph。
-LangGraph仅做复杂任务结构化结果；事件/工具续推理由TurnCoordinator协调，Persona按Session/revision加载。
-每个robot_id继续隔离状态；一机器人独占一个Room、六通道全保留、一路PCM输入，本期不做同房间多机器人。
-实施前按总计划第25/32节复述目标/效果、输入输出、保留项、不做事项、验收和未决问题。
-不明确的业务/协议/设备语义或删除配置/换模型/跨阶段扩展先问用户；相关改动等答复，不擅自替用户决定。
+仅在当前 brainv2 根目录工作。先读 docs/README.md、PROJECT_RULES.md、收束总览和结构规范。
+阶段规划已冻结；只复现并最小修复本次明确的 Bug，不自动推进后续阶段。
+保留工作区已有代码/配置改动、长期回归、全部 Room 通道和单头嘴型能力。
+说明目标、可见效果、输入输出、拟改文件、保留项和验收；业务或协议不明先询问。
+记录真实命令与证据级别，不用模拟/自动化结果填写设备或人工验收通过；不自动提交。
 ```

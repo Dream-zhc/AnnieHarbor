@@ -45,7 +45,7 @@ first_min_chars = 2
 
 [tts.qwen_audio]
 model = "qwen-audio-3.0-tts-flash"
-voice = "qwen-audio-3.0-tts-flash-annie-9417629004fa4493a2c172b24d3e764a"
+voice = "qwen-audio-3.0-tts-flash-annie-51664564da2a4cf39b2ef934c6213d94"
 sample_rate = 24000
 
 [vision]
@@ -68,7 +68,7 @@ max_chars = 200
 api_key_env = "AMAP_WEATHER_API_KEY"
 default_adcode = "110000"
 default_city = "北京市"
-timeout_ms = 1200
+timeout_ms = 2400 # 本机1.2s曾超时，2.4s保留上界；不加串行重试
 http_retries = 0 # 语音热路径不串行重试；失败返回诊断，避免放大延迟与 QPS
 live_cache_sec = 180
 forecast_cache_sec = 1800

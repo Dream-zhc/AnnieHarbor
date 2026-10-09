@@ -1,0 +1,2 @@
+# Vite/third-party bundles are generated; check authored sources for whitespace.
+web/dist/assets/*.js -whitespace

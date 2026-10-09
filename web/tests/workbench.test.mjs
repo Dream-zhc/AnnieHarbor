@@ -23,7 +23,7 @@ test('production panels use compact labels rather than repeated explanatory copy
     '通过当前机器人实时对话触发动作；此页不直接控制电机',
     '网页调试扬声器可逆 Hold/Resume',
   ])assert.ok(!source.includes(verbose),`unnecessary UI explanation: ${verbose}`);
-  assert.match(source,/发至 Room 即完成/);
+  assert.match(source,/Room 发布/);
   assert.match(source,/删除后无法恢复/);
 });
 
@@ -191,7 +191,7 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/setPreviewTranscript\(\(item\.text\?\?'\'\)\+\(item\.stash\?\?'\'\)\)/);
   assert.match(source,/云端起声 → 首次 ASR 增量/);
   assert.match(await readFile(path.join(web,'src/microphone.tsx'),'utf8'),
-    /aria-label="麦克风增强"/);
+    /原始 PCM · 云端 AEC/);
   assert.match(source,/session\.ready/);
   assert.doesNotMatch(source,/cascade_llm|last_llm_input|llm_error/);
   assert.match(source,/last_stop_reason/);
@@ -253,9 +253,9 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(mic,/track\?\.getSettings\(\)/);
   assert.match(mic,/track\.onmute/);
   assert.match(mic,/frames>100&&level<0\.1/);
-  assert.match(mic,/echoCancellation:!rawDiagnostic/);
-  assert.match(mic,/noiseSuppression:!rawDiagnostic/);
-  assert.match(mic,/原始收音排障/);
+  assert.match(mic,/echoCancellation:false/);
+  assert.match(mic,/noiseSuppression:false,autoGainControl:false/);
+  assert.match(mic,/原始 PCM/);
   assert.match(mic,/room-capture-worklet\.js/);
   assert.match(mic,/new AudioWorkletNode\(context,'room-capture'/);
   assert.doesNotMatch(mic,/createScriptProcessor|onaudioprocess/);

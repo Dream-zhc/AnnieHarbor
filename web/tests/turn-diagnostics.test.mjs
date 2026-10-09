@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {selectTurnEvidence} from '../src/turn-evidence.ts';
+
+test('per-turn diagnostics separate direct Realtime replies from actual planner calls',()=>{
+  const source=readFileSync(new URL('../src/turn-diagnostics.tsx',import.meta.url),'utf8');
+  assert.match(source,/source_turn_id===turnId\|\|item\.result_turn_id===turnId/);
+  assert.match(source,/普通回合内模型自己生成的问句不代表 LangGraph 审核/);
+  assert.match(source,/planning\?\.continuation\.recent/);
+  assert.match(source,/get_weather ·/);
+  assert.match(source,/诊断是有界 Session 缓存/);
+});
 
 test('a selected turn never borrows the latest turn prompt, tools, or motion',()=>{
   const ident={robot_id:'annie-a',chat_id:'测试',persona_id:'annie',

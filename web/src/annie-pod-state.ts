@@ -20,6 +20,14 @@ export type AnniePodReadout = {
     playback_state?: string | null;
     playback_source?: string | null;
   };
+  provider_session_id?: string;
+  provider_history_turns?: number;
+  transcripts_completed?: number;
+  session_frames_sent?: number;
+  frames_sent?: number;
+  frames_dropped?: number;
+  first_text_ms?: number | null;
+  last_asr_first_delta_ms?: number | null;
 };
 
 export type AnniePodPhase = 'offline'|'sleep'|'awake'|'listening'|'processing'|'playing'|'followup'|'error';
@@ -51,6 +59,6 @@ export function anniePodPhase(snapshot: AnniePodReadout | null, stale = false): 
   if (output?.state === 'active')
     return state('processing', '语音生成中', '正在合成，不代表已播放');
   if (wake?.state === 'ACTIVE')
-    return state('processing', '对话处理中', '本轮已准入，等待回复');
+    return state('awake', '待机中', '已唤醒 · 待机中，等待下次提问');
   return state('awake', '在线待命', '当前没有讲话或播放回执');
 }

@@ -48,16 +48,12 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
   const [status,setStatus]=useState('未开启');
   const [frames,setFrames]=useState(0);
   const [level,setLevel]=useState(0);
-  const [gain,setGain]=useState(1.75);
+  const gain=1;
   const [clipped,setClipped]=useState(false);
   const [inputs,setInputs]=useState<InputDevice[]>([]);
   const [selectedInput,setSelectedInput]=useState('');
-  const [rawDiagnostic,setRawDiagnostic]=useState(false);
   const [trackInfo,setTrackInfo]=useState('');
   const [deviceError,setDeviceError]=useState('');
-  useEffect(()=>{
-    active.current?.processor.port.postMessage({type:'gain',value:gain});
-  },[gain]);
 
   async function refreshDevices(){
     try{
@@ -122,8 +118,10 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       // AudioContext after awaiting the permission dialog loses user activation
       // in some browsers, leaving an apparently live graph with zero callbacks.
       const permission=navigator.mediaDevices.getUserMedia({audio:{
-        channelCount:1,echoCancellation:!rawDiagnostic,
-        noiseSuppression:!rawDiagnostic,autoGainControl:false,
+        // The server owns AEC. Browser AEC/NS would corrupt the far-end
+        // reference relationship; never also multiply the microphone samples.
+        channelCount:1,echoCancellation:false,
+        noiseSuppression:false,autoGainControl:false,
         ...(selectedInput?{deviceId:{exact:selectedInput}}:{}),
       }});
       context=acquireAudioContext();
@@ -221,7 +219,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
         ' · '+(settings?.channelCount??'?')+'ch'+
         (track?.muted?' · 系统静音':'')+
         (selectedInput&&settings?.deviceId!==selectedInput?' · 设备ID与选择不一致':'')+
-        (rawDiagnostic?' · 原始收音排障':''));
+        ' · 原始 PCM（未开启浏览器 AEC/NS/AGC）');
       setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
       onActive?.(true);
     }catch(error){
@@ -235,7 +233,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       if(current===token.current)setWorking(false);
     }
   }
-  // 原始收音排障（已从主面板移除，保持对讲座舱界面清爽克制）
+  // One raw PCM publisher; AEC is performed centrally before KWS and ASR.
   return <div className="voice-input voice-input-compact">
     <div className="voice-compact-bar">
       <div className="voice-compact-group mic-device-wrap">
@@ -266,11 +264,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
             onChange={event=>setConfirmed(event.target.checked)}/>
           <span>此 Room 没有另一个麦克风占用</span>
         </label>
-        <label className="mic-gain-control compact-gain">
-          <span>增强 {gain.toFixed(2)}×</span>
-          <input type="range" aria-label="麦克风增强" min="1" max="4" step="0.25"
-            value={gain} onChange={event=>setGain(Number(event.target.value))}/>
-        </label>
+        <span className="mic-gain-control compact-gain">原始 PCM · 云端 AEC</span>
       </div>
     </div>
     {deviceError&&<small role="alert" className="mic-signal" style={{marginTop:'2px'}}>{deviceError}</small>}

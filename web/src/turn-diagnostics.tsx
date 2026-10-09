@@ -16,11 +16,17 @@ const since=(times:TurnTimeline['times']|undefined,from:string,to:string)=>{
 };
 const endState=(status?:string)=>{
   if(!status)return '未记录';
-  if(status==='published_unknown')return '已执行（已发至 Room）';
+  if(status==='published_unknown')return '云端下发完成（设备执行未核验）';
   if(status==='awaiting_audio_anchor')return '等待首帧音频';
+  if(status==='awaiting_text_anchor')return '等待回复包含目标词';
+  if(status==='awaiting_word_alignment')return '旧协议：等待声学对齐';
+  if(status==='call_observed')return '仅观察到工具调用';
   if(status==='queued')return '已排队';
   if(status==='send_unknown')return '发送结果不确定';
-  if(status.startsWith('rejected')||status.startsWith('cancelled')||status.startsWith('expired'))return `未执行：${status}`;
+  if(status==='rejected_late')return '已错过触发点，动作未发布';
+  if(status==='expired_no_text_anchor')return '回复未出现目标词，未发布动作';
+  if(status==='expired_no_alignment')return '旧协议：字词对齐超时';
+  if(status.startsWith('rejected')||status.startsWith('cancelled')||status.startsWith('expired'))return `未发布：${status}`;
   return status;
 };
 
@@ -62,7 +68,14 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
     return Array.isArray(result?.evidence)?result.evidence:[];
   });
   const actionCalls=toolCalls.filter(item=>item.name==='perform_action'||item.name==='set_expression');
+  const weatherCalls=toolCalls.filter(item=>item.name==='get_weather');
   const weatherResults=tools.filter(item=>item.kind==='tool.result'&&item.name==='get_weather');
+  const planning=diagnostics?.idle_planning;
+  const plans=[...(planning?.continuation.recent??[]),...(planning?.recent??[])]
+    .filter(item=>item.source_turn_id===turnId||item.result_turn_id===turnId)
+    .sort((a,b)=>a.ts_ms-b.ts_ms);
+  const waitingPlan=planning&&turnId&&planning.continuation.turn_id===turnId?
+    planning.continuation:null;
 
   return (
     <section className="turn-diagnostic">
@@ -212,11 +225,41 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
             </div>
             <div className="turn-diagnostic-line">
               <span className="line-label">本轮调用：</span>
-              <strong>{weatherResults.length?`${weatherResults.length} 次，有结果`:'无结果记录'}</strong>
+              <strong>{weatherCalls.length?`${weatherCalls.length} 次`:'未见调用证据'}</strong>
             </div>
-            {weatherResults.map(item=><Detail key={item.call_id??item.seq}
-              label={`get_weather · ${item.valid?'已返回':'失败'} · ${item.duration_ms??'—'} ms`}
-              value={{arguments:item.arguments,result:item.result}}/>)}
+            {weatherCalls.map(call=>{
+              const result=weatherResults.find(item=>item.call_id===call.call_id);
+              const output=result?.result as {status?:string;reason?:string}|undefined;
+              return <Detail key={call.call_id??call.seq}
+                label={`get_weather · ${output?.status??'未见结果'}${output?.reason?' / '+output.reason:''} · ${result?.duration_ms??'—'} ms`}
+                value={{arguments:call.arguments,result:result?.result??'无结果记录'}}/>;
+            })}
+            <small>没有工具记录不等于没有调用：诊断是有界 Session 缓存，重连后旧轮工具明细可能丢失。天气失败须看具体 status/reason。</small>
+          </div>
+
+          <div className="turn-diagnostic-section">
+            <div className="section-head"><h4>主动追问 / 独立规划</h4></div>
+            <div className="turn-diagnostic-line">
+              <span className="line-label">本轮来源：</span>
+              <strong>{turn?.turn_source==='external'?'外部触发回合':turn?.turn_source==='user'?'用户输入 → Realtime 主模型':'未知'}</strong>
+            </div>
+            <div className="turn-diagnostic-line">
+              <span className="line-label">独立规划：</span>
+              <strong>{plans.length?`${plans.length} 次决策记录`:waitingPlan?.status==='planning'?'正在评估':
+                '本轮无独立规划调用记录'}</strong>
+            </div>
+            {waitingPlan&&!plans.length&&<div className="turn-diagnostic-line">
+              <span className="line-label">短时续聊准入：</span>
+              <strong>{waitingPlan.status} · {waitingPlan.reason??'未记录'}</strong>
+            </div>}
+            {plans.map((record,index)=><Detail key={`${record.mode}-${record.ts_ms}-${index}`}
+              label={`${record.mode==='short_continuation'?'15秒短时续聊':'8C空闲主动交谈'} · ${record.decision??record.status} · ${record.model_ms??'—'} ms`}
+              value={{model:planning?.model,thinking_enabled:planning?.thinking_enabled,
+                source_turn_id:record.source_turn_id,result_turn_id:record.result_turn_id,
+                decision:record.decision,topic:record.topic,status:record.status,
+                reason:record.reason,model_ms:record.model_ms,ts_ms:record.ts_ms,
+                channel:record.channel}}/>)}
+            <small>普通回合内模型自己生成的问句不代表 LangGraph 审核。仅标记实际发生的独立规划；历史记录最多保留32次/类型，Runtime重启后不保留。</small>
           </div>
 
           <div className="turn-diagnostic-section">
@@ -247,7 +290,7 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
               <strong>{timeline?.viseme_count?`收到 ${timeline.viseme_count} 个 Aligner 音素`:'无音素回执记录'}</strong>
             </div>
             {mouth.length>0&&<Detail label="嘴型对齐证据" value={mouth}/>}
-            <small>动作以成功发至 Room 为完成；音素仅证明对齐消息已到达，不代表嘴部物理执行。</small>
+            <small>云端动作以成功发布到 Room 为下发完成，不等待设备回执；字级动作由设备按流 epoch 与实际播放采样点执行，物理动作仍待核验。</small>
           </div>
 
           <div className="turn-diagnostic-section">

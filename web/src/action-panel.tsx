@@ -14,13 +14,17 @@ const sample:Record<string,string>={
   look_right:'你看右边',fast_double_blink:'请你眨两下眼',
 };
 const status:Record<string,string>={
-  awaiting_audio_anchor:'等待当前轮首帧音频',reserved:'已预约',
+  awaiting_audio_anchor:'等待首帧音频',
+  awaiting_text_anchor:'等待回复包含目标词',reserved:'已预约',
+  awaiting_word_alignment:'旧协议：等待声学对齐',
   queued:'表情已排队',
-  published_unknown:'已执行（已发至 Room）',
+  published_unknown:'云端下发完成 · 设备执行未核验',
   send_unknown:'发送结果不确定，禁止盲重试',
   cancelled_before_send:'取消（未发布）',
   expired_no_pcm:'未见首帧音频，已过期',
-  rejected_late:'音频已开始，表情未发送',
+  expired_no_text_anchor:'回复未出现目标词，未发布',
+  expired_no_alignment:'旧协议：声学对齐超时',
+  rejected_late:'已错过触发点，动作未发布',
 };
 
 export function ActionPanel({robotId,onClose,onFillText}:{robotId:string;onClose:()=>void;
@@ -65,7 +69,7 @@ export function ActionPanel({robotId,onClose,onFillText}:{robotId:string;onClose
       <div className="action-body">
         {error&&<p role="alert" className="danger-text">{error}</p>}
         <div className="action-status-card">
-          <div>动作发送：<strong>{data?.enabled?'已启用':data?'未启用':'读取中'}</strong> · 执行口径：<strong>发至 Room 即完成</strong></div>
+          <div>动作发送：<strong>{data?.enabled?'已启用':data?'未启用':'读取中'}</strong> · 完成口径：<strong>Room 发布</strong> · 真机：<strong>待核验</strong></div>
           {!data?.enabled&&<small style={{color:'#94a3b8',lineHeight:1.4}}>启用：ANNIE_ACTIONS_ENABLED=1 · 重启 Runtime</small>}
         </div>
 

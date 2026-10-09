@@ -12,7 +12,9 @@ import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
+import {WakeIndicator} from './wake-indicator';
 import {AnnieStatePod} from './annie-state-pod';
+import {isPodStatusEvent} from './annie-pod-refresh';
 
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
@@ -67,9 +69,11 @@ const ACTION_SCRIPT_NAMES:Record<string,string>={
 };
 
 const actionStatusLabel:Record<string,string>={
-  awaiting_audio_anchor:'等待音频',reserved:'已预约',queued:'已排队',
-  published_unknown:'已下发',send_unknown:'未确认',cancelled_before_send:'已取消',
-  expired_no_pcm:'已过期',rejected_late:'未发送',
+  awaiting_audio_anchor:'等待音频',awaiting_text_anchor:'等待目标词',
+  call_observed:'工具调用待确认',reserved:'已预约',queued:'已排队',
+  published_unknown:'云端已下发',send_unknown:'发送未确认',cancelled_before_send:'已取消',
+  expired_no_pcm:'等待音频超时',expired_no_text_anchor:'目标词超时',
+  rejected_late:'迟到丢弃',
 };
 
 function getTurnActions(
@@ -92,9 +96,9 @@ function getTurnActions(
           robot_id:event.robot_id,room_id:(event as unknown as {room_id?:string}).room_id??prev?.room_id??'',
           turn_id:event.turn_id,call_id:event.call_id??prev?.call_id??'',
           kind:event.action_kind??prev?.kind??'action',value:event.action_value,
-          status:event.status??prev?.status??'published_unknown',error:event.error??prev?.error??null,
+          status:event.status??prev?.status??'call_observed',error:event.error??prev?.error??null,
         });
-      }else if(event.kind==='tool.call'&&(event.name==='perform_action'||event.name==='set_expression')){
+      }else if(event.kind==='tool.called'&&(event.name==='perform_action'||event.name==='set_expression')){
         try{
           const args=typeof event.arguments==='string'?JSON.parse(event.arguments):event.arguments;
           const isAct=event.name!=='set_expression';
@@ -102,7 +106,7 @@ function getTurnActions(
           if(val&&!map.has(event.call_id||val)){
             map.set(event.call_id||val,{
               robot_id:event.robot_id,room_id:'',turn_id:event.turn_id,call_id:event.call_id??'',
-              kind:isAct?'action':'expression',value:val,status:'awaiting_audio_anchor',
+              kind:isAct?'action':'expression',value:val,status:'call_observed',
             });
           }
         }catch{/* ignore json error */}
@@ -111,7 +115,8 @@ function getTurnActions(
   }
   if(diagnostics?.tool_history){
     for(const tool of diagnostics.tool_history){
-      if(tool.turn_id===turnId&&(tool.name==='perform_action'||tool.name==='set_expression')){
+      if(tool.turn_id===turnId&&tool.kind==='tool.called'&&
+        (tool.name==='perform_action'||tool.name==='set_expression')){
         try{
           const args=typeof tool.arguments==='string'?JSON.parse(tool.arguments):tool.arguments;
           const isAct=tool.name!=='set_expression';
@@ -119,7 +124,7 @@ function getTurnActions(
           if(val&&!map.has(tool.call_id||val)){
             map.set(tool.call_id||val,{
               robot_id:tool.robot_id,room_id:'',turn_id:tool.turn_id,call_id:tool.call_id??'',
-              kind:isAct?'action':'expression',value:val,status:'published_unknown',
+              kind:isAct?'action':'expression',value:val,status:'call_observed',
             });
           }
         }catch{/* ignore json error */}
@@ -129,7 +134,7 @@ function getTurnActions(
   return Array.from(map.values());
 }
 
-export function Workbench(){
+export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 'workbench') => void } = {}){
   const root=useRef<HTMLDivElement>(null);
   useGSAP(()=>{
     const media=gsap.matchMedia();
@@ -164,8 +169,8 @@ export function Workbench(){
   const developerOpenRef=useRef(false);
   developerOpenRef.current=developerOpen;
   const [historyOpen,setHistoryOpen]=useState(false);
-  const [actionOpen,setActionOpen]=useState(false);
   const [memoryOpen,setMemoryOpen]=useState(false);
+  const [actionOpen,setActionOpen]=useState(false);
   const [eventsOpen,setEventsOpen]=useState(false);
   const [preferenceOpen,setPreferenceOpen]=useState(false);
   const [micActive,setMicActive]=useState(false);
@@ -184,6 +189,7 @@ export function Workbench(){
   const [social,setSocial]=useState<SocialState>({});
   const [settingPreference,setSettingPreference]=useState(false);
   const [realtimeEvents,setRealtimeEvents]=useState<RealtimeEvent[]>([]);
+  const [podStatusRevision,setPodStatusRevision]=useState(0);
   const [actionRequests,setActionRequests]=useState<ActionRequest[]>([]);
   const [diagnostics,setDiagnostics]=useState<RealtimeDiagnostics|null>(null);
   const [liveTurn,setLiveTurn]=useState<{turnId:string;userText:string;source:'user'|'external'}|null>(null);
@@ -252,7 +258,6 @@ export function Workbench(){
   const persona=realtime?.persona_snapshot;
   const personaForSession=persona&&session&&persona.robot_id===session.robot_id&&persona.chat_id===session.chat_id&&persona.persona_id===session.persona_id&&persona.session_epoch===session.session_epoch&&persona.generation===session.generation&&persona.provider_session_id===realtime?.provider_session_id?persona:null;
   const savedPreference=social.question_pressure?.source==='user_setting'&&['active','normal','low','none'].includes(String(social.question_pressure.value))?String(social.question_pressure.value):'normal';
-  const savedStyle=social.persona_style?.source==='user_setting'&&profiles.some(item=>item.persona_id===social.persona_style.value)
   const lastVisibleTurn=history?.turns.at(-1);
   useEffect(()=>{
     if(!session||!robotId||!realtime?.ready||savedPreference!=='active'||
@@ -277,6 +282,7 @@ export function Workbench(){
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,
       session?.generation,realtime?.ready,savedPreference,
       lastVisibleTurn?.turn_id,lastVisibleTurn?.updated_ms,lastVisibleTurn?.status]);
+  const savedStyle=social.persona_style?.source==='user_setting'&&profiles.some(item=>item.persona_id===social.persona_style.value)
     ?String(social.persona_style.value):profiles.some(item=>item.persona_id===session?.persona_id)
       ?session?.persona_id??'annie':'annie';
   const styleApplied=!!realtime?.ready&&!!personaForSession&&personaForSession.style_id===savedStyle;
@@ -386,6 +392,8 @@ export function Workbench(){
         eventCursor.current=Math.max(eventCursor.current,result.latest);
         if(result.gap)notify('Realtime 事件缺口','info');
         const scoped=events.filter(event=>eventBelongsToSession(event,session));
+        if(scoped.some(item=>isPodStatusEvent(item.kind)))
+          setPodStatusRevision(previous=>previous+1);
         if(scoped.length){
           // Audio/diagnostic events should not diff the whole conversation
           // while the diagnostics drawer is closed. Keep only playback controls
@@ -404,7 +412,7 @@ export function Workbench(){
                 call_id:(item as unknown as {call_id?:string}).call_id??'',
                 kind:item.action_kind??'action',
                 value:item.action_value,
-                status:item.status??'published_unknown',
+                status:item.status??'call_observed',
                 error:item.error??null,
               };
               setActionRequests(prev=>{
@@ -634,7 +642,7 @@ export function Workbench(){
   const voiceMode=!realtime?.ready?'未连接':
     speech?.playback_control_state==='held_confirmed'||speech?.playback_control_state==='hold_requested'?'暂停中':
     ['speaking','streaming','running'].includes(speech?.state??'')?'说话':
-    asrStage==='speech'||previewTranscript?'倾听':asrStage==='finalizing'?'识别结束':liveTurn||liveText?'思考':'空闲';
+    asrStage==='speech'||previewTranscript?'倾听':asrStage==='finalizing'?'识别结束':liveTurn||liveText?'思考':'语音空闲';
 
   const lastUserText=history?.turns?.at(-1)?.user_text;
   const lastAssistantReply=history?.turns?.at(-1)?.assistant_spoken_text||history?.turns?.at(-1)?.assistant_generated_text;
@@ -655,6 +663,11 @@ export function Workbench(){
         {!health?.robots.length&&<span className="empty-copy">无可用机器人</span>}
       </div>
       <div className="topbar-right">
+        {onSwitchMode && (
+          <button className="action-pill" type="button" onClick={() => onSwitchMode('cockpit')} title="切回全息态势大屏" style={{ color: 'var(--neon-cyan, #00f0ff)', fontWeight: 600 }}>
+            🌌 态势大屏
+          </button>
+        )}
         <button className="action-pill theme-toggle-btn" type="button"
           onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}
           aria-label={theme==='dark'?'切换至日间模式':'切换至夜间模式'}
@@ -694,16 +707,16 @@ export function Workbench(){
           onClick={()=>setHistoryOpen(open=>!open)} aria-expanded={historyOpen}>
           💬 会话{conversations.length>0?' ('+conversations.length+')':''}
         </button>
+        <button className={'action-pill '+(memoryOpen?'active':'')} type="button"
+          onClick={()=>setMemoryOpen(true)} disabled={!session}
+          aria-haspopup="dialog" aria-expanded={memoryOpen} title="会话与长期记忆管理">
+          记忆
+        </button>
         <button className="action-pill" type="button" onClick={()=>setPreferenceOpen(true)}>
           ⚙️ 设定
         </button>
         <button className="action-pill" type="button" onClick={()=>setActionOpen(true)} disabled={!robotId}>
           动作
-        </button>
-        <button className={'action-pill '+(memoryOpen?'active':'')} type="button"
-          onClick={()=>setMemoryOpen(true)} disabled={!session}
-          aria-haspopup="dialog" aria-expanded={memoryOpen} title="会话与长期记忆管理">
-          记忆
         </button>
         <button className={'action-pill '+(eventsOpen?'active':'')} type="button"
           onClick={()=>setEventsOpen(true)} disabled={!robotId} title="定时提醒与事件">
@@ -733,7 +746,8 @@ export function Workbench(){
       <div className={'chat-layout cockpit-layout '+(historyOpen?'history-open':'history-closed')}>
         <AnnieStatePod key={robotId+'\u0000'+(session?.generation??'none')}
           robotId={robotId} generation={session?.generation}
-          roomId={selectedRobot?.room_id??route?.room_id}/>
+          roomId={selectedRobot?.room_id??route?.room_id} micActive={micActive}
+          statusRevision={podStatusRevision}/>
         <div className="cockpit-stage">
           <aside className="chat-sidebar">
             <div className="sidebar-top">
@@ -768,6 +782,9 @@ export function Workbench(){
               <span className="room-tag">{selectedRobot?.room_id??route?.room_id??session?.room_id??'—'}</span>
               <State value={realtime?.state} good={realtime?.ready}/>
               <span className="voice-mode" role="status">{voiceMode}</span>
+              <WakeIndicator key={`${robotId}:${session?.generation??'none'}`}
+                robotId={robotId} generation={session?.generation}
+                ready={!!realtime?.ready} initial={realtime?.wakeword}/>
             </div>
             <div className="stage-header-tools">
               <label className="persona-live-switch">当前性格

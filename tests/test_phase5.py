@@ -72,9 +72,12 @@ class ContextSelectionTests(unittest.TestCase):
         self.assertIn("Never call for conversational text", preview["description"])
 
     def test_four_presets_share_identity_and_do_not_invent_user_facts(self):
-        self.assertEqual(set(PROFILES), {"annie", "annie-calm", "annie-lively", "annie-roast"})
+        self.assertEqual(set(PROFILES), {
+            "annie", "annie-calm", "annie-lively", "annie-roast",
+            "annie-weary", "annie-deadpan",
+        })
         instructions = [session_instructions(name, PROFILES, {})[0] for name in PROFILES]
-        self.assertEqual(len(set(instructions)), 4)
+        self.assertEqual(len(set(instructions)), 6)
         for text in instructions:
             self.assertIn("你是小安妮", text)
             self.assertIn("最新明确更正", text)
@@ -92,10 +95,10 @@ class ContextSelectionTests(unittest.TestCase):
         self.assertIn("有主见的熟人", instructions[0])
         self.assertIn("知心朋友", instructions[1])
         self.assertIn("反差、双关或荒诞", instructions[2])
-        self.assertIn("嘴上不饶人的损友", instructions[3])
-        self.assertIn("先接住请求，再顺手反击", instructions[3])
-        self.assertIn("不评价对方智商", instructions[3])
-        self.assertIn("焦虑", instructions[3])
+        self.assertIn("硬核损友", instructions[3])
+        self.assertIn("严禁机械重复", instructions[3])
+        self.assertIn("绝不攻击真实智商", instructions[3])
+        self.assertIn("秒切靠谱同盟模式", instructions[3])
         self.assertNotIn("温和", session_instructions("unknown", PROFILES, {})[0])
         self.assertFalse(session_instructions("unknown", PROFILES, {})[1]["configured"])
         text, snapshot = session_instructions("annie", PROFILES, {
@@ -540,7 +543,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(.01)
         self.assertEqual(a.persona_snapshot["label"], "机灵互怼")
-        self.assertIn("先接住请求，再顺手反击", a.socket.outbound[0]["session"]["instructions"])
+        self.assertIn("抓包现场", a.socket.outbound[0]["session"]["instructions"])
         self.assertEqual(b.persona_snapshot["style_id"], "annie")
         self.assertEqual((await self.runtime.load_conversation(
             "annie-a", original["chat_id"], original["persona_id"]))["turns"], earlier["turns"])

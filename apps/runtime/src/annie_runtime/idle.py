@@ -75,7 +75,7 @@ class ShortContinuation:
             return False
         row = self.rows[robot_id]
         if row["turn_id"] == turn_id:
-            if row["channel"] == "text":
+            if row["channel"] in {"text", "browser_test"}:
                 row["visible_at"] = time.monotonic()
             return True
         row.update(self._blank())
@@ -99,26 +99,35 @@ class ShortContinuation:
             # Even speech without a final ASR must cancel an in-flight plan.
             row.update(self._blank())
             return
-        if event["kind"] != "tts.playback.drained" or event.get("source") != "speaker":
+        if (event["kind"] != "tts.playback.drained"
+                or event.get("source") not in {"speaker", "browser_test"}):
             return
         client = self.runtime.realtime.get(robot_id)
         if client is None or self.graph is None:
             return
         turn_id = event.get("turn_id")
-        if row["turn_id"] == turn_id and row["identity"] == self.runtime.session_state(robot_id):
-            return  # a repeated or late speaker receipt cannot re-arm the same turn
         turn = client.robot.turn_cache.get(turn_id)
         if (not turn or turn.get("turn_source") != "user" or
                 turn.get("status") != "completed" or
                 any(event.get(k) != self.runtime.session_state(robot_id).get(k)
                     for k in IDENTITY)):
             return
+        source = event.get("source")
+        if source == "browser_test" and (
+                client._turn_timelines.get(turn_id, {}).get("input_mode") != "text"
+                or getattr(client, "_last_user_turn_id", None) != turn_id):
+            return  # browser audio is opt-in output, never a physical receipt
+        if row["turn_id"] == turn_id and row["identity"] == self.runtime.session_state(robot_id):
+            if source == "browser_test" and row["channel"] == "text" and not row["attempted"]:
+                row.update(channel="browser_test", drained_at=time.monotonic())
+            return  # duplicates do not reset delay or re-arm an attempted turn
         user = str(turn.get("user_text") or "").strip()
         assistant = str(turn.get("assistant_generated_text") or "").strip()
         if not user or not assistant:
             return
         row.update(self._blank())
-        row.update(turn_id=turn_id, channel="speaker",
+        row.update(turn_id=turn_id, channel=source,
+                   visible_at=time.monotonic() if source == "browser_test" else None,
                    identity=dict(self.runtime.session_state(robot_id)),
                    user_at=client._last_user_turn_at, drained_at=time.monotonic(),
                    user_text=user[:180], assistant_text=assistant[:180],
@@ -133,7 +142,7 @@ class ShortContinuation:
         client = self.runtime.realtime.get(robot_id)
         if not client or not client.ready:
             return "realtime_unavailable"
-        if row["channel"] == "speaker" and client.speech is None:
+        if row["channel"] in {"speaker", "browser_test"} and client.speech is None:
             return "tts_unavailable"
         if (row["identity"] != self.runtime.session_state(robot_id)
                 or row["user_at"] != client._last_user_turn_at):
@@ -147,7 +156,7 @@ class ShortContinuation:
                 any(word in row["user_text"] for word in
                     ("退下", "闭嘴", "安静", "别说", "不想聊", "不用回答", "停止"))):
             return "no_open_topic"
-        if row["channel"] == "text" and (
+        if row["channel"] in {"text", "browser_test"} and (
                 row["visible_at"] is None or now - row["visible_at"] > 8):
             return "web_not_visible"
         if getattr(client, "dialogue", None) and (

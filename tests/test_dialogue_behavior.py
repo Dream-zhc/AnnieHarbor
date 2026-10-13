@@ -109,7 +109,9 @@ class DialogueSessionTests(unittest.IsolatedAsyncioTestCase):
             if client.socket.sent:
                 break
             await asyncio.sleep(.005)
-        self.assertEqual(client.socket.sent[-1]["session"]["instructions"], "BASE")
+        self.assertEqual(client.socket.sent[-1]["session"]["instructions"],
+                         "BASE" + client.language.instruction_hint())
+        self.assertNotIn(old_hint, client.socket.sent[-1]["session"]["instructions"])
         await client._stop_visual_task()
 
     async def test_only_real_speaker_drain_counts_delivered_question(self):

@@ -14,9 +14,9 @@ const health=await get('/health');
 const robot=health.robots[0].robot_id;
 const session=await get('/api/robots/'+robot+'/session');
 const initial=await get('/api/robots/'+robot+'/realtime');
-let wake='SLEEP',talking=false,output={state:'idle',playback_state:'unknown',playback_source:null};
+let wake='SLEEP',talking=false,responding=false,output={state:'idle',playback_state:'unknown',playback_source:null};
 const readout=()=>({...initial,robot_id:robot,generation:session.generation,ready:true,state:'connected',
-  speech_active:talking,wakeword:{...initial.wakeword,enabled:true,state:wake,error:null,candidate_speech:false},speech_output:output});
+  response_id:responding?'fixture-response':null,speech_active:talking,wakeword:{...initial.wakeword,enabled:true,state:wake,error:null,candidate_speech:false},speech_output:output});
 const browser=await chromium.launch({headless:true,args:['--use-gl=angle','--use-angle=swiftshader']});
 try{
  const page=await browser.newPage({viewport:{width:1440,height:900},reducedMotion:'reduce'});
@@ -63,11 +63,15 @@ try{
   ['WAKE_WAIT','wakeword.detected','已唤醒'],
   ['LISTEN','speech.started','正在收听'],
   ['THINK','tts.segment_queued','语音生成中'],
+  ['TEXT_RESPONSE','response.created','正在回复'],
+  ['TEXT_TTS','tts.segment_queued','语音生成中'],
+  ['FOLLOWUP_REPLY','response.created','正在回复'],
   ['SPEAK','tts.playback.started','扬声器播放中'],
   ['FOLLOWUP','tts.playback.drained','等待追问'],
  ]){
-  talking=state==='LISTEN';wake=['LISTEN','WAKE_WAIT'].includes(state)?'WAKE_WAIT':state==='FOLLOWUP'?'FOLLOWUP':'ACTIVE';
-  output={state:state==='THINK'?'active':'idle',playback_state:state==='SPEAK'?'started':'unknown',playback_source:state==='SPEAK'?'speaker':null};
+  talking=state==='LISTEN';responding=['TEXT_RESPONSE','FOLLOWUP_REPLY'].includes(state);
+  wake=['LISTEN','WAKE_WAIT'].includes(state)?'WAKE_WAIT':['FOLLOWUP','FOLLOWUP_REPLY'].includes(state)?'FOLLOWUP':state.startsWith('TEXT_')?'SLEEP':'ACTIVE';
+  output={state:['THINK','TEXT_TTS'].includes(state)?'active':'idle',playback_state:state==='SPEAK'?'started':'unknown',playback_source:state==='SPEAK'?'speaker':null};
   const start=performance.now();await emit(kind);
   await pod.locator('strong').filter({hasText:label}).waitFor({timeout:800});
   timings.push({state,fixture_event_to_observation_ms:Math.round(performance.now()-start)});

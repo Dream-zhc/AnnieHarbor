@@ -8,7 +8,7 @@ from pathlib import Path
 
 from annie_core import InputRejectedError, RobotQueueFullError, RobotUnavailableError
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -37,6 +37,38 @@ class TextViewedInput(BaseModel):
     persona_id: str = Field(min_length=1, max_length=128)
     session_epoch: int = Field(ge=0)
     generation: int = Field(ge=0)
+
+
+class SpeechExpressionIdentity(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    chat_id: str = Field(min_length=1, max_length=128)
+    persona_id: str = Field(min_length=1, max_length=128)
+    session_epoch: int = Field(ge=0)
+    generation: int = Field(ge=0)
+
+
+class AcousticSidecarInput(SpeechExpressionIdentity):
+    enabled: bool
+
+
+class LanguagePreferenceClear(SpeechExpressionIdentity):
+    scope: str = Field(pattern='^(chat|robot)$')
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+class LanguagePreferenceInput(LanguagePreferenceClear):
+    language: str = Field(min_length=2, max_length=8)
+    dialect: str = Field(min_length=1, max_length=32)
+
+
+class VoiceSelectionInput(SpeechExpressionIdentity):
+    voice_id: str = Field(min_length=5, max_length=200)
+    scope: str = Field(pattern="^(chat|robot)$")
+
+
+class VoiceRenameInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=40)
 
 
 class SessionInput(BaseModel):
@@ -261,6 +293,157 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     @app.post("/api/robots/{robot_id}/turns")
     async def turn(robot_id: str, body: TurnInput):
         return await operation(robot_id, "turns", body.text)
+
+    @app.get('/api/robots/{robot_id}/speech-expression')
+    async def speech_expression(robot_id: str):
+        require_robot(robot_id)
+        return await runtime.speech_expression_state(robot_id)
+
+    @app.put('/api/robots/{robot_id}/speech-expression/sidecar')
+    async def acoustic_sidecar(robot_id: str, body: AcousticSidecarInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.set_acoustic_enabled(robot_id, body.enabled,
+                                                      expected_identity=body.model_dump())
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.put('/api/robots/{robot_id}/language-preference')
+    async def set_language_preference(robot_id: str, body: LanguagePreferenceInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.set_language_preference(robot_id,
+                scope=body.scope, language=body.language, dialect=body.dialect,
+                request_id=body.request_id, expected_identity=body.model_dump())
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.delete('/api/robots/{robot_id}/language-preference')
+    async def clear_language_preference(robot_id: str, body: LanguagePreferenceClear):
+        require_robot(robot_id)
+        try:
+            return await runtime.clear_language_preference(robot_id,
+                scope=body.scope, request_id=body.request_id,
+                expected_identity=body.model_dump())
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/speakers")
+    async def list_speakers():
+        return runtime.speaker_catalog()
+
+    @app.post("/api/speakers")
+    async def enroll_speaker(request: Request, name: str):
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+            if len(content) > 2_000_000:
+                raise HTTPException(413, "录音不能超过 2MB")
+        try:
+            return await runtime.enroll_speaker(name, bytes(content))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.delete("/api/speakers/{speaker_id}")
+    async def remove_speaker(speaker_id: str):
+        try:
+            return await runtime.delete_speaker(speaker_id)
+        except KeyError as exc:
+            raise HTTPException(404, "没有这个声纹") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/voices")
+    async def list_voices(robot_id: str):
+        require_robot(robot_id)
+        return runtime.voice_library(robot_id)
+
+    @app.post("/api/robots/{robot_id}/voices/clone")
+    async def clone_voice(robot_id: str, request: Request, name: str, filename: str,
+                          language: str = "zh"):
+        require_robot(robot_id)
+        from annie_runtime.voice_profiles import MAX_BYTES
+        size = request.headers.get("content-length")
+        if size and size.isdecimal() and int(size) > MAX_BYTES:
+            raise HTTPException(413, "音色参考音频不可超过10MB")
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+            if len(content) > MAX_BYTES:
+                raise HTTPException(413, "音色参考音频不可超过10MB")
+        try:
+            return await runtime.clone_voice(robot_id, name, filename, bytes(content), language)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            logger.warning("voice_clone failed robot=%s error=%s", robot_id, type(exc).__name__)
+            raise HTTPException(502, "云端音色复刻失败，请检查模型权限和服务器日志") from exc
+
+    @app.put("/api/robots/{robot_id}/voices/selection")
+    async def select_voice(robot_id: str, body: VoiceSelectionInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.select_voice(robot_id, body.voice_id, body.scope,
+                                              expected_identity=body.model_dump())
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.patch("/api/robots/{robot_id}/voices/{voice_id}")
+    async def rename_voice(robot_id: str, voice_id: str, body: VoiceRenameInput):
+        require_robot(robot_id)
+        try:
+            return await runtime.rename_voice(robot_id, voice_id, body.name)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.delete("/api/robots/{robot_id}/voices/{voice_id}")
+    async def delete_voice(robot_id: str, voice_id: str):
+        require_robot(robot_id)
+        try:
+            return await runtime.delete_voice(robot_id, voice_id)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/voices/{voice_id}/previews")
+    async def voice_previews(robot_id: str, voice_id: str):
+        require_robot(robot_id)
+        if runtime.voices is None:
+            raise HTTPException(503, "voice cloning unavailable")
+        try:
+            return {"previews": runtime.voices.preview_state(voice_id)}
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/voices/{voice_id}/previews/{preset}")
+    async def voice_preview_audio(robot_id: str, voice_id: str, preset: str):
+        require_robot(robot_id)
+        if runtime.voices is None:
+            raise HTTPException(503, "voice cloning unavailable")
+        try:
+            path = runtime.voices.preview_path(voice_id, preset)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        if not path.is_file():
+            raise HTTPException(404, "preview not generated")
+        return FileResponse(path, media_type="audio/wav",
+                            headers={"Cache-Control": "private, max-age=3600"})
+
+    @app.post("/api/robots/{robot_id}/voices/{voice_id}/previews/{preset}")
+    async def generate_voice_preview(robot_id: str, voice_id: str, preset: str):
+        require_robot(robot_id)
+        if runtime.voices is None:
+            raise HTTPException(503, "voice cloning unavailable")
+        try:
+            await runtime.voices.preview(voice_id, preset)
+            return {"status": "ready"}
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except Exception as exc:
+            logger.warning("voice_preview failed preset=%s error=%s",
+                           preset, type(exc).__name__)
+            raise HTTPException(502, "试听合成失败，请检查服务器日志") from exc
 
     @app.get("/api/robots/{robot_id}/realtime")
     async def realtime_state(robot_id: str):
@@ -493,11 +676,17 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
             raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/robots/{robot_id}/conversations/{chat_id}")
-    async def conversation(robot_id: str, chat_id: str, persona_id: str):
+    async def conversation(robot_id: str, chat_id: str, persona_id: str,
+                           limit: int | None = None, before_id: int | None = None):
         require_robot(robot_id)
         if not chat_id.strip() or not persona_id.strip():
             raise HTTPException(422, "chat_id and persona_id must not be blank")
-        return await runtime.load_conversation(robot_id, chat_id, persona_id)
+        if (limit is not None and not 1 <= limit <= 200) or (before_id is not None and before_id <= 0):
+            raise HTTPException(422, "invalid conversation page cursor")
+        if before_id is not None and limit is None:
+            raise HTTPException(422, "limit is required with before_id")
+        return await runtime.load_conversation(robot_id, chat_id, persona_id,
+                                               limit=limit, before_id=before_id)
 
     @app.delete("/api/robots/{robot_id}/conversations/{chat_id}")
     async def delete_conversation(robot_id: str, chat_id: str, persona_id: str):

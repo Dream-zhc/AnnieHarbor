@@ -5,6 +5,7 @@ import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents,type RealtimeDiagnostics,type PersonaProfile} from './api';
 import {MicrophoneControls,RoomSpeakerPanel} from './audio-panels';
 import {LatencyHud} from './latency-hud';
+import {RoleLanguagePreference,SpeechExpressionPanel} from './speech-expression';
 import {ActionPanel} from './action-panel';
 import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
@@ -13,14 +14,16 @@ import {RoomObservationsBar} from './room-observations';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
 import {WakeIndicator} from './wake-indicator';
+import {VoiceSettings} from './voice-settings';
 import {AnnieStatePod} from './annie-state-pod';
 import {isPodStatusEvent} from './annie-pod-refresh';
 
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
 type PersonaInstance={persona_id:string;display_name:string;created_ms:number;updated_ms:number};
-type Turn={turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string;created_ms?:number;updated_ms?:number};
-type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string};
+type Turn={id:number;turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string;created_ms?:number;updated_ms?:number};
+type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string;has_more?:boolean;next_before_id?:number|null};
+const HISTORY_PAGE_SIZE=80;
 type SocialState=Record<string,{value:unknown;source:string;expires_at_ms:number|null}>;
 
 const errorText=(value:unknown)=>value instanceof Error?value.message:String(value);
@@ -180,6 +183,8 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
   const [session,setSession]=useState<Session|null>(null);
   const [conversations,setConversations]=useState<Conversation[]>([]);
   const [history,setHistory]=useState<History|null>(null);
+  const [visibleHistoryCount,setVisibleHistoryCount]=useState(HISTORY_PAGE_SIZE);
+  const [olderLoading,setOlderLoading]=useState(false);
   const [context,setContext]=useState<unknown>(null);
   const [profiles,setProfiles]=useState<PersonaProfile[]>([]);
   const [instances,setInstances]=useState<PersonaInstance[]>([]);
@@ -236,6 +241,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
   const selection=useRef(0);
   const displayedSession=useRef('');
+  const olderRequest=useRef(false);
   const eventCursor=useRef(0);
   const scrollPanel=useRef<HTMLDivElement>(null);
   const followLatest=useRef(true);
@@ -316,12 +322,13 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
       const identity=[selected.robot_id,selected.chat_id,selected.persona_id,selected.session_epoch,selected.generation].join('\u0000');
       if(displayedSession.current!==identity){
         displayedSession.current=identity;
+        setVisibleHistoryCount(HISTORY_PAGE_SIZE);
         setHistory(null);setContext(null);setCoordinator(null);setSocial({});setActionRequests([]);
       }
       setSession(selected);
       const [list,turns,rooms,socialState,roles,actionsData]=await Promise.all([
         api<Conversation[]>(base+'/conversations'),
-        api<History>(base+'/conversations/'+encodeURIComponent(selected.chat_id)+'?persona_id='+encodeURIComponent(selected.persona_id)),
+        api<History>(base+'/conversations/'+encodeURIComponent(selected.chat_id)+'?persona_id='+encodeURIComponent(selected.persona_id)+'&limit='+HISTORY_PAGE_SIZE),
         api<RoomRoute[]>('/api/phase2/rooms'),
         api<SocialState>(base+'/social-state'),
         api<PersonaInstance[]>(base+'/persona-instances'),
@@ -332,6 +339,43 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
       if(actionsData?.requests)setActionRequests(actionsData.requests);
     }catch(error){if(ticket===selection.current)notify('当前机器人数据读取失败：'+errorText(error),'error');}
   },[notify]);
+
+  const refreshRecent=useCallback(async(id:string,selected:Session)=>{
+    const ticket=selection.current;
+    const identity=[selected.robot_id,selected.chat_id,selected.persona_id,selected.session_epoch,selected.generation].join('\u0000');
+    try{
+      const page=await api<History>(robotPath(id)+'/conversations/'+encodeURIComponent(selected.chat_id)+
+        '?persona_id='+encodeURIComponent(selected.persona_id)+'&limit='+HISTORY_PAGE_SIZE);
+      if(ticket!==selection.current||displayedSession.current!==identity)return;
+      setHistory(prev=>{
+        if(!prev||prev.chat_id!==page.chat_id||prev.persona_id!==page.persona_id)return page;
+        if(!prev.turns.length)return page;
+        const recentFirstId=page.turns[0]?.id??Number.POSITIVE_INFINITY;
+        const earlier=prev.turns.filter(turn=>turn.id<recentFirstId);
+        return {...page,turns:[...earlier,...page.turns],
+          has_more:earlier.length?prev.has_more:page.has_more,
+          next_before_id:earlier.length?prev.next_before_id:page.next_before_id};
+      });
+    }catch(error){if(ticket===selection.current)notify('最新对话读取失败：'+errorText(error),'error');}
+  },[notify]);
+
+  const loadOlder=useCallback(async()=>{
+    if(olderRequest.current||!session||!history?.has_more||!history.next_before_id)return;
+    const ticket=selection.current;
+    const oldest=history.next_before_id;
+    const identity=displayedSession.current;
+    olderRequest.current=true;setOlderLoading(true);
+    try{
+      const page=await api<History>(robotPath(robotId)+'/conversations/'+encodeURIComponent(session.chat_id)+
+        '?persona_id='+encodeURIComponent(session.persona_id)+'&limit='+HISTORY_PAGE_SIZE+'&before_id='+oldest);
+      if(ticket!==selection.current||identity!==displayedSession.current)return;
+      setHistory(prev=>prev&&prev.next_before_id===oldest?{
+        ...prev,turns:[...page.turns,...prev.turns],has_more:page.has_more,
+        next_before_id:page.next_before_id}:prev);
+      setVisibleHistoryCount(count=>count+HISTORY_PAGE_SIZE);
+    }catch(error){if(ticket===selection.current)notify('更早对话读取失败：'+errorText(error),'error');}
+    finally{olderRequest.current=false;setOlderLoading(false);}
+  },[session,history,robotId,notify]);
 
   useEffect(()=>{void refreshSelected(robotId);return()=>{selection.current++;};},[robotId,refreshSelected]);
 
@@ -453,7 +497,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
               setPreviewTranscript('');setPendingAsr('');setAsrStage('idle');
               if(item.text&&item.turn_id){
                 setFinalTranscript({turnId:item.turn_id,text:item.text});
-                void refreshSelected(robotId);
+                if(session)void refreshRecent(robotId,session);
               }
             }
             if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
@@ -465,7 +509,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             }
             if(item.kind==='turn.done'){
               if(typeof item.first_text_ms==='number')setLastFirstText(item.first_text_ms);
-              setLiveText(item.text??'');void refreshSelected(robotId);
+              setLiveText(item.text??'');if(session)void refreshRecent(robotId,session);
             }
           }
         }
@@ -473,7 +517,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
     };
     source.onerror=()=>{if(active)notify('Realtime 实时推送中断，正在自动重连…','error');};
     return()=>{active=false;source.close();};
-  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation,!!realtime,refreshSelected,notify,refreshHealth]);
+  },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation,!!realtime,refreshRecent,notify,refreshHealth]);
 
   useEffect(()=>{
     if(!robotId)return;
@@ -796,6 +840,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                     ...profiles.map(item=>({value:item.persona_id,label:item.label}))
                   ]}/>
               </label>
+              <RoleLanguagePreference robotId={robotId} session={session}/>
               {!styleApplied&&session&&<span role="status" className="quality-note">性格待生效</span>}
               <button className="quiet-button" type="button" onClick={()=>setHistoryOpen(o=>!o)}>{historyOpen?'收起会话':'会话列表'}</button>
               <button className="quiet-button" type="button" onClick={openCreate} disabled={!robotId}>＋ 新建</button>
@@ -866,7 +911,12 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                   </button>
                 </div>
               </div>}
-              {history?.turns.map(turn=>{
+              {history&&(history.has_more||history.turns.length>visibleHistoryCount)&&
+                <button type="button" disabled={olderLoading} onClick={()=>{
+                  if(history.turns.length>visibleHistoryCount)setVisibleHistoryCount(count=>count+HISTORY_PAGE_SIZE);
+                  else void loadOlder();
+                }}>{olderLoading?'读取历史中…':'加载更早对话'}</button>}
+              {history?.turns.slice(-visibleHistoryCount).map(turn=>{
                 const streaming=liveTurn?.turnId===turn.turn_id&&turn.status==='running';
                 const reply=streaming?(liveText||turn.assistant_generated_text):
                   (turn.assistant_spoken_text||turn.assistant_generated_text);
@@ -955,6 +1005,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
         <aside className="inspector cockpit-hud" aria-label="声学与延迟仪表盘">
           <LatencyHud realtime={realtime} speech={speech}/>
+          <SpeechExpressionPanel key={JSON.stringify([robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation])} robotId={robotId} session={session}/>
           <MicrophoneControls key={robotId+'\u0000'+(route?.room_id??'')}
             route={realtime?.ready?route:undefined} onActive={setMicActive}/>
           <RoomSpeakerPanel key={'speaker:'+robotId+'\u0000'+(route?.room_id??'')}
@@ -983,9 +1034,9 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
       onClose={()=>setMemoryOpen(false)}/>}
 
     {preferenceOpen&&<div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPreferenceOpen(false);}}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="preference-title">
+      <div className="dialog voice-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="preference-title">
         <button type="button" className="dialog-close-btn" onClick={()=>setPreferenceOpen(false)} aria-label="关闭">×</button>
-        <h2 id="preference-title">性格与追问设定</h2>
+        <h2 id="preference-title">机器人设定</h2>
         <div className="inspector-group" style={{marginBottom:'12px'}}>
           <div className="info-line"><span>当前 Persona</span><strong>{session?.persona_id??'—'}</strong></div>
           <div className="info-line"><span>当前性格</span><strong>{styleApplied?personaForSession?.label:'切换中 / 等待模型连接'}</strong></div>
@@ -1013,6 +1064,8 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             ]}
           />
         </label>
+        <VoiceSettings key={[robotId,session?.chat_id,session?.persona_id].join(':')}
+          robotId={robotId} session={session}/>
         <div className="dialog-actions">
           <button className="primary-button" type="button" onClick={()=>setPreferenceOpen(false)}>完成</button>
         </div>

@@ -21,6 +21,7 @@ WAKE_ADDRESS_INSTRUCTIONS = (
     "语音句首的“小安妮”及其近音转写“小爱你/小安尼/小安你/小爱妮”，"
     "在紧接问候或请求时只是呼叫称呼，不是表白或独立话题。"
     "直接回应后面的问候或请求，不要围绕称呼打趣、复述“小爱你”或推断爱意，"
+    "也不要把这个近音当成用户的姓名，"
     "也不要沿用历史中由这些误识别引出的表白梗。"
     "仅有唤醒称呼不构成聊天问题，等待后续提问。"
     "用户明确讨论词义或真实表达“我爱你”等情感时保留原意；"
@@ -64,6 +65,11 @@ class WakeAdmission:
     def expirations(self):
         return self.presence.expirations
 
+    @property
+    def inference_age_ms(self):
+        return (max(0, (self.clock() - self._batch_started_at) * 1000)
+                if self._batch_started_at is not None else 0)
+
     def reset(self):
         self.presence.close()
         if self.task and not self.task.done():
@@ -100,42 +106,10 @@ class WakeAdmission:
             del self.recent[:-WINDOW_BYTES]
         if self.streaming:
             self.pending.extend(pcm)
-            if self.task is not None and self.task.done():
-                task, self.task = self.task, None
-                batch_at, self._batch_started_at = self._batch_started_at, None
-                try:
-                    triggered = task.result()
-                except Exception as exc:
-                    self.error = type(exc).__name__
-                    raise RuntimeError(f"sherpa KWS failed: {self.error}") from exc
-                # Preserve last real detector evidence across the new stream
-                # created when returning to sleep. Otherwise the diagnostics
-                # misleadingly reset to None immediately after a wake.
-                decoded_ms = getattr(self.detector, "last_decode_ms", None)
-                if decoded_ms is not None:
-                    self.last_completed_decode_ms = decoded_ms
-                if triggered:
-                    self.last_detected_keyword = getattr(
-                        self.detector, "last_keyword", None
-                    )
-                    self.last_keyword_tokens = list(getattr(
-                        self.detector, "last_keyword_tokens", []
-                    ))
-                    self.last_keyword_token_times_ms = list(getattr(
-                        self.detector, "last_keyword_token_times_ms", []
-                    ))
-                if triggered:
-                    self.last_trigger_lag_ms = (round((self.clock() - batch_at) * 1000, 1)
-                                                if batch_at is not None else None)
-                    return self._admit_wake()
-            if len(self.pending) >= STREAM_BACKLOG_LIMIT_BYTES:
-                self.error = "stream_backlog"
-                raise RuntimeError("sherpa KWS stream backlog exceeded")
-            if self.task is None and len(self.pending) >= STREAM_BATCH_BYTES:
-                batch = bytes(self.pending)
-                self.pending.clear()
-                self._batch_started_at = self.clock()
-                self.task = asyncio.create_task(self.detector.detected(batch))
+            completed = self.complete_inference()
+            if completed:
+                return completed
+            self._start_inference()
             return ()
         # Legacy 2s fake detector is retained only for current synthetic tests.
         now = self.clock()
@@ -144,6 +118,55 @@ class WakeAdmission:
         self.next_inference_at = now + 0.5
         if await self.detector.detected(bytes(self.recent)):
             return self._admit_wake()
+        return ()
+
+    def _start_inference(self):
+        if len(self.pending) >= STREAM_BACKLOG_LIMIT_BYTES:
+            self.error = "stream_backlog"
+            raise RuntimeError("sherpa KWS stream backlog exceeded")
+        if self.task is None and len(self.pending) >= STREAM_BATCH_BYTES:
+            batch = bytes(self.pending)
+            self.pending.clear()
+            self._batch_started_at = self.clock()
+            self.task = asyncio.create_task(self.detector.detected(batch))
+
+    def complete_inference(self, *, discard=False) -> tuple[bytes, ...]:
+        """Consume one finished native job, independently of future PCM arrival.
+
+        The audio pump owns delivery and validates its input/generation identity.
+        frames() also uses this path for existing direct gate consumers.
+        """
+        if self.task is None or not self.task.done():
+            return ()
+        task, self.task = self.task, None
+        batch_at, self._batch_started_at = self._batch_started_at, None
+        if task.cancelled():
+            return ()
+        try:
+            triggered = task.result()
+        except Exception as exc:
+            self.error = type(exc).__name__
+            raise RuntimeError(f"sherpa KWS failed: {self.error}") from exc
+        if discard:
+            # Retrieve native errors before retiring an overage success; never
+            # briefly admit stale audio or increment the wake counter.
+            self.reset()
+            return ()
+        decoded_ms = getattr(self.detector, "last_decode_ms", None)
+        if decoded_ms is not None:
+            self.last_completed_decode_ms = decoded_ms
+        if triggered:
+            self.last_detected_keyword = getattr(self.detector, "last_keyword", None)
+            self.last_keyword_tokens = list(getattr(self.detector, "last_keyword_tokens", []))
+            self.last_keyword_token_times_ms = list(getattr(
+                self.detector, "last_keyword_token_times_ms", []
+            ))
+            self.last_trigger_lag_ms = (round((self.clock() - batch_at) * 1000, 1)
+                                       if batch_at is not None else None)
+            return self._admit_wake()
+        # PCM can arrive while native decoding runs. Drain its complete batch
+        # even if the sender becomes silent before the previous job finishes.
+        self._start_inference()
         return ()
 
     def _admit_wake(self):

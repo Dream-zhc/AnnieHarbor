@@ -26,6 +26,12 @@ class ReminderService:
         speaker = getattr(speech, "receipt_tracks", {}).get("speaker", {})
         if speaker.get("state") in {"started", "progress", "resumed", "held"}:
             return True
+        stopped = getattr(speech, "local_output_stopped_at", None)
+        if getattr(speech, "failed_turn", None) == speech.turn_id and stopped is not None:
+            # Failed synthesis never sets synthesized_complete. A published STOP
+            # can release local arbitration after grace, without claiming playback.
+            return not (speaker.get("state") == "stopped" or
+                        time.monotonic() - stopped >= UNCONFIRMED_PLAYBACK_GRACE_SECONDS)
         completed = getattr(speech, "local_output_completed_at", None)
         return not (getattr(speech, "synthesized_complete", False)
                     and completed is not None

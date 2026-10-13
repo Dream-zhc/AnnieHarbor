@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {pcmFrame} from './pcm-format';
+import {waitForCaptureReady} from './capture-ready';
 import {acquireAudioContext,loadAudioWorklet,releaseAudioContext} from './shared-audio-context';
 
 type Route={room_id:string;mic_url:string;urls?:Record<string,string>};
@@ -42,6 +43,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
 }){
   const active=useRef<Microphone|null>(null);
   const token=useRef(0);
+  const startupAbort=useRef<AbortController|null>(null);
   const [confirmed,setConfirmed]=useState(false);
   const [working,setWorking]=useState(false);
   const [listening,setListening]=useState(false);
@@ -82,6 +84,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
 
   function stop(update=true){
     token.current++;
+    startupAbort.current?.abort();startupAbort.current=null;
     const old=active.current;active.current=null;
     if(old){
       if(old.voiceWs?.readyState===WebSocket.OPEN){
@@ -89,7 +92,8 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       }
       old.voiceWs?.close();
       window.clearTimeout(old.watchdog);
-      old.processor.port.onmessage=null;
+      old.processor.port.postMessage({type:'stop'});
+      old.processor.port.onmessage=null;old.processor.onprocessorerror=null;
       old.processor.disconnect();old.source.disconnect();old.silent.disconnect();
       old.stream.getTracks().forEach(track=>track.stop());
       old.ws.onclose=null;old.ws.close();releaseAudioContext(old.context);
@@ -109,6 +113,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       setStatus('浏览器无麦克风权限 API：请通过 localhost 或 HTTPS 打开工作台');return;
     }
     const current=++token.current,roomId=route.room_id;
+    const abort=new AbortController();startupAbort.current=abort;
     let stream:MediaStream|undefined,context:AudioContext|undefined,ws:WebSocket|undefined;
     let source:MediaStreamAudioSourceNode|undefined,processor:AudioWorkletNode|undefined,silent:GainNode|undefined;
     let handedOff=false;
@@ -131,7 +136,9 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       void refreshDevices(); // permitted device labels become available after getUserMedia
       await resume;
       if(current!==token.current)return;
-      await loadAudioWorklet(context,'/room-capture-worklet.js');
+      await loadAudioWorklet(context,'/vendor/libsamplerate-2.1.2.worklet.js');
+      if(current!==token.current)return;
+      await loadAudioWorklet(context,'/room-capture-worklet.js?v=best-2.1.2');
       if(current!==token.current)return;
       ws=await connect(route.mic_url,roomId);
       if(current!==token.current)return;
@@ -140,6 +147,12 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
         outputChannelCount:[1],processorOptions:{gain},
       });
       silent=context.createGain();silent.gain.value=0;
+      // Keep the worklet alive while initializing, but do not attach mic audio yet.
+      processor.connect(silent);silent.connect(context.destination);
+      setStatus('初始化高质量重采样…');
+      await waitForCaptureReady(processor,abort.signal);
+      if(current!==token.current)return;
+      if(ws.readyState!==WebSocket.OPEN)throw new Error('Room 在麦克风初始化期间断开');
       // Keep immutable handles: the capture callback must not read locals
       // cleared/changed by startup cleanup after it has been installed.
       const captureWs=ws,captureContext=context,captureStream=stream;
@@ -147,6 +160,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       processor.port.onmessage=event=>{
         if(active.current?.ws!==captureWs||captureWs.readyState!==WebSocket.OPEN)return;
         try{
+          if(event.data.type==='error')throw new Error(String(event.data.message));
           if(event.data.type==='level'){
             setLevel(event.data.value);setClipped(event.data.clipped>0);
             onLevel?.(event.data.value);
@@ -168,7 +182,9 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
           if(previous===0||Math.floor(previous/10)!==Math.floor(sent/10))setFrames(sent);
         }catch(error){stop();setStatus('麦克风发送失败：'+String(error));}
       };
-      source.connect(processor);processor.connect(silent);silent.connect(context.destination);
+      processor.onprocessorerror=()=>{
+        if(active.current?.ws===captureWs){stop();setStatus('麦克风音频处理器失败，请重新开启');}
+      };
       const watchdog=window.setTimeout(()=>{
         if(active.current?.ws!==captureWs||sent>0)return;
         const state=captureContext.state,track=captureStream.getAudioTracks()[0];
@@ -178,6 +194,7 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
       },3000);
       active.current={ws,stream,context,source,processor,silent,watchdog,voiceWs:null};
       handedOff=true;
+      source.connect(processor);
       if(route.urls?.voice){
         const voiceWs=new WebSocket(route.urls.voice);
         active.current.voiceWs=voiceWs;
@@ -219,13 +236,20 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
         ' · '+(settings?.channelCount??'?')+'ch'+
         (track?.muted?' · 系统静音':'')+
         (selectedInput&&settings?.deviceId!==selectedInput?' · 设备ID与选择不一致':'')+
-        ' · 原始 PCM（未开启浏览器 AEC/NS/AGC）');
+        ' · BEST 连续重采样（未开启浏览器 AEC/NS/AGC）');
       setListening(true);setStatus('已连接 '+roomId+'，等待首帧…');
       onActive?.(true);
     }catch(error){
       if(current===token.current)setStatus('开启失败：'+String(error));
     }finally{
+      if(startupAbort.current===abort)startupAbort.current=null;
       if(!handedOff){
+        if(processor){
+          processor.port.postMessage({type:'stop'});
+          processor.port.onmessage=null;processor.onprocessorerror=null;
+          processor.disconnect();
+        }
+        source?.disconnect();silent?.disconnect();
         ws?.close();
         stream?.getTracks().forEach(track=>track.stop());
         if(context)releaseAudioContext(context);

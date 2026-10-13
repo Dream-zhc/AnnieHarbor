@@ -1,6 +1,7 @@
 """Per-robot duplex Session: Qwen-Audio hears, reasons and calls tools."""
 
 import asyncio
+import copy
 import json
 import logging
 import math
@@ -16,18 +17,27 @@ from annie_brain.context import (
     select_restorable_context,
 )
 from annie_brain.dialogue import DialogueState
-from annie_brain.persona import session_instructions, social_instruction_hint
+from annie_brain.persona import (
+    active_style_id,
+    resolve_persona_style_request,
+    session_instructions,
+    social_instruction_hint,
+)
 from annie_core import RobotUnavailableError
 
+from annie_runtime.language import ReplyLanguageState, explicit_language_request
+from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream
 from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
 
 logger = logging.getLogger(__name__)
 AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
 IDLE_SESSION_GAP_SECONDS = 15 * 60
 IDLE_RECV_CHECK_SECONDS = 30
+AUDIO_SEND_DEADLINE_SECONDS = 1.0
 VISUAL_CONTEXT_MIN_INTERVAL_SECONDS = 1.0
 VISUAL_CONTEXT_POLL_SECONDS = 0.5
 VISUAL_CONTEXT_MAX_CHARS = 2000
+SLEEP_AFTER_REPLY_SECONDS = 20.0
 
 
 def visual_instructions(base, description):
@@ -51,7 +61,8 @@ class RealtimeRobot:
     def __init__(self, robot, *, url: str, key: str, persona_profiles=None,
                  history_turns: int = 8, restore_char_budget: int = 3000,
                  socket_factory=QwenRealtimeSocket, wake_detector=None,
-                 wake_wait_ms=5000, wake_followup_ms=8000):
+                 wake_wait_ms=5000, wake_followup_ms=8000,
+                 expression_enabled=False):
         self.robot = robot
         self.wake = (WakeAdmission(wake_detector, wake_wait_ms=wake_wait_ms,
                                    followup_ms=wake_followup_ms)
@@ -65,7 +76,28 @@ class RealtimeRobot:
         self.history_turns = history_turns
         self.restore_char_budget = restore_char_budget
         self.history_turns_confirmed = None
+        self.language = ReplyLanguageState()
+        self.language.reset(robot.session_state())
+        self.acoustic = None
+        self.language_preference_writer = None
+        self._language_sent_revision = -1
+        self._language_pending_update = None
+        self._instruction_wait = None
+        self._instruction_send_lock = asyncio.Lock()
+        self._persona_text = ""
+        self._instruction_tail = ""
+        self._persona_display_name = None
+        self._persona_physical = False
+        self._main_audio_samples = 0
+        self._acoustic_windows = deque(maxlen=32)
+        self._acoustic_pending = deque(maxlen=8)
+        self._acoustic_rejected = 0
         self.speech = None
+        self.expression_enabled = expression_enabled
+        self.expression = None
+        self._expression_raw = ""
+        self._last_expression = None
+        self._last_expression_identity = None
         self.socket = None
         self.task = None
         self.audio_task = None
@@ -95,6 +127,10 @@ class RealtimeRobot:
         self.calls = set()
         self.call_count = 0
         self.followup_needed = False
+        self._pending_sleep = None
+        self._sleep_wait_task = None
+        self._deferred_sleep_task = None
+        self._sleep_closing = False
         self._tool_queue = deque()
         self._pending_tool_ids = set()
         self._tool_worker = None
@@ -124,6 +160,8 @@ class RealtimeRobot:
         self.prompt_snapshot = None
         self.prompt_history = deque(maxlen=4)
         self.voice_event = None  # optional same-room reb_voice status relay
+        self.voices = None  # optional persistent TTS voice catalog, no extra LLM
+        self.speakers = None  # optional global voiceprint tracker, no extra LLM
         self.visual_observer = None  # fresh Room observation, not a second LLM
         self._visual_task = None
         self._visual_base_instructions = None
@@ -160,7 +198,7 @@ class RealtimeRobot:
         self._turn_prompt_snapshots = {}
         self._timeline_order = deque(maxlen=128)  # bounded 100+ turn performance window
 
-    def _timeline_snapshot(self, turn_id):
+    def _timeline_snapshot(self, turn_id, *, include_tts=True):
         record = self._turn_timelines.get(turn_id)
         if record is None:
             return None
@@ -190,7 +228,9 @@ class RealtimeRobot:
             else:
                 durations[name] = None
                 duration_sources[name] = "unobserved"
-        return {"turn_id": turn_id, "user_text": record.get("user_text"),
+        return {**record.get("identity", {}),
+                "turn_id": turn_id, "user_text": record.get("user_text"),
+                "tts": copy.deepcopy(record.get("tts")) if include_tts else None,
                 "times": times, "durations": durations,
                 "duration_sources": duration_sources,
                 "turn_source": record.get("turn_source"),
@@ -199,12 +239,96 @@ class RealtimeRobot:
                 "viseme_count": record.get("viseme_count", 0),
                 "provider_session_id": record.get("provider_session_id")}
 
+    @staticmethod
+    def _record_tts_evidence(record, event):
+        """Bounded per-turn wire proof, never derived from the latest output owner."""
+        if any(event.get(k) != v for k, v in record["identity"].items()):
+            return
+        kind = event["kind"]
+        if kind not in {"tts.style.locked", "tts.run_task", "tts.task_started",
+                        "tts.task_finished", "tts.text_submitted", "tts.error",
+                        "tts.stop_requested", "tts.segment_done",
+                        "tts.mixed.started", "tts.stream_finished"}:
+            return
+        evidence = record.setdefault("tts", {
+            "state": "locked", "task_id": None, "segment_id": None,
+            "speech_style": None, "parameters": {}, "streaming": None,
+            "voice_fingerprint": None,
+            "submitted_text": "", "submitted_chars": 0, "segments": [],
+            "segment_count": 0, "segments_omitted": 0, "text_truncated": False,
+            "additional_tasks": [], "mixed_mode": False,
+        })
+        if kind == "tts.mixed.started":
+            evidence["mixed_mode"] = True
+            return
+        if kind == "tts.stream_finished":
+            evidence["state"] = "completed"
+            return
+        task_id = event.get("task_id")
+        if task_id and evidence["task_id"] not in {None, task_id} and kind != "tts.text_submitted":
+            later = evidence["additional_tasks"]
+            if kind == "tts.run_task":
+                if len(later) >= 12:
+                    later.pop(0)
+                later.append({
+                    "task_id": task_id, "segment_id": event.get("segment_id"),
+                    "parameters": copy.deepcopy(event.get("parameters", {})),
+                    "voice_fingerprint": event.get("voice_fingerprint"),
+                    "streaming": event.get("streaming"),
+                    "speech_style": copy.deepcopy(event.get("speech_style")),
+                    "state": "run_sent",
+                })
+            else:
+                for item in reversed(later):
+                    if item["task_id"] == task_id:
+                        if kind == "tts.task_started":
+                            item["state"] = "started"
+                        elif kind == "tts.task_finished":
+                            item["state"] = "completed"
+                        break
+            return
+        if kind == "tts.style.locked":
+            evidence["speech_style"] = copy.deepcopy(event.get("speech_style"))
+        elif kind == "tts.run_task":
+            evidence.update(task_id=task_id, segment_id=event.get("segment_id"),
+                            voice_fingerprint=event.get("voice_fingerprint"),
+                            parameters=copy.deepcopy(event.get("parameters", {})),
+                            streaming=event.get("streaming"), state="run_sent",
+                            speech_style=copy.deepcopy(event.get("speech_style")))
+        elif kind == "tts.text_submitted":
+            text = event.get("text", "")
+            if not isinstance(text, str):
+                return
+            evidence["segment_count"] += 1
+            evidence["submitted_chars"] += len(text)
+            room = max(0, 8000 - len(evidence["submitted_text"]))
+            evidence["submitted_text"] += text[:room]
+            evidence["text_truncated"] |= len(text) > room
+            if len(evidence["segments"]) == 64:
+                evidence["segments"].pop(0)
+                evidence["segments_omitted"] += 1
+            evidence["segments"].append({
+                "index": evidence["segment_count"], "text": text[:1024],
+                "chars": len(text), "start_char": event.get("start_char"),
+                "end_char": event.get("end_char"), "task_id": task_id,
+                "segment_id": event.get("segment_id"), "ts_ms": event["ts_ms"],
+            })
+            evidence["text_truncated"] |= len(text) > 1024
+        elif kind == "tts.error":
+            evidence.update(state="failed", error=event.get("error", "unknown"))
+        elif evidence["state"] not in {"completed", "failed", "cancelled"}:
+            next_state = {"tts.task_started": "started", "tts.task_finished": "completed",
+                          "tts.segment_done": "completed", "tts.stop_requested": "cancelled"}[kind]
+            if evidence["mixed_mode"] and next_state == "completed":
+                next_state = "started"  # first segment done != entire mixed playback
+            evidence["state"] = next_state
+
     def _timeline_percentiles(self):
         fields = ("speech_to_asr_final_ms", "endpoint_to_asr_final_ms",
                   "llm_request_to_first_text_ms", "tts_submit_to_pcm_ms",
                   "first_pcm_to_room_ms", "endpoint_to_speaker_start_ms",
                   "room_to_speaker_drained_ms")
-        turns = [self._timeline_snapshot(turn) for turn in self._timeline_order]
+        turns = [self._timeline_snapshot(turn, include_tts=False) for turn in self._timeline_order]
         result = {}
         for field in fields:
             applicable = [turn for turn in turns if turn is not None and (
@@ -234,7 +358,18 @@ class RealtimeRobot:
                     if self.speech is not None)}
 
     def publish(self, kind, **fields):
-        if (self.wake and kind == "tts.playback.drained"
+        if kind == "tts.run_task":
+            # Exact sent controls only: never export clone identifiers or secrets.
+            wire = fields.get("parameters", {})
+            fields["parameters"] = {k: copy.deepcopy(wire[k]) for k in (
+                "text_type", "format", "sample_rate", "enable_ssml", "instruction",
+                "rate", "pitch", "volume", "language_hints",
+            ) if k in wire}
+        if kind == "tts.playback.drained" and (
+                self._sleep_closing or self._claim_deferred_sleep(
+                    fields.get("turn_id"), fields.get("source"))):
+            pass  # This goodbye closes the gate instead of opening a follow-up.
+        elif (self.wake and kind == "tts.playback.drained"
                 and fields.get("source") == "speaker"):
             # Only a validated physical speaker receipt opens the follow-up.
             self.wake.speaker_drained(fields.get("turn_id"))
@@ -272,6 +407,7 @@ class RealtimeRobot:
                 self._turn_prompt_snapshots[turn_id] = dict(self.prompt_snapshot)
             is_audio = fields.get("asr_final_ms") is not None
             self._turn_timelines[turn_id] = {"provider_session_id": self.session,
+                                            "identity": dict(self.robot.session_state()),
                                             "user_text": fields.get("user_text"),
                                             "turn_source": fields.get("turn_source", "user"),
                                             "input_mode": ("external" if fields.get("turn_source") == "external"
@@ -316,12 +452,16 @@ class RealtimeRobot:
                 self._turn_timelines[turn_id]["times"].setdefault(slot, event["ts_ms"])
                 self._turn_timelines[turn_id]["monotonic_times"].setdefault(slot, observed_t)
             record = self._turn_timelines.get(turn_id)
+            if record and kind.startswith("tts."):
+                self._record_tts_evidence(record, event)
             if record and kind == "turn.done":
                 record["status"] = fields.get("status", "failed")
             if record and kind in {
                 "action.state", "viseme.aligned", "tts.first_audio",
                 "tts.first_published", "tts.playback.started",
                 "tts.playback.drained", "tts.playback.stopped", "turn.done",
+                "tts.style.locked", "tts.run_task", "tts.task_started",
+                "tts.task_finished", "tts.error", "tts.stop_requested",
             }:
                 if kind == "viseme.aligned":
                     record["viseme_count"] += 1
@@ -356,7 +496,7 @@ class RealtimeRobot:
                 queue.get_nowait()
             queue.put_nowait(event)
         if kind in {"session.ready", "turn.done", "speech.stopped", "tts.stream_finished", "tts.playback.drained",
-                    "tts.playback.stopped", "response.done", "session.updated"}:
+                    "tts.playback.stopped", "tts.output_stopped", "response.done", "session.updated"}:
             callback = getattr(self, "event_activity", None)
             if callback:
                 callback()
@@ -383,6 +523,8 @@ class RealtimeRobot:
             "response_id": self.response_id,
             "speech_active": self.speech_active,
             "wakeword": (self.wake.snapshot() if self.wake else {"enabled": False}),
+            "speaker": (self.speakers.public() if self.speakers is not None
+                        else {"status": "unavailable", "name": None, "score": None}),
             "frames_sent": self.frames_sent,
             "frames_dropped": self.frames_dropped,
             "session_frames_sent": self.session_frames_sent,
@@ -395,6 +537,7 @@ class RealtimeRobot:
             "asr_delta_count": self.asr_delta_count,
             "first_text_ms": self.first_text_ms,
             "speech_output": self.speech.snapshot() if self.speech else {"state": "not_configured"},
+            "speech_expression": self.speech_expression_snapshot(),
             "visual_context": self.visual_context_snapshot(),
             "dialogue_policy": self.dialogue_snapshot(),
             "restored_context": self.restored_context,
@@ -404,6 +547,141 @@ class RealtimeRobot:
             "latency_percentiles": self._timeline_percentiles(),
             "latency_window": self._latency_window(),
         }
+
+    def turn_speech_style(self, turn_id, identity):
+        if identity != self.robot.session_state():
+            return None
+        style = self.language.style_for(turn_id)
+        self.language.locked_turns.add(turn_id)
+        # Default contextual delivery is independent of the acoustic sidecar switch.
+        return style
+
+    def speech_expression_snapshot(self):
+        identity = self.robot.session_state()
+        latest = next((turn_id for turn_id, record in reversed(self._turn_timelines.items())
+                       if record.get('tts') and all(record.get('identity', {}).get(key) == value
+                           for key, value in identity.items())), None)
+        latest_tts = self._timeline_snapshot(latest) if latest else None
+        expression = self.expression.snapshot() if self.expression else (
+            self._last_expression if self._last_expression_identity == identity else None)
+        speech_snapshot = self.speech.snapshot() if self.speech else {'state': 'not_configured'}
+        mixed_run = speech_snapshot.get('mixed_last_run') or {}
+        if (expression and speech_snapshot.get('mixed_sentences_submitted', 0)
+                and mixed_run.get('source') in {'llm_sentence', 'llm_tag'}):
+            expression['tts_applied'] = True
+        return {**self.robot.session_state(),
+                'enabled': bool(self.acoustic and self.acoustic.snapshot().get('enabled')),
+                'sidecar': self.acoustic.snapshot() if self.acoustic else {'state': 'disabled'},
+                'language': self.language.snapshot(), 'latest_tts': latest_tts,
+                'speech': speech_snapshot,
+                'association_rejected': self._acoustic_rejected,
+                'llm_expression_enabled': self.expression_enabled,
+                'llm_expression': expression}
+
+    def invalidate_acoustic(self, reason, *, reset_policy=False):
+        if self.acoustic:
+            self.acoustic.invalidate(reason)
+        self._acoustic_windows.clear()
+        self._acoustic_pending.clear()
+        if reset_policy:
+            self.language.reset(self.robot.session_state())
+
+    def accept_acoustic_observation(self, observation, *, pending=True):
+        observation = {**observation,
+            'audio_stream_epoch': observation.get('audio_stream_epoch', observation.get('stream_epoch')),
+            'source': 'qwen3_asr_sidecar',
+            'observed_monotonic_ms': observation.get('observed_monotonic_ms',
+                observation.get('observed_at', 0)*1000)}
+        if observation.get('kind') in {'speech_started', 'speech_stopped', 'error', 'failed'}:
+            return False
+        identity = self.robot.session_state()
+        if (any(observation.get(k) != identity.get(k) for k in identity)
+                or observation.get('audio_stream_epoch') != self.robot.audio.stream_epoch
+                or observation.get('source_id') != self.robot.audio.source_id):
+            self._acoustic_rejected += 1
+            return False
+        start, end = observation.get('main_sample_start'), observation.get('main_sample_end')
+        if not isinstance(start, int) or not isinstance(end, int) or end <= start:
+            return False
+        matches = []
+        for window in self._acoustic_windows:
+            stop = window['end'] if window['end'] is not None else self._main_audio_samples
+            overlap = max(0, min(end, stop)-max(start, window['start']))
+            if (not window.get('invalid') and stop > window['start']
+                    and overlap / (end-start) >= .6 and abs(start-window['start']) <= 3200):
+                matches.append(window)
+        if len(matches) != 1:
+            if pending:
+                self._acoustic_pending.append(observation)
+            self._acoustic_rejected += 1
+            return False
+        accepted = self.language.observe({**observation, 'utterance_id': matches[0]['local_id']})
+        if accepted:
+            self.publish('acoustic.observed', language=observation.get('language'),
+                         emotion=observation.get('emotion'), utterance_id=matches[0]['local_id'],
+                         observed_monotonic_ms=observation.get('observed_monotonic_ms'),
+                         application=self.language.application)
+            self.visual_changed()
+        return accepted
+
+    def _acoustic_window(self, event, *, stopped=False):
+        stamp = event.get('audio_end_ms' if stopped else 'audio_start_ms')
+        if type(stamp) is not int or stamp < 0:
+            return
+        if not stopped:
+            self._acoustic_windows.append({'start': stamp*16, 'end': None,
+                'main_item_id': event.get('item_id'), 'local_id': uuid4().hex, 'invalid': False})
+        else:
+            for window in reversed(self._acoustic_windows):
+                if window['main_item_id'] == event.get('item_id'):
+                    window['end'] = stamp*16
+                    window['invalid'] = event.get('reason') == 'turn_invalid'
+                    break
+        pending, self._acoustic_pending = self._acoustic_pending, deque(maxlen=8)
+        for observation in pending:
+            self.accept_acoustic_observation(observation, pending=False)
+
+    async def _language_tool(self, name, args, call_id):
+        cached = self.robot.turn_cache.get(self.turn_id) or {}
+        text = str(cached.get('user_text') or self.transcript or '')
+        if self.turn_id == self.external_turn_id or self.turn_identity != self.robot.session_state():
+            raise ValueError('language tool requires current user turn')
+        if name == 'select_reply_style':
+            if not {'language', 'dialect', 'emotion'} <= set(args) <= {
+                    'language', 'dialect', 'emotion', 'evidence', 'reason'}:
+                raise ValueError('invalid reply style arguments')
+            evidence = args.get('evidence', '')
+            if evidence and (not isinstance(evidence, str) or evidence not in text
+                             or re.search(r'旅游|地名|翻译|引用|[“”‘’]', text)):
+                raise ValueError('inference requires unquoted current lexical evidence')
+            self.language.reply_intent(**args)
+            self.visual_changed()
+            return {'status': 'selected', 'application': self.language.application,
+                    'persistent': False}
+        clear = name == 'clear_language_preference'
+        if set(args) != ({'scope'} if clear else {'scope', 'language', 'dialect'}):
+            raise ValueError('invalid preference arguments')
+        if clear:
+            scope = ('chat' if re.search(r'(?i)chat|本会话|这个会话|当前会话', text)
+                     else 'robot' if re.search(r'机器人|全局|所有会话', text) else None)
+            if (not re.search(r'清除|清空|删除|取消|恢复默认', text)
+                    or re.search(r'不要|别|不清|引用|翻译|[“”‘’\"\']', text) or scope != args['scope']):
+                raise ValueError('clear requires explicit current scope request')
+        else:
+            requested = explicit_language_request(text)
+            if not requested or any(requested.get(k) != args[k] for k in ('scope','language','dialect')):
+                raise ValueError('preference requires matching explicit current user request')
+        if self.language_preference_writer is None:
+            raise ValueError('preference writer not connected')
+        owned_socket, owned_epoch, owned_turn = self.socket, self._tool_epoch, self.turn_id
+        def validate_current():
+            if (self.socket is not owned_socket or self._tool_epoch != owned_epoch
+                    or self.turn_id != owned_turn or not self.ready
+                    or self.turn_identity != self.robot.session_state()):
+                raise ValueError('stale language preference tool')
+        return await self.language_preference_writer(
+            validate_current=validate_current, clear=clear, request_id=call_id, source_turn_id=self.turn_id,
+            expected_identity=self.turn_identity, **args)
 
     def diagnostic_snapshot(self):
         """Sensitive evidence, requested only by the selected robot's open drawer."""
@@ -479,7 +757,22 @@ class RealtimeRobot:
         return visual_instructions(
             self._visual_base_instructions + self._memory_bootstrap
             + (WAKE_ADDRESS_INSTRUCTIONS if self.wake else "")
-            + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now), description,
+            + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now)
+            + self.language.instruction_hint()
+            + (self.speakers.instruction_hint() if self.speakers is not None else "")
+            + (EXPRESSION_HINT if self.expression_enabled else "")
+            + ("\n【音色状态】目前实际选中的TTS音色："
+               + self.voices.label(self.voices.resolved(self.robot.session_state()))
+               + "；可用克隆音色："
+               + "、".join(row["name"] for row in self.voices.choices()[:20])
+               + "。用户明确要求换声线时调用select_voice；‘换一个音色’未指名时"
+               + "只能在唯一其他候选时自动切换，否则需要询问。"
+               + "只有工具结果status=selected才可告诉用户已安排下一次TTS换声；"
+               + "already_selected表示原本就是该声音；"
+               + "rejected、needs_selection或没调用工具都代表没有换。"
+               + "严禁把没切换的声音形容成已切换、让用户试听新音色。"
+               + "音色切换不改变人格、语言或情绪，也不能改变正在播出的PCM。"
+               if self.voices and self.voices.choices() else ""), description,
         )
 
     def memory_changed(self):
@@ -602,6 +895,20 @@ class RealtimeRobot:
                 "confirmed_seq": self._visual_confirmed_seq,
                 "provider_session_id": self.session}
 
+    async def note_speaker(self):
+        """Push the latest speaker hint before the next reply, without blocking PCM."""
+        if self._stopping or self.speakers is None:
+            return
+        info = self.speakers.public()
+        self.publish("speaker.updated", status=info.get("status"), name=info.get("name"))
+        if (not self.ready or self.socket is None or self._visual_base_instructions is None):
+            return
+        try:
+            await self._send_instruction_update(self.socket, self.robot.generation)
+            self.publish("speaker.context.sent", status=info.get("status"), name=info.get("name"))
+        except Exception as exc:
+            self.publish("speaker.context.failed", reason=type(exc).__name__)
+
     def visual_changed(self):
         """Room callbacks stay nonblocking; only the latest scene is sent."""
         if (not self.ready or self.socket is None or self._stopping
@@ -620,6 +927,169 @@ class RealtimeRobot:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
+    async def _send_instruction_update(self, socket, generation, confirm=None):
+        """One writer for coalesced context and ordered typed-language changes."""
+        async with self._instruction_send_lock:
+            if self.socket is not socket or generation != self.robot.generation or not self.ready:
+                raise RobotUnavailableError("stale instruction update")
+            description = self._fresh_visual()
+            instructions = self._combined_instructions(description)
+            if instructions is None or instructions == self._visual_sent_instructions:
+                if confirm is not None and (self.prompt_snapshot or {}).get("instructions") == instructions:
+                    confirm.set()
+                elif confirm is not None:
+                    self._instruction_wait = (instructions, confirm)
+                return
+            sent_hint = self.dialogue.instruction_hint()
+            language_revision = self.language.revision
+            self._language_pending_update = (instructions, language_revision)
+            if confirm is not None:
+                self._instruction_wait = (instructions, confirm)
+            async with asyncio.timeout(2):
+                await socket.send({"type": "session.update", "session": {"instructions": instructions}})
+            if self.socket is not socket or generation != self.robot.generation:
+                raise RobotUnavailableError("stale instruction update after send")
+            changed_visual = description != self._visual_sent_text
+            changed_dialogue = sent_hint != self._dialogue_sent_hint
+            self._visual_sent_text = description
+            self._visual_sent_instructions = instructions
+            self._dialogue_sent_hint = sent_hint
+            self._language_sent_revision = language_revision
+            self.publish("language.context.sent", revision=language_revision)
+            self._visual_last_send_at = time.monotonic()
+            if changed_visual:
+                self._visual_sent_seq += 1
+                self.publish("vision.context.sent", visual_present=bool(description),
+                             visual_seq=self._visual_sent_seq, provider_session_id=self.session)
+            if changed_dialogue:
+                self.publish("dialogue.policy.sent", **self.dialogue.snapshot())
+
+    def _replace_persona_text(self):
+        text, snapshot = session_instructions(
+            self.robot.persona_id, self.persona_profiles, self.social_state,
+            self._persona_display_name, physical_actions=self._persona_physical,
+        )
+        self._persona_text = text
+        self._visual_base_instructions = text + self._instruction_tail
+        return snapshot
+
+    async def _confirm_live_instructions(self):
+        """Wait until this connection accepts the prompt already sent on it."""
+        event = asyncio.Event()
+        try:
+            await self._send_instruction_update(
+                self.socket, self.robot.generation, confirm=event)
+            if not event.is_set():
+                await asyncio.wait_for(event.wait(), 2)
+        except TimeoutError as exc:
+            raise RobotUnavailableError("persona instruction update was not confirmed") from exc
+        finally:
+            if self._instruction_wait is not None and self._instruction_wait[1] is event:
+                self._instruction_wait = None
+
+    async def _restore_persona_style(self, identity, previous, old_text, old_base, old_snapshot):
+        self._persona_text = old_text
+        self._visual_base_instructions = old_base
+        self.persona_snapshot = old_snapshot
+        if previous is None:
+            self.social_state.pop("persona_style", None)
+        else:
+            self.social_state["persona_style"] = previous
+        robot_id, chat_id, persona_id = (
+            identity["robot_id"], identity["chat_id"], identity["persona_id"])
+
+        def undo():
+            if previous is None:
+                with self.robot.store.connect() as db:
+                    db.execute(
+                        """DELETE FROM conversation_social_state
+                           WHERE robot_id=? AND chat_id=? AND persona_id=? AND state_key='persona_style'""",
+                        (robot_id, chat_id, persona_id),
+                    )
+                return
+            self.robot.store.upsert_social_state(
+                robot_id, chat_id, persona_id, "persona_style", previous["value"],
+                source=previous["source"], source_turn_id=previous.get("source_turn_id"),
+                generation=previous["generation"], expires_at_ms=previous.get("expires_at_ms"),
+                updated_ms=previous.get("updated_ms") or time.time_ns() // 1_000_000,
+            )
+
+        try:
+            await asyncio.to_thread(undo)
+        except Exception:
+            logger.exception("persona style rollback failed")
+        try:
+            if self.ready and self.socket is not None:
+                await self._send_instruction_update(self.socket, self.robot.generation)
+        except Exception:
+            logger.warning("persona style prompt restore failed")
+
+    async def _commit_persona_style(self, style_id):
+        identity = dict(self.turn_identity)
+        previous = self.social_state.get("persona_style")
+        previous = dict(previous) if isinstance(previous, dict) else None
+        old_text, old_base = self._persona_text, self._visual_base_instructions
+        old_snapshot = self.persona_snapshot
+        now_ms = time.time_ns() // 1_000_000
+        written = False
+        try:
+            await asyncio.to_thread(
+                self.robot.store.upsert_social_state,
+                identity["robot_id"], identity["chat_id"], identity["persona_id"],
+                "persona_style", style_id,
+                source="user_setting", source_turn_id=self.turn_id,
+                generation=identity["generation"], expires_at_ms=None, updated_ms=now_ms,
+            )
+            written = True
+            if self.turn_identity != identity or self.robot.session_state() != identity:
+                raise ValueError("stale persona style switch")
+            self.social_state["persona_style"] = {
+                "value": style_id, "source": "user_setting", "source_turn_id": self.turn_id,
+                "generation": identity["generation"], "expires_at_ms": None, "updated_ms": now_ms,
+            }
+            snapshot = self._replace_persona_text()
+            await self._confirm_live_instructions()
+            if self.turn_identity != identity or not self.ready or self.socket is None:
+                raise ValueError("stale persona style switch")
+            self.persona_snapshot = {
+                **(old_snapshot or {}), **self.robot.session_state(), **snapshot,
+                "provider_session_id": self.session,
+            }
+            self.publish("persona.style.selected", style_id=style_id,
+                         style_label=snapshot.get("label"), effective="next_reply")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("persona style apply failed: %s", type(exc).__name__)
+            if written:
+                await self._restore_persona_style(
+                    identity, previous, old_text, old_base, old_snapshot)
+            raise ValueError("persona style was not applied") from exc
+
+    async def _select_persona_style(self, args):
+        if set(args) != {"style_name"}:
+            raise ValueError("expected style_name")
+        requested = args["style_name"]
+        if type(requested) is not str or len(requested) > 40:
+            raise ValueError("invalid style_name")
+        if self.turn_identity != self.robot.session_state():
+            raise ValueError("stale persona style switch")
+        current = self.robot.turn_cache.get(self.turn_id) or {}
+        utterance = str(current.get("user_text") or self.transcript or "")
+        style_id, options = resolve_persona_style_request(
+            self.robot.persona_id, self.persona_profiles, self.social_state,
+            requested.strip(), utterance,
+        )
+        if style_id is None:
+            return {"status": "needs_selection", "style_changed": False, "options": options}
+        label = self.persona_profiles[style_id]["label"]
+        if style_id == active_style_id(
+                self.robot.persona_id, self.persona_profiles, self.social_state):
+            return {"status": "already_selected", "style_changed": False, "style_label": label}
+        await self._commit_persona_style(style_id)
+        return {"status": "selected", "style_changed": True, "style_id": style_id,
+                "style_label": label, "effective": "next_reply"}
+
     async def _visual_loop(self, socket, generation):
         try:
             while (self.ready and not self._stopping and self.socket is socket
@@ -632,30 +1102,14 @@ class RealtimeRobot:
                     if remaining > 0:
                         await asyncio.sleep(remaining)
                         continue  # choose the newest scene after the wait
-                    sent_hint = self.dialogue.instruction_hint()
                     try:
-                        async with asyncio.timeout(2):
-                            await socket.send({"type": "session.update",
-                                               "session": {"instructions": instructions}})
+                        await self._send_instruction_update(socket, generation)
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
                         self.publish("vision.context.failed" if description != self._visual_sent_text
                                      else "dialogue.policy.failed", reason=type(exc).__name__)
                         return
-                    changed_visual = description != self._visual_sent_text
-                    changed_dialogue = sent_hint != self._dialogue_sent_hint
-                    self._visual_sent_text = description
-                    self._visual_sent_instructions = instructions
-                    self._dialogue_sent_hint = sent_hint
-                    self._visual_last_send_at = time.monotonic()
-                    if changed_visual:
-                        self._visual_sent_seq += 1
-                        self.publish("vision.context.sent", visual_present=bool(description),
-                                     visual_seq=self._visual_sent_seq,
-                                     provider_session_id=self.session)
-                    if changed_dialogue:
-                        self.publish("dialogue.policy.sent", **self.dialogue.snapshot())
                 now_ms = time.time_ns() // 1_000_000
                 has_expiring_social = any(type(row.get("expires_at_ms")) is int
                                           and row["expires_at_ms"] > now_ms
@@ -685,6 +1139,12 @@ class RealtimeRobot:
 
     async def _stop_impl(self):
         self._stopping = True
+        await self._cancel_sleep_tasks()
+        if self.speakers is not None:
+            self.speakers.reset()
+        self.invalidate_acoustic("stop", reset_policy=True)
+        if self.acoustic:
+            await self.acoustic.stop()
         if self.wake:
             self.wake.reset()
         self._wake_held_events.clear()
@@ -748,6 +1208,11 @@ class RealtimeRobot:
             self.start()
 
     def _reset_turn(self):
+        if self.expression is not None:
+            self._last_expression = self.expression.snapshot()
+            self._last_expression_identity = dict(self.turn_identity) if self.turn_identity else None
+        self.expression = None
+        self._expression_raw = ""
         self.turn_id = self.response_id = None
         self.external_turn_id = None
         self._external_text_only = False
@@ -781,6 +1246,37 @@ class RealtimeRobot:
         return stale
 
     async def _interrupt_active_turn(self, reason):
+        # Retire old reply style and cloud observations without erasing the admitted
+        # new user's stable request/candidate or persisted language defaults.
+        explicit, style_request = self.language.explicit, dict(self.language.style_request)
+        serious_context = self.language.serious_context
+        window = self._acoustic_windows[-1] if self._acoustic_windows else None
+        observation = self.language.observation
+        current_observation = (observation if window and (observation or {}).get('utterance_id')
+                               == window['local_id'] else None)
+        self.language.reset(self.robot.session_state())
+        if current_observation:
+            self.language.observe(current_observation)
+        self.language.explicit, self.language.style_request = explicit, style_request
+        self.language.serious_context = serious_context
+        self.language._refresh_revision()
+        self.invalidate_acoustic('user_interrupt')
+        if window and window['main_item_id'] == self.pending_audio_item_id:
+            self._acoustic_windows.append(window)
+        # Snapshot ownership before cancelling TTS (which clears its turn_id).
+        interrupted_turn = (self.speech.turn_id if self.speech and self.speech.turn_id
+                            else self.turn_id)
+        unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
+                   if self.speech and self.speech.turn_id else set())
+        response_id = self.response_id
+        if response_id:
+            self._cancelled_response_ids.add(response_id)
+            self.response_id = None
+        # Stop independent TTS before awaiting SQLite, tools or Provider I/O.
+        speech_cancel = (asyncio.create_task(self.speech.cancel(reason))
+                         if self.speech and self.speech.turn_id else None)
+        if speech_cancel:
+            await asyncio.sleep(0)
         await self._cancel_tools()
         # response.done can precede the end of independent TTS playback.
         # A confirmed barge-in must retire that finished-but-unheard output,
@@ -788,20 +1284,15 @@ class RealtimeRobot:
         if reason in {"stable_asr_prefix", "valid_smart_turn", "meaningful_ambient"}:
             if self.dialogue.mark_interrupt():
                 self._dialogue_changed()
-        response_id = self.response_id
         if self.actions is not None:
             await self.actions.cancel_pending(
                 self.robot.config.robot_id,
-                self.speech.turn_id if self.speech and self.speech.turn_id else self.turn_id,
+                interrupted_turn,
             )
         if response_id:
-            self._cancelled_response_ids.add(response_id)
-            self.response_id = None
             await self._request_response_cancel(expected_id=response_id)
-        unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
-                   if self.speech and self.speech.turn_id else set())
-        if self.speech and self.speech.turn_id:
-            await self.speech.cancel(reason)
+        if speech_cancel:
+            await speech_cancel
         if unheard and self.socket and self.ready:
             await self._delete_unheard_items(unheard)
         if self.turn_id:
@@ -819,6 +1310,15 @@ class RealtimeRobot:
             self._visual_sent_seq = self._visual_confirmed_seq = 0
             self._visual_last_send_at = 0.0
             try:
+                self.invalidate_acoustic('realtime_connection', reset_policy=True)
+                self._main_audio_samples = 0
+                self._language_pending_update = None
+                self._instruction_wait = None
+                if self.acoustic:
+                    self.acoustic.start()
+                self.language.load_preferences(await asyncio.to_thread(
+                    self.robot.store.load_language_preferences,
+                    self.robot.config.robot_id, self.robot.chat_id))
                 self.socket = self.socket_factory(self.url, self.key)
                 self._opening = True
                 self._open_done.clear()
@@ -841,10 +1341,13 @@ class RealtimeRobot:
                     self.robot.config.robot_id, self.robot.persona_id,
                 )
                 physical = bool(self.actions and self.actions.enabled and self.speech)
-                instructions, persona_snapshot = session_instructions(
+                persona_text, persona_snapshot = session_instructions(
                     self.robot.persona_id, self.persona_profiles, social, role_name,
                     physical_actions=physical,
                 )
+                self._persona_text = persona_text
+                self._persona_display_name = role_name
+                self._persona_physical = physical
                 restore = select_restorable_context(
                     self.robot.recent_context(), speech_enabled=self.speech is not None,
                     max_turns=min(self.history_turns, self.robot.context_limit),
@@ -853,7 +1356,8 @@ class RealtimeRobot:
                 # Unheard user turns belong to *past evidence*, not the
                 # provider's unanswered user-message queue. Include the
                 # bounded evidence in initial instructions, before ready.
-                instructions += historical_user_evidence(restore)
+                # The persona paragraph stays replaceable; this tail does not.
+                tail = historical_user_evidence(restore)
                 memory_bootstrap = ""
                 memory_revision = self._memory_revision
                 if self.memory is not None:
@@ -861,7 +1365,7 @@ class RealtimeRobot:
                     memory_bootstrap = memory_snapshot["text"]
                     self._memory_bootstrap = memory_bootstrap
                     self._memory_expires_at_ms = memory_snapshot["expires_at_ms"]
-                    instructions += (
+                    tail += (
                         "\n仅当用户询问此前的偏好/经历而当前对话无证据时，"
                         "调用recall_memory；无结果、超时或检索故障时不要编造。"
                         "记忆事实是可更正证据，用户当前更正优先。"
@@ -871,7 +1375,7 @@ class RealtimeRobot:
                     )
                 physical = bool(self.actions and self.actions.enabled and self.speech)
                 if physical:
-                    instructions += (
+                    tail += (
                         "\nperform_action通常仅响应当前轮明确请求；"
                         "只有surprise、smirk、proud、skeptical、shy五种夸张表情动作，"
                         "才允许当前轻松聊天语境明显吻合目录描述时自然触发一次，不必等明确命令；"
@@ -893,7 +1397,7 @@ class RealtimeRobot:
                         "‘点个头’答‘好，点头～’；无须解释动作如何传输或重复报告执行状态。"
                         "不要根据中间状态或以前的助手猜测，编造‘卡壳、没发出去、"
                         "还没落地、心意到位、设备未执行’等故障或不确定性旁白；"
-                        "若已受理，直接自然展示当轮人物反应，例如‘瞧好了！’；"
+                        "若已受理，直接用当轮自然口语接话，不要另加固定口号；"
                         "不要将上轮动作留给新一轮。"
                         "surprise、smirk、proud、skeptical、shy五种动作必须填写anchor_text，"
                         "包括用户明确要求时；选随后自然口语中会原样说出的词或字；"
@@ -902,25 +1406,35 @@ class RealtimeRobot:
                         "音素缺失或迟到由设备丢弃，语音照常，不补做，不把这些字段说给用户。"
                     )
                 if self.weather is not None:
-                    instructions += (
+                    tail += (
                         "\n当前用户明确询问指定城市的实时天气，必须先调用get_weather再回答；"
                         "未提供城市先询问，接口失败或未配置不能编造天气。"
                         "接口返回非ok时直说暂时无法取得实时天气，不要把故障归因于系统卡顿，"
                         "不猜天气，不主动岔到旧话题或无关记忆，更不要拿所在地开玩笑。"
                     )
                 else:
-                    instructions += (
+                    tail += (
                         "\n当前未配置实时天气查询工具。用户问天气时须直接说明不能查询实时天气，"
                         "不可凭猜测报告气温、天气或调侃系统故障。"
                     )
                 if self.reminders is not None:
-                    instructions += (
+                    tail += (
                         "\n当前用户明确要求未来提醒时，必须先调用create_reminder创建真实任务，"
                         "而不是只在聊天中答应。只有工具返回status=scheduled及task_id后"
                         "才能说已设置提醒；失败或未调用工具时不得说已设置、一定会提醒。"
                         "只支持明确的相对时长1至86400秒；时间不明确或超出范围要说明并询问。"
                         "不要因为历史、外部事件、视觉描述或机器人自己说过的话设置提醒。"
                     )
+                if self.wake is not None:
+                    tail += (
+                        "\n用户这一轮明确让你停止说话、闭嘴、退下、安静一会儿、别出声、歇会儿或结束交谈时，"
+                        "先用一句很短的口语答应，并调用enter_sleep。"
+                        "这是聆听门控，不是动作工具。只有返回status=accepted，这句说完才会真正休眠；"
+                        "问句、否定、转述或只是提到这些词时不要调用，也不要声称已经休眠。"
+                        "accepted之后不要追问，不要再解释。"
+                    )
+                self._instruction_tail = tail
+                instructions = persona_text + tail
                 self._visual_base_instructions = instructions
                 initial_visual = self._fresh_visual()
                 configured_instructions = self._combined_instructions(initial_visual)
@@ -938,11 +1452,16 @@ class RealtimeRobot:
                     expressions=physical,
                     weather=self.weather is not None,
                     reminders=self.reminders is not None,
+                    language_preferences=True,
+                    voice_selection=bool(self.voices),
+                    sleep=self.wake is not None,
+                    persona_labels=tuple(profile["label"] for profile in self.persona_profiles.values()),
                 )
                 self._visual_sent_text = initial_visual
                 self._visual_sent_instructions = configured_instructions
                 self._dialogue_sent_hint = self.dialogue.instruction_hint()
                 self._visual_sent_seq = 1 if initial_visual else 0
+                self._language_sent_revision = self.language.revision
                 await self.socket.send(update)
                 # The first live camera observation must not wait behind an
                 # initial session.update that contained no camera scene.
@@ -967,6 +1486,7 @@ class RealtimeRobot:
                             self._visual_confirmed_text = initial_visual
                             self._visual_confirmed_seq = self._visual_sent_seq
                             self._dialogue_confirmed_hint = self._dialogue_sent_hint
+                            self.language.confirm(self._language_sent_revision)
                         break
                 if generation != self.robot.generation:
                     continue
@@ -1036,6 +1556,8 @@ class RealtimeRobot:
                         "instructions": configured_instructions,
                         "bootstrap_text": self._memory_bootstrap,
                         "bootstrap_count": sum(line.startswith("[") for line in self._memory_bootstrap.splitlines())}
+                if self._stopping:
+                    return
                 self.ready = True
                 self.error = None
                 retry = 1
@@ -1048,22 +1570,46 @@ class RealtimeRobot:
                     self.wake.reset()  # Provider reconnect cannot inherit an open gate.
                     self._wake_held_events.clear()
                     self._wake_candidate_pending = False
+                if self.speakers is not None:
+                    self.speakers.reset()
                 self.audio_task = asyncio.create_task(self._audio_pump(generation))
-                while generation == self.robot.generation:
+                while generation == self.robot.generation and not self._stopping:
+                    recv_task = asyncio.create_task(self.socket.recv())
                     try:
-                        event = await asyncio.wait_for(
-                            self.socket.recv(), timeout=IDLE_RECV_CHECK_SECONDS,
+                        done, _ = await asyncio.wait(
+                            (recv_task, self.audio_task), timeout=IDLE_RECV_CHECK_SECONDS,
+                            return_when=asyncio.FIRST_COMPLETED,
                         )
-                    except asyncio.TimeoutError:
-                        if self._idle_recycle_due():
-                            idle_recycle = True
-                            self._idle_recycled = True
-                            self.publish("session.idle_recycle",
-                                         threshold_minutes=IDLE_SESSION_GAP_SECONDS // 60)
-                            break
-                        continue
+                        if self.audio_task in done:
+                            await self.audio_task
+                            raise ConnectionError("audio sender stopped unexpectedly")
+                        if recv_task not in done:
+                            if self._idle_recycle_due():
+                                idle_recycle = True
+                                self._idle_recycled = True
+                                self.publish("session.idle_recycle",
+                                             threshold_minutes=IDLE_SESSION_GAP_SECONDS // 60)
+                                break
+                            continue
+                        try:
+                            event = recv_task.result()
+                        except asyncio.TimeoutError:
+                            # Preserve Provider recv-timeout / idle recycle semantics.
+                            if self._idle_recycle_due():
+                                idle_recycle = True
+                                self._idle_recycled = True
+                                self.publish("session.idle_recycle",
+                                             threshold_minutes=IDLE_SESSION_GAP_SECONDS // 60)
+                                break
+                            continue
+                    finally:
+                        if not recv_task.done():
+                            recv_task.cancel()
+                        await asyncio.gather(recv_task, return_exceptions=True)
+                    if self._stopping:
+                        break
                     await self.handle(event, generation, background_tools=True)
-                if not idle_recycle:
+                if not idle_recycle and not self._stopping:
                     raise ConnectionError("session generation changed")
             except asyncio.CancelledError:
                 raise
@@ -1177,49 +1723,125 @@ class RealtimeRobot:
                                  "provider_session_id": self.session}
 
     async def _audio_pump(self, generation):
-        while self.ready and generation == self.robot.generation:
-            audio = self.robot.audio
-            frame, stream_epoch = await audio.next_frame()
-            try:
-                if (
-                    not self.ready
-                    or self._stopping
-                    or generation != self.robot.generation
-                    or stream_epoch != audio.stream_epoch
-                    or frame.source_id != audio.source_id
-                    or (time.monotonic() - frame.received_at) * 1000
-                    > self.robot.config.audio_max_age_ms
-                ):
-                    self.frames_dropped += 1
-                    continue
-                try:
-                    was_sleeping = self.wake is not None and self.wake.state == "SLEEP"
-                    chunks = (await self.wake.frames(frame.payload)
-                              if self.wake else (frame.payload,))
-                except RuntimeError as exc:
-                    self.error = str(exc)
-                    self.publish("wakeword.error", error=self.error)
-                    # KWS failure may not become an implicit open microphone.
-                    self._stopping = True
-                    self.ready = False
-                    if self.socket:
-                        await self.socket.close()
-                    return
-                if was_sleeping and self.wake.state == "WAKE_WAIT":
-                    self.publish("wakeword.detected",
-                                 trigger_lag_ms=self.wake.last_trigger_lag_ms,
-                                 preroll_ms=self.wake.snapshot()["preroll_ms"])
-                if self.wake and self.wake.state == "SLEEP" and self._wake_held_events:
-                    await self._reject_wake_response("window_expired")
-                for chunk in chunks:
-                    if (not self.ready or generation != self.robot.generation
-                            or stream_epoch != audio.stream_epoch):
-                        break
+        audio = self.robot.audio
+        frame_task = None
+        wake_input = None
+
+        def current(stream_epoch, source_id):
+            return (self.ready and not self._stopping
+                    and generation == self.robot.generation
+                    and stream_epoch == audio.stream_epoch
+                    and source_id == audio.source_id)
+
+        async def forward(chunks, stream_epoch, source_id):
+            for chunk in chunks:
+                if not current(stream_epoch, source_id):
+                    break
+                async with asyncio.timeout(AUDIO_SEND_DEADLINE_SECONDS):
                     await self.socket.send(audio_append(chunk))
-                    self.frames_sent += 1
-                    self.session_frames_sent += 1
-            finally:
-                audio.queue.task_done()
+                if self.speakers is not None:
+                    self.speakers.observe(chunk)
+                if self.acoustic:
+                    self.acoustic.offer(chunk, identity=self.robot.session_state(),
+                        stream_epoch=stream_epoch, source_id=source_id,
+                        received_at=time.monotonic(), sample_start=self._main_audio_samples)
+                self._main_audio_samples += len(chunk)//2
+                self.frames_sent += 1
+                self.session_frames_sent += 1
+
+        def announce_wake(was_sleeping):
+            if was_sleeping and self.wake and self.wake.state == "WAKE_WAIT":
+                self.publish("wakeword.detected",
+                             trigger_lag_ms=self.wake.last_trigger_lag_ms,
+                             preroll_ms=self.wake.snapshot()["preroll_ms"])
+
+        async def fail_wake(exc):
+            self.error = str(exc)
+            self.publish("wakeword.error", error=self.error)
+            # Native failure is fail-closed even when the sender stops PCM.
+            self._stopping = True
+            self.ready = False
+            if self.socket:
+                await self.socket.close()
+
+        async def next_frame():
+            return await audio.next_frame()
+
+        try:
+            while self.ready and generation == self.robot.generation:
+                if frame_task is None:
+                    frame_task = asyncio.create_task(next_frame())
+                inference = self.wake.task if self.wake and self.wake.streaming else None
+                if inference is not None:
+                    done, _ = await asyncio.wait(
+                        (frame_task, inference), return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if inference in done:
+                        # A reset/reconnect can retire the inference while we wait.
+                        if self.wake.task is not inference:
+                            continue
+                        if wake_input is None or not current(*wake_input):
+                            self.wake.reset()
+                            wake_input = None
+                            continue
+                        inference_age_ms = self.wake.inference_age_ms
+                        stale = inference_age_ms > self.robot.config.audio_max_age_ms
+                        was_sleeping = self.wake.state == "SLEEP"
+                        try:
+                            chunks = self.wake.complete_inference(discard=stale)
+                        except RuntimeError as exc:
+                            await fail_wake(exc)
+                            return
+                        if stale:
+                            self.publish("wakeword.stale_completion",
+                                         age_ms=round(inference_age_ms, 1))
+                            wake_input = None
+                            continue
+                        announce_wake(was_sleeping)
+                        await forward(chunks, *wake_input)
+                        # If both complete together, retain the dequeued frame:
+                        # pre-roll is sent first, then the new PCM exactly once.
+                        continue
+                else:
+                    await frame_task
+                frame, stream_epoch = frame_task.result()
+                frame_task = None
+                try:
+                    if (not current(stream_epoch, frame.source_id)
+                            or (time.monotonic() - frame.received_at) * 1000
+                            > self.robot.config.audio_max_age_ms):
+                        self.frames_dropped += 1
+                        continue
+                    identity = (stream_epoch, frame.source_id)
+                    if wake_input is not None and wake_input != identity:
+                        self.invalidate_acoustic('input_stream_changed', reset_policy=True)
+                        if self.wake:
+                            self.wake.reset()
+                        if self.speakers is not None:
+                            self.speakers.reset()
+                    wake_input = identity
+                    try:
+                        was_sleeping = self.wake is not None and self.wake.state == "SLEEP"
+                        chunks = (await self.wake.frames(frame.payload)
+                                  if self.wake else (frame.payload,))
+                    except RuntimeError as exc:
+                        await fail_wake(exc)
+                        return
+                    announce_wake(was_sleeping)
+                    if self.wake and self.wake.state == "SLEEP" and self._wake_held_events:
+                        await self._reject_wake_response("window_expired")
+                    await forward(chunks, stream_epoch, frame.source_id)
+                finally:
+                    audio.queue.task_done()
+        finally:
+            if frame_task is not None:
+                frame_task.cancel()
+                await asyncio.gather(frame_task, return_exceptions=True)
+                if not frame_task.cancelled() and frame_task.exception() is None:
+                    # A cancellation may race a completed queue.get().
+                    audio.queue.task_done()
+            if self.wake and self.wake.task is not None:
+                self.wake.reset()
 
     def _create_turn(self, user_text, *, audio=False, source="user"):
         if self.turn_id:
@@ -1250,6 +1872,11 @@ class RealtimeRobot:
             "cancel_source": None,
         })
         self.turn_id = turn_id
+        if self.expression_enabled:
+            self.expression = ExpressionStream()
+            self._expression_raw = ""
+            self._last_expression = None
+            self._last_expression_identity = None
         if audio:
             self.audio_turn_id = turn_id
             if self.wake:
@@ -1385,18 +2012,35 @@ class RealtimeRobot:
                         **self.robot.session_state()}
         if self.speech_active or self.turn_id or self.response_id:
             raise RobotUnavailableError("Realtime busy; do not create a duplicate response")
+        if source == "user":
+            # A new explicit message retires a goodbye that has not closed the gate.
+            self._disarm_sleep_wait()
         speech_at = self._last_provider_speech_started_t
         self.audio_turn_id = None
         self._external_text_only = text_only
+        if source == "user":
+            self.language.user_request(text, input_source="typed")
+            self.visual_changed()
         self._create_turn(text, source=source)
         owned_turn = self.turn_id
+        owned_socket, owned_identity = self.socket, dict(self.turn_identity)
+        def ensure_owned():
+            if (self.turn_id != owned_turn or self.socket is not owned_socket or not self.ready
+                    or self.turn_identity != owned_identity
+                    or self.robot.session_state() != owned_identity
+                    or self.speech_active or speech_at != self._last_provider_speech_started_t):
+                raise RobotUnavailableError("text submission cancelled or preempted")
         self.external_turn_id = self.turn_id if source == "external" else None
         try:
-            await self.socket.send({
+            if source == "user":
+                await self._send_instruction_update(owned_socket, self.robot.generation)
+            ensure_owned()
+            await owned_socket.send({
                 "type": "conversation.item.create",
                 "item": {"type": "message", "role": "user",
                          "content": [{"type": "input_text", "text": text}]},
             })
+            ensure_owned()
             if expected_identity is not None and any(
                 expected_identity.get(key) != self.robot.session_state()[key]
                 for key in ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
@@ -1406,7 +2050,10 @@ class RealtimeRobot:
                     (self.speech_active or speech_at != self._last_provider_speech_started_t)):
                 raise RobotUnavailableError("external response preempted by speech")
             self.publish("llm.request_started", turn_id=self.turn_id)
-            await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
+            ensure_owned()
+            # Accepted means the request was sent, not that playback finished.
+            # A fast provider may already complete and retire this owner during send.
+            await owned_socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
         except Exception:
             if self.turn_id == owned_turn:
                 self._finish("failed", cancel_source="send_failed")
@@ -1416,6 +2063,7 @@ class RealtimeRobot:
     async def cancel(self):
         # Retire the response before tool cancellation (which may await network
         # cleanup). A late response.done cannot promote this turn to completed.
+        self.invalidate_acoustic("user_cancel", reset_policy=True)
         cancelled_response = self.response_id
         owned_turn, socket, identity = self.turn_id, self.socket, self.robot.session_state()
         completed_unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
@@ -1430,6 +2078,11 @@ class RealtimeRobot:
             return (socket is self.socket and identity == self.robot.session_state()
                     and self.turn_id == owned_turn)
 
+        # Issue the stop before any action persistence or Provider network wait.
+        speech_cancel = (asyncio.create_task(self.speech.cancel("local_cancel"))
+                         if self.speech and self.speech.turn_id else None)
+        if speech_cancel:
+            await asyncio.sleep(0)
         await self._cancel_tools()
         if not still_owned():
             return self.snapshot()
@@ -1441,8 +2094,8 @@ class RealtimeRobot:
             await self._request_response_cancel(expected_id=cancelled_response)
         if not still_owned():
             return self.snapshot()
-        if self.speech:
-            await self.speech.cancel("local_cancel")
+        if speech_cancel:
+            await speech_cancel
         if not still_owned():
             return self.snapshot()
         if socket and self.ready and completed_unheard:
@@ -1461,23 +2114,106 @@ class RealtimeRobot:
         self.publish("context.unheard_delete_requested", count=len(item_ids),
                      provider_confirmed=False)
 
-    async def _enter_sleep(self, source, *, item_id=None):
-        """Revoke PCM and reply grants before waiting for remote cancellation."""
-        if not self.wake:
+    def _disarm_sleep_wait(self):
+        self._pending_sleep = None
+        task = self._sleep_wait_task
+        self._sleep_wait_task = None
+        if task is not None and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+
+    async def _cancel_sleep_tasks(self):
+        tasks = []
+        self._pending_sleep = None
+        for attr in ("_sleep_wait_task", "_deferred_sleep_task"):
+            task = getattr(self, attr)
+            setattr(self, attr, None)
+            if task is not None and not task.done():
+                task.cancel()
+                tasks.append(task)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _arm_deferred_sleep(self):
+        self._disarm_sleep_wait()
+        self._pending_sleep = {
+            "turn_id": self.turn_id,
+            "identity": dict(self.turn_identity),
+            "generation": self.robot.generation,
+        }
+
+    def _claim_deferred_sleep(self, turn_id, source):
+        pending = self._pending_sleep
+        if (not pending or pending.get("turn_id") != turn_id
+                or source not in {"speaker", "browser_test"}):
+            return False
+        if (pending.get("generation") != self.robot.generation
+                or pending.get("identity") != self.robot.session_state()):
+            self._disarm_sleep_wait()
+            return False
+        self._sleep_closing = True
+        self._disarm_sleep_wait()
+        self._deferred_sleep_task = asyncio.create_task(
+            self._enter_sleep("tool", keep_playback=True),
+        )
+        return True
+
+    async def _sleep_if_playback_missed(self, turn_id, generation, identity):
+        await asyncio.sleep(SLEEP_AFTER_REPLY_SECONDS)
+        pending = self._pending_sleep
+        if (not pending or pending.get("turn_id") != turn_id
+                or pending.get("generation") != generation
+                or pending.get("identity") != identity
+                or generation != self.robot.generation
+                or identity != self.robot.session_state()):
             return
-        self.wake.reset()
-        self._wake_candidate_pending = False
-        self.speech_active = False
-        self.pending_audio_item_id = None
-        self._candidate_playback_turn_id = None
-        self._candidate_confirmed = False
-        self.audio_turn_id = None
-        await self._reject_wake_response("sleep_command")
-        await self._interrupt_active_turn("sleep_command")
-        if item_id and self.socket and self.ready:
-            await self._delete_unheard_items({item_id})
-        self.transcript = ""
-        self.publish("wakeword.sleep_command", source=source)
+        self._pending_sleep = None
+        self._sleep_wait_task = None
+        self._sleep_closing = True
+        await self._enter_sleep("tool_timeout", keep_playback=True)
+
+    async def _settle_deferred_sleep(self, turn_id, text, has_speech, status):
+        pending = self._pending_sleep
+        if not pending or pending.get("turn_id") != turn_id:
+            return False
+        if (status != "completed"
+                or pending.get("generation") != self.robot.generation
+                or pending.get("identity") != self.robot.session_state()):
+            self._disarm_sleep_wait()
+            return False
+        if not has_speech or not str(text or "").strip():
+            await self._enter_sleep("tool", keep_playback=True)
+            return True
+        self._sleep_wait_task = asyncio.create_task(
+            self._sleep_if_playback_missed(
+                turn_id, pending["generation"], pending["identity"],
+            ),
+        )
+        return True
+
+    async def _enter_sleep(self, source, *, item_id=None, keep_playback=False):
+        """Close the listen gate. An accepted goodbye keeps playing."""
+        if not self.wake:
+            self._sleep_closing = False
+            return
+        self._disarm_sleep_wait()
+        try:
+            self.wake.reset()
+            self.invalidate_acoustic("sleep", reset_policy=True)
+            self._wake_candidate_pending = False
+            self.speech_active = False
+            self.pending_audio_item_id = None
+            self._candidate_playback_turn_id = None
+            self._candidate_confirmed = False
+            self.audio_turn_id = None
+            await self._reject_wake_response("sleep_command")
+            if not keep_playback:
+                await self._interrupt_active_turn("sleep_command")
+                if item_id and self.socket and self.ready:
+                    await self._delete_unheard_items({item_id})
+            self.transcript = ""
+            self.publish("wakeword.sleep_command", source=source)
+        finally:
+            self._sleep_closing = False
 
     async def _reject_wake_response(self, reason):
         """Fail closed for provider replies emitted before authoritative ASR."""
@@ -1580,6 +2316,14 @@ class RealtimeRobot:
         if kind == "session.updated":
             config = event.get("session") or {}
             instructions = config.get("instructions")
+            wait = self._instruction_wait
+            if wait is not None and isinstance(instructions, str) and instructions == wait[0]:
+                wait[1].set()
+                if self.prompt_snapshot is not None:
+                    self.prompt_snapshot = {**self.prompt_snapshot, "instructions": instructions}
+            if (self._language_pending_update is not None and isinstance(instructions, str)
+                    and instructions == self._language_pending_update[0]):
+                self.language.confirm(self._language_pending_update[1])
             if (isinstance(instructions, str)
                     and instructions == self._visual_sent_instructions):
                 visual_changed = self._visual_confirmed_seq != self._visual_sent_seq
@@ -1587,6 +2331,7 @@ class RealtimeRobot:
                 self._visual_confirmed_text = self._visual_sent_text
                 self._visual_confirmed_seq = self._visual_sent_seq
                 self._dialogue_confirmed_hint = self._dialogue_sent_hint
+                self.language.confirm(self._language_sent_revision)
                 if self.prompt_snapshot is not None:
                     # Preserve older turn/session evidence; do not rewrite the
                     # instruction snapshot under already-finished turns.
@@ -1646,12 +2391,20 @@ class RealtimeRobot:
                 self.publish("transcript.stale", item_id=new_item_id,
                              event_kind=kind, pending_item_id=self.pending_audio_item_id)
                 return
+            # The user spoke again before the goodbye finished: keep listening.
+            self._disarm_sleep_wait()
             if self.pending_audio_item_id and self.pending_audio_item_id != new_item_id:
                 self._obsolete_audio_item(self.pending_audio_item_id)
             # A new microphone candidate owns a new logical utterance even if
             # the previous provider response finished before its ASR final.
+            self._acoustic_window(event)
+            self.language.explicit = None
+            self.language.style_request = {}
+            self.language.serious_context = False
             self.audio_turn_id = None
             self.speech_active = True
+            if self.speakers is not None:
+                self.speakers.begin()
             self._candidate_confirmed = False
             self._candidate_playback_turn_id = (
                 self.speech.turn_id if self.speech and self.speech.turn_id else None
@@ -1677,6 +2430,7 @@ class RealtimeRobot:
         elif kind == "input_audio_buffer.speech_stopped":
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
+            self._acoustic_window(event, stopped=True)
             invalid = event.get("reason") == "turn_invalid"
             if self.wake:
                 self.wake.speech_stopped(event.get("item_id"), invalid=invalid)
@@ -1692,6 +2446,8 @@ class RealtimeRobot:
                 self.last_provider_stopped_ms = time.time_ns() // 1_000_000
                 self._last_provider_stopped_t = time.monotonic()
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
+            if self.speakers is not None:
+                await self.speakers.finish(invalid=invalid)
             if (invalid and not self._candidate_confirmed
                 and self.speech and self.speech.turn_id):
                 self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
@@ -1737,6 +2493,8 @@ class RealtimeRobot:
             self.publish("transcript.delta", text=event.get("text", ""),
                          stash=event.get("stash", ""), item_id=event.get("item_id"))
             stable = str(event.get("text") or "").strip()
+            if self.language.user_request(stable):
+                self.visual_changed()
             # Demo v1.7 confirms an interruption from the stable text only,
             # never speculative stash or local microphone energy.
             meaningful = len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", stable)) >= 3
@@ -1823,6 +2581,8 @@ class RealtimeRobot:
                         "set_conversation_turn_user_text",
                         self.robot.config.robot_id, target, self.transcript, now,
                     )
+            if self.language.user_request(self.transcript):
+                self.visual_changed()
             self.publish("transcript.done", text=self.transcript, turn_id=target)
             if target:
                 changed = self.dialogue.observe_user(target, self.transcript)
@@ -1835,6 +2595,7 @@ class RealtimeRobot:
             if self.wake:
                 await self._release_wake_response(generation, background_tools=background_tools)
         elif kind == "response.created":
+            self.language.response_started()
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)
         elif kind == "response.output_item.added":
@@ -1848,18 +2609,55 @@ class RealtimeRobot:
         elif kind == "response.text.delta":
             if not self.turn_id:
                 self._create_turn(self.transcript, audio=True)
+            self.language.first_text(self.turn_id)
             chunk = event.get("delta", "")
+            if self.expression is not None:
+                self._expression_raw += chunk
+                before = self.expression.changes, len(self.expression.issues)
+                chunk = self.expression.feed(chunk)
+                if self.speech and getattr(self.speech, "mixed_enabled", False) and not self._external_text_only:
+                    events = self.expression.take_events()
+                    if events:
+                        await self.speech.expression_events(self.turn_id, self.turn_identity, events)
+                if before != (self.expression.changes, len(self.expression.issues)):
+                    self.publish("speech.expression.observed", turn_id=self.turn_id,
+                                 **self.expression.snapshot())
             self.text += chunk
-            if self.first_text_ms is None and self.began is not None:
+            if chunk and self.first_text_ms is None and self.began is not None:
                 self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
-            self.publish("text.delta", turn_id=self.turn_id, delta=chunk, text=self.text)
+            if chunk or self.expression is None:
+                self.publish("text.delta", turn_id=self.turn_id, delta=chunk, text=self.text)
             if self.speech and chunk and not self._external_text_only:
                 await self.speech.feed(self.turn_id, self.turn_identity, chunk)
                 if self.actions is not None:
                     self.actions.on_text_ready({"robot_id": self.robot.config.robot_id,
                                                 "turn_id": self.turn_id})
         elif kind == "response.text.done":
+            self.language.first_text(self.turn_id)
             complete = event.get("text", self.text)
+            if self.expression is not None:
+                # Some providers return only final text, others append a suffix
+                # after the last delta. Never replay an already-spoken prefix.
+                suffix = (complete[len(self._expression_raw):]
+                          if complete.startswith(self._expression_raw) else "")
+                before = self.expression.changes, len(self.expression.issues)
+                extra = self.expression.feed(suffix) + self.expression.finish()
+                if self.speech and getattr(self.speech, "mixed_enabled", False) and not self._external_text_only:
+                    events = self.expression.take_events()
+                    if events:
+                        await self.speech.expression_events(self.turn_id, self.turn_identity, events)
+                if before != (self.expression.changes, len(self.expression.issues)):
+                    self.publish("speech.expression.observed", turn_id=self.turn_id,
+                                 **self.expression.snapshot())
+                if extra:
+                    self.text += extra
+                    if self.first_text_ms is None and self.began is not None:
+                        self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
+                    self.publish("text.delta", turn_id=self.turn_id, delta=extra,
+                                 text=self.text)
+                    if self.speech and not self._external_text_only:
+                        await self.speech.feed(self.turn_id, self.turn_identity, extra)
+                complete = self.text
             if (self.speech and not self._external_text_only
                     and not self.text and complete and self.turn_id):
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)
@@ -1867,6 +2665,7 @@ class RealtimeRobot:
                     self.actions.on_text_ready({"robot_id": self.robot.config.robot_id,
                                                 "turn_id": self.turn_id})
             self.text = complete
+            self.language.response_text_done(self.text)
             self.publish("text.done", turn_id=self.turn_id, text=self.text)
         elif kind == "response.function_call_arguments.done":
             if background_tools:
@@ -1879,10 +2678,28 @@ class RealtimeRobot:
             self.response_id = None
             if self.followup_needed and status == "completed":
                 self.followup_needed = False
-                await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
-                self.publish("tool.followup")
-                return
+                pending = self._pending_sleep
+                if not (pending and pending.get("turn_id") == self.turn_id
+                        and str(self.text or "").strip()):
+                    await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
+                    self.publish("tool.followup")
+                    return
+            if self.expression is not None and self.turn_id:
+                # response.text.done is not guaranteed on all provider paths.
+                # Never discard a trailing ordinary bracketed utterance.
+                tail = self.expression.finish()
+                if tail:
+                    self.text += tail
+                    self.publish("text.delta", turn_id=self.turn_id, delta=tail,
+                                 text=self.text)
+                    if self.speech and not self._external_text_only and status == "completed":
+                        await self.speech.feed(self.turn_id, self.turn_identity, tail)
+            self.language.response_finished()
+            self.visual_changed()
             if self.turn_id:
+                finished_turn = self.turn_id
+                finished_text = self.text
+                has_speech = self.speech is not None and not self._external_text_only
                 if self.speech and not self._external_text_only:
                     if status == "completed":
                         await self.speech.finish(self.turn_id)
@@ -1890,7 +2707,9 @@ class RealtimeRobot:
                         await self.speech.cancel("response_failed")
                 self._finish(status if status in {"completed", "cancelled"} else "failed",
                              cancel_source=(response.get("status_details") or {}).get("reason"))
-                if self.wake and status == "completed":
+                settled = await self._settle_deferred_sleep(
+                    finished_turn, finished_text, has_speech, status)
+                if self.wake and status == "completed" and not settled:
                     self.wake.reply_finished(has_speaker=self.speech is not None)
             else:
                 self._reset_turn()
@@ -1941,20 +2760,59 @@ class RealtimeRobot:
                 raise ValueError("tool call budget exceeded")
             if not isinstance(arguments, str) or len(arguments) > 4096:
                 raise ValueError("invalid arguments size")
-            args = json.loads(arguments)
+            if name == "enter_sleep" and arguments.strip() in {"", "{}"}:
+                args = {}
+            else:
+                args = json.loads(arguments)
             if not isinstance(args, dict):
                 raise ValueError("expected object arguments")
             if self.turn_id == self.external_turn_id and name in {
                 "perform_action", "set_expression", "preview_action",
                 "forget_memory", "correct_memory", "recall_memory", "create_reminder",
-                "get_weather",
+                "get_weather", "select_persona_style", "enter_sleep",
             }:
                 raise ValueError("external_event_no_motion" if name in {
                     "perform_action", "set_expression", "preview_action"
                 } else "external_event_no_reminder" if name == "create_reminder"
                 else "external_event_no_tools" if name == "get_weather"
+                else "external_event_no_persona" if name == "select_persona_style"
+                else "external_event_no_sleep" if name == "enter_sleep"
                 else "external_event_no_memory_write")
-            if name == "create_reminder" and self.reminders is not None:
+            if name in {"set_language_preference", "clear_language_preference", "select_reply_style"}:
+                result = await self._language_tool(name, args, call_id)
+            elif name == "select_persona_style":
+                result = await self._select_persona_style(args)
+            elif name == "select_voice" and self.voices is not None:
+                if set(args) != {"voice_name", "scope"}:
+                    raise ValueError("expected voice_name and scope")
+                if (not isinstance(args["voice_name"], str)
+                        or not 1 <= len(args["voice_name"].strip()) <= 200):
+                    raise ValueError("invalid voice_name")
+                if args["scope"] not in {"chat", "robot"}:
+                    raise ValueError("invalid voice scope")
+                if self.turn_identity != self.robot.session_state():
+                    raise ValueError("stale voice switch")
+                current = self.robot.turn_cache.get(self.turn_id) or {}
+                utterance = str(current.get("user_text") or self.transcript or "")
+                if not re.search(r"换|切换|改成|换成|用.*(?:声音|音色)|恢复.*(?:声音|音色)", utterance):
+                    raise ValueError("voice selection requires explicit user request")
+                if args["scope"] == "robot" and not re.search(r"以后|所有|一直|全局|默认|每个", utterance):
+                    raise ValueError("robot-wide voice needs an explicit scope")
+                voice_id, alternatives = self.voices.resolve_request(
+                    self.turn_identity, args["voice_name"].strip(), utterance)
+                if voice_id is None:
+                    result = {
+                        "status": "needs_selection",
+                        "options": alternatives,
+                        "instruction": "音色尚未切换，请先问用户选择哪个音色。",
+                    }
+                else:
+                    result = await self.voices.select(self.turn_identity, voice_id, args["scope"])
+                    if result["status"] == "selected":
+                        self.publish("tts.voice.selected", voice_name=result["voice_name"],
+                                     scope=args["scope"], effective="next_tts_task")
+                        self.visual_changed()
+            elif name == "create_reminder" and self.reminders is not None:
                 if set(args) != {"text", "delay_seconds"}:
                     raise ValueError("expected text and delay_seconds")
                 if (not isinstance(args["text"], str)
@@ -2051,6 +2909,25 @@ class RealtimeRobot:
                     args["text"] if name == "correct_memory" else None,
                     source_turn_id=self.turn_id,
                 )
+            elif name == "enter_sleep":
+                if args:
+                    raise ValueError("enter_sleep takes no arguments")
+                if self.wake is None:
+                    raise ValueError("sleep gate unavailable")
+                if self.turn_identity != self.robot.session_state():
+                    raise ValueError("stale sleep request")
+                current = self.robot.turn_cache.get(self.turn_id) or {}
+                utterance = str(current.get("user_text") or self.transcript or "")
+                if not self.wake.presence.is_sleep_request(utterance):
+                    raise ValueError("sleep requires an explicit current request to stop")
+                result = {
+                    "status": "accepted",
+                    "effect": "after_this_reply",
+                    "instruction": (
+                        "只用一句很短的话答应。不要追问，不要再调用工具。"
+                        "这句说完才会休眠。已经答应过就不要再说话。"
+                    ),
+                }
             elif name == "preview_action":
                 if set(args) != {"description"}:
                     raise ValueError("expected exactly description")
@@ -2071,6 +2948,9 @@ class RealtimeRobot:
         if (self.socket is not socket or identity != self.robot.session_state()
                 or self.turn_id != turn_id or epoch != self._tool_epoch or not self.ready):
             return  # late I/O belongs to the retired turn, never the new conversation
+        if (name == "enter_sleep" and valid and isinstance(result, dict)
+                and result.get("status") == "accepted"):
+            self._arm_deferred_sleep()
         self.publish("tool.result", turn_id=turn_id, call_id=call_id,
                      name=name, arguments=arguments, result=result, valid=valid,
                      provider_session_id=self.session,
@@ -2092,9 +2972,58 @@ class RealtimeRobot:
                 model_result = {"status": "delivery_unconfirmed"}
             # Rejections keep their actual reason so callers and the LLM can
             # distinguish a prohibited request from an asynchronous wait.
+        elif name == "select_voice" and isinstance(result, dict):
+            status = str(result.get("status", "unavailable"))
+            if status == "selected":
+                model_result = {
+                    "status": "selected", "voice_changed": True,
+                    "voice_name": result["voice_name"],
+                    "effective": "next_tts_task",
+                    "instruction": "音色已写入当前偏好；仅下一次TTS任务使用，勿声称当前正在播的新声音。",
+                }
+            else:
+                model_result = {
+                    "status": status, "voice_changed": False,
+                    "instruction": (
+                        "实际音色没有变化；不得说已切换或让用户试听新声线。"
+                        + (" 请询问用户选择：" + "、".join(result["options"])
+                           if status == "needs_selection" else "")
+                    ),
+                }
+        elif name == "select_persona_style" and isinstance(result, dict):
+            status = str(result.get("status", "unavailable"))
+            if status == "selected":
+                model_result = {
+                    "status": "selected", "style_changed": True,
+                    "style_label": result["style_label"], "effective": "next_reply",
+                    "instruction": (
+                        f"当前会话性格已是「{result['style_label']}」，没有新建会话。"
+                        "用这个性格自然说一句，接住用户刚才的话；"
+                        "不要念固定确认稿，不要复述风格规则。"
+                    ),
+                }
+            elif status == "needs_selection":
+                model_result = {
+                    "status": "needs_selection", "style_changed": False,
+                    "instruction": "性格没有变。只问一句要哪一种：" + "、".join(result["options"]),
+                }
+            elif status == "already_selected":
+                model_result = {
+                    "status": "already_selected", "style_changed": False,
+                    "style_label": result.get("style_label"),
+                    "instruction": f"本来就是「{result.get('style_label')}」，不要说刚刚换成了它。",
+                }
+            else:
+                model_result = {
+                    "status": status, "style_changed": False,
+                    "instruction": "性格没有变化，不要说已经换成新性格。",
+                }
         await self.socket.send({
             "type": "conversation.item.create",
             "item": {"type": "function_call_output", "call_id": call_id,
                      "output": json.dumps(model_result, ensure_ascii=False)},
         })
-        self.followup_needed = True
+        self.followup_needed = not (
+            name == "enter_sleep" and valid and isinstance(result, dict)
+            and result.get("status") == "accepted" and bool(self.text.strip())
+        )

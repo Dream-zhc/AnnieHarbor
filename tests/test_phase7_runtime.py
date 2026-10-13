@@ -48,7 +48,7 @@ def room_server():
     )
 
 
-def runtime(tmp_path, weather_client=None):
+def runtime(tmp_path, weather_client=None, persona_profiles=None):
     Publisher.instances.clear()
     FakeSocket.instances.clear()
     return HarborRuntime(
@@ -57,6 +57,7 @@ def runtime(tmp_path, weather_client=None):
         room_server(),
         realtime_key="fake-key",
         realtime_socket_factory=FakeSocket,
+        persona_profiles=persona_profiles,
         tts_voice="fake-voice",
         room_tts_factory=Publisher,
         room_action_factory=Publisher,

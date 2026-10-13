@@ -63,6 +63,20 @@ class EventPolicy:
                 decision = "need_response"
                 prompt = "有人触摸了你的头顶。这是外部传感器事件，不是用户说的话。简短自然回应，不要执行物理动作。"
                 self.cooldown[key] = now_ms + 15_000
+        elif not reason and event.kind == "sensor.radar":
+            # Embedded already decided the person is too close. Reply once,
+            # then ignore repeats until the cooldown so a held trigger cannot spam.
+            if key in self.cooldown:
+                decision, reason = "dropped", "cooldown"
+            else:
+                decision = "need_response"
+                prompt = (
+                    "现场情况：有人靠得很近。这不是用户说的话，也不是要你照念的台词。"
+                    "按你当前的性格，并结合正在进行的对话，自己组织一句自然的口头回应。"
+                    "可以接住刚才的话题，也可以就这次靠近做出符合你性格的反应。"
+                    "不要使用固定套话，不要复述这段说明，不要提及传感器、雷达或具体数字，不要执行物理动作。"
+                )
+                self.cooldown[key] = now_ms + 15_000
         elif not reason:
             reason = "context_only"
 
@@ -75,6 +89,8 @@ class EventPolicy:
             "summary": {
                 "level": event.payload.get("level"),
                 "sensor_id": str(event.payload.get("id", ""))[:64],
+                "distance": event.payload.get("distance")
+                if type(event.payload.get("distance")) in (int, float) else None,
                 "tracks_count": len(event.payload.get("tracks", []))
                 if isinstance(event.payload.get("tracks"), list) else None,
             },

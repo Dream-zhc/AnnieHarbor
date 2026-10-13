@@ -2,12 +2,17 @@
 // this worklet posts only transferable 16kHz mono S16LE 20ms PCM frames.
 class RoomCaptureProcessor extends AudioWorkletProcessor {
   constructor(options){
-    super();this.sourceCount=0;this.nextPosition=0;this.last=0;this.hasLast=false;
+    super();this.resampler=null;this.stopped=false;
+    globalThis.LibSampleRate.create(1,sampleRate,16000,{converterType:0}).then(src=>{
+      if(this.stopped){src.destroy();return;}
+      this.resampler=src;this.port.postMessage({type:'ready',resampler:'libsamplerate-best-2.1.2'});
+    }).catch(error=>{this.stopped=true;this.port.postMessage({type:'error',message:String(error)});});
     this.pending=[];this.levelSum=0;this.levelCount=0;this.levelBlocks=0;
     this.noiseFloor=null;
     this.gain=this.targetGain=Math.max(1,Math.min(4,options?.processorOptions?.gain??1));
     this.clipped=0;
     this.port.onmessage=event=>{
+      if(event.data?.type==='stop'){this.stopped=true;this.resampler?.destroy();this.resampler=null;return;}
       if(event.data?.type==='gain'&&Number.isFinite(event.data.value)){
         this.targetGain=Math.max(1,Math.min(4,event.data.value));
         this.noiseFloor=null; // old floor is not comparable after a gain change
@@ -18,7 +23,8 @@ class RoomCaptureProcessor extends AudioWorkletProcessor {
   process(inputs,outputs){
     const input=inputs[0]?.[0];
     if(outputs[0]?.[0])outputs[0][0].fill(0);
-    if(!input?.length)return true;
+    if(this.stopped)return false;
+    if(!input?.length||!this.resampler)return true;
     const step=(this.targetGain-this.gain)/input.length;
     // Amplify the same PCM sent to Room; the meter must not show a different signal.
     const amplified=new Float32Array(input.length);
@@ -43,19 +49,14 @@ class RoomCaptureProcessor extends AudioWorkletProcessor {
         clipped:this.clipped});
       this.levelBlocks=0;this.levelSum=0;this.levelCount=0;this.clipped=0;
     }
-    const ratio=sampleRate/16000;
-    const base=this.sourceCount-(this.hasLast?1:0);
-    const end=this.sourceCount+amplified.length-1;
-    while(this.nextPosition<=end+1e-9){
-      const index=Math.floor(this.nextPosition+1e-9);
-      const a=index-base,b=Math.min(index+1,end)-base;
-      const first=a===0&&this.hasLast?this.last:amplified[a-(this.hasLast?1:0)];
-      const second=b===0&&this.hasLast?this.last:amplified[b-(this.hasLast?1:0)];
-      const fraction=Math.max(0,Math.min(1,this.nextPosition-index));
-      this.pending.push(first+(second-first)*fraction);
-      this.nextPosition+=ratio;
+    // Continuous full() state; never use simple() per audio block.
+    let converted;
+    try{converted=this.resampler.full(amplified);}
+    catch(error){
+      this.resampler.destroy();this.resampler=null;this.stopped=true;
+      this.port.postMessage({type:'error',message:String(error)});return false;
     }
-    this.sourceCount+=input.length;this.last=amplified[amplified.length-1];this.hasLast=true;
+    for(let i=0;i<converted.length;i++)this.pending.push(converted[i]);
     while(this.pending.length>=320){
       const pcm=new Int16Array(320);
       for(let i=0;i<320;i++){

@@ -45,11 +45,11 @@ first_min_chars = 2
 
 [tts.qwen_audio]
 model = "qwen-audio-3.0-tts-flash"
-voice = "qwen-audio-3.0-tts-flash-annie-51664564da2a4cf39b2ef934c6213d94"
+voice = "qwen-audio-3.0-tts-flash-annie-9417629004fa4493a2c172b24d3e764a"
 sample_rate = 24000
 
 [vision]
-provider = "minicpm_local"
+provider = "minicpm_local" 
 
 [vision.minicpm_local]
 base_url = "http://192.168.1.47:1234/v1"

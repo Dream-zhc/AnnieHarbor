@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import type {RealtimeDiagnostics,TurnTimeline} from './api';
 import {selectTurnEvidence} from './turn-evidence';
+import {turnTtsEvidenceView} from './turn-tts-evidence';
 import {CustomSelect} from './custom-select';
 import './turn-diagnostics.css';
 
@@ -46,7 +47,8 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
   const [choice,setChoice]=useState('latest');
   const turnId=choice==='latest'?(latestTurnId??turns.at(-1)?.turn_id):choice;
   const turn=turns.find(item=>item.turn_id===turnId);
-  const {timeline,prompt,tools,events}=selectTurnEvidence(diagnostics,turnId);
+  const {timeline,tts:ttsEvidence,prompt,tools,events}=selectTurnEvidence(diagnostics,turnId);
+  const ttsView=turnTtsEvidenceView(ttsEvidence);
   const user=(liveUser?.turnId===turnId?liveUser?.text:null)||turn?.user_text||timeline?.user_text;
   const toolCalls=tools.filter(item=>item.kind==='tool.called');
   const recall=tools.filter(item=>item.kind==='tool.result'&&item.name==='recall_memory');
@@ -159,6 +161,41 @@ export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
                 ?`${latestBrowser.kind.replace('tts.playback.','')}（仅 browser_test，非真机）`
                 :'未记录'}</small>
             </div>
+          </div>
+
+          <div className="turn-diagnostic-section turn-tts-evidence">
+            <div className="section-head"><span className="section-icon">🔊</span><h4>本轮 TTS 文本与表达参数</h4></div>
+            <p className="turn-unrecorded">{ttsView.status}</p>
+            {ttsView.recorded&&<>
+              {([
+                ['实际 TTS 音色指纹',ttsEvidence?.voice_fingerprint??'旧记录未采集'],
+                ['目标语种 / 方言',`${ttsView.language} / ${ttsView.dialect}`],
+                ['情绪分类 / 表达方式',`${ttsView.emotion} / ${ttsView.delivery}`],
+                ['风格来源',ttsView.source],
+                ['实际 rate / pitch / volume',`${ttsView.rate} / ${ttsView.pitch} / ${ttsView.volume}`],
+                ['实际 language_hints',ttsView.languageHints],
+                ['音频 / 流式方式',`${ttsView.audio} / ${ttsView.streaming}`],
+                ['text_type / enable_ssml',`${ttsView.textType} / ${ttsView.ssml}`],
+              ] as const).map(([name,value])=><div className="turn-diagnostic-line" key={name}><span>{name}</span><strong>{value}</strong></div>)}
+              <div className="turn-tts-instruction"><strong>实际 instruction</strong><p>{ttsView.instruction}</p></div>
+              <div className="turn-tts-text"><strong>实际提交文本 · {ttsView.submittedChars} 字符</strong>
+                <p>{ttsView.submittedText?ttsView.submittedText.slice(0,240):'尚无 continue-task 文本提交记录'}</p>
+                {ttsView.submittedText.length>240&&<Detail label="展开完整 TTS 提交文本" value={ttsView.submittedText}/>}
+              </div>
+              <details className="turn-detail">
+                <summary><span className="turn-detail-chevron">▶</span>continue-task 文本片段（{ttsView.segmentCount} 个）</summary>
+                <small>同一任务共享冻结参数；以下是发送文本的片段，不是独立声学分段，也不代表逐句识别了情绪。</small>
+                {ttsView.segments.map((piece,index)=><div className="turn-tts-piece" key={`${piece.index}-${index}`}>
+                  <strong>片段 {piece.index} · 字符 {piece.range} · {piece.chars} 字符</strong><p>{piece.text}</p>
+                </div>)}
+                <small>{ttsView.retention}</small>
+              </details>
+              {ttsView.error&&<p className="turn-unrecorded">失败信息：{ttsView.error}</p>}
+              <Detail label="实际 run-task parameters（JSON）" value={ttsView.parameters}/>
+              <Detail label="TTS 任务标识" value={{task_id:ttsView.taskId,segment_id:ttsView.segmentId}}/>
+              <small>参数已提交不等于听感已验证；情绪分类为中性也不等于无表情。TTS 云端完成、浏览器试听回执和真机播完证据分开查看。{ttsView.retention}</small>
+            </>}
+            {!ttsView.recorded&&<small>不借用当前任务或其它回合的 TTS 文本、方言、情绪与参数。</small>}
           </div>
 
           <div className="turn-diagnostic-section">

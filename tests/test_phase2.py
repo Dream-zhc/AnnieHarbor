@@ -134,6 +134,30 @@ class ProtocolAdapterTests(unittest.TestCase):
         self.assertEqual((touch.kind, touch.payload["level"]), ("sensor.touch", 1))
         self.assertIsNone(normalize_room_event({"type": "pressure", "level": 6}))
 
+        radar = normalize_room_event({
+            "type": "pressure",
+            "sensor_type": "pressure",
+            "id": 5,
+            "name": "距离过近",
+            "distance": 148.0,
+            "from": "anonymous-04ad4b04",
+            "ts": 1791791143116,
+            "room": "main",
+        })
+        self.assertEqual(radar.kind, "sensor.radar")
+        self.assertIsNone(radar.target_robot_id)
+        self.assertEqual(radar.source, "anonymous-04ad4b04")
+        self.assertEqual(radar.ts_ms, 1791791143116)
+        self.assertEqual(radar.payload, {
+            "id": 5, "name": "距离过近", "distance": 148.0, "sensor_type": "radar",
+        })
+        self.assertIsNone(normalize_room_event({
+            "type": "pressure", "id": 5, "name": "距离过近",
+        }))
+        self.assertIsNone(normalize_room_event({
+            "type": "pressure", "id": 1, "name": "距离过近", "distance": 148.0,
+        }))
+
         vision = normalize_room_event(load_contract("vision-face"))
         self.assertEqual(vision.kind, "vision.face")
         self.assertEqual(vision.source, "fixture-vision")

@@ -452,3 +452,15 @@
 :root[data-theme="light"] .turn-detail summary {
   color: #2563eb;
 }
+
+/* Per-turn text/wire evidence stays readable without expanding raw JSON. */
+.turn-tts-evidence .turn-diagnostic-line { align-items: flex-start; }
+.turn-tts-evidence .turn-diagnostic-line strong { overflow-wrap: anywhere; text-align: right; }
+.turn-tts-instruction, .turn-tts-text, .turn-tts-piece { min-width: 0; margin-top: 10px; }
+.turn-tts-instruction p, .turn-tts-text p, .turn-tts-piece p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 5px 0;
+  line-height: 1.6;
+}
+.turn-tts-piece { padding: 8px; border-left: 2px solid var(--border-card, #334155); }

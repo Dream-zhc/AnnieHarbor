@@ -252,6 +252,38 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         )
         self.addAsyncCleanup(self.speech.close)
 
+    async def test_playback_commands_coalesce_without_task_chain_and_stop_wins(self):
+        started, release = asyncio.Event(), asyncio.Event()
+        original = self.publisher.publish
+
+        async def slow_publish(packet):
+            if packet["type"] == "tts.playback.hold" and not started.is_set():
+                started.set()
+                await release.wait()
+            await original(packet)
+
+        self.publisher.publish = slow_publish
+        self.speech.turn_id = "stress"
+        self.speech.identity = self.robot.session_state()
+        self.speech.stream_epoch = 1
+        self.assertTrue(self.speech.request_playback_control("hold", reason="speech_started"))
+        await asyncio.wait_for(started.wait(), .5)
+        one_worker = self.speech.control_task
+        for index in range(200):
+            self.assertTrue(self.speech.request_playback_control(
+                "resume" if index % 2 else "hold", reason="turn_invalid"))
+        self.assertIs(self.speech.control_task, one_worker)
+        self.assertEqual(self.speech._control_next[0], "resume")
+        self.assertLessEqual(len(self.speech.pending_controls), 1)
+        release.set()
+        await asyncio.wait_for(one_worker, 1)
+        commands = [p["type"] for p in self.publisher.messages]
+        self.assertEqual(commands, ["tts.playback.hold", "tts.playback.resume"])
+        await self.speech.cancel("interrupt")
+        self.assertEqual(self.publisher.messages[-1]["type"], "tts")
+        self.assertTrue(self.publisher.messages[-1]["data"]["stop"])
+        self.assertIsNone(self.speech._control_next)
+
     async def test_voice_channel_mirrors_control_with_sender_and_preserves_pcm_channel(self):
         voice = FakePublisher()
         self.speech.voice_publisher = voice

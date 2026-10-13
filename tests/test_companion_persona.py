@@ -54,9 +54,15 @@ def test_personality_preferences_overlay_same_companion_baseline(style_id):
 
 def test_core_stays_bounded_and_operational_rules_are_outside_personality():
     assert 250 <= len(persona.COMPANION_CORE) <= 350
+    assert "只用自然中文口语" not in persona.COMPANION_CORE
+    assert "就用那种回答" in persona.COMPANION_CORE
+    assert "整句外语必须跟随" in persona.COMPANION_CORE
+    assert "未明确切换时依语境延续" not in persona.COMPANION_CORE
     for marker in ("退下由Runtime", "perform_action", "preview_action", "recall_memory", "get_weather"):
         assert marker not in persona.COMPANION_CORE
     text, _ = persona.session_instructions("annie", PROFILES, {}, physical_actions=True)
+    assert "普通话、四川话、河南话、陕西话、粤语" in text
+    assert "不要声称会未列出的方言" in text
     assert text.index("当前表达风格") < text.index("【工具边界】")
     assert "不调用任何工具" not in text
     assert "已授权的语境动作可按当前工具规则选择" in text

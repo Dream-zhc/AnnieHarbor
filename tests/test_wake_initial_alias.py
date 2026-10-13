@@ -150,6 +150,7 @@ def test_provider_receives_wake_address_rule_only_with_kws_enabled(tmp_path, ena
                 assert "小爱你" in instructions
                 assert "我爱你" in instructions
                 assert "不要围绕称呼打趣" in instructions
+                assert "也不要把这个近音当成用户的姓名" in instructions
                 assert "明确讨论词义" in instructions
         finally:
             await runtime.close()

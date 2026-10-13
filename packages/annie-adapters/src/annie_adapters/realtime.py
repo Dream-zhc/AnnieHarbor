@@ -25,7 +25,10 @@ def realtime_url(base_url: str, model: str = MODEL) -> str:
 def session_update(instructions: str, history_turns: int = 20, *,
                    memory: bool = False, actions: tuple[str, ...] = (),
                    expressions: bool = False, weather: bool = False,
-                   reminders: bool = False,
+                   reminders: bool = False, language_preferences: bool = False,
+                   voice_selection: bool = False,
+                   sleep: bool = False,
+                   persona_labels: tuple[str, ...] = (),
                    action_descriptions: dict[str, str] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
     if type(history_turns) is not int or not 1 <= history_turns <= 50:
@@ -53,6 +56,57 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 },
             },
         }]
+    if voice_selection:
+        session["tools"].append({
+            "type": "function", "function": {
+                "name": "select_voice",
+                "description": (
+                    "Only when the CURRENT user explicitly asks to switch TTS voices. "
+                    "If they say '换一个音色' without naming a voice, still call this "
+                    "tool with a catalog voice name: the Runtime chooses automatically "
+                    "only if exactly one other candidate exists; otherwise tool returns "
+                    "needs_selection and you MUST ask which. Use scope=chat normally, "
+                    "scope=robot ONLY for explicitly permanent/all-chats requests. "
+                    "You MUST inspect the tool result: ONLY status=selected means a "
+                    "new voice was selected; needs_selection or rejected means NOTHING "
+                    "changed. Never claim the voice was changed without status=selected. "
+                    "Never pick a new voice merely because emotion, dialect, "
+                    "speaker identity or persona changed. Takes effect for the next "
+                    "TTS task; it cannot change already synthesized speech."
+                ),
+                "parameters": {"type": "object", "properties": {
+                    "voice_name": {"type": "string", "description": "Exact configured voice name or 默认音色"},
+                    "scope": {"type": "string", "enum": ["chat", "robot"]},
+                }, "required": ["voice_name", "scope"]},
+            },
+        })
+    if persona_labels:
+        if (not isinstance(persona_labels, tuple) or not persona_labels or len(persona_labels) > 12
+                or any(type(label) is not str or not 1 <= len(label) <= 40 for label in persona_labels)):
+            raise ValueError("persona labels must be a short tuple of names")
+        session["tools"].append({
+            "type": "function", "function": {
+                "name": "select_persona_style",
+                "description": (
+                    "Only when the CURRENT user explicitly asks to change the personality "
+                    "style of THIS chat. Do not create a new chat or reconnect. "
+                    "Available styles: " + "、".join(persona_labels) + ". "
+                    "If they name one, pass that exact label as style_name. "
+                    "If they ask to switch but name none, pass style_name as an empty string; "
+                    "needs_selection means NOTHING changed and you must ask once which style. "
+                    "Never invent a style, and never call this for voice, dialect or language. "
+                    "ONLY status=selected means the style changed. "
+                    "already_selected, needs_selection or rejected means it did not. "
+                    "Call this before speaking. After selected, say one new sentence in that "
+                    "style that answers what they just said. Do not recite a fixed confirmation "
+                    "or the style rules."
+                ),
+                "parameters": {"type": "object", "properties": {
+                    "style_name": {"type": "string",
+                                   "description": "Exact style label, or empty when the user did not name one"},
+                }, "required": ["style_name"]},
+            },
+        })
     if memory:
         session["tools"].append({
             "type": "function",
@@ -207,6 +261,55 @@ def session_update(instructions: str, history_turns: int = 20, *,
                                           "description": "Delay relative to now in seconds"},
                     },
                     "required": ["text", "delay_seconds"],
+                },
+            },
+        })
+    if language_preferences:
+        for name, description, properties, required in (
+            ('set_language_preference',
+             'Save ONLY a CURRENT explicit user language preference. scope=chat for this Chat; '
+             'scope=robot for all future Chats of THIS robot. Never persist automatic inference. '
+             'Call before claiming saved; status=set confirms committed success.',
+             {'scope': {'type': 'string', 'enum': ['chat', 'robot']},
+              'language': {'type': 'string'}, 'dialect': {'type': 'string'}},
+             ['scope', 'language', 'dialect']),
+            ('clear_language_preference',
+             'Clear ONLY when the CURRENT user explicitly requests clearing a saved language '
+             'preference and names Chat or robot scope. status=cleared confirms committed success.',
+             {'scope': {'type': 'string', 'enum': ['chat', 'robot']}}, ['scope']),
+            ('select_reply_style',
+             'OPTIONAL context choice, never required before speaking. Select reply language and '
+             'expression; for province dialect inference supply an EXACT stable user acoustic '
+             'phrase as evidence. Do not infer from place names. Never persists preference. '
+             'Quoted/translated/ambiguous speech may decline following with reason. Late choices '
+             'affect next reply only. Output spoken text without control tags.',
+             {'language': {'type': 'string'}, 'dialect': {'type': 'string'},
+              'emotion': {'type': 'string', 'enum': ['neutral','warm','playful','sarcastic',
+                                                    'curious','serious','sad','excited','calm']},
+              'evidence': {'type': 'string'}, 'reason': {'type': 'string'}},
+             ['language', 'dialect', 'emotion']),
+        ):
+            session['tools'].append({'type': 'function', 'function': {
+                'name': name, 'description': description, 'parameters': {
+                    'type': 'object', 'properties': properties, 'required': required,
+                    'additionalProperties': False}}})
+    if sleep:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "enter_sleep",
+                "description": (
+                    "Call when the CURRENT user explicitly tells you to stop talking, "
+                    "be quiet, leave, or end this conversation, including paraphrases. "
+                    "Say one short acknowledgment. Listening closes after that sentence "
+                    "finishes playing. Do not call for questions, negation, quotations, "
+                    "or talk about someone else. Only status=accepted means this reply "
+                    "will enter sleep. Never claim you went quiet without status=accepted."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
                 },
             },
         })

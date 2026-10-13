@@ -1,49 +1,36 @@
-# Phase 7｜真实动作、表情、简单工具与小脑协同
+# Phase 7｜动作、表情与简单工具摘要
 
-## 本轮开工与边界
+> 2026-10-10精简旧开工和重复返工记录。保留该阶段最终软件边界及未闭合风险；后续字级动作能力见[同步协议](../../规范/字级动作与嘴型同步协议.md)与最新开发记录，不用历史脚本数/白名单推定当前配置。**设备物理完成/停止尚待统一验收。**
 
-- 用户于2026-09-22安排第七阶段代码交付并准备统一测试。**软件执行链已接通，真实动作仍默认关闭，尚未核验真机接收、动作完成或停止回执；不能签发物理闭环PASS。** 不把模型选中工具、Room发送成功或浏览器动画当作物理执行成功。
-- 最终目标：机器人A执行已确认的动作，B不动；表情与语音对应；重复、无效、过期、取消、设备无回执均有如实状态与工作台记录。现有Realtime/TTS/嘴型/六通道不变，简单动作不进LangGraph。
-- 旧合同：config/action_scripts.json有34个enabled脚本。action_trigger发送至reb_main，含script_id、offset_ms、conversation_id、anchor_source；offset以真实首PCM播放sample锚定。expression发送至reb_tts。协议没有action_cancel；小脑action_prep取消Brain/TTS时须保留小脑接管动作。既有preview_action仅模拟，不是物理执行工具。
-- 安全开工成果：packages/annie-brain/src/annie_brain/action_catalog.py只读加载并校验现有目录，拒绝重复ID、禁用动作、非法时长、附加target和模型自造脚本；tests/test_phase7.py为15项纯目录和白名单测试，不连接Room或触发真实电机。已有Python全量168项，增加15项后183项通过，30 subtests通过；Ruff通过。
+## 软件链路与硬边界
 
-## 必须确认后才能开启真实物理执行
+- Qwen Realtime Function Calling提出动作、表情、天气；简单工具不进LangGraph。目录只读加载并校验真实ID、enabled/时长，拒绝重复、非法参数、附加target或模型自造脚本。实际目录与允许集查 `config/action_scripts.json`及本机配置。
+- 每robot独立turn/generation/call_id、Room、幂等、冷却与冲突；重复call/同轮动作不二次执行。旧generation、未确认当前ASR、取消、过期/无PCM明确拒绝。FC早于最终ASR时回写unconfirmed_current_turn，不暗中执行。
+- 后端已移除手写中文动作句式白名单，Qwen按目录description选择；仅保留明确否定/取消veto及硬约束。**模型语义仍可能误判**，目录允许不等于用户意图可靠确认。
+- 该阶段action_trigger经所属reb_main发布，含script_id/offset_ms/conversation_id/anchor_source；动作等真实首PCM锚点，表情经同一reb_tts出口在首PCM前发送。在途PCM用inflight_end及共用WS锁二次检查，避免仅检查已完成frames导致错过音频边界。后续字锚点扩展按同步协议，不在本文重新定义wire。
+- action_requests迁移/查询/CAS/崩溃恢复由annie-adapters RuntimeStore承担，调度器不自行建SQLite表；保留历史及记忆数据。发送前原子记录send_unknown并释放robot锁，网络等待不挡同头取消或B并发；已发送/可能已收不盲目重试，也不伪报cancelled_before_send。
+- 小脑action_prep在当前ASR身份匹配时取消Brain/TTS及未发布语义动作，保留小脑接管动作，不影响另一头。协议无可信action_cancel、完成或停止回执；Room成功发送不证明电机动作或严格物理起声同步。
+- 工作台动作面板展示真实SQLite记录、目录、允许集与等待/失败/未知状态；示例只填对话输入框，不直接POST电机命令。preview_action仍是模拟，不能混为真实执行成功。
 
-1. 首批脚本：建议从已列出的agree_micro_nod、look_left、look_right、fast_double_blink中选少量核对接收端；计划示例“挥挥手”不在当前34个ID中，不可自行创造wave。表情的喜/怒/哀/乐/中要确认接收端具体值、分段和持续时间。
-2. 协议与设备回执：需要接收端证明reb_main/action_trigger、reb_tts/expression实际消费的消息，以及动作开始、完成、失败、停止的回执来源与字段。没有回执时只能报告已提交或不确定，不能回写成功。
-3. 物理安全与小脑：确认首批脚本幅度、部位、冷却、动作冲突、执行超时、取消后的收尾和小脑即时动作优先级。确认本期具体简单工具（例如已有天气配置是否真的应接入），未选定前不建技能平台。
+## 开关与未解决风险
 
-## 后续待验（P7-W1/P7-W2）
+- 真实动作需显式 `ANNIE_ACTIONS_ENABLED=1`、TTS/Key/所属Room及接收端测试前提；`ANNIE_ACTION_ALLOWLIST`收紧允许集。幅度、部位、冷却、冲突、超时、小脑优先级和真实回执未确认前不扩大执行范围，计划示例不授权发明wave等ID。
+- 自主轻动作另需 `ANNIE_SOCIAL_ACTIONS_ENABLED=1`，仅向perform_social_action授予micro类及agree_micro_nod，不包含头部大动作。
+- **已知未闭合：关闭社交工具不能保证普通perform_action绝不误触发。** 当时隔离复现“我完全赞成你”被模型普通工具选为agree_micro_nod仍返回awaiting_audio_anchor。若要求硬保证，需单独明确意图授权或用户确认，不能恢复中文正则并宣称已解决。
+- send_unknown后取消不能保证电机停止；无可信动作回执持续unknown，不让模型宣称身体已动。双头物理验收、真实自主轻动作选择频率/误触发率待测。
 
-- Realtime Function Call → ID与参数白名单及robot/generation/turn/call_id核对 → 所属Room与小脑 → 真实状态回写 → 工作台与模型后续表达。旧generation和重复call不得执行两次。
-- P7-W1：在React工作台观察A的请求、校验、执行和回执；B正常聊天；真机分别确认动作/表情/音频/嘴型。
-- P7-W2：重复、非法参数、超时、部分执行、取消、跨机器人与小脑抢占；无设备证据始终显示不确定。无新增独立HTML验收页。
+## 天气与历史实证
 
-## 2026-09-22 软件实现与现场验收更新
+- 仅对当前用户明确城市调用已有高德接口，不凭关键词编造结果；缺Key/超时/错误可解释。历史城市歧义：西安被解析为黑龙江西安区231005，西安市/610100才是陕西西安。保留城市名称归一/返回校验，显式区县/adcode不误改。
+- 该阶段复用1200ms超时、180秒缓存，异步单飞合并同城请求，成功结果带来源/报告时间/cache_hit/fetch_ms；无新增LLM/Graph或无限重试。当前值以配置为准，未测真实语音端到端改善。
+- 隔离真实Qwen三例分别选择点头、双眨眼和北京天气工具；高德北京市实时天气返回成功。**这些没有执行真实物理动作。**
+- 阶段最后一轮自动化Python221项、30子测试、2项第三方弃用警告，前端24项及Ruff/类型/构建/锁/diff通过；不是今日计数或真机通过证明。
 
-- **执行链已落地**：Qwen-Audio Realtime 的 perform_action、set_expression 与 get_weather 经严格参数/当前用户请求/turn与generation校验，调用本地 SQLite 事实记录。动作只接已有ID，默认允许 agree_micro_nod、look_left、look_right、fast_double_blink，其他不发。每机器人独立 Room 发布与状态；同回合相同动作、重复call_id和网络重试不二次执行；目录时长内冷却、冲突、取消及15秒内没有首帧 PCM 时过期。
-- **PCM与外部合同**：动作等到本轮第一帧 PCM 确实发布后才通过所属 reb_main 发 action_trigger，data.script_id/offset_ms=0/conversation_id=本轮turn_id/anchor_source=robot_main_brain。表情仅采用喜/怒/哀/乐/中，随本轮 TTS 通过同一 reb_tts 出口在本轮首PCM前发送。main 出口检验 WELCOME 房间/通道身份并尝试预热。现有协议没有可信动作完成/停止回执，也没有action_cancel；故仅能区分等待PCM、已发未知、发送未知、取消未发、过期/失败。已发动作不能声称撤销，不能让LLM声称身体已动。
-- **小脑与天气**：小脑 action_prep 只在当前 ASR 身份匹配时中止Brain/TTS与尚未发布的语义动作，保留小脑接管动作，不影响B。简单天气工具只用用户当前明确说出的城市请求真实高德实时接口，返回来源、报告时间、气温等；密钥缺失/失败不编造。
-- **天气热路径返工（2026-09-24）**：实测根 `.env` 天气 Key 可用，原始 `city=西安` 却被高德解释为黑龙江 `西安区`（231005），而 `西安市`/610100 才是陕西西安；统一城市名称、返回城市校验，保留显式区县/adcode。复用配置 `timeout_ms=1200`、`live_cache_sec=180`，异步单飞合并双头同城请求、成功缓存并返回 `cache_hit/fetch_ms` 实测证据，错误不伪造天气或无限重试。保留 Qwen Realtime 原有 Function Calling，不新增 LLM/Graph 调用；未测真实语音端到端首响与设备播放。
-- **工作台**：顶部「动作」显示当前 robot_id 的SQLite真实执行记录、等待/失败/未知状态、动作目录和本机白名单；示例动作按钮仅填入对话输入框，不直接发电机命令。不新增独立Phase7 HTML页。
-- **启用**：默认 ANNIE_ACTIONS_ENABLED 未设置时仍为关闭。只有确认接收端、安全幅度及测试环境后，停止麦克风并安全重启 Runtime 时配置 ANNIE_ACTIONS_ENABLED=1，同时需 ANNIE_TTS_ENABLED=1、DASHSCOPE_API_KEY、正确Room；可用 ANNIE_ACTION_ALLOWLIST 进一步收紧允许的目录ID。建议首先仅放行 agree_micro_nod。旧 preview_action 在动作关闭时仍是模拟；动作启用时从模型工具列表移除，不在真实执行中混淆预览。天气沿用 AMAP_WEATHER_API_KEY。
-- **验收证据**：tests/test_phase7_execution.py、tests/test_phase7_runtime.py、tests/test_phase7_wire.py 覆盖真实SQLite与Fake Room、双机器人隔离、动作/表情旧wire、去重/冷却/取消/过期、ASR身份匹配、ASGI工作台接口和天气Mock；web/tests/action-panel.test.mjs 验证仅填入且未出现直接动作POST。隔离的真实Qwen-Audio Realtime三例：“点头”触发 agree_micro_nod、“眨两下眼”触发 fast_double_blink、“北京天气”触发 get_weather；真实高德北京市实时天气返回成功。这些都**没有**执行真实物理动作。
-- **审查返工（2026-09-22）**：修复“问你有没有点头”等叙述/疑问误命令、用户要求看右边却被模型选看左边、表情喜哀不匹配；只能执行当前输入明确对应的四项命令或五种表情。新的目录ID需专门补经审查的语义规则，修改白名单本身不代表可安全执行。修复重启残留awaiting_audio_anchor阻断后续动作、冷却时间按前后两动作较长者计算、首PCM已发送仍注册动作而空等15秒、上一轮TTS进行中发送下一轮表情、Room发送故障未写入SQLite。若Function Calling先于当前最终ASR，明确回写unconfirmed_current_turn且绝不执行，不能像此前静默丢工具；需由真人连续语音验收确认这种保守降级出现频率。
-- **自动化结果**：Python 全量 212 passed、30 subtests passed；前端24 passed；Ruff、TypeScript、Vite生产构建、uv锁和diff检查通过。两条警告来自第三方弃用接口，不是设备验证证据。阶段7源码从共用文件中只选择本阶段差异入Git；先前未提交的Phase6、旧Web/sidecar修改不擅自提交或清理。
-- **现场P7-W1**：未启用时先核验模拟/未知状态；安全启用后A说“请你点下头”，工作台与接收端逐条核对工具→PCM→reb_main→设备动作，B独立聊天；表情及对应TTS和嘴型分别核验。
-- **现场P7-W2**：重复相同call、无效ID、取消、过期、旧generation、网络失败、小脑action_prep及B不串动作；没有实际设备回执时只给unknown，真人物理完成/停止和Windows双头仍待用户人工签收。计划中的“挥挥手”不在34个已有脚本，不能擅创ID。
+## 回归与人工验收
 
-## 2026-09-22｜针对性返工：审查报告问题处理
+长期 `tests/test_phase7*.py`覆盖目录、SQLite迁移/恢复、Fake Room旧wire、去重/冷却/取消/过期、ASR身份、在途PCM、慢网络不持锁、社交授权、天气与机器人隔离；前端动作面板测试保留。
 
-- **已移除手写中文动作句式清单**：先前本页“只能执行当前输入明确对应的四项命令/五种表情、每个新ID需补中文正则”已被本次实现取代。Qwen Realtime 根据本轮语境及实时白名单目录（提供各动作原有description）选择工具；后端不再拿中文关键词进行第二次语义判断，仅做本轮明确否定/取消的简短 veto，校验机器人、turn/generation/call_id、脚本是否enabled及被允许、冷却和冲突。**模型可能误判语义**，因此硬件总开关仍默认关闭。额外的社交自主轻动作由 ANNIE_SOCIAL_ACTIONS_ENABLED=1 单独显式授权，独立 perform_social_action 只授予目录 micro 类与 agree_micro_nod，不能据此自主调用头部大动作；未授权时模型不见该工具。自然附和只是能力，不保证模型每次都调用。
-- **网络等待脱离机器人锁**：动作在首PCM锚点后，先原子迁移SQLite到send_unknown并释放锁，然后执行Room发送。表情同样先落状态再释放锁发布。网络卡顿期间取消和其他机器人动作不会在此锁上等待；已进入send_unknown的动作可能已经被设备接收，取消不能伪报cancelled_before_send，也不盲目重试。实际物理动作停止需要接收端提供协议，仍无回执则unknown。
-- **SQLite边界收拢**：Runtime不再sqlite3.connect或CREATE TABLE。action_requests结构纳入annie-adapters的RuntimeStore迁移，schema版本升至5；预约幂等/冷却、记录查询、CAS状态及崩溃恢复由RuntimeStore承担，ActionCoordinator只负责调度和Room。原历史和Phase6数据不删除。
-- **测试**：新增慢Room发送时同头取消不被6秒网络等待阻塞、B可并发工作、表情网络卡住时同头其他动作可预约、社交轻动作需单独授权与大动作被拒、崩溃恢复与SQLite迁移回归。原有“右/左必须由Regex匹配”的测试已改为硬白名单/取消/授权测试；模型语义正确性留给真实Qwen样本与人工评估，不能由Fake测试冒充。
-- **审查保留项**：该阶段未实现设备动作完成/停止的可信回执，也不推断严格扬声器物理起声同步；Phase6依赖/云调用暂不在本次提交范围。先按此软件分工送审，真人物理闭环仍待统一测试。
+- P7-W1：工作台选择A，核对工具→PCM/字锚点→reb_main→接收端动作与真实回执，B独立聊天；表情、TTS与嘴型分别验。
+- P7-W2：重复call、非法ID、旧generation、超时、取消、部分执行、Room失败和小脑抢占；确认设备实际开始/完成/停止，不把已提交未知当完成。
 
-## 2026-09-22｜再次复核：前述“已全部修复”结论不成立
-
-- **找到并修复首PCM并发漏洞**：SpeechOutput在发出首帧PCM之前设置inflight_end，原动作和表情却只检查发送完成后才增加的frames，因此动作可以在PCM发送中预约，表情可以晚于首帧发送。本轮两处都检查inflight_end，表情通过与PCM共用的reb_tts WebSocket锁进行第二次校验。新增在途PCM和锁竞争测试。
-- **尚未解决的硬保证**：ANNIE_SOCIAL_ACTIONS_ENABLED=0仅隐藏perform_social_action，但无法保证模型不会把普通聊天（如“我完全赞成你”）误选为普通perform_action。隔离复现：社交模式关闭时，普通工具以该文本与agree_micro_nod调用，仍返回awaiting_audio_anchor。总动作开关和目录白名单仍生效，但不得声称“关闭社交动作后，聊天绝不会触发点头”。不能重新使用中文句式正则伪装已解决语义问题。若需要硬保证，必须对明确动作意图做独立授权，或要求用户确认；需先确定交互延迟和安全性取舍，当前尚未完成。
-- **物理闭环仍待验证**：Room发送不等于真实扬声器起声；没有可信设备动作完成或停止回执，send_unknown后取消无法保证电机停止。当前运行工作区包含Phase6等未提交更改，审查完整运行态不能只看HEAD。
-- **本轮自动化复跑**：全量 Python 221 passed、30 subtests passed（另2条第三方弃用告警）；前端24 passed；Ruff、TypeScript、Vite构建、uv锁检查和diff检查均通过。真实Qwen自主微动作使用真实服务的选择频率/误触发率及设备动作完成/撤销仍须独立验收，模拟工具和单测不能替代。
+入口仅现有React工作台，不新建HTML。验收前按真实接收端合同确认样本，自动化/Mock和物理结果分列。

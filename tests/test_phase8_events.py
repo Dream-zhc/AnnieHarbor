@@ -127,6 +127,57 @@ def test_event_realtime_isolation_and_waiting(tmp_path):
     asyncio.run(exercise())
 
 
+def test_radar_too_close_replies_once_then_cools_down(tmp_path):
+    packet = {
+        "type": "pressure", "sensor_type": "pressure", "id": 5,
+        "name": "距离过近", "distance": 148.0,
+        "from": "anonymous-04ad4b04", "room": "main",
+    }
+
+    async def exercise():
+        FakeSocket.instances.clear()
+        rt = HarborRuntime(
+            [RobotConfig("a", room_id="roomv2")],
+            tmp_path / "radar.db", realtime_key="fake",
+            realtime_socket_factory=FakeSocket,
+        )
+        rt.bind_input_source("room:roomv2:main-event", ["a"])
+        await rt.start()
+        try:
+            for _ in range(100):
+                if rt.realtime["a"].ready:
+                    break
+                await asyncio.sleep(.01)
+            assert rt.realtime["a"].ready
+            rt.dispatch_room_event("room:roomv2:main-event", packet)
+            rows = rt.external_events("a")["events"]
+            for _ in range(100):
+                if rows[-1]["status"] == "submitted_unknown":
+                    break
+                await asyncio.sleep(.01)
+            assert rows[-1]["kind"] == "sensor.radar"
+            assert rows[-1]["decision"] == "need_response"
+            assert rows[-1]["status"] == "submitted_unknown"
+            assert rows[-1]["summary"]["distance"] == 148.0
+            client = rt.realtime["a"]
+            assert sum(item["type"] == "response.create" for item in client.socket.outbound) == 1
+            prompt = client.robot.cached_turn(client.turn_id)["external_prompt"]
+            assert "靠得很近" in prompt
+            assert "当前的性格" in prompt
+            assert "正在进行的对话" in prompt
+            assert "固定套话" in prompt
+            assert "请对方稍微退开" not in prompt
+            assert "非用户发言" in prompt
+            rt.dispatch_room_event("room:roomv2:main-event", packet)
+            await asyncio.sleep(.02)
+            assert rt.external_events("a")["events"][-1]["reason"] == "cooldown"
+            assert sum(item["type"] == "response.create" for item in client.socket.outbound) == 1
+        finally:
+            await rt.close()
+
+    asyncio.run(exercise())
+
+
 def test_policy_bounded_and_no_raw_vision():
     policy = EventPolicy()
     for i in range(90):

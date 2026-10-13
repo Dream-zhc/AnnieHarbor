@@ -3,9 +3,11 @@
 import asyncio
 import base64
 import inspect
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from annie_adapters.realtime import MODEL, QwenRealtimeSocket, audio_append, realtime_url, session_update
 from annie_core import RobotConfig, RobotUnavailableError
@@ -51,8 +53,32 @@ class RealtimeWireTests(unittest.TestCase):
                        "退下退下别说了。"):
             self.assertTrue(DialoguePresence.is_sleep_command(phrase), phrase)
         for phrase in ("退下？", "闭嘴？", "我没让你退下", "不要闭嘴", "别退下", "你为什么退下了", "怎么让你闭嘴",
-                       "退下是什么意思", "讲个故事，里面有人说退下", "结束这个话题"):
+                       "退下是什么意思", "讲个故事，里面有人说退下", "结束这个话题", "你先别说话了。"):
             self.assertFalse(DialoguePresence.is_sleep_command(phrase), phrase)
+
+    def test_sleep_request_accepts_paraphrases_and_rejects_questions(self):
+        for phrase in ("你先别说话了。", "先安静一下", "你歇会儿", "可以先别出声",
+                       "你可以先别说话了好吗", "小安妮，别出声", "安静点", "不想聊了",
+                       "你去休息吧", "帮我安静一下", "现在先闭嘴", "请你先别说话",
+                       "小安妮你先别说话了", "退下吧。", "别说话了"):
+            self.assertTrue(DialoguePresence.is_sleep_request(phrase), phrase)
+        for phrase in ("你先别说话了？", "退下？", "我没让你退下", "不要闭嘴", "别退下",
+                       "你为什么退下了", "怎么让你闭嘴", "退下是什么意思",
+                       "讲个故事，里面有人说退下", "结束这个话题", "这里很安静",
+                       "我要休息一下", "别说这个", "你什么时候休眠", "不是让你闭嘴",
+                       "你别让我退下", "", "你好", "今天天气怎么样",
+                       "先停下来把那个故事讲完"):
+            self.assertFalse(DialoguePresence.is_sleep_request(phrase), phrase)
+
+    def test_enter_sleep_tool_is_advertised_only_with_the_listen_gate(self):
+        absent = [tool["function"]["name"] for tool in session_update("小安妮")["session"]["tools"]]
+        present = session_update("小安妮", sleep=True)["session"]["tools"]
+        names = [tool["function"]["name"] for tool in present]
+        self.assertNotIn("enter_sleep", absent)
+        self.assertIn("enter_sleep", names)
+        tool = next(item["function"] for item in present if item["function"]["name"] == "enter_sleep")
+        self.assertEqual(tool["parameters"]["properties"], {})
+        self.assertFalse(tool["parameters"]["additionalProperties"])
 
     def test_audio_pump_has_no_idle_sleep_or_nowait_polling(self):
         source = inspect.getsource(RealtimeRobot._audio_pump)
@@ -85,6 +111,101 @@ class RealtimeWireTests(unittest.TestCase):
 
 
 class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_audio_sender_failure_reconnects_only_its_robot(self):
+        sender, other = (self.runtime.realtime[robot] for robot in ("annie-a", "annie-b"))
+        old_socket, other_socket = sender.socket, other.socket
+        original = old_socket.send
+
+        async def broken_send(packet):
+            if packet.get("type") == "input_audio_buffer.append":
+                raise ConnectionError("simulated send failure")
+            await original(packet)
+
+        old_socket.send = broken_send
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
+        for _ in range(180):
+            if sender.socket is not None and sender.socket is not old_socket and sender.ready:
+                break
+            await asyncio.sleep(.01)
+        self.assertIsNot(sender.socket, old_socket)
+        self.assertTrue(sender.ready)
+        self.assertTrue(any(e["kind"] == "session.error" for e in sender.events))
+        self.assertIs(other.socket, other_socket)
+        self.assertTrue(other.ready)
+
+    async def test_blocked_audio_send_has_deadline_and_reconnects(self):
+        client = self.runtime.realtime["annie-a"]
+        old_socket = client.socket
+        original = old_socket.send
+
+        async def stuck_send(packet):
+            if packet.get("type") == "input_audio_buffer.append":
+                await asyncio.Event().wait()
+            await original(packet)
+
+        old_socket.send = stuck_send
+        source = "room:roomv2:reb_mic"
+        from annie_adapters import VERIFIED_MIC_FORMAT
+        self.runtime.bind_input_source(source, ["annie-a"])
+        self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
+        with patch("annie_runtime.realtime.AUDIO_SEND_DEADLINE_SECONDS", .03):
+            self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
+            for _ in range(180):
+                if client.socket is not None and client.socket is not old_socket and client.ready:
+                    break
+                await asyncio.sleep(.01)
+        self.assertIsNot(client.socket, old_socket)
+        self.assertTrue(any(e["kind"] == "session.error" for e in client.events))
+
+    async def test_interrupt_requests_stop_before_slow_tool_cleanup(self):
+        client = self.runtime.realtime["annie-a"]
+        began, release = asyncio.Event(), asyncio.Event()
+        cancelled_turns = []
+
+        class SlowSpeech:
+            turn_id = "old-reply"
+
+            async def cancel(self, reason):
+                began.set()
+                self.turn_id = None
+
+            async def close(self):
+                pass
+
+        client.speech = SlowSpeech()
+
+        class Actions:
+            async def cancel_pending(self, robot_id, turn_id=None):
+                cancelled_turns.append((robot_id, turn_id))
+
+        client.actions = Actions()
+
+        async def slow_tools():
+            await release.wait()
+
+        client._cancel_tools = slow_tools
+        interrupted = asyncio.create_task(client._interrupt_active_turn("valid_smart_turn"))
+        try:
+            await asyncio.wait_for(began.wait(), .3)
+            self.assertFalse(release.is_set())
+            self.assertFalse(interrupted.done())
+        finally:
+            release.set()
+            await interrupted
+        self.assertIn(("annie-a", "old-reply"), cancelled_turns)
+
+    async def _detached_audio_pump(self, client):
+        """Test an isolated pump; a cancelled supervised pump must reconnect."""
+        client.task.cancel()
+        await asyncio.gather(client.task, return_exceptions=True)
+        client.socket = FakeSocket("wss://isolated.test", "fake")
+        client.ready = True
+        client._stopping = False
+
     async def test_response_cancel_observed_lifecycle_and_idempotence(self):
         client = self.runtime.realtime["annie-a"]
         gen = client.robot.generation
@@ -1067,6 +1188,8 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_audio_inflight_task_done_on_cancel(self):
         """Cancellation during a blocked send must not strand queue.join()."""
         client = self.runtime.realtime["annie-a"]
+        await self._detached_audio_pump(client)
+        client.audio_task = asyncio.create_task(client._audio_pump(client.robot.generation))
         source = "room:roomv2:reb_mic"
         from annie_adapters import VERIFIED_MIC_FORMAT
 
@@ -1127,14 +1250,13 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_audio_expired_after_enqueue_is_dropped(self):
         """Freshness is checked at send, not only when the Room frame arrived."""
         client = self.runtime.realtime["annie-a"]
+        await self._detached_audio_pump(client)
         source = "room:roomv2:reb_mic"
         from annie_adapters import VERIFIED_MIC_FORMAT
 
         self.runtime.bind_input_source(source, ["annie-a"])
         self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
-        # Queue a frame before the pump starts to guarantee stale age at dequeue.
-        client.audio_task.cancel()
-        await asyncio.gather(client.audio_task, return_exceptions=True)
+        # Queue a frame before the isolated pump starts to guarantee stale age.
         self.runtime.ingest_pcm(source, b"\x00\x09MIC_AUDIO" + bytes(640))
         await asyncio.sleep(client.robot.config.audio_max_age_ms / 1000 + 0.02)
         before = client.frames_dropped
@@ -1147,14 +1269,13 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_stream_restart_does_not_forward_old_frame(self):
         """Same source ID does not make an old stream's frame valid again."""
         client = self.runtime.realtime["annie-a"]
+        await self._detached_audio_pump(client)
         source = "room:roomv2:reb_mic"
         from annie_adapters import VERIFIED_MIC_FORMAT
 
         self.runtime.bind_input_source(source, ["annie-a"])
         self.runtime.start_pcm_stream(source, VERIFIED_MIC_FORMAT)
         audio = client.robot.audio
-        client.audio_task.cancel()
-        await asyncio.gather(client.audio_task, return_exceptions=True)
         acquired = asyncio.Event()
         release = asyncio.Event()
         original_get = audio.next_frame
@@ -1181,3 +1302,252 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         if item["type"] == "input_audio_buffer.append"]
         self.assertEqual(len(pcm_messages), 1)
         self.assertEqual(base64.b64decode(pcm_messages[0]["audio"]), bytes([2]) * 640)
+
+
+class QuietSpeech:
+    def __init__(self):
+        self.turn_id = None
+        self.cancelled = []
+        self.finished = []
+
+    async def feed(self, turn_id, _identity, _text):
+        self.turn_id = turn_id
+
+    async def finish(self, turn_id):
+        self.finished.append(turn_id)
+
+    def request_playback_control(self, _kind, *, reason):
+        del reason
+
+    async def cancel(self, reason="cancel"):
+        self.cancelled.append(reason)
+        self.turn_id = None
+
+    async def close(self):
+        return None
+
+
+class DeferredSleepTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        FakeSocket.instances.clear()
+        self.tmp = tempfile.TemporaryDirectory(dir=ROOT / "var", prefix="phase4-sleep-")
+        self.addCleanup(self.tmp.cleanup)
+        self.runtime = HarborRuntime(
+            [RobotConfig("annie-a", room_id="roomv2", fake_delay_ms=0, listen_enabled=True),
+             RobotConfig("annie-b", room_id="roomv3", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "runtime.db",
+            realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+        )
+        await self.runtime.start()
+        self.addAsyncCleanup(self.runtime.close)
+        for _ in range(100):
+            if all(client.ready for client in self.runtime.realtime.values()):
+                break
+            await asyncio.sleep(0.01)
+        self.client = self.runtime.realtime["annie-a"]
+        self.other = self.runtime.realtime["annie-b"]
+        self.speech = QuietSpeech()
+        self.client.speech = self.speech
+
+    async def _admit(self, text, item_id="leave"):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _pcm):
+                return False
+
+        self.client.wake = WakeAdmission(Detector())
+        self.other.wake = WakeAdmission(Detector())
+        self.client.wake.presence.wake_detected()
+        generation = self.client.robot.generation
+        await self.client.handle({"type": "input_audio_buffer.speech_started",
+                                  "item_id": item_id}, generation)
+        await self.client.handle({
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": item_id, "transcript": text,
+        }, generation)
+        return generation
+
+    def _creates(self):
+        return [event for event in self.client.socket.outbound
+                if event.get("type") == "response.create"]
+
+    def _tool_output(self):
+        outputs = [event for event in self.client.socket.outbound
+                   if event.get("type") == "conversation.item.create"
+                   and event["item"]["type"] == "function_call_output"]
+        return json.loads(outputs[-1]["item"]["output"])
+
+    async def _call_sleep(self, generation, *, call_id="sleep-1", arguments="{}"):
+        await self.client.handle({
+            "type": "response.function_call_arguments.done", "response_id": "bye",
+            "call_id": call_id, "name": "enter_sleep", "arguments": arguments,
+        }, generation)
+
+    async def test_spoken_ack_stays_awake_until_playback_then_sleeps(self):
+        generation = await self._admit("你先别说话了。")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye",
+                                  "delta": "行，我闭嘴。"}, generation)
+        await self._call_sleep(generation)
+        self.assertEqual(self._tool_output()["status"], "accepted")
+        self.assertEqual(self._tool_output()["effect"], "after_this_reply")
+        self.assertEqual(self._creates(), [])
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye", "status": "completed"}}, generation)
+        self.assertEqual(self.speech.finished, [self.speech.turn_id])
+        self.assertEqual(self.speech.cancelled, [])
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        self.assertFalse(any(event["kind"] == "wakeword.sleep_command"
+                             for event in self.client.events))
+        turn_id = self.speech.turn_id
+        self.client.publish("tts.playback.drained", source="speaker", turn_id=turn_id)
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        await self.client._deferred_sleep_task
+        self.assertEqual(self.client.wake.state, "SLEEP")
+        self.assertEqual(self.speech.cancelled, [])
+        self.assertTrue(any(event["kind"] == "wakeword.sleep_command" and event["source"] == "tool"
+                            for event in self.client.events))
+        self.assertEqual(self.other.wake.state, "SLEEP")
+
+    async def test_browser_playback_also_closes_the_gate_after_the_ack(self):
+        generation = await self._admit("先安静一下")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye",
+                                  "delta": "好，我不说了。"}, generation)
+        await self._call_sleep(generation)
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye", "status": "completed"}}, generation)
+        self.client.publish("tts.playback.drained", source="browser_test", turn_id=self.speech.turn_id)
+        await self.client._deferred_sleep_task
+        self.assertEqual(self.client.wake.state, "SLEEP")
+        self.assertEqual(self.speech.cancelled, [])
+
+    async def test_ack_spoken_after_the_tool_does_not_ask_for_another_reply(self):
+        generation = await self._admit("你先别说话了。")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self._call_sleep(generation)
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye",
+                                  "delta": "行，我闭嘴。"}, generation)
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye", "status": "completed"}}, generation)
+        self.assertEqual(self._creates(), [])
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        self.assertEqual(len(self.speech.finished), 1)
+        self.assertEqual(self.speech.cancelled, [])
+
+    async def test_tool_without_text_gets_one_ack_then_waits_for_playback(self):
+        generation = await self._admit("你歇会儿")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self._call_sleep(generation)
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye", "status": "completed"}}, generation)
+        self.assertEqual(len(self._creates()), 1)
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        self.assertEqual(self.speech.finished, [])
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye-2",
+                                  "delta": "行，我闭嘴。"}, generation)
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye-2", "status": "completed"}}, generation)
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        self.assertEqual(len(self.speech.finished), 1)
+        self.client.publish("tts.playback.drained", source="speaker", turn_id=self.speech.turn_id)
+        await self.client._deferred_sleep_task
+        self.assertEqual(self.client.wake.state, "SLEEP")
+        self.assertEqual(self.speech.cancelled, [])
+
+    async def test_question_and_external_turn_cannot_sleep(self):
+        generation = await self._admit("你为什么要退下")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self._call_sleep(generation)
+        self.assertEqual(self._tool_output()["status"], "rejected")
+        self.assertIsNone(self.client._pending_sleep)
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        self.client._create_turn("你先别说话了", source="external")
+        self.client.external_turn_id = self.client.turn_id
+        await self.client.handle({
+            "type": "response.function_call_arguments.done", "call_id": "sleep-ext",
+            "name": "enter_sleep", "arguments": "{}",
+        }, generation)
+        self.assertEqual(self._tool_output()["reason"], "external_event_no_sleep")
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+
+    async def test_new_speech_or_text_cancels_unfinished_sleep(self):
+        generation = await self._admit("你先别说话了。")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye",
+                                  "delta": "行，我闭嘴。"}, generation)
+        await self._call_sleep(generation)
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye", "status": "completed"}}, generation)
+        waiting = self.client._sleep_wait_task
+        self.client.publish("tts.playback.drained", source="speaker", turn_id="someone-else")
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        await self.client.handle({"type": "input_audio_buffer.speech_started",
+                                  "item_id": "stay"}, generation)
+        await asyncio.sleep(0)
+        self.assertIsNone(self.client._pending_sleep)
+        self.assertTrue(waiting.cancelled())
+        self.client.publish("tts.playback.drained", source="speaker", turn_id=self.speech.turn_id)
+        self.assertNotEqual(self.client.wake.state, "SLEEP")
+        self.assertFalse(any(event["kind"] == "wakeword.sleep_command"
+                             for event in self.client.events))
+
+    async def test_missing_playback_receipt_sleeps_without_cutting_audio(self):
+        generation = await self._admit("可以先别出声")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye",
+                                  "delta": "好。"}, generation)
+        await self._call_sleep(generation)
+        with patch("annie_runtime.realtime.SLEEP_AFTER_REPLY_SECONDS", 0.05):
+            await self.client.handle({"type": "response.done",
+                                      "response": {"id": "bye", "status": "completed"}}, generation)
+            await asyncio.wait_for(self.client._sleep_wait_task, 1)
+        self.assertEqual(self.client.wake.state, "SLEEP")
+        self.assertEqual(self.speech.cancelled, [])
+        self.assertTrue(any(event["kind"] == "wakeword.sleep_command"
+                            and event["source"] == "tool_timeout"
+                            for event in self.client.events))
+
+    async def test_text_without_speaker_sleeps_when_the_ack_is_done(self):
+        self.client.speech = None
+        generation = await self._admit("你先别说话了。")
+        await self.client.handle({"type": "response.created", "response": {"id": "bye"}}, generation)
+        await self.client.handle({"type": "response.text.delta", "response_id": "bye",
+                                  "delta": "行，我闭嘴。"}, generation)
+        await self._call_sleep(generation)
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+        await self.client.handle({"type": "response.done",
+                                  "response": {"id": "bye", "status": "completed"}}, generation)
+        self.assertEqual(self.client.wake.state, "SLEEP")
+        self.assertTrue(any(event["kind"] == "wakeword.sleep_command" and event["source"] == "tool"
+                            for event in self.client.events))
+
+    async def test_wake_session_tells_the_model_to_call_enter_sleep(self):
+        from annie_runtime.wakeword import WakeAdmission
+
+        class Detector:
+            async def detected(self, _pcm):
+                return False
+
+        runtime = HarborRuntime(
+            [RobotConfig("annie-a", room_id="roomv2", fake_delay_ms=0, listen_enabled=True)],
+            Path(self.tmp.name) / "wake-session.db",
+            realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+            wake_detector=Detector(),
+        )
+        await runtime.start()
+        self.addAsyncCleanup(runtime.close)
+        client = runtime.realtime["annie-a"]
+        for _ in range(100):
+            if client.ready:
+                break
+            await asyncio.sleep(0.01)
+        update = next(event for event in client.socket.outbound if event["type"] == "session.update")
+        names = {tool["function"]["name"] for tool in update["session"]["tools"]}
+        self.assertIn("enter_sleep", names)
+        self.assertIn("调用enter_sleep", update["session"]["instructions"])
+        self.assertIsInstance(client.wake, WakeAdmission)

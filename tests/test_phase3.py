@@ -73,6 +73,31 @@ class SessionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context[0]["user_text"], "turn-05")
         self.assertEqual(context[-1]["user_text"], "turn-24")
 
+    async def test_paged_history_is_complete_and_does_not_truncate_persistence(self):
+        await self.runtime.switch_session("annie-a", chat_id="paged", persona_id="annie")
+        for index in range(95):
+            result = await self.runtime.submit("annie-a", f"page-{index:03d}")
+            self.assertEqual(result.status, "completed")
+        full = await self.runtime.load_conversation("annie-a", "paged", "annie")
+        self.assertEqual(len(full["turns"]), 95)
+        cursor = None
+        pages = []
+        while True:
+            page = await self.runtime.load_conversation(
+                "annie-a", "paged", "annie", limit=30, before_id=cursor)
+            self.assertLessEqual(len(page["turns"]), 30)
+            pages[:0] = page["turns"]
+            if not page["has_more"]:
+                self.assertIsNone(page["next_before_id"])
+                break
+            cursor = page["next_before_id"]
+            self.assertEqual(cursor, page["turns"][0]["id"])
+        self.assertEqual([item["turn_id"] for item in pages],
+                         [item["turn_id"] for item in full["turns"]])
+        self.assertEqual(len(set(item["id"] for item in pages)), 95)
+        other = await self.runtime.load_conversation("annie-b", "paged", "annie", limit=30)
+        self.assertEqual(other["turns"], [])
+
     async def test_turn_hot_path_does_not_wait_for_sqlite_ledger_write(self):
         original_create = self.runtime.store.create_conversation_turn
         write_started = threading.Event()

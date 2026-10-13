@@ -18,7 +18,7 @@ const phases: Array<{
   {key: 'listening', label: '收听', code: 'LISTEN', color: '#00f5ff', detail: '天青倾听中'},
   {key: 'processing', label: '处理', code: 'THINK', color: '#c084fc', detail: '鸢尾深度联想'},
   {key: 'playing', label: '播放', code: 'SPEAK', color: '#ff2a85', detail: '全息珊瑚绽放'},
-  {key: 'followup', label: '追问', code: 'FLOW', color: '#00ffc4', detail: '翡翠追问窗口'},
+  {key: 'followup', label: '等追问', code: 'FLOW', color: '#00ffc4', detail: '等待用户继续提问，不代表主动续聊'},
 ];
 
 const displayNumber = (value: number | null | undefined, unit = '') =>

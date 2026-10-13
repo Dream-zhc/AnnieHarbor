@@ -1,88 +1,32 @@
-# Phase 4C · 统一 React 工作台实施与验收
+# Phase 4C｜React工作台整合摘要
 
-> **2026-09-20 返工决定：原版“测试功能汇总页”不作为正式产品交付。以下历史清单记录上轮状态；以文末“产品级工作台返工”作为当前实现与验收范围。**
+> 2026-10-10精简。历史“测试汇总页”、独立阶段HTML及缺失环境说明不再作为当前操作指南。**软件与浏览器模拟证据不代替真实设备、声学或人工体验验收。**
 
-## 阶段状态
+## 软件职责与保留项
 
-- 用户已明确安排在 Phase 4B 尚未人工测试时先实施 4C，待统一工作台完成后集中测试。**4B 保留待验，不宣布 PASS**；Phase 4 的物理麦克风与真正音频联合验收同样未补证据。
-- 本阶段只整合原有 web/、Phase 1–4B 已接线功能，不换模型、音色、Room 合同、4B 合成/嘴型/取消链，不新增后续阶段业务。
-- 4C 自动化、构建、实际浏览器、真 Room、真扬声器、人工体验分别记录；真实回执不存在时继续 unknown。
+- 在既有 `web/`整合Phase 1–4B功能，不重建React/TypeScript/Vite工程、不换模型/音色/Room合同、不改变TTS/嘴型/取消链。当前工作台与大屏入口见[前端说明](../../../web/README.md)。
+- 顶部robot/Room/Chat与取消清楚；会话侧栏、完整历史/流式正文/输入、当前机器人状态和按需开发者诊断分区。技术epoch/generation后置，JSON默认折叠，不预建空模块或假状态。
+- 新建/切换/删除Chat及Persona/revision沿用Session接口，删除明确确认；查看旧消息不强制滚动。旧请求/事件按robot/chat/persona/epoch/generation过滤，不串目标。
+- 会话列表的persona_revision取该Chat/Persona最后创建的已落盘回合，不取最大值；回退4→1仍显示1，无历史不伪造落盘事实。
+- 既有接线包括健康/实例控制、PCM/Room、会话/历史/context、Ledger/Coordinator/SocialState、Realtime文本/SSE与TTS/嘴型/播放证据。Fake与真实操作分开，模拟播放不能修改真实回复事实。
+- 六通道配置存在不等于全部已连接。speaker与browser_test分源，无真实播放证据仍unknown；网页不能持有Provider密钥或自行切换Provider开关。
+- GSAP3.15.0 + @gsap/react2.1.2为该阶段精确依赖基线，当前以锁文件为准。入场动效遵守减少动效和卸载清理，不逐token动画、不延迟PCM/输入/取消，不制造假波形。
 
-## 功能迁移清单（入口 → 真实接口 → 状态）
+## 麦克风0帧缺陷与有效复现
 
-| 来源 | 统一工作台入口 | 后端/Room 接线 | 本轮结果 |
-|---|---|---|---|
-| 1 | 顶部健康、机器人栏、开发者 Fake 控制/独立 Fake 回合及取消 | `/health`、`/api/robots/{id}/{start,stop,fail,cancel}`、`/turns` | 代码接线，人工待验 |
-| 2 | PCM / Room、测试帧、浏览器麦克风和明确停止按钮 | `/api/phase2/rooms`、`/inputs`、原 MIC_AUDIO Room WS | 复用，人工待验 |
-| 3 | 会话栏、新建/切换/删除、完整历史、20轮上下文、开发者 Fake 播放、Coordinator/SocialState | `/session`、`/conversations`、`/context`、`/turns/{turn_id}/playback`、`/response-requests`、`/coordinator`、`/social-state` | 历史列表补 `persona_revision`；页面动作/历史复用，人工待验 |
-| 4 | 对话文字流、转写/函数事件、Session/generation、连接/错误 | `/realtime/events?after=N`、`/realtime/text`、`/health` | 复用并增加隔离单测，人工待验 |
-| 4B | TTS/PCM/嘴型/回执、浏览器测试扬声器、同一取消链 | 已有 reb_tts、reb_sam、reb_main、`speech_output` | **仅整合展示；声学/真机未验** |
+根因是启动完成后把局部ws/context设为undefined，音频回调仍引用这些变量，造成UI“发送中”而不产帧。修复捕获不可变capture资源并显式移交所有权，启动失败与正常停止分别清理；getUserMedia和AudioContext.resume在用户点击时发起。
 
-本轮改动只对现有会话列表 API 增加 `persona_revision`：取本 Chat/Persona **最后创建的已落盘回合**的 revision（即使后来手动从 4 改回 1 也显示 1），不改数据库 schema/历史数据；全新无历史 Chat 仍由当前 Session 表单创建。无法从列表推出无历史 Session 的版本时，不伪造数据库事实。
+PCM跨回调按16kHz/mono/S16LE、20ms打包；16/44.1/48kHz连续样本有可执行回归，不再仅匹配源码字符串。首帧即时刷新计数，后续降频更新；3秒无首帧显示AudioContext/track状态并停止，不把WS连接成功当音频回调成功。切Robot/离页/停止释放MediaStream、AudioContext和WS。同Room一路音源，真实发送必须由用户显式开启。
 
-## 工作台组织与边界
+**当时真实Chromium＋假麦克风＋Mock Room WS**捕获12个651B MIC_AUDIO包，UI非零帧，停止/切B关闭旧连接，无JS异常。该证据验证真实浏览器回调，不向现场Room发帧，不证明物理麦克风、ASR或扬声器通过。长期浏览器回归为 `web/tests/microphone.browser.mjs`。
 
-- 顶栏唯一显示 robot / Room / 当前 Chat、健康及全局取消；侧栏只负责机器人与会话；中央保留完整历史与流式文字；音频/PCM 独立入口，开发者详情默认收起、JSON 默认折叠。
-- 六通道显示的是地址配置状态，**仅 mic 展示其实际连接状态**；浏览器试听报告标 `browser_test`，不升格为真机扬声器已播；4B 默认不开启真实发布或下载模型。
-- GSAP 3.15.0 + @gsap/react 2.1.2 精确锁版，首次静态卡片轻量入场，media query 减少动效；无流式文本逐 token 动画，不阻塞取消、PCM 或 Room 消息，卸载清理 GSAP scope。
-- 原 React/TypeScript/Vite、npm 单锁、Python 静态发布保留；Fake 播放修改限定刚在本页创建的 Fake Turn，不改真实回复的播放事实。
+## 历史验证与证据级别
 
-## 网页验收
+- 初始/返工Python101项、25子测试、2项既有弃用警告，前端最终8项及类型/构建/Ruff/锁/diff通过；这些是历史版本结果，不是当前全量计数。
+- TestClient与独立SQLite验证过页面/静态资源；独立关闭TTS/ForcedAligner的Runtime曾HTTP200且退出清理。**当时**无法取得浏览器可执行文件的那轮只记HTTP通过，不追认GUI通过；后来麦克风Chromium证据独立记录如上。
+- GSAP接入时未压缩构建约增加74.5kB；没有动效开关的长任务/掉帧/取消延迟对照，不据构建体积判真实性能。
+- 旧 `/phase-tests/`和 `tests/html/`已清理；正式麦克风与网页调试扬声器以现有工作台实现为准，不恢复阶段验收页面。
 
-正式入口 `/`；独立步骤入口 `/phase-tests/phase4c.html`。按总计划 WEB-01～08 与 P4C-W1～W7 执行。桌面 1440×900、窄屏 390×844、减少动效开关、机器人/会话连续切换、Room 输入/浏览器播放器、失败提示、关闭页面释放、前后端回归及浏览器性能均须单独留下证据。
+## 统一验收待办
 
-**结论：浏览器人工操作、真实设备/麦克风、AEC、实际嘴型与性能前后对照均待验；不能用构建通过替代。**
-
-## 本轮自动化证据（2026-09-20）
-
-- `uv run --locked pytest -q`：**101 passed / 2 条既有第三方弃用 warning / 25 subtests**。4C 新增 revision 回退与 A/B 独立历史、Python TestClient 正式页面/静态资源/验收页 HTTP 检查。
-- `npm --prefix web ci`、`npm --prefix web run typecheck`、`npm --prefix web test`（**7 passed**）、`npm --prefix web run build` 均退出 0；`uv lock --check`、`uv run --locked ruff check apps packages tests`、`git diff --check` 均通过。
-- 正式构建 JS：前次已提交产物 243,214 B；本轮构建约 317,700 B，新增 GSAP 等约 74.5 kB 未压缩。**未**取得浏览器动效开/关的长任务/掉帧和取消延迟对照；不评价实际性能。
-- HTTP 检查使用内存 TestClient + 独立临时 SQLite，不是通过 CLI 新开独立服务，也不是实际浏览器。未调用 TTS 或声学模型、未向 Room 发布测试音频；设备联合实测留待用户集中进行。
-
-## 产品级工作台返工（用户确认，优先于上轮迁移清单）
-
-- **正式 React 首页不是阶段测试聚合器。** 导航固定为当前有真实数据的总览、实时对话、机器人控制中心和只读开发者观测；后续记忆、视觉、事件、动作、复杂任务按实际接线逐步增量进入各业务区，不预建空白模块或伪造状态。
-- 对话页改为「机器人/会话侧栏 → 历史、实时文字与固定输入 → 当前机器人状态」三栏；Session/Persona/revision 使用新建会话弹窗、历史会话直接切换，技术 epoch/generation 留在 Developer。删除范围显式确认。用户查看旧消息时不强制滚动；转写/生成事件仍以 robot/chat/persona/epoch/generation 过滤。
-- 总览和机器人页面使用后端的健康/Room/Realtime/TTS/嘴型及播放证据数据；六通道保留，非 mic 只展示已配置而非已连接；发布和真机已播保持分层，未知仍为 unknown。
-- **前序调试功能保留单独简单 HTML，不作为正式 React 操作**：Phase 1 Fake/多头在 `/phase-tests/phase1.html`；Phase 2 单帧 PCM、浏览器测试麦克风在 `/phase-tests/phase2.html`；Phase 3 Fake Ledger/模拟播放/Coordinator 在 `/phase-tests/phase3.html`；Phase 4 Realtime 联调在 `/phase-tests/phase4.html`；Phase 4B reb_tts/reb_sam 浏览器试听与 `browser_test` 回执在 `/phase-tests/phase4b.html`。**保留了这些页的可测试能力与公开后端合同，不删除阶段回归。**
-- 4B 测试 HTML 直接订阅原 Room WebSocket，消费一份真实 reb_tts PCM、显示 ForcedAligner 实际嘴型、发 browser_test 回执；无设备数据时不产生 speaker、spoken 事实。移除 React 中无人使用的 PCM/播放测试组件，不改变 Runtime/声学 sidecar/模型配置/Room wire。
-- GSAP 只做展示入场，媒体减少动效时不创建该动画；输入/取消无需等待动画、无假波形或伪反馈；不增加新状态框架/第二前端/产品测试按钮。
-
-### 返工验证记录
-
-工作台正式入口仍为 `/`，新版阶段验收入口仍为 `/phase-tests/phase4c.html`。需重新执行 WEB-01～08 与 P4C-W1～W7 的实际布局、弹窗、历史滚动、隔离、错误、取消、减少动效、Room/设备/性能分层验收。**Phase 4/4B/4C 人工体验与真实设备不因为本轮重排而自动通过。**
-
-- `npm --prefix web ci`、`npm --prefix web run typecheck`、`npm --prefix web test`（8 passed）、`npm --prefix web run build`：通过。Python 完整回归 101 passed / 2 条既有弃用 warning / 25 subtests，uv lock、ruff、diff check 通过。
-- 实际以独立 SQLite、关闭外置 TTS/ForcedAligner 且不使用 Provider Key 启动 Python Runtime；`/`、`/health` 和全部 `/phase-tests/phase1.html`～`phase4c.html` 真实 HTTP 均为 200。自建测试进程已结束，测试数据库已清理；未发起真实音频发布。
-- 测试 HTML 与正式工作台隔离由静态回归覆盖；Phase 4B HTML 的 JS 已语法解析并核对 Room URL、browser_test 与采样回执字段。**浏览器实际播放、桌面/窄屏截图、减少动效与性能前后对照未取得：本机 Playwright 未安装浏览器可执行文件，不能把 HTTP/构建验证记成 GUI PASS。**
-
-## 工作台第二轮精简（2026-09-20）
-
-- 总览仅保留 Runtime、机器人数量和可选机器人列表，去掉「当前 Realtime」「设备播放证据」和逐项能力统计；总览不依赖当前选中哪个机器人。
-- 对话、机器人、开发者共用顶部唯一机器人选择框；切换后复用原 robot_id 隔离、重置旧会话状态与迟到结果保护，不再各页重复选择器。
-- 机器人页面保留当期可用的 Realtime、TTS、嘴型、设备播放状态及最小 Room 信息；六通道细项与 PCM/事件 JSON 只放只读开发者诊断，Fake/注入/浏览器试听只在前序独立 HTML。
-- TTS 代码已连接但默认关闭，需 `ANNIE_TTS_ENABLED=1` + Realtime Key/Room；嘴型另需 `ANNIE_VISEME_ENABLED=1` 和 Sidecar 环境，模型输出真实 `mouth_script` 前不宣告已对齐。未取得真机播放证据时保持 unknown。
-- 本轮 `npm --prefix web run typecheck`、`npm --prefix web test`（8 passed）、`npm --prefix web run build`、`git diff --check` 通过。未进行人工浏览器布局、设备或声学验收。
-
-## 语音入口与 4B 试听可发现性修复（2026-09-20）
-
-- 用户在正式对话找不到麦克风：此前为隔离测试功能错误移除了正式的麦克风入口。现在在对话输入区恢复**真实 Room PCM 麦克风**，不包含测试帧/Fake；必须明确确认该 Room 无其他麦克风源，再主动点击开启。启动/授权中可以取消，关闭页面、切机器人或离开对话自动断开与释放音轨/AudioContext/WebSocket；Room 连接身份校验、网络积压停止，按 16kHz mono S16LE/20ms MIC_AUDIO 发送。
-- 用户找不到浏览器试听：对话侧栏显示真实 TTS 状态及原因，增加新标签页的 4B HTML 链接，避免返回正式对话时销毁监听器。独立 `phase4b.html` 先检查所选机器人的健康数据；若 TTS 为 `not_configured`，明确显示没有 reb_tts PCM 并禁用无效试听；订阅成功后可直接在测试页发送真实 Realtime 文字来闭环，不伪造 PCM/嘴型/设备已播事实。
-- 当前本机运行实例 PID 87312 的健康检查：annie-a、annie-b Realtime 为 `connected`，两者 TTS 均为 `not_configured`。本机根 `.env` 有 Key，但未启用 TTS/嘴型；ForcedAligner 的 sidecar Python 环境不存在。当前没有音频进入 reb_tts、没有声学 mouth_script 进入 reb_sam，**不能把测试无声归因于浏览器播放器本身**。
-- **未自动更改 `.env` 或重启当前 Runtime**：启用 TTS 会把真实音频送入现有 Room，设备播放、停播与 AEC 未经验收；需先确认 Room 下游扬声器/麦克风安全条件，再按 4B 流程显式开启。侧车环境准备完成且模型实际生成 mouth_script 后才能说嘴型已通。
-- 新增对应前端回归和网页诊断；类型/构建/自动化验证不代表真实麦克风、Provider、Room 实际收音、浏览器播放和声学嘴型现场通过。
-
-## 正式麦克风一直显示 0 帧的确定性缺陷（2026-09-20）
-
-- 根因：`start()` 完成连接后将局部 `ws`、`context` 设为 `undefined`，而 `processor.onaudioprocess` 依旧引用这两个局部变量；所以即使 UI 显示「正在发送」，回调进入后立即返回，绝不发送帧。前一轮静态回归只检查存在 `getUserMedia`/打包字段，**未验证实际回调产出**。
-- 修复：音频回调捕获不可变的 `captureWs`/`captureContext`/`captureStream`；用 `handedOff` 明确移交资源，仅启动失败时清理临时资源；正常停止/切换/离页仍释放。将 16k PCM 20ms 按样本跨回调打包抽成可执行的纯函数，新增在 16/44.1/48kHz 下实际输入连续静音样本并验证产生 `MIC_AUDIO` 651B 房间帧的自动化，不再仅匹配静态源码。
-- 首帧即时更新计数，其后每 25 帧刷新一次；握手完成先显示「等待首帧」，3 秒音频回调未到会停止并显示 AudioContext 与设备 track 状态，避免永远假显示「发送中 · 0 帧」。
-- 仍不得声称已在用户浏览器/实体麦克风验证：真实 Room 音频发送必须由用户在正式页点击并授权；只对测试静音在内存中执行打包，无需向现场 Room 注入任何帧。
-
-### 本次实际浏览器回归（补证据）
-
-- 除资源移交错误外，旧版也在等待麦克风授权后才创建和 resume AudioContext；现在将 `getUserMedia` 和 `AudioContext.resume` 都发起于初始点击回调。不会把「Room WebSocket 已连接」当作「音频回调正在运行」。
-- 新增 3 秒首帧超时，直接展示 AudioContext 和麦克风 track 状态。首帧立即更新计数，之后每 10 帧刷新一次；在后台不进行逐帧 React 状态更新。
-- **实际 Chromium Headless + 假麦克风（非静态断言）**：Playwright 在真实 React 页面启动并授予假麦克风，替换浏览器 WebSocket 为只记录而不发送到现场 Room 的 Mock；浏览器真实 `onaudioprocess` 触发后捕获 **12 个 651B MIC_AUDIO 包**（仅测试页模拟连接，URL 仍与目标 roomv2 匹配），UI 显示非零帧；停止与切到机器人 B 均能关闭原 WebSocket，不再收到旧房间帧；页面无 JS 异常。可选回归：`node web/tests/microphone.browser.mjs`（需本地 Runtime / Playwright Chromium）。
-- **现场物理麦克风、真实 Room 接收、ASR/smart_turn 仍待用户操作验证**；本项不改 `.env`、不动现场 PCM 音源、不可倒填完整硬件闭环 PASS。
+按[总览WEB-01～08](../../规划/小安妮V2后端开发总计划.md)验证1440×900/390×844、键盘、弹窗、历史滚动、错误/断线、减少动效、快速切Robot/Chat/Persona、迟到结果和资源释放；音频/取消并发与性能留实际数据。真实Room/物理麦克风/扬声器/AEC/嘴型与真人体验继续待验，不能因重排布局或自动化通过而标Phase 4/4B/4C整体PASS。

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import re
 import sqlite3
 import time
@@ -15,6 +16,15 @@ from uuid import uuid4
 
 from annie_core import AudioFormat, NormalizedEvent, RobotConfig
 from websockets.asyncio.client import connect
+
+from .language_preferences import (
+    clear_language_preference,
+    delete_unowned_chat_language_preferences,
+    load_language_preferences,
+    migrate_language_preferences,
+    set_language_preference,
+)
+from .speakers import migrate_speaker_profiles
 
 VERIFIED_MIC_FORMAT = AudioFormat("pcm_s16le", 16000, 1, 20, 640)
 logger = logging.getLogger(__name__)
@@ -361,6 +371,27 @@ def _first_text(message: dict) -> str | None:
     return None
 
 
+def _radar_too_close(message: dict, data: dict) -> dict | None:
+    """Embedded radar proximity uses the pressure envelope: id 5, name 距离过近."""
+    sensor_id = data.get("id", message.get("id"))
+    name = data.get("name", message.get("name"))
+    distance = data.get("distance", message.get("distance"))
+    if type(sensor_id) is not int or sensor_id != 5:
+        return None
+    if not isinstance(name, str) or name.strip() != "距离过近":
+        return None
+    if type(distance) not in (int, float) or not math.isfinite(distance):
+        return None
+    if not 0 <= distance <= 100_000:
+        return None
+    return {
+        "id": 5,
+        "name": "距离过近",
+        "distance": distance,
+        "sensor_type": "radar",
+    }
+
+
 def normalize_room_event(message: dict) -> NormalizedEvent | None:
     """Normalize only Phase 0-proven inputs; transport target remains intentionally unset."""
     if not isinstance(message, dict):
@@ -403,6 +434,17 @@ def normalize_room_event(message: dict) -> NormalizedEvent | None:
 
     if message_type in {"pressure", "touch", "gas"}:
         data = message.get("data") if isinstance(message.get("data"), dict) else {}
+        if message_type == "pressure":
+            radar = _radar_too_close(message, data)
+            if radar is not None:
+                source = data.get("source", message.get("from", message.get("source")))
+                ts_ms = data.get("ts", message.get("ts"))
+                return NormalizedEvent(
+                    kind="sensor.radar",
+                    payload=radar,
+                    source=source if isinstance(source, str) else None,
+                    ts_ms=ts_ms if type(ts_ms) is int else None,
+                )
         level = data.get("level", message.get("level"))
         if type(level) is not int:
             return None
@@ -540,7 +582,11 @@ def resolve_database(root: Path, value: str) -> Path:
 
 
 class RuntimeStore:
-    SCHEMA_VERSION = 9
+    SCHEMA_VERSION = 10
+
+    load_language_preferences = load_language_preferences
+    set_language_preference = set_language_preference
+    clear_language_preference = clear_language_preference
 
     def __init__(self, path: Path):
         self.path = path
@@ -730,6 +776,16 @@ class RuntimeStore:
                 )
             db.execute("""CREATE INDEX IF NOT EXISTS action_requests_recent
                 ON action_requests(robot_id,updated_ms DESC)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS cloned_voices (
+                voice_id TEXT PRIMARY KEY, name TEXT NOT NULL, region TEXT NOT NULL,
+                model TEXT NOT NULL, created_ms INTEGER NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS voice_preferences (
+                robot_id TEXT NOT NULL, chat_id TEXT NOT NULL,
+                persona_id TEXT NOT NULL, voice_id TEXT NOT NULL,
+                updated_ms INTEGER NOT NULL,
+                PRIMARY KEY(robot_id,chat_id,persona_id))""")
+            migrate_language_preferences(db)
+            migrate_speaker_profiles(db)
             db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
 
     def recover_actions(self):
@@ -1110,6 +1166,28 @@ class RuntimeStore:
             ).fetchall()
         return [self._turn_row(row) for row in rows]
 
+    def load_conversation_page(self, robot_id: str, chat_id: str, persona_id: str,
+                               *, limit: int, before_id: int | None = None):
+        """Read the latest bounded page, using the existing scope/id index."""
+        where = "robot_id=? AND chat_id=? AND persona_id=?"
+        args = [robot_id, chat_id, persona_id]
+        if before_id is not None:
+            where += " AND id<?"
+            args.append(before_id)
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT id,turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
+                session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
+                assistant_planned_text,assistant_generated_text,
+                assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
+                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                FROM conversation_turns WHERE """ + where + " ORDER BY id DESC LIMIT ?",
+                (*args, limit + 1),
+            ).fetchall()
+        turns = [self._turn_row(row) for row in reversed(rows[:limit])]
+        return {"turns": turns, "has_more": len(rows) > limit,
+                "next_before_id": turns[0]["id"] if len(rows) > limit else None}
+
     def list_conversations(self, robot_id: str):
         with self.connect() as db:
             rows = db.execute(
@@ -1186,6 +1264,7 @@ class RuntimeStore:
                 WHERE robot_id=? AND chat_id=? AND persona_id=?""",
                 (robot_id, chat_id, persona_id),
             )
+            delete_unowned_chat_language_preferences(db, robot_id, chat_id, persona_id)
         return deleted_turns
 
     def list_chat_memories(self, robot_id, persona_id, chat_id, include_deleted=False):

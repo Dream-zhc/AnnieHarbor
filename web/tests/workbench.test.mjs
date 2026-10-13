@@ -56,6 +56,14 @@ test('robot and session routing preserves all isolation dimensions',()=>{
   assert.notEqual(sessionKey(a),sessionKey({...a,chat_id:'other'}));
 });
 
+test('conversation viewport pages records rather than mapping full history',async()=>{
+  const source=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  assert.match(source,/HISTORY_PAGE_SIZE=80/);
+  assert.match(source,/before_id=/);
+  assert.match(source,/history\?\.turns\.slice\(-visibleHistoryCount\)/);
+  assert.match(source,/if\(session\)void refreshRecent\(robotId,session\)/);
+});
+
 test('Realtime stream is visible only within matching robot, chat, persona, epoch and generation',()=>{
   const event={robot_id:'annie-a',chat_id:'same',persona_id:'calm',session_epoch:7,generation:9};
   assert.equal(eventBelongsToSession(event,event),true);

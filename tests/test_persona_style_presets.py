@@ -10,7 +10,9 @@ STYLE_MARKERS = {
     "annie": ("自然陪伴", "反常细节与因果", "先给观察，再亮立场", "我倒觉得", "明确判断收住"),
     "annie-calm": ("温柔知心", "没说透的顾虑", "先回应具体处境", "这事先不急着下结论", "小选择收束"),
     "annie-lively": ("活泼俏皮", "反差、双关或荒诞", "短促接梗，再补一拍反转", "回应当轮真实情境", "包袱落在情境"),
-    "annie-roast": ("机灵互怼", "夸张里的逻辑漏洞", "先办正事，再反击一句", "行，这题算你会出", "利落判断落句"),
+    "annie-roast": ("机灵互怼", "抓包现场", "短句起手", "用你的逻辑打你的脸", "严禁机械重复"),
+    "annie-weary": ("怨种搭档", "精神工伤", "叹气归叹气", "行，命给你了", "现实主义泼冷水"),
+    "annie-deadpan": ("优雅乐子人", "人类迷惑行为", "优雅递刀", "载入史册", "冷淡幽默"),
 }
 
 
@@ -40,6 +42,19 @@ def test_idioms_are_occasional_not_a_repeated_script(style_id):
         assert "不固定套用口头禅" in style
         assert "用户疲惫或吐露压力时先正常接话" in style
         assert "好家伙，还有这一出" not in style
+        return
+    if style_id == "annie-roast":
+        assert "严禁机械重复" in style
+        assert "秒切靠谱同盟模式" in style
+        assert "这题算你会出" not in style
+        assert "还挺会挑时候" not in style
+        return
+    if style_id == "annie-weary":
+        assert "偶尔自然调侃" in style
+        assert "不连续两轮重复" in style
+        return
+    if style_id == "annie-deadpan":
+        assert "打趣时克制使用" in style
         return
     for marker in ("偶尔", "不照搬示例", "不每轮必说", "不连续两轮重复"):
         assert marker in style

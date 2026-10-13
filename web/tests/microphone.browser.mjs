@@ -48,7 +48,7 @@ try{
       close(){this.readyState=3;window.__micClosed++;}
     };
   });
-  const url=process.env.ANNIE_BROWSER_TEST_URL??'http://127.0.0.1:8780/';
+  const url=new URL('?view=workbench',process.env.ANNIE_BROWSER_TEST_URL??'http://127.0.0.1:8780/').href;
   await page.goto(url,{waitUntil:'domcontentloaded'});
   await page.getByRole('checkbox',{name:/此 Room 没有另一个麦克风/}).check();
   await page.getByRole('button',{name:'开启麦克风'}).click();
@@ -57,7 +57,7 @@ try{
   assert.equal(first.bytes,651);
   assert.equal(first.header,'MIC_AUDIO');
   assert.match(first.room,/\/reb_mic$/);
-  assert.match(await page.locator('.voice-actions [role="status"]').innerText(),/已发 [1-9]\d* 帧/);
+  assert.match(await page.locator('.voice-input [role="status"]').innerText(),/[1-9]\d*帧/);
   await page.getByRole('button',{name:'停止麦克风'}).click();
   const stopped=await page.evaluate(()=>window.__micFrames.length);
   await page.waitForTimeout(450);
@@ -68,7 +68,7 @@ try{
   assert.ok(after.closed>0,'microphone WebSocket not released');
   await page.getByRole('button',{name:'开启麦克风'}).click();
   await page.waitForFunction(before=>window.__micFrames.length>=before+5,stopped,{timeout:10000});
-  await page.getByRole('combobox',{name:'当前机器人'}).selectOption('annie-b');
+  await page.getByRole('button',{name:'annie-b',exact:true}).click();
   await page.waitForTimeout(200);
   const switched=await page.evaluate(()=>({
     frames:window.__micFrames.length,closed:window.__micClosed,
@@ -80,4 +80,54 @@ try{
   assert.deepEqual(errors,[],'browser JS errors');
   console.log('PASS Chromium fake microphone → real audio callbacks →',
     stopped,'651-byte MIC_AUDIO packets; stop and robot switch release WS; no leaked frames.');
+  // Actual React startup failure/cancellation, without a real Room publisher.
+  for(const scenario of ['cancel','wasm-error','room-close']){
+    const fixture=await context.newPage();
+    await fixture.addInitScript(mode=>{
+      window.__fixtureFrames=0;window.__fixtureClosed=0;
+      if(mode==='cancel'||mode==='wasm-error'){
+        const NativeContext=window.AudioContext;
+        window.AudioContext=class extends NativeContext{
+          constructor(options){
+            super(options);
+            const add=this.audioWorklet.addModule.bind(this.audioWorklet);
+            this.audioWorklet.addModule=(url,...args)=>{
+              if(String(url).includes('/vendor/libsamplerate-')){
+                const code=mode==='cancel'?'globalThis.LibSampleRate={create:()=>new Promise(()=>{})};'
+                  :"globalThis.LibSampleRate={create:()=>Promise.reject(new Error('fixture WASM failure'))};";
+                url=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));
+              }
+              return add(url,...args);
+            };
+          }
+        };
+      }
+      window.WebSocket=class{
+        static OPEN=1;readyState=0;bufferedAmount=0;
+        constructor(url){this.url=url;setTimeout(()=>{
+          this.readyState=1;this.onmessage?.({data:JSON.stringify({type:'WELCOME',ok:true,
+            room:url.match(/\/robot\/([^/]+)\/reb_mic/)?.[1]??'unknown',robotId:'reb_mic'})});
+          if(mode==='room-close'){this.readyState=3;this.onclose?.();}
+        },0);}
+        send(){window.__fixtureFrames++;}
+        close(){this.readyState=3;window.__fixtureClosed++;}
+      };
+    },scenario);
+    await fixture.goto(url,{waitUntil:'domcontentloaded'});
+    await fixture.getByRole('checkbox',{name:/此 Room 没有另一个麦克风/}).check();
+    await fixture.getByRole('button',{name:'开启麦克风'}).click();
+    if(scenario==='cancel'){
+      await fixture.getByText('初始化高质量重采样…',{exact:true}).waitFor({timeout:5000}).catch(async error=>{console.log('FIXTURE_STATUS',await fixture.locator('.voice-input').innerText());throw error;});
+      await fixture.getByRole('button',{name:'取消开启'}).click();
+      await fixture.getByText('已停止浏览器麦克风',{exact:true}).waitFor();
+    }else{
+      await fixture.getByText(/开启失败：/).waitFor();
+    }
+    await fixture.waitForTimeout(600);
+    assert.equal(await fixture.evaluate(()=>window.__fixtureFrames),0,scenario+' leaked PCM');
+    assert.ok(await fixture.evaluate(()=>window.__fixtureClosed)>0,scenario+' leaked WS');
+    await fixture.getByRole('button',{name:'开启麦克风'}).waitFor();
+    console.log('PASS Chromium startup '+scenario+': no PCM, WS released, start is available.');
+    await fixture.close();
+  }
 }finally{await browser.close();}

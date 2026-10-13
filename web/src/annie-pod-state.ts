@@ -15,6 +15,7 @@ export type AnniePodReadout = {
   state: string;
   wakeword: PodWakeState;
   speech_active: boolean | null;
+  response_id?: string | null;
   speech_output: {
     state: string;
     playback_state?: string | null;
@@ -48,16 +49,18 @@ export function anniePodPhase(snapshot: AnniePodReadout | null, stale = false): 
     return state('playing', '扬声器播放中', '收到实体扬声器播放回执');
   if (played && output?.playback_source === 'browser_test')
     return state('playing', '网页试听中', '仅网页播放，不代表真机播放');
-  if (wake?.enabled && wake.state === 'SLEEP')
-    return state('sleep', '休眠待唤醒', '仅在本地检测唤醒词');
   if (snapshot.speech_active || wake?.candidate_speech)
     return state('listening', '正在收听', '收到用户语音开始事件');
+  if (output?.state === 'active')
+    return state('processing', '语音生成中', '正在合成，不代表已播放');
+  if (snapshot.response_id)
+    return state('processing', '正在回复', 'Realtime 正在生成回复或主动续聊，尚无播放证据');
+  if (wake?.enabled && wake.state === 'SLEEP')
+    return state('sleep', '休眠待唤醒', '仅在本地检测唤醒词');
   if (wake?.state === 'WAKE_WAIT')
     return state('awake', '已唤醒', '等待有效提问');
   if (wake?.state === 'FOLLOWUP')
     return state('followup', '等待追问', '追问窗口保持开放');
-  if (output?.state === 'active')
-    return state('processing', '语音生成中', '正在合成，不代表已播放');
   if (wake?.state === 'ACTIVE')
     return state('awake', '待机中', '已唤醒 · 待机中，等待下次提问');
   return state('awake', '在线待命', '当前没有讲话或播放回执');

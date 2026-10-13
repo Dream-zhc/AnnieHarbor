@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {eventStages, interactionPhase, latestPreview} from '../src/exhibit/telemetry.ts';
+import {readFile} from 'node:fs/promises';
 
 const row = (generation, status='published_unknown') => ({
   call_id: `call-${generation}`, turn_id: `turn-${generation}`,
@@ -61,4 +62,18 @@ test('holographic state follows realtime receipts rather than TTS estimates', ()
   assert.equal(interactionPhase(snapshot,true).phase,'offline');
   rt.wakeword.error='stream_backlog';
   assert.equal(get(),'error');
+});
+
+test('exhibition consumes actual receipts and never invents observations',async()=>{
+  const source=await readFile(new URL('../src/exhibit/exhibit-view.tsx',import.meta.url),'utf8');
+  for(const absent of [
+    'tts.playback.finished', 'turn.finished', '人脸 0.98', '距离 1.2 m',
+    '-42 dB', '186 ms', '用户曾提到喜欢喝茶', '正在关注访客',
+    '我很喜欢茶文化！', 'Math.sin(',
+  ])assert.equal(source.includes(absent),false,`unobserved state: ${absent}`);
+  for(const required of [
+    'tts.playback.drained', 'tts.playback.stopped', 'tts.playback.held',
+    'tts.playback.resumed', 'eventBelongsToSession', 'sseSeqRef.current',
+    'playbackSource', '视觉信息未观测', '暂无可验证的记忆内容',
+  ])assert.ok(source.includes(required),`missing evidence rule: ${required}`);
 });

@@ -18,6 +18,25 @@ _SLEEP_COMMAND = re.compile(
     r"(?:退下(?:退下)?(?:别说了)?|闭嘴|别说话|不要说话|别说了|停止聊天|结束对话)"
     r"(?:吧|了|一下)?$"
 )
+_SLEEP_LEADS = (
+    "小安妮", "能不能", "可不可以", "请你", "现在", "马上", "立刻", "赶紧",
+    "可以", "帮我", "安妮", "请", "你", "先",
+)
+_SLEEP_STEMS = (
+    "安静一会儿", "不想聊了", "不要说话", "停止聊天", "结束对话", "不用回答",
+    "不用说话", "安静一下", "安静一会", "歇一会儿", "先停一下", "别出声",
+    "别说话", "别说了", "别聊了", "别讲了", "不聊了", "不想聊", "安静点",
+    "先停下", "去睡觉", "去休息", "歇一会", "歇会儿", "歇一下", "闭嘴",
+    "退下", "休眠", "歇着",
+)
+_SLEEP_TAIL = re.compile(
+    r"^(?:(?:了|吧)?(?:好吗|行吗|可以吗|好不好|啊|呀|哦|啦)?|"
+    r"(?:一下|一会儿|一会|吗|么|点)?)$"
+)
+_SLEEP_REJECT = (
+    "为什么", "怎么", "什么", "没让", "没有", "不是", "别让", "不要让",
+    "干嘛", "干什么", "怎样",
+)
 ASR_GRACE_SECONDS = 10.0
 
 
@@ -121,6 +140,36 @@ class DialoguePresence:
             return False  # A question about leaving is not an explicit command.
         normalized = _PUNCTUATION.sub("", source).strip()
         return bool(_SLEEP_COMMAND.fullmatch(normalized))
+
+    @staticmethod
+    def is_sleep_request(text):
+        """Current-turn evidence that she was told to stop, including paraphrases.
+
+        Exact commands stay on is_sleep_command so they can close immediately.
+        This check only admits a model sleep call; it does not close the gate.
+        """
+        if DialoguePresence.is_sleep_command(text):
+            return True
+        source = unicodedata.normalize("NFKC", str(text or ""))
+        if "?" in source or "？" in source:
+            return False
+        normalized = _PUNCTUATION.sub("", source).strip()
+        if not normalized or len(normalized) > 24:
+            return False
+        if any(word in normalized for word in _SLEEP_REJECT):
+            return False
+        rest = normalized
+        for _ in range(6):
+            for stem in _SLEEP_STEMS:
+                if rest.startswith(stem) and _SLEEP_TAIL.fullmatch(rest[len(stem):]):
+                    return True
+            for lead in _SLEEP_LEADS:
+                if rest.startswith(lead) and len(rest) > len(lead):
+                    rest = rest[len(lead):]
+                    break
+            else:
+                return False
+        return False
 
     def is_wake_transcript(self, text):
         """One observed misdecode, only on the first utterance after KWS.

@@ -29,6 +29,7 @@ test('workbench halo phases reflect actual wake, speech and verified playback st
   assert.equal(anniePodPhase(item).label,'扬声器播放中');
   item.speech_output.playback_state='drained';
   item.wakeword.state='FOLLOWUP';
+  item.speech_output.state='idle';
   assert.equal(anniePodPhase(item).phase,'followup');
   assert.equal(anniePodPhase(item,true).phase,'offline');
   item.wakeword.error='stream_backlog';
@@ -47,4 +48,20 @@ test('state pod is workbench-only, read-only and releases its poll on switch',as
   assert.match(component,/window\.clearInterval\(timer\)/);
   assert.match(css,/prefers-reduced-motion:reduce/);
   assert.doesNotMatch(component,/WebGL|requestAnimationFrame|response\.create|\.send\(/);
+});
+
+test('text and assistant continuation activity outrank idle microphone wake state',()=>{
+  const item=fixture('SLEEP');
+  item.response_id='assistant-followup';
+  assert.equal(anniePodPhase(item).phase,'processing');
+  assert.equal(anniePodPhase(item).label,'正在回复');
+  item.response_id=null;
+  item.speech_output.state='active';
+  assert.equal(anniePodPhase(item).label,'语音生成中');
+  item.wakeword.state='FOLLOWUP';
+  assert.equal(anniePodPhase(item).phase,'processing','active synthesis is not waiting for the user');
+  item.speech_output.state='idle';
+  assert.equal(anniePodPhase(item).label,'等待追问');
+  item.wakeword.state='SLEEP';item.speech_active=true;
+  assert.equal(anniePodPhase(item).phase,'listening');
 });

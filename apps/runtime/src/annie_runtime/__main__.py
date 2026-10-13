@@ -212,6 +212,22 @@ def main():
         level=resolve_log_level(os.environ.get("ANNIE_LOG_LEVEL", config["app"].get("log_level", "INFO"))),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    speaker_embedder = None
+    if os.environ.get("ANNIE_SPEAKER_ENABLED", "1") != "0":
+        from annie_adapters.speakers import MODEL_FILE, SpeakerEmbedder
+
+        speaker_path = Path(os.environ.get(
+            "ANNIE_SPEAKER_MODEL", f"var/models/{MODEL_FILE}",
+        )).expanduser()
+        if not speaker_path.is_absolute():
+            speaker_path = (root / speaker_path).resolve()
+        if speaker_path.is_file():
+            speaker_embedder = SpeakerEmbedder(speaker_path)
+        else:
+            logging.getLogger("annie.speakers").warning(
+                "声纹模型未找到，注册与识别暂不可用: %s", speaker_path)
+    speaker_threshold = float(os.environ.get("ANNIE_SPEAKER_THRESHOLD", "0.5"))
+    speaker_margin = float(os.environ.get("ANNIE_SPEAKER_MARGIN", "0.08"))
     database = resolve_database(
         root,
         args.database or os.environ.get("ANNIE_DATABASE") or config["storage"]["database"],
@@ -240,6 +256,10 @@ def main():
         cloud_aec_sync_offset_ms=int(os.environ.get("ANNIE_CLOUD_AEC_SYNC_OFFSET_MS", "80")),
         cloud_aec_delay_ms=int(os.environ.get("ANNIE_CLOUD_AEC_DELAY_MS", "0")),
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
+        acoustic_enabled=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_ENABLED", "0") == "1",
+        acoustic_url=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_URL") or None,
+        tts_expression_enabled=os.environ.get("ANNIE_TTS_EXPRESSION_ENABLED", "0") == "1",
+        tts_mixed_mode_enabled=os.environ.get("ANNIE_TTS_MIXED_MODE_ENABLED", "0") == "1",
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]
             if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
@@ -275,6 +295,9 @@ def main():
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
         weather_timeout_ms=int(provider_defaults["weather"]["amap"]["timeout_ms"]),
         weather_cache_sec=int(provider_defaults["weather"]["amap"]["live_cache_sec"]),
+        speaker_embedder=speaker_embedder,
+        speaker_threshold=speaker_threshold,
+        speaker_margin=speaker_margin,
     )
     try:
         runtime.preflight()

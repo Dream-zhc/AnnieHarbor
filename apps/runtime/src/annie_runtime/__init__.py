@@ -838,6 +838,11 @@ class HarborRuntime:
         realtime_key: str | None = None,
         realtime_url: str | None = None,
         realtime_socket_factory=None,
+        acoustic_enabled: bool = False,
+        tts_expression_enabled: bool = False,
+        tts_mixed_mode_enabled: bool = False,
+        acoustic_url: str | None = None,
+        acoustic_socket_factory=None,
         wake_detector=None,
         wake_wait_ms: int = 5000,
         wake_followup_ms: int = 8000,
@@ -872,6 +877,9 @@ class HarborRuntime:
         idle_second_seconds: float = 120,
         continuation_enabled: bool = False,
         continuation_seconds: float = 15,
+        speaker_embedder=None,
+        speaker_threshold: float = 0.5,
+        speaker_margin: float = 0.08,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -882,10 +890,30 @@ class HarborRuntime:
         if (type(realtime_restore_char_budget) is not int or
                 not 1 <= realtime_restore_char_budget <= 12000):
             raise ValueError("realtime_restore_char_budget must be an integer between 1 and 12000")
+        if type(tts_expression_enabled) is not bool:
+            raise ValueError("tts_expression_enabled must be boolean")
+        if type(tts_mixed_mode_enabled) is not bool or (tts_mixed_mode_enabled
+                                                          and not tts_expression_enabled):
+            raise ValueError("mixed TTS requires enabled expression parser")
+        if tts_mixed_mode_enabled and not tts_voice:
+            raise ValueError("mixed TTS requires enabled TTS voice")
         if continuation_enabled and (idle_model is None or
                                      not 8 <= continuation_seconds <= 25):
             raise ValueError("short continuation requires idle model and delay from 8 to 25 seconds")
         self.store = RuntimeStore(database)
+        from annie_runtime.speakers import SpeakerService
+
+        self.speakers = SpeakerService(
+            self.store, speaker_embedder,
+            threshold=speaker_threshold, margin=speaker_margin,
+        )
+        self.voices = None
+        if realtime_key and tts_voice:
+            from annie_adapters.tts import DEFAULT_URL as TTS_DEFAULT_URL
+
+            from annie_runtime.voice_profiles import DashscopeVoiceProvider, VoiceProfiles
+            provider = DashscopeVoiceProvider(realtime_key, tts_url or TTS_DEFAULT_URL)
+            self.voices = VoiceProfiles(self.store, provider, tts_voice)
         self.recorder = Recorder(self.store.write_batch)
         self.process_probe = ProcessProbe()
         self.ledger = ConversationLedgerWriter(self.store)
@@ -954,9 +982,31 @@ class HarborRuntime:
                     wake_detector=wake_detector,
                     wake_wait_ms=wake_wait_ms,
                     wake_followup_ms=wake_followup_ms,
+                    expression_enabled=tts_expression_enabled and bool(tts_voice),
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }
+        if type(acoustic_enabled) is not bool:
+            raise ValueError('acoustic_enabled must be boolean')
+        if self.realtime:
+            from annie_adapters.acoustic import QwenASRSocket
+            from annie_adapters.realtime import DEFAULT_URL as ASR_URL
+
+            from annie_runtime.acoustic import AcousticSidecar
+            for robot_id, client in self.realtime.items():
+                client.acoustic = AcousticSidecar(
+                    robot_id=robot_id, room_id=client.robot.config.room_id,
+                    url=acoustic_url or ASR_URL, key=realtime_key,
+                    on_observation=client.accept_acoustic_observation,
+                    socket_factory=acoustic_socket_factory or QwenASRSocket,
+                    enabled=acoustic_enabled)
+                client.language_preference_writer = (
+                    lambda robot_id=robot_id, **kwargs:
+                    self._write_language_preference(robot_id, **kwargs))
+        from annie_runtime.speakers import SpeakerTracker
+
+        for client in self.realtime.values():
+            client.speakers = SpeakerTracker(self.speakers, client.note_speaker)
         for robot_id, client in self.realtime.items():
             client.visual_observer = (
                 lambda robot_id=robot_id: self._current_visual(robot_id)
@@ -1009,8 +1059,13 @@ class HarborRuntime:
                     voice=tts_voice, socket_factory=tts_socket_factory or QwenTtsSocket,
                     first_chars=tts_first_chars, min_chars=tts_min_chars, max_chars=tts_max_chars,
                     event=client.publish,
+                    style_provider=client.turn_speech_style,
+                    mixed_enabled=tts_mixed_mode_enabled,
+                    voice_provider=(lambda identity: self.voices.resolved(identity))
+                    if self.voices is not None else None,
                     voice_publisher=self.voice_publishers.get(robot_id),
                 )
+                client.voices = self.voices
                 self.playback_listeners[robot_id] = (
                     RoomEventListener(
                         room_server, client.robot.config.room_id, "main",
@@ -1591,6 +1646,9 @@ class HarborRuntime:
             aec.loop = asyncio.get_running_loop()
             aec.start()
         await asyncio.to_thread(self.store.migrate)
+        await asyncio.to_thread(self.speakers.reload)
+        if self.voices is not None:
+            await self.voices.start()
         if self.actions is not None:
             await self.actions.start()
         self.ledger.start()
@@ -1639,6 +1697,8 @@ class HarborRuntime:
             await self.events.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
+            if self.voices is not None:
+                await self.voices.close()
             for task in tuple(self.voice_tasks):
                 task.cancel()
             await asyncio.gather(*self.voice_tasks, return_exceptions=True)
@@ -1679,6 +1739,70 @@ class HarborRuntime:
 
     def session_state(self, robot_id: str):
         return self.robots[robot_id].session_state()
+
+    def voice_library(self, robot_id):
+        identity = self.session_state(robot_id)
+        if self.voices is None:
+            return {"available": False, "voices": [], "previews": []}
+        return {"available": True, **self.voices.snapshot(identity)}
+
+    async def clone_voice(self, robot_id, name, filename, audio, language="zh"):
+        if self.voices is None:
+            raise ValueError("TTS voice cloning is not configured")
+        from annie_runtime.voice_profiles import check_audio
+        check_audio(filename, audio)
+        result = await self.voices.clone(name, filename, audio, language=language)
+        for client in self.realtime.values():
+            client.visual_changed()
+        return result
+
+    def speaker_catalog(self):
+        return self.speakers.catalog()
+
+    async def enroll_speaker(self, name, audio):
+        return await asyncio.to_thread(self.speakers.enroll, name, audio)
+
+    async def delete_speaker(self, speaker_id):
+        removed = await asyncio.to_thread(self.speakers.delete, speaker_id)
+        if removed is None:
+            raise KeyError(speaker_id)
+        for client in self.realtime.values():
+            tracker = getattr(client, "speakers", None)
+            if tracker is not None and tracker.forget(removed["speaker_id"]):
+                await client.note_speaker()
+        return {"status": "deleted", **removed}
+
+    async def select_voice(self, robot_id, voice_id, scope="chat", expected_identity=None):
+        if self.voices is None:
+            raise ValueError("TTS voices are not configured")
+        identity = self.session_state(robot_id)
+        if expected_identity and any(
+                expected_identity.get(k) != identity[k]
+                for k in ("chat_id", "persona_id", "session_epoch", "generation")):
+            raise ValueError("stale_voice_session")
+        result = await self.voices.select(identity, voice_id, scope)
+        client = self.realtime.get(robot_id)
+        if client:
+            client.publish("tts.voice.selected", voice_id=result["active_voice_id"],
+                           scope=scope, effective="next_tts_task")
+            client.visual_changed()
+        return {**result, **self.voice_library(robot_id)}
+
+    async def rename_voice(self, robot_id, voice_id, name):
+        if self.voices is None:
+            raise ValueError("TTS voices are not configured")
+        result = await self.voices.rename(voice_id, name)
+        for client in self.realtime.values():
+            client.visual_changed()
+        return result
+
+    async def delete_voice(self, robot_id, voice_id):
+        if self.voices is None:
+            raise ValueError("TTS voices are not configured")
+        result = await self.voices.delete(voice_id)
+        for client in self.realtime.values():
+            client.visual_changed()
+        return result
 
     async def list_persona_instances(self, robot_id):
         return await asyncio.to_thread(self.store.list_persona_instances, robot_id)
@@ -1734,19 +1858,22 @@ class HarborRuntime:
         await self.ledger.flush()
         return await asyncio.to_thread(self.store.list_conversations, robot_id)
 
-    async def load_conversation(self, robot_id: str, chat_id: str, persona_id: str):
+    async def load_conversation(self, robot_id: str, chat_id: str, persona_id: str,
+                                *, limit: int | None = None, before_id: int | None = None):
         await self.ledger.flush()
-        turns = await asyncio.to_thread(
-            self.store.load_conversation,
-            robot_id,
-            chat_id,
-            persona_id,
-        )
+        if limit is None:
+            page = {"turns": await asyncio.to_thread(
+                self.store.load_conversation, robot_id, chat_id, persona_id)}
+        else:
+            page = await asyncio.to_thread(
+                self.store.load_conversation_page, robot_id, chat_id, persona_id,
+                limit=limit, before_id=before_id,
+            )
         return {
             "robot_id": robot_id,
             "chat_id": chat_id,
             "persona_id": persona_id,
-            "turns": turns,
+            **page,
         }
 
     async def recent_context(self, robot_id: str):
@@ -2038,6 +2165,85 @@ class HarborRuntime:
         if identity != robot.session_state():
             raise ValueError("session changed while modifying; check original Chat")
         return result
+
+    async def speech_expression_state(self, robot_id):
+        client = self.realtime.get(robot_id)
+        if client:
+            return client.speech_expression_snapshot()
+        return {**self.robots[robot_id].session_state(), 'enabled': False,
+                'sidecar': {'state': 'not_configured'}, 'speech': {'state': 'not_configured'},
+                'language': {'input': None, 'application': 'unknown',
+                    'target': {'language': 'zh', 'dialect': 'unknown', 'source': 'runtime_default'},
+                    'llm_decision': None,
+                    'preferences': await asyncio.to_thread(self.store.load_language_preferences,
+                        robot_id, self.robots[robot_id].chat_id),
+                    'llm_actual_text_language': 'unknown', 'tts_audibly_verified_language': 'unknown'}}
+
+    async def set_acoustic_enabled(self, robot_id, enabled, *, expected_identity):
+        self._check_language_identity(robot_id, expected_identity)
+        if type(enabled) is not bool:
+            raise ValueError('enabled must be boolean')
+        client = self.realtime.get(robot_id)
+        if client is None or client.acoustic is None:
+            raise RobotUnavailableError('Realtime not configured')
+        client.acoustic.set_enabled(enabled)
+        client.invalidate_acoustic('sidecar_toggle', reset_policy=True)
+        client.visual_changed()
+        return client.speech_expression_snapshot()
+
+    def _check_language_identity(self, robot_id, expected_identity):
+        identity = self.robots[robot_id].session_state()
+        if expected_identity is None or any(expected_identity.get(k) != identity[k] for k in (
+                'chat_id', 'persona_id', 'generation', 'session_epoch')):
+            raise RobotUnavailableError('stale language preference identity')
+        return identity
+
+    async def set_language_preference(self, robot_id, *, scope, language, dialect,
+                                     request_id, expected_identity):
+        return await self._write_language_preference(robot_id, clear=False, scope=scope,
+            language=language, dialect=dialect, request_id=request_id,
+            expected_identity=expected_identity)
+
+    async def clear_language_preference(self, robot_id, *, scope, request_id, expected_identity):
+        return await self._write_language_preference(robot_id, clear=True, scope=scope,
+            request_id=request_id, expected_identity=expected_identity)
+
+    async def _write_language_preference(self, robot_id, *, clear, scope, request_id,
+                                        expected_identity, source_turn_id=None,
+                                        language=None, dialect=None, validate_current=None):
+        robot = self.robots[robot_id]
+        # Session switching and writes serialize only this robot's short SQLite transaction.
+        async with robot.session_lock:
+            identity = self._check_language_identity(robot_id, expected_identity)
+            if not isinstance(request_id, str) or not 1 <= len(request_id) <= 128:
+                raise ValueError('request_id must be 1..128 characters')
+            method = self.store.clear_language_preference if clear else self.store.set_language_preference
+            kwargs = dict(scope=scope, source_turn_id=source_turn_id,
+                          call_id=request_id, updated_ms=time.time_ns()//1_000_000)
+            if not clear:
+                kwargs.update(language=language, dialect=dialect)
+            def write():
+                self._check_language_identity(robot_id, identity)
+                if validate_current:
+                    validate_current()
+                    kwargs['validate_current'] = validate_current
+                return method(robot_id, identity['chat_id'], **kwargs)
+            task = asyncio.create_task(asyncio.to_thread(write))
+            try:
+                result = await asyncio.shield(task)
+            except asyncio.CancelledError:
+                # Keep session lock until the transaction commits/rolls back, even if a tool is cancelled.
+                await task
+                raise
+            preferences = await asyncio.to_thread(self.store.load_language_preferences,
+                                                  robot_id, identity['chat_id'])
+            client = self.realtime.get(robot_id)
+            if client and robot.session_state() == identity:
+                client.language.load_preferences(preferences)
+                client.visual_changed()
+                client.publish('language.preference.changed', scope=scope,
+                               revision=result['revision'], status=result['status'])
+            return result
 
     def realtime_state(self, robot_id: str):
         if robot_id not in self.realtime:

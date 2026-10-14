@@ -118,11 +118,12 @@ class RealtimeRobot:
     def __init__(self, robot, *, url: str, key: str, model: str = MODEL, persona_profiles=None,
                  history_turns: int = 8, restore_char_budget: int = 3000,
                  socket_factory=QwenRealtimeSocket, wake_detector=None,
-                 wake_wait_ms=5000, wake_followup_ms=8000,
+                 wake_wait_ms=5000, wake_followup_ms=20000, side_talk_listen_ms=120000,
                  expression_enabled=False):
         self.robot = robot
         self.wake = (WakeAdmission(wake_detector, wake_wait_ms=wake_wait_ms,
-                                   followup_ms=wake_followup_ms)
+                                   followup_ms=wake_followup_ms,
+                                   side_talk_listen_ms=side_talk_listen_ms)
                      if wake_detector is not None else None)
         self._wake_held_events = []
         self._wake_candidate_pending = False
@@ -830,7 +831,7 @@ class RealtimeRobot:
             if evidence and (not isinstance(evidence, str) or evidence not in text
                              or re.search(r'旅游|地名|翻译|引用|[“”‘’]', text)):
                 raise ValueError('inference requires unquoted current lexical evidence')
-            self.language.reply_intent(**args)
+            self.language.reply_intent(**args, transcript=text)
             self.visual_changed()
             return {'status': 'selected', 'application': self.language.application,
                     'persistent': False}
@@ -1030,7 +1031,7 @@ class RealtimeRobot:
         })
         await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
         self.publish("turn.recovered", turn_id=turn_id, item_id=item_id,
-                     reason="provider_turn_invalid")
+                     reason="provider_turn_invalid", text=self.transcript[:80])
         logger.info("turn_recovered robot=%s turn=%s chars=%d", self.robot.config.robot_id,
                     turn_id, len(self.transcript))
 
@@ -1166,6 +1167,8 @@ class RealtimeRobot:
         text = str(event.get("transcript", "")).strip()
         if not text or WAKE_NAME.search(text):
             return False  # calling her by name is the fast path
+        if DialoguePresence.is_sleep_request(text):
+            return False  # "你先歇会儿吧" is for her; enter_sleep decides
         if self.wake:
             # Just woken (WAKE_WAIT) is addressed; ACTIVE keeps barge-in rules.
             return (self.wake.state == "FOLLOWUP"
@@ -1226,7 +1229,7 @@ class RealtimeRobot:
         self.publish("addressee.decided", item_id=item_id, verdict=final, raw=verdict,
                      choice=(answer or {}).get("choice"),
                      confidence=(answer or {}).get("confidence"),
-                     latency_ms=latency_ms, error=error)
+                     latency_ms=latency_ms, error=error, text=text[:80])
         logger.info("addressee_decision robot=%s verdict=%s raw=%s choice=%s confidence=%s "
                     "latency_ms=%s error=%s chars=%d", self.robot.config.robot_id, final, verdict,
                     (answer or {}).get("choice"), (answer or {}).get("confidence"),
@@ -1246,7 +1249,9 @@ class RealtimeRobot:
             # the overheard block instead, clearly marked as not for the robot.
             await self._delete_unheard_items({item_id})
         if self.wake:
-            self.wake.speech_stopped(item_id, invalid=True)  # back to the open window
+            # People talking to each other: keep listening instead of falling
+            # back to the old deadline, which often expired mid-sentence.
+            self.wake.presence.side_talk(item_id=item_id)
         if (self.speech and self.speech.turn_id and
                 getattr(self.speech, "control_state", "") in {"hold_requested", "held_confirmed"}):
             self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
@@ -1326,7 +1331,7 @@ class RealtimeRobot:
         source = answer.get("source", "decision_model")
         self.publish("action.auto_decided", turn_id=turn_id, choice=answer.get("choice"),
                      confidence=answer.get("confidence"), script=script, latency_ms=latency_ms,
-                     source=source)
+                     source=source, text=str(user_text or "")[:80])
         logger.info("auto_expression robot=%s turn=%s choice=%s confidence=%s accepted=%s "
                     "source=%s latency_ms=%s", self.robot.config.robot_id, turn_id,
                     answer.get("choice"), answer.get("confidence"), script is not None,
@@ -2443,7 +2448,7 @@ class RealtimeRobot:
             if self.wake and self.wake.task is not None:
                 self.wake.reset()
 
-    def _create_turn(self, user_text, *, audio=False, source="user"):
+    def _create_turn(self, user_text, *, audio=False, source="user", cause=None):
         if self.turn_id:
             return
         self._last_conversation_activity_t = time.monotonic()
@@ -2487,6 +2492,10 @@ class RealtimeRobot:
             if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                 self._dialogue_changed()
         self.began = time.perf_counter()
+        logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d",
+                    self.robot.config.robot_id, turn_id, fields["input_mode"], source,
+                    cause or ("asr_final" if audio else "submit"), self.pending_audio_item_id,
+                    len(visible_text))
         self.publish("turn.started", turn_id=turn_id, user_text=visible_text,
                      turn_source=source,
                      speech_started_ms=(
@@ -2861,6 +2870,11 @@ class RealtimeRobot:
     async def _release_wake_response(self, generation, *, background_tools=False):
         events, self._wake_held_events = self._wake_held_events, []
         self._wake_candidate_pending = False
+        if events:
+            logger.info("wake_response_released robot=%s events=%d responses=%s turn=%s",
+                        self.robot.config.robot_id, len(events),
+                        [(item.get("response") or {}).get("id") for item in events
+                         if item.get("type") == "response.created"], self.turn_id)
         for buffered in events:
             if generation != self.robot.generation or (self.wake and not self.wake.reply_allowed()):
                 return
@@ -3139,6 +3153,9 @@ class RealtimeRobot:
             self.pending_audio_item_id = None
             self._candidate_playback_turn_id = None
             self.publish("transcript.ambient", text=final_text)
+            if (self.wake and self.wake.state != "SLEEP"
+                    and DialoguePresence.is_sleep_command(final_text)):
+                await self._enter_sleep("ambient_asr")
         elif kind == "conversation.item.ambient_audio_transcription.delta":
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
@@ -3193,6 +3210,13 @@ class RealtimeRobot:
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
             event = self._normalize_wake_call(event)
+            if (self.wake and self.wake.state != "SLEEP"
+                    and DialoguePresence.is_sleep_command(event.get("transcript", ""))):
+                # "退下/闭嘴" is obeyed before the decision model, a dropped
+                # smart_turn or the wake gate's admission can discard it.
+                self._invalid_recovery = None
+                await self._enter_sleep("asr", item_id=event.get("item_id"))
+                return
             recovering = event.get("_recovery_settled") is True
             if not recovering and self._hold_dropped_call(event, generation, background_tools):
                 return
@@ -3297,7 +3321,8 @@ class RealtimeRobot:
                     self._response_output_ids.pop(next(iter(self._response_output_ids)))
         elif kind == "response.text.delta":
             if not self.turn_id:
-                self._create_turn(self.transcript, audio=True)
+                self._create_turn(self.transcript, audio=True,
+                                  cause="text_before_turn:" + str(event.get("response_id")))
             self.language.first_text(self.turn_id)
             chunk = event.get("delta", "")
             if self.expression is not None:

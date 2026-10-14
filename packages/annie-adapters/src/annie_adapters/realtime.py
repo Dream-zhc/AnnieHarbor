@@ -278,10 +278,14 @@ def session_update(instructions: str, history_turns: int = 20, *,
              'Chat or robot scope. Only status=cleared means cleared.',
              {'scope': {'type': 'string', 'enum': ['chat', 'robot']}}, ['scope']),
             ('select_reply_style',
-             'OPTIONAL, never needed before speaking: pick reply language/emotion. Dialect '
-             'inference needs an EXACT phrase the user said as evidence, never a place name. '
-             'Not saved; a late choice affects the next reply only.',
-             {'language': {'type': 'string'}, 'dialect': {'type': 'string'},
+             'Sets how the voice sounds; not saved. Call it first when you START answering in '
+             'a dialect the user is speaking (zh + sichuan/henan/shaanxi, or yue), so the voice '
+             'pronounces it; not again while the dialect continues. Dialect evidence = an EXACT '
+             'phrase the user said, never a place name. Otherwise optional; a late call affects '
+             'the next reply only.',
+             {'language': {'type': 'string'},
+              'dialect': {'type': 'string', 'enum': ['unknown', 'mandarin', 'sichuan', 'henan',
+                                                     'shaanxi', 'cantonese']},
               'emotion': {'type': 'string', 'enum': ['neutral','warm','playful','sarcastic',
                                                     'curious','serious','sad','excited','calm']},
               'evidence': {'type': 'string'}, 'reason': {'type': 'string'}},

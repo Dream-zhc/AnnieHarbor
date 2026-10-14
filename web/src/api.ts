@@ -28,6 +28,8 @@ export type RealtimeEvent={
   provider_session_id?:string|null;
   action_kind?:string;action_value?:string;real_device_executed?:boolean;device_completion?:string;
   source?:string;evidence?:string;timing_source?:string;viseme?:string;
+  reason?:string;verdict?:string;choice?:string|null;confidence?:number|null;latency_ms?:number|null;
+  script?:string|null;style_id?:string;style_label?:string;setting?:string;value?:string;
 };
 export type RealtimeEvents={events:RealtimeEvent[];gap:boolean;latest:number};
 export const robotPath = (id:string) => `/api/robots/${encodeURIComponent(id)}`;

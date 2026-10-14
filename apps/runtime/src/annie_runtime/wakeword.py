@@ -13,7 +13,7 @@ WINDOW_BYTES = SAMPLE_RATE * 2 * 2  # simulation test window; not sherpa require
 # Retain 1.6s of bounded PCM: 800ms could omit early question words.
 PRE_ROLL_BYTES = FRAME_BYTES * 80  # 1600ms accommodates late keyword confirmation
 WAKE_WAIT_SECONDS = 5.0
-FOLLOWUP_SECONDS = 8.0
+FOLLOWUP_SECONDS = 20.0
 STREAM_BATCH_BYTES = FRAME_BYTES * 2     # 40ms input reduces detection batch wait
 STREAM_BACKLOG_LIMIT_BYTES = FRAME_BYTES * 25  # 500ms fail-closed backlog
 WAKE_ADDRESS_INSTRUCTIONS = (
@@ -33,10 +33,11 @@ class WakeAdmission:
     """Never await native inference in Room's 20ms PCM audio pump."""
 
     def __init__(self, detector, *, clock=time.monotonic,
-                 wake_wait_ms=5000, followup_ms=8000):
+                 wake_wait_ms=5000, followup_ms=20000, side_talk_listen_ms=120000):
         self.clock = clock
         self.presence = DialoguePresence(clock=clock, wake_wait_ms=wake_wait_ms,
-                                         followup_ms=followup_ms)
+                                         followup_ms=followup_ms,
+                                         side_talk_listen_ms=side_talk_listen_ms)
         self.factory = detector
         self.streaming = hasattr(detector, "new_stream")
         self.detector = detector.new_stream() if self.streaming else detector

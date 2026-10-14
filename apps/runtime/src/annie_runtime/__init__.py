@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from annie_adapters import (
     parse_mic_start,
 )
 from annie_brain import FakeBrain
+from annie_brain.persona import CHAT_PREFERENCES
 from annie_core import (
     AudioFormat,
     InputRejectedError,
@@ -318,6 +320,11 @@ class RobotRuntime:
         "persona_style",
         "humor_level",
         "advice_readiness",
+        "reply_length",
+        "speech_rate",
+        "speech_volume",
+        "spontaneous_motions",
+        "home_city",
     }
 
     def __init__(
@@ -882,6 +889,13 @@ class HarborRuntime:
         speaker_embedder=None,
         speaker_threshold: float = 0.5,
         speaker_margin: float = 0.08,
+        decision_url: str | None = None,
+        decision_client=None,
+        decision_timeout_ms: int = 1500,
+        addressee_enabled: bool = False,
+        auto_expression_enabled: bool = False,
+        expression_threshold: float = 0.55,
+        ambient_enabled: bool = False,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -1010,6 +1024,36 @@ class HarborRuntime:
 
         for client in self.realtime.values():
             client.speakers = SpeakerTracker(self.speakers, client.note_speaker)
+        # Decision model: one shared keep-alive client for every robot.
+        self.decision = decision_client
+        self._owns_decision = False
+        if self.decision is None and decision_url and realtime_key and self.realtime:
+            from annie_adapters.decision import DecisionClient
+
+            self.decision = DecisionClient(decision_url, realtime_key,
+                                           timeout=decision_timeout_ms / 1000)
+            self._owns_decision = True
+        for client in self.realtime.values():
+            client.decision = self.decision
+            client.addressee_enabled = bool(addressee_enabled and self.decision)
+            client.auto_expression_enabled = bool(auto_expression_enabled and self.decision)
+            client.expression_threshold = expression_threshold
+        if ambient_enabled and self.realtime:
+            from annie_adapters.acoustic import QwenASRSocket as AmbientSocket
+            from annie_adapters.realtime import DEFAULT_URL as AMBIENT_URL
+
+            from annie_runtime.acoustic import AcousticSidecar
+            from annie_runtime.ambient import MAX_LAG_MS, QUEUE_FRAMES, AmbientListener
+            for robot_id, client in self.realtime.items():
+                if client.wake is None:
+                    continue  # no wake gate: every utterance already reaches Realtime
+                sidecar = AcousticSidecar(
+                    robot_id=robot_id, room_id=client.robot.config.room_id,
+                    url=acoustic_url or AMBIENT_URL, key=realtime_key,
+                    on_observation=lambda row, client=client: client.ambient.observe(row),
+                    socket_factory=acoustic_socket_factory or AmbientSocket,
+                    max_lag_ms=MAX_LAG_MS, queue_frames=QUEUE_FRAMES)
+                client.ambient = AmbientListener(sidecar, client._remember_overheard)
         for robot_id, client in self.realtime.items():
             client.visual_observer = (
                 lambda robot_id=robot_id: self._current_visual(robot_id)
@@ -1531,6 +1575,8 @@ class HarborRuntime:
                     "transcript.done": "用户语音识别最终文本",
                     "transcript.final_preview": "用户语音识别待确认文本",
                     "transcript.ambient": "未触发对话的环境语音",
+                    "turn.started": "机器人开始思考回复",
+                    "tts.first_published": "机器人开始说话",
                 }
                 await publisher.publish({
                     "type": "voice.interaction",
@@ -1545,6 +1591,11 @@ class HarborRuntime:
                         "item_id": event.get("item_id"),
                         "conversation_id": event.get("turn_id"),
                         "text": str(event.get("text") or "")[:256],
+                        # Coarse state for the device's own micro-motions.
+                        "interaction_state": {
+                            "speech.started": "listening", "turn.started": "thinking",
+                            "tts.first_published": "speaking", "transcript.ambient": "idle",
+                        }.get(kind),
                     },
                 })
             except Exception as exc:
@@ -1643,6 +1694,12 @@ class HarborRuntime:
         if client is not None:
             client.memory_changed()
 
+    async def _warm_decision(self):
+        try:
+            await self.decision.warm()
+        except Exception as exc:  # the first real question will report failures
+            logger.info("decision_warm_failed error=%s", type(exc).__name__)
+
     async def start(self):
         if self.started:
             return
@@ -1670,6 +1727,8 @@ class HarborRuntime:
             await self.viseme_sidecars.start()
         for realtime in self.realtime.values():
             realtime.start()
+        if self.decision is not None and self._owns_decision:
+            self._decision_warm = asyncio.create_task(self._warm_decision())
         for connection in self.room_connections.values():
             connection.start()
         for connections in self.playback_listeners.values():
@@ -1713,6 +1772,8 @@ class HarborRuntime:
                 await self.actions.close()
             if self.weather is not None:
                 await self.weather.close()
+            if self.decision is not None and self._owns_decision:
+                await self.decision.close()
             if self.memory:
                 await self.memory.close()
             for connections in self.playback_listeners.values():
@@ -1998,15 +2059,15 @@ class HarborRuntime:
         if not isinstance(source, str) or not source.strip():
             raise ValueError("social state source required")
         if source == "user_setting":
-            if len(fields) != 1 or not (
-                (set(fields) == {"question_pressure"} and
-                 isinstance(fields["question_pressure"], str) and
-                 fields["question_pressure"] in {"active", "normal", "low", "none"})
-                or (set(fields) == {"persona_style"} and
-                    isinstance(fields["persona_style"], str) and
-                    fields["persona_style"] in self.persona_profiles)
+            (key, value), = fields.items() if len(fields) == 1 else ((None, None),)
+            if not (
+                (key == "persona_style" and isinstance(value, str)
+                 and value in self.persona_profiles)
+                or (key in CHAT_PREFERENCES and value in CHAT_PREFERENCES[key])
+                or (key == "home_city" and isinstance(value, str)
+                    and re.fullmatch(r"[\u4e00-\u9fffA-Za-z]{2,20}", value))
             ):
-                raise ValueError("user_setting requires a configured persona_style or active/normal/low/none question_pressure")
+                raise ValueError("user_setting requires one configured persona_style or chat preference")
             if ttl_ms is not None:
                 raise ValueError("user_setting cannot expire")
             client = self.realtime.get(robot_id)

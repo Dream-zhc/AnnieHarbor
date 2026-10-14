@@ -133,3 +133,78 @@ def test_named_style_switch_updates_this_chat_without_reconnecting(tmp_path):
             await rt.close()
 
     asyncio.run(exercise())
+
+
+def test_user_can_hand_the_choice_back_after_being_asked():
+    offered = ["annie-calm", "annie-lively", "annie-roast", "annie-deadpan"]
+    for reply in ("你选一个。", "随便，你定吧", "那你换吧。", "好", "就它吧"):
+        style, options = resolve_persona_style_request(
+            "annie", PROFILES, {}, "机灵互怼", reply, offered=offered)
+        assert style == "annie-roast" and options is None, reply
+    style, _ = resolve_persona_style_request(
+        "annie", PROFILES, {}, "活泼俏皮", "那就活泼俏皮吧", offered=offered)
+    assert style == "annie-lively"
+
+
+@pytest.mark.parametrize(("reply", "requested", "offered"), [
+    ("你选一个。", "机灵互怼", None),                       # nobody asked: no delegation
+    ("你选一个。", "怨种搭档", ["annie-calm", "annie-roast"]),  # not among the offer
+    ("别换了，你选的不行", "机灵互怼", ["annie-roast"]),        # negated
+    ("那就活泼俏皮吧", "机灵互怼", ["annie-lively", "annie-roast"]),  # disagrees with user
+])
+def test_delegation_never_overrides_the_offer_or_a_refusal(reply, requested, offered):
+    with pytest.raises(ValueError):
+        resolve_persona_style_request("annie", PROFILES, {}, requested, reply, offered=offered)
+
+
+def test_switch_after_asking_then_delegating_in_a_live_chat(tmp_path):
+    """Regression: 换一个性格 → 你选一个 → 那你换吧 used to be rejected every time."""
+    async def exercise():
+        rt = runtime(tmp_path, persona_profiles=PROFILES)
+        await ready(rt)
+        client = rt.realtime["a"]
+        stop = asyncio.Event()
+
+        async def echo():
+            seen = 0
+            while not stop.is_set():
+                outbound = list(client.socket.outbound)
+                for event in outbound[seen:]:
+                    if event.get("type") == "session.update" and event.get("session", {}).get("instructions"):
+                        await client.socket.inbound.put({"type": "session.updated", "session": {
+                            "id": client.session, "modalities": ["text"],
+                            "turn_detection": {"type": "smart_turn"},
+                            "instructions": event["session"]["instructions"]}})
+                seen = len(outbound)
+                await asyncio.sleep(0.01)
+
+        echo_task = asyncio.create_task(echo())
+        try:
+            client._create_turn("换一个性格")
+            asked = await result_from_call(client, "ask", "select_persona_style", {"style_name": ""})
+            assert asked[0]["status"] == "needs_selection"
+            assert "让你来选" in asked[0]["instruction"]
+            client._finish("completed")
+            client._create_turn("你选一个。")
+            picked = await result_from_call(client, "pick", "select_persona_style",
+                                            {"style_name": "机灵互怼"})
+            assert picked[0]["status"] == "selected"
+            assert client.persona_snapshot["style_id"] == "annie-roast"
+            assert "annie-roast" not in client._persona_offer["options"]  # follow-ups may delegate again
+            client._finish("completed")
+            client._create_turn("那你换吧。")
+            same = await result_from_call(client, "same", "select_persona_style",
+                                          {"style_name": "机灵互怼"})
+            assert same[0]["status"] == "already_selected"  # never a refusal for a no-op
+        finally:
+            stop.set()
+            await echo_task
+            await rt.close()
+    asyncio.run(exercise())
+
+
+def test_unnamed_switch_accepts_the_models_pick_of_another_style():
+    style, options = resolve_persona_style_request("annie-weary", PROFILES, {}, "活泼俏皮", "换一个性格")
+    assert style == "annie-lively" and options is None
+    style, options = resolve_persona_style_request("annie-weary", PROFILES, {}, "怨种搭档", "换一个性格")
+    assert style is None and "怨种搭档" not in options  # picking the current one still asks

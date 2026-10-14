@@ -301,6 +301,12 @@ def main():
         speaker_embedder=speaker_embedder,
         speaker_threshold=speaker_threshold,
         speaker_margin=speaker_margin,
+        decision_url=os.environ.get("ANNIE_DECISION_URL") or None,
+        decision_timeout_ms=int(provider_defaults.get("decision", {}).get("timeout_ms", 1500)),
+        addressee_enabled=os.environ.get("ANNIE_ADDRESSEE_ENABLED", "1") == "1",
+        auto_expression_enabled=os.environ.get("ANNIE_AUTO_EXPRESSION_ENABLED", "1") == "1",
+        expression_threshold=float(provider_defaults.get("decision", {}).get("expression_threshold", .55)),
+        ambient_enabled=os.environ.get("ANNIE_AMBIENT_LISTEN_ENABLED", "0") == "1",
     )
     try:
         runtime.preflight()

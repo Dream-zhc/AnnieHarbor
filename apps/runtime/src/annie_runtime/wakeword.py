@@ -18,7 +18,7 @@ STREAM_BATCH_BYTES = FRAME_BYTES * 2     # 40ms input reduces detection batch wa
 STREAM_BACKLOG_LIMIT_BYTES = FRAME_BYTES * 25  # 500ms fail-closed backlog
 WAKE_ADDRESS_INSTRUCTIONS = (
     "\n【本地唤醒称呼】语音入口使用本地唤醒词“小安妮”。"
-    "语音句首的“小安妮”及其近音转写“小爱你/小安尼/小安你/小爱妮”，"
+    "语音句首的“小安妮”及其近音转写“小爱你/小安尼/小安你/小爱妮/小阿妮”，"
     "在紧接问候或请求时只是呼叫称呼，不是表白或独立话题。"
     "直接回应后面的问候或请求，不要围绕称呼打趣、复述“小爱你”或推断爱意，"
     "也不要把这个近音当成用户的姓名，"

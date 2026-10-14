@@ -14,6 +14,13 @@ chat_completions_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/c
 [realtime]
 model = "qwen-audio-3.1-realtime-plus"
 
+# 决策模型（TypeSafe System One）：判断“是不是对机器人说的”、自发表情。
+# 地址含业务空间，只放 .env 的 ANNIE_DECISION_URL；未配置时两项都不启用。
+[decision]
+model = "decision-model-preview"
+timeout_ms = 1500
+expression_threshold = 0.55
+
 [llm.main]
 model = "qwen3.8-flash"
 stream = true

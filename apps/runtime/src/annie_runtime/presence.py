@@ -7,10 +7,42 @@ import unicodedata
 _PUNCTUATION = re.compile(r"[\s,，。！!？?、.：:~～…]+")
 _WAKE_ONLY = re.compile(r"^(?:小安妮)+$")
 _WAKE_ONLY_ASR_ALIASES = frozenset({
-    "小安尼", "小安你", "小爱你", "小爱妮",  # observed Mandarin homophones
+    "小安尼", "小安你", "小爱你", "小爱妮", "小阿妮",  # observed Mandarin homophones
     "анне", "ане", "aне",  # Cyrillic/Latin-mixed decoding of Annie ("А не.")
     "annie", "xiaoanni", "xiaoani", "ane",  # wake-name transliteration only
 })
+# The robot's name is a call, not content: Qwen ASR often writes it as a
+# homophone ("小爱你，今天天气怎么样") although local KWS heard 小安妮. Such a
+# leading call is shown and stored as 小安妮; typed text is never rewritten.
+_CALL_END = r"[\s,，。！!？?、.：:~～…]"
+# After a KWS hit the first utterance starts with the name, so any 小+安/爱 +
+# 妮-like syllable is the call, also when ASR puts the pause inside it
+# ("小爱，你今天……") or drops the last syllable ("小爱，今天……"). 你 is kept
+# before 好/们: "小安你好" may be 小安妮 + 你好.
+_KWS_CALL = re.compile(
+    r"^\s*(?P<call>[小晓筱][安爱艾阿](?:(?P<pause>[，,、 ])?[你呢](?![好们])|[妮尼泥倪妳霓])"
+    r"|[小晓筱][爱艾阿](?=[，,、。！？!?\s]))"
+)
+# Without that evidence only observed homophones used as a vocative count.
+_ASR_CALL = re.compile(
+    rf"^\s*(?P<call>小(?:安尼|安你|爱你|爱妮|阿妮|艾妮)|晓安妮)(?={_CALL_END})"
+)
+
+
+def canonical_wake_call(text, *, kws_confirmed=False):
+    """(text with a misheard leading call written as 小安妮, the raw call or None).
+
+    A pause ASR put inside the call moves behind it ("小爱，你" -> "小安妮，").
+    """
+    text = str(text or "")
+    match = (_KWS_CALL if kws_confirmed else _ASR_CALL).match(text)
+    if not match or match.group("call") == "小安妮":
+        return text, None
+    start, end = match.span("call")
+    pause = match.groupdict().get("pause") or ""
+    return text[:start] + "小安妮" + pause + text[end:], match.group("call")
+
+
 _BACKCHANNEL = frozenset({"嗯", "嗯嗯", "啊", "哦", "噢", "好", "好的", "对", "是", "呃"})
 _WAKE_FRAGMENTS = frozenset({"妮", "安妮", "小安", "小安尼"})
 _SLEEP_COMMAND = re.compile(
@@ -123,6 +155,12 @@ class DialoguePresence:
             # Qwen can produce transcript.completed after speech_stopped.
             self.deadline = self.clock() + ASR_GRACE_SECONDS
         return True
+
+    @property
+    def first_wake_utterance(self):
+        """The utterance local KWS just admitted; its leading call is the name."""
+        self._expire()
+        return self.state == "WAKE_WAIT" and self._first_wake_transcript
 
     @staticmethod
     def is_wake_only(text):

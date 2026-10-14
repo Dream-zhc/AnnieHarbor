@@ -42,7 +42,10 @@ def session_update(instructions: str, history_turns: int = 20, *,
                    expressions: bool = False, weather: bool = False,
                    reminders: bool = False, language_preferences: bool = False,
                    voice_selection: bool = False,
+                   preferences: bool = False,
+                   spontaneous_expressions: bool = True,
                    sleep: bool = False,
+                   overheard: bool = False,
                    persona_labels: tuple[str, ...] = (),
                    action_descriptions: dict[str, str] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
@@ -99,8 +102,11 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "description": (
                     "Only when the CURRENT user explicitly asks to change THIS chat's personality "
                     "style (not voice, dialect or language). Do not create a new chat. Styles: "
-                    + "、".join(persona_labels) + ". Pass the exact label they named, or an empty "
-                    "string if they named none (needs_selection: ask once which). ONLY "
+                    + "、".join(persona_labels) + ". Pass the exact label they named. If they "
+                    "named none, either pick a different style yourself or pass an empty string to "
+                    "ask once which (needs_selection); if you asked and they let you choose "
+                    "(你选/随便/那你换吧), pick one offered label and call again. Call it once per "
+                    "decision, never retry after selected or already_selected. ONLY "
                     "status=selected means it changed. Call before speaking; after selected, answer "
                     "them in one new sentence in that style instead of reciting a confirmation."
                 ),
@@ -149,23 +155,30 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     },
                 },
             })
-    if actions:
+    if actions or not spontaneous_expressions:
         # In real-motion mode, an ambiguous preview tool would intercept real
-        # motion requests. Keep the legacy fake tool ONLY in safe/dry-run mode.
+        # motion requests; when the Runtime performs motions itself the model
+        # needs no motion tool at all. Keep the fake tool ONLY in dry-run mode.
         session["tools"] = [
             tool for tool in session["tools"]
             if tool["function"]["name"] != "preview_action"
         ]
+    if actions:
         session["tools"].append({
             "type": "function",
             "function": {
                 "name": "perform_action",
                 "description": (
-                    "Physical robot action. Ordinary scripts ONLY when the CURRENT user explicitly "
-                    "asks for that action. Expressive scripts surprise, smirk, proud, skeptical, shy "
-                    "may also be used once when the CURRENT lighthearted talk clearly fits their "
-                    "catalog description; never for distress, serious news, negation or "
-                    "cancellation, and never inferred from earlier turns. These five REQUIRE "
+                    ("Physical robot action. Ordinary scripts ONLY when the CURRENT user explicitly "
+                     "asks for that action. Expressive scripts surprise, smirk, proud, skeptical, shy "
+                     "may also be used once when the CURRENT lighthearted talk clearly fits their "
+                     "catalog description; never for distress, serious news, negation or "
+                     "cancellation, and never inferred from earlier turns."
+                     if spontaneous_expressions else
+                     "Physical robot action, ONLY when the CURRENT user explicitly asks for that "
+                     "action or expression. The robot chooses its own spontaneous expressions "
+                     "automatically, so never add one yourself.")
+                    + " Expressive scripts surprise, smirk, proud, skeptical, shy REQUIRE "
                     "anchor_text: an exact word you will say in this reply (anchor_occurrence picks "
                     "which occurrence, from 1); the action fires when your speech reaches it and is "
                     "dropped if you never say it. Other scripts may omit it and start with your "
@@ -278,6 +291,50 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 'name': name, 'description': description, 'parameters': {
                     'type': 'object', 'properties': properties, 'required': required,
                     'additionalProperties': False}}})
+    if preferences:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "update_chat_preference",
+                "description": (
+                    "Only when the CURRENT user explicitly asks to change how you talk in THIS "
+                    "chat. Settings: question_pressure (active|normal|low|none: how often you ask "
+                    "follow-up questions), humor_level (none|low|normal|high), reply_length "
+                    "(short|normal|detailed), speech_rate (slower|normal|faster), speech_volume "
+                    "(quieter|normal|louder; a small change only), spontaneous_motions (on|off: "
+                    "unprompted expressive actions), home_city (city used when weather is asked "
+                    "without one). Only status=set means it changed; unchanged means it already "
+                    "was. Then simply talk the new way instead of announcing the setting."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "setting": {"type": "string", "enum": [
+                            "question_pressure", "humor_level", "reply_length", "speech_rate",
+                            "speech_volume", "spontaneous_motions", "home_city"]},
+                        "value": {"type": "string"},
+                    },
+                    "required": ["setting", "value"],
+                    "additionalProperties": False,
+                },
+            },
+        })
+    if overheard:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "recall_overheard",
+                "description": (
+                    "Get what people in the room said in the last few minutes that was not said "
+                    "to you. Call it when the user asks what was just said (我们刚才说什么), or "
+                    "mentions someone or something you have no context for (他/那个地方/刚才那个), "
+                    "before asking them who or what. Not for questions that make sense on their "
+                    "own. Speakers are unknown and usually the people in front of you: say "
+                    "你们刚才说……; if empty, say you did not catch it."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
+        })
     if sleep:
         session["tools"].append({
             "type": "function",

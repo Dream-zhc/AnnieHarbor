@@ -6,6 +6,39 @@ import tomllib
 from pathlib import Path
 
 QUESTION_PRESSURE = {"active", "normal", "low", "none"}
+# Chat-scoped preferences the user may change by talking. Values are closed
+# enums so a tool call can never write free-form instructions into the prompt.
+CHAT_PREFERENCES = {
+    "question_pressure": ("active", "normal", "low", "none"),
+    "humor_level": ("none", "low", "normal", "high"),
+    "reply_length": ("short", "normal", "detailed"),
+    "speech_rate": ("slower", "normal", "faster"),
+    "speech_volume": ("quieter", "normal", "louder"),
+    "spontaneous_motions": ("on", "off"),
+}
+# The current utterance must actually talk about the setting being changed.
+PREFERENCE_REQUEST = {
+    "question_pressure": r"追问|问我|提问|问题|反问|问来问去|多问|少问",
+    "humor_level": r"玩笑|幽默|逗|搞笑|正经|严肃|贫嘴|皮一?点",
+    "reply_length": r"简短|短一?点|简单点|啰嗦|话多|详细|多说|长一?点|展开|一句话",
+    "speech_rate": r"慢|快|语速",
+    "speech_volume": r"大声|小声|声音|音量|轻一?点|响一?点|吵",
+    "spontaneous_motions": r"动作|表情|别动|乱动|动来动去|摇头晃脑",
+    "home_city": r"我在|住在|我们这|这边|城市|天气",
+}
+REPLY_LENGTH_HINTS = {
+    "short": "用户偏好简短：每次一两句说完重点，除非对方追问。",
+    "detailed": "用户偏好详细：可以多讲背景和理由，但仍用口语，不列清单。",
+}
+
+
+def chat_preference(social: dict, key: str):
+    """A value the user set by voice or UI; observed cues never count."""
+    field = social.get(key) or {}
+    if not isinstance(field, dict) or field.get("source") != "user_setting":
+        return None
+    value = field.get("value")
+    return value if key == "home_city" or value in CHAT_PREFERENCES.get(key, ()) else None
 
 # Stable identity and conversational principles. Runtime owns sleep/admission;
 # tool schemas and the live dialogue state own their respective boundaries.
@@ -116,8 +149,21 @@ def active_style_id(persona_id: str, profiles: dict, social: dict) -> str:
     return "annie"
 
 
-def resolve_persona_style_request(persona_id, profiles, social, requested_name, user_text):
-    """Match an explicit style change. An unnamed request asks; it does not guess."""
+# After the robot asked "which style?", the user may hand the choice back.
+DELEGATED_CHOICE = re.compile(
+    r"你(?:来)?(?:选|挑|定|决定)|随便|都行|都可以|听你的|你看着办|你说了算"
+    r"|就(?:这个|那个|它|这种|你说的)|(?:那你|那就|快)?换吧|那就这样"
+    r"|^(?:好|好的|行|可以|嗯+|就这么办)[。！!～~]*$")
+
+
+def resolve_persona_style_request(persona_id, profiles, social, requested_name, user_text,
+                                  offered=None):
+    """Match an explicit style change. An unnamed request ("换个性格") either asks
+    which (empty requested name) or accepts the model's pick of a *different* style.
+
+    ``offered`` holds the style IDs the robot just asked the user to pick from;
+    only then may a delegating reply ("你选一个") accept the model's own pick.
+    """
     if not isinstance(profiles, dict) or not profiles:
         raise ValueError("persona styles are not configured")
     if not isinstance(requested_name, str) or not isinstance(user_text, str):
@@ -126,6 +172,13 @@ def resolve_persona_style_request(persona_id, profiles, social, requested_name, 
         raise ValueError("persona style request is too long")
     if re.search(r"不要|别换|不用换|不切换|别用", user_text):
         raise ValueError("persona switch was negated")
+    if offered:
+        picked = [style_id for style_id in offered if style_id in profiles
+                  and requested_name in {style_id, profiles[style_id]["label"]}]
+        named_offer = [style_id for style_id in offered if style_id in profiles
+                       and profiles[style_id]["label"] in user_text]
+        if picked and (DELEGATED_CHOICE.search(user_text.strip()) or named_offer == picked):
+            return picked[0], None
     labels = [(profile["label"], style_id) for style_id, profile in profiles.items()
               if isinstance(profile, dict) and isinstance(profile.get("label"), str)]
     named = [style_id for label, style_id in labels if label and label in user_text]
@@ -153,6 +206,10 @@ def resolve_persona_style_request(persona_id, profiles, social, requested_name, 
     if not names_style:
         raise ValueError("persona switch requires an explicit current request")
     current = active_style_id(persona_id, profiles, social)
+    picked = [style_id for style_id, profile in profiles.items()
+              if requested_name and requested_name in {style_id, profile.get("label")}]
+    if picked and picked[0] != current:
+        return picked[0], None  # "换一个" lets the robot choose any other style
     return None, [profile["label"] for style_id, profile in profiles.items() if style_id != current]
 
 
@@ -197,6 +254,9 @@ def session_instructions(persona_id: str, profiles: dict, social: dict,
             "事实查询、明确任务、连续简短应答、被打断或用户要求停止时，不为热闹强行追问。"
         )
     instructions += LANGUAGE_CAPABILITY + VOICE_OUTPUT
+    length = chat_preference(social, "reply_length")
+    if length in REPLY_LENGTH_HINTS:
+        instructions += REPLY_LENGTH_HINTS[length]
     if physical_actions:
         instructions += (
             "\n【工具边界】普通聊天、改口、表达观点和情绪以说话为主，不滥用工具；"
@@ -205,6 +265,8 @@ def session_instructions(persona_id: str, profiles: dict, social: dict,
             "已受理便自然接话，不播报等待或猜测故障；以前助手说过的‘动作没发出’不算本轮事实，"
             "也不将语言旁白当作物理执行证据。"
         )
+        if chat_preference(social, "spontaneous_motions") == "off":
+            instructions += "用户关闭了自发表情动作：只在当前轮明确要求时调用perform_action。"
     else:
         instructions += (
             "\n【工具边界】普通聊天、改口、选饮品、表达观点和情绪回应只生成文字，不调用任何工具。"
@@ -212,6 +274,9 @@ def session_instructions(persona_id: str, profiles: dict, social: dict,
             "不得为了描述聊天或表达情绪而调用它。"
         )
     return instructions, {"persona_id": persona_id, "style_id": style_id,
+                          "preferences": {key: chat_preference(social, key)
+                                          for key in (*CHAT_PREFERENCES, "home_city")
+                                          if chat_preference(social, key) is not None},
                           "configured": bool(profile and (persona_id in profiles
                                                          or override == style_id)),
                           "label": profile["label"] if profile else None,

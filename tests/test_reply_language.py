@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from annie_runtime.language import ReplyLanguageState, explicit_language_request
 
 IDENTITY = dict(robot_id="a", room_id="r", chat_id="c", persona_id="p", generation=1,
@@ -167,3 +169,77 @@ def test_serious_user_context_suppresses_sarcastic_intent():
     s.first_text('t')
     s.reply_intent(language='zh',emotion='sarcastic')
     assert s.style_for('t').emotion in {'calm','serious'}
+
+
+def test_without_the_sidecar_the_asr_final_is_dialect_evidence():
+    s = state()  # no acoustic observation: ANNIE_ACOUSTIC_SIDECAR_ENABLED=0 by default
+    with pytest.raises(ValueError):
+        s.reply_intent(language="zh", dialect="sichuan", evidence="巴适", emotion="playful",
+                       transcript="今天天气好得很")
+    s.reply_intent(language="zh", dialect="sichuan", evidence="巴适", emotion="playful",
+                   transcript="今天耍得好巴适哦")
+    s.confirm(s.revision)
+    s.response_started()
+    s.first_text("t1")
+    assert s.style_for("t1").dialect == "sichuan"
+    assert "四川话" in s.style_for("t1").instruction
+    assert s.preferences["chat"]["dialect"] == "sichuan"  # nothing persisted
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("今天天气巴适得很，我们去耍嘛", ("zh", "sichuan", "巴适")),
+    ("中不中？咱今儿个去吃烩面", ("zh", "henan", "中不中")),
+    ("今日天气好好，我哋去饮茶啦", ("yue", "cantonese", "哋")),
+    ("你觉得点样？", ("yue", "cantonese", "点样")),  # Qwen ASR writes Cantonese simplified
+    ("额们今天去哪儿", ("zh", "shaanxi", "额们")),
+    ("我一定要得到它", None), ("这里很安逸", None), ("额，我想想", None),
+    ("唔，好吧", None), ("有一点样子了", None), ("你翻译一下巴适是什么意思", None),
+])
+def test_only_dialect_only_words_count(text, expected):
+    from annie_runtime.language import dialect_marker
+    assert dialect_marker(text) == expected
+
+
+def plain_state():
+    result = ReplyLanguageState()
+    result.reset(IDENTITY)
+    return result
+
+
+def test_a_dialect_heard_in_the_asr_text_is_followed_until_mandarin_is_asked():
+    s = plain_state()
+    s.user_request("今天天气巴适得很")
+    # Unconfirmed prompt: the voice still follows this utterance's own words.
+    s.response_started()
+    s.first_text("t1")
+    assert s.style_for("t1").dialect == "sichuan"
+    assert "四川话" in s.style_for("t1").instruction
+    assert "巴适" in s.instruction_hint()
+    s.response_finished()
+    s.user_request("那明天呢")  # no marker: the conversation stays in Sichuanese
+    s.confirm(s.revision)
+    s.response_started()
+    s.first_text("t2")
+    assert s.style_for("t2").dialect == "sichuan"
+    s.response_finished()
+    s.user_request("你说普通话吧")
+    s.confirm(s.revision)
+    s.response_started()
+    s.first_text("t3")
+    assert s.style_for("t3").dialect != "sichuan"
+    assert s.snapshot()["asr_dialect"] is None
+
+
+def test_saved_preferences_keep_only_the_first_follow():
+    s = state()  # chat preference: Sichuanese
+    s.user_request("中不中？咱去吃烩面")
+    s.response_started()
+    s.first_text("t1")
+    assert s.style_for("t1").dialect == "henan"  # first follow overrides once
+    s.response_finished()
+    s.user_request("中不中嘛")
+    s.confirm(s.revision)
+    s.response_started()
+    s.first_text("t2")
+    assert s.style_for("t2").dialect == "sichuan"  # back to the saved choice
+    assert s.preferences["chat"]["dialect"] == "sichuan"

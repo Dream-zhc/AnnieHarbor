@@ -403,3 +403,60 @@ def test_requested_motion_starts_with_the_first_words_even_in_a_short_reply(tmp_
         finally:
             await rt.close()
     asyncio.run(run())
+
+
+def followup(client, seconds=8):
+    class Detector:
+        async def detected(self, _):
+            return False
+    client.wake = WakeAdmission(Detector(), followup_ms=8000)
+    presence = client.wake.presence
+    presence.state = "FOLLOWUP"
+    presence._listen_since = time.monotonic()
+    presence.deadline = presence._window_deadline = time.monotonic() + seconds
+    return presence
+
+
+def test_side_talk_past_the_deadline_keeps_her_listening(tmp_path):
+    decision = FakeDecision({"choice": "person", "confidence": .9})
+
+    async def run():
+        rt = runtime_with(tmp_path, decision)
+        client = await ready(rt)
+        try:
+            presence = followup(client, seconds=.05)  # the window ends mid-sentence
+            await utter(client, "s1", "老王，周末一起去钓鱼吧")
+            assert presence.state == "FOLLOWUP"  # not SLEEP: people are still talking
+            assert presence.deadline - time.monotonic() > 7
+            decided = [e for e in client.events if e["kind"] == "addressee.decided"][-1]
+            assert decided["text"] == "老王，周末一起去钓鱼吧" and decided["verdict"] == "not_robot"
+        finally:
+            await rt.close()
+    asyncio.run(run())
+
+
+def test_goodbyes_are_obeyed_before_the_decision_model(tmp_path):
+    decision = FakeDecision()  # any call would fail: no answer queued
+
+    async def run():
+        rt = runtime_with(tmp_path, decision)
+        client = await ready(rt)
+        try:
+            presence = followup(client)
+            await utter(client, "g1", "闭嘴")
+            assert presence.state == "SLEEP" and decision.calls == []
+            assert [e for e in client.events if e["kind"] == "wakeword.sleep_command"]
+
+            presence = followup(client)  # Qwen itself may call it ambient audio
+            g = client.robot.generation
+            await client.handle({"type": "input_audio_buffer.speech_started", "item_id": "g2"}, g)
+            await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
+                                 "item_id": "g2", "transcript": "退下吧。"}, g)
+            assert presence.state == "SLEEP"
+
+            presence = followup(client)
+            assert not client._addressee_check_needed({"transcript": "你先歇会儿吧"})
+            assert decision.calls == []
+        finally:
+            await rt.close()
+    asyncio.run(run())

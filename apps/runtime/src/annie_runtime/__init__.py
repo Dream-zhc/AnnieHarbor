@@ -853,7 +853,8 @@ class HarborRuntime:
         acoustic_socket_factory=None,
         wake_detector=None,
         wake_wait_ms: int = 5000,
-        wake_followup_ms: int = 8000,
+        wake_followup_ms: int = 20000,
+        side_talk_listen_ms: int = 120000,
         cloud_aec_robots: tuple[str, ...] = (),
         cloud_aec_sync_offset_ms: int = 80,
         cloud_aec_delay_ms: int = 0,
@@ -999,6 +1000,7 @@ class HarborRuntime:
                     wake_detector=wake_detector,
                     wake_wait_ms=wake_wait_ms,
                     wake_followup_ms=wake_followup_ms,
+                    side_talk_listen_ms=side_talk_listen_ms,
                     expression_enabled=tts_expression_enabled and bool(tts_voice),
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled

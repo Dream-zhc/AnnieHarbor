@@ -11,6 +11,7 @@ import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
+import {decisionEntry,formatDecision,isProviderAmbient,type DecisionEntry} from './decision-log';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
 import {WakeIndicator} from './wake-indicator';
@@ -206,6 +207,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
   const [firstAsrDeltaMs,setFirstAsrDeltaMs]=useState<number|null>(null);
   const [finalTranscript,setFinalTranscript]=useState<{turnId:string;text:string}|null>(null);
   const [ambient,setAmbient]=useState<string[]>([]);
+  const [decisions,setDecisions]=useState<DecisionEntry[]>([]);
   const [lastFirstText,setLastFirstText]=useState<number|null>(null);
   const [systemError,setSystemError]=useState<string|null>(null);
   const [toast,setToast]=useState<{message:string;type:'error'|'info'}|null>(null);
@@ -419,7 +421,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
   useEffect(()=>{
     setRealtimeEvents([]);setLiveTurn(null);setLiveText('');setPreviewTranscript('');
     setPendingAsr('');setAmbientPreview('');setAsrStage('idle');setFirstAsrDeltaMs(null);
-    setFinalTranscript(null);setAmbient([]);setLastFirstText(null);eventCursor.current=0;
+    setFinalTranscript(null);setAmbient([]);setDecisions([]);setLastFirstText(null);eventCursor.current=0;
     followLatest.current=true;
     setShowJump(false);
   },[robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation]);
@@ -485,9 +487,21 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             }
             if(item.kind==='transcript.ambient_delta')
               setAmbientPreview((item.text??'')+(item.stash??''));
-            if(item.kind==='transcript.ambient'&&item.text?.trim()){
-              setAmbientPreview('');setAsrStage('idle');
-              setAmbient(previous=>[...previous,item.text!.trim()].slice(-5));
+            if(item.kind==='transcript.ambient'){
+              setAmbientPreview('');setPreviewTranscript('');setAsrStage('idle');
+              // Side talk the decision model declined is listed under decisions.
+              if(isProviderAmbient(item)&&item.text?.trim())
+                setAmbient(previous=>[...previous,item.text!.trim()].slice(-5));
+            }
+            const decision=decisionEntry(item);
+            if(decision)setDecisions(previous=>[decision,...previous].slice(0,6));
+            if(item.kind==='persona.style.selected'||item.kind==='chat.preference.set'){
+              // A change made by talking must show up exactly like one made here.
+              void api<SocialState>(robotPath(robotId)+'/social-state')
+                .then(state=>{if(active)setSocial(state);}).catch(()=>{});
+              void refreshHealth();
+              if(item.kind==='persona.style.selected')
+                notify('已通过对话切换性格：'+(item.style_label??item.style_id??''),'info');
             }
             if(item.kind==='transcript.final_preview'){
               setPendingAsr(item.text??'');setPreviewTranscript('');
@@ -877,6 +891,13 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
               <div className="card-label"><span>smart_turn 忽略的环境音</span></div>
               <div className="card-body ambient" title={ambient.length>0?ambient.slice(-4).join(' / '):'—'}>
                 {ambient.length>0?ambient.slice(-4).join(' / '):'—'}
+              </div>
+            </div>
+            <div className="live-cockpit-card decision-card" aria-label="对话决策">
+              <div className="card-label"><span>对话决策</span><span>{decisions.length?decisions.length+' 条':''}</span></div>
+              <div className={'card-body decision '+(decisions[0]?.outcome.startsWith('不回复')?'declined':'')}
+                title={decisions.length?decisions.map(formatDecision).join('\n'):'暂无决策'}>
+                {decisions[0]?formatDecision(decisions[0]):'—'}
               </div>
             </div>
           </div>

@@ -79,13 +79,18 @@ class DialoguePresence:
     epoch and validate real physical speaker receipts before calling drained.
     """
 
-    def __init__(self, *, clock=time.monotonic, wake_wait_ms=5000, followup_ms=8000):
+    def __init__(self, *, clock=time.monotonic, wake_wait_ms=5000, followup_ms=20000,
+                 side_talk_listen_ms=120000):
         if (type(wake_wait_ms) is not int or not 1000 <= wake_wait_ms <= 30000
                 or type(followup_ms) is not int or not 1000 <= followup_ms <= 30000):
             raise ValueError("wake and followup windows must be 1000..30000 ms")
+        if type(side_talk_listen_ms) is not int or not 10000 <= side_talk_listen_ms <= 600000:
+            raise ValueError("side_talk_listen_ms must be 10000..600000 ms")
         self.clock = clock
         self.wake_wait_seconds = wake_wait_ms / 1000
         self.followup_seconds = followup_ms / 1000
+        self.side_talk_listen_seconds = side_talk_listen_ms / 1000
+        self._listen_since = None  # when the current wake/follow-up window opened
         self.epoch = 0
         self.state = "SLEEP"
         self.deadline = None
@@ -119,6 +124,7 @@ class DialoguePresence:
         self.epoch += 1
         self.state = "WAKE_WAIT"
         self._first_wake_transcript = True
+        self._listen_since = self.clock()
         self.deadline = self.clock() + self.wake_wait_seconds
         self._window_deadline = self.deadline
         return True
@@ -161,6 +167,29 @@ class DialoguePresence:
         """The utterance local KWS just admitted; its leading call is the name."""
         self._expire()
         return self.state == "WAKE_WAIT" and self._first_wake_transcript
+
+    def side_talk(self, *, item_id=None):
+        """Speech the decision model judged not said to the robot.
+
+        People talking to each other must not end the conversation: the open
+        window restarts from now, but only up to side_talk_listen_seconds
+        after it first opened, so a long chat among people still ends in SLEEP
+        (a call by name wakes her again). ACTIVE only drops the candidate.
+        """
+        if (self._candidate and self._candidate_item_id is not None
+                and item_id is not None and item_id != self._candidate_item_id):
+            return False
+        self._first_wake_transcript = False
+        self._candidate = False
+        self._candidate_item_id = None
+        if self.state in {"WAKE_WAIT", "FOLLOWUP"}:
+            now = self.clock()
+            limit = (self._listen_since if self._listen_since is not None else now) \
+                + self.side_talk_listen_seconds
+            self.deadline = self._window_deadline = min(
+                max(self._window_deadline or now, now + self.followup_seconds), limit)
+        self._expire()
+        return True
 
     @staticmethod
     def is_wake_only(text):
@@ -259,6 +288,7 @@ class DialoguePresence:
         if not verified or self.state != "ACTIVE" or not self._reply_admitted:
             return False
         self.state = "FOLLOWUP"
+        self._listen_since = self.clock()
         self.deadline = self.clock() + self.followup_seconds
         self._window_deadline = self.deadline
         self._reply_admitted = False

@@ -52,6 +52,33 @@ def prose_language_hint(text):
     return detected
 
 
+# Words only a dialect speaker says in conversation; one is enough. They are
+# lexical evidence from the ASR text, labelled as such, never an acoustic
+# label. Ambiguous ones are left out: 要得(到), 安逸, 晓得, 俺, 得劲, 额(=嗯).
+DIALECT_MARKERS = (
+    ('yue', 'cantonese', re.compile(
+        r'[哋嘅咗嚟冇喺佢啱睇嘢]|唔(?:係|好|該|该|知|使|系)|乜嘢|點樣|係咪|系咪|傾偈'
+        r'|(?<![一有])点样(?![子品本式])')),  # Qwen ASR writes Cantonese in simplified Mandarin
+    ('zh', 'sichuan', re.compile(
+        r'巴适|要得不|咋个|啥子|莫得|搞快|屋头|娃儿|瓜娃子|得行|撒子|耍嘛|好耍')),
+    ('zh', 'henan', re.compile(r'中不中|弄啥嘞|弄啥咧|可中|恁(?!地)|夜儿个|美得很嘞')),
+    ('zh', 'shaanxi', re.compile(r'嫽|咥|谝闲传|么麻达|美滴很|哈怂|额们|额滴')),
+)
+# A dialect heard by its words keeps being followed this long after the last one.
+DIALECT_FOLLOW_SECONDS = 120
+
+
+def dialect_marker(text):
+    """(language, dialect, word) for the first dialect-only word, else None."""
+    if not isinstance(text, str) or re.search(r'[“”‘’「」"\']|翻译|引用', text):
+        return None
+    for language, dialect, pattern in DIALECT_MARKERS:
+        match = pattern.search(text)
+        if match:
+            return language, dialect, match.group(0)
+    return None
+
+
 def validate_language(language, dialect):
     if language not in LANGUAGES or dialect not in DIALECTS:
         raise ValueError('invalid language or dialect')
@@ -137,6 +164,7 @@ class ReplyLanguageState:
         self.observation = None
         self.typed_observation = None
         self.asr_text_observation = None
+        self.asr_dialect = None
         self.candidate = None
         self.first_pending = False
         self.last_candidate = None
@@ -189,6 +217,10 @@ class ReplyLanguageState:
             return dict(self.candidate)
         if self.intent:
             return dict(self.intent)
+        if self._dialect_followed() and not any(self.preferences.values()):
+            # Saved preferences keep their one-reply first follow only.
+            return dict(language=self.asr_dialect['language'], dialect=self.asr_dialect['dialect'],
+                        source='asr_lexicon')
         if self.asr_text_observation and not any(self.preferences.values()) and not self.candidate:
             return dict(language=self.asr_text_observation['language'], dialect='unknown',
                         source='asr_text_heuristic')
@@ -240,6 +272,7 @@ class ReplyLanguageState:
             self.asr_text_observation = ({'language': hint, 'dialect': 'unknown',
                                           'source': 'asr_text_heuristic',
                                           'evidence_level': 'text_heuristic'} if hint else None)
+            self._hear_dialect(text, request)
         else:
             self.asr_text_observation = None
         # Stable prefixes can be extended by negation/correction. Re-evaluate the
@@ -253,15 +286,46 @@ class ReplyLanguageState:
         self._refresh_revision()
         return previous_hint != self.instruction_hint()
 
-    def reply_intent(self, *, language, dialect='unknown', evidence='', emotion='neutral', reason=''):
+    def _hear_dialect(self, text, request):
+        """Follow a dialect the user is speaking, by its words in the ASR text.
+
+        Runs on stable partials, so the prompt update usually lands before
+        smart_turn starts the reply. "说普通话" and other explicit requests win.
+        """
+        if request:
+            self.asr_dialect = None
+            return
+        found = dialect_marker(text)
+        if not found:
+            return
+        language, dialect, word = found
+        self.asr_dialect = {'language': language, 'dialect': dialect, 'evidence': word,
+                            'source': 'asr_lexicon', 'evidence_level': 'lexical_inference',
+                            'at': time.monotonic()}
+        pair = (language, dialect)
+        if pair != self.last_candidate:
+            self.candidate = dict(language=language, dialect=dialect, source='asr_lexicon')
+            self.last_candidate = pair
+            self.first_pending = pair not in self.seen_candidates
+
+    def _dialect_followed(self):
+        heard = self.asr_dialect
+        return bool(heard and time.monotonic() - heard['at'] <= DIALECT_FOLLOW_SECONDS)
+
+    def reply_intent(self, *, language, dialect='unknown', evidence='', emotion='neutral', reason='',
+                     transcript=''):
         validate_language(language, dialect)
         if dialect not in {'unknown', 'mandarin', 'cantonese'}:
+            # Evidence is a phrase the user really said: the sidecar's stable
+            # text, or the main ASR final when the sidecar is off (default).
             stable = (self.observation or {}).get('text', '')
-            if not evidence.strip() or evidence not in stable:
-                raise ValueError('dialect inference requires current stable acoustic text evidence')
-            self.observation = {**self.observation, 'dialect_candidate': dialect,
-                                'evidence_level': 'lexical_inference', 'dialect_source': 'llm_inferred',
-                                'dialect_evidence': evidence[:120]}
+            if not evidence.strip() or (evidence not in stable and evidence not in transcript):
+                raise ValueError('dialect inference requires a phrase from the current utterance')
+            if self.observation:
+                self.observation = {**self.observation, 'dialect_candidate': dialect,
+                                    'evidence_level': 'lexical_inference',
+                                    'dialect_source': 'llm_inferred',
+                                    'dialect_evidence': evidence[:120]}
         from annie_core.speech_style import choose_speech_style
         choose_speech_style(language=language, dialect=dialect, emotion=emotion)
         self.intent = dict(language=language, dialect=dialect, emotion=emotion,
@@ -288,7 +352,8 @@ class ReplyLanguageState:
     def instruction_hint(self):
         selected = self.selection()
         if (not self.observation and not self.typed_observation and not any(self.preferences.values())
-                and not self.explicit and not self.style_request and not self.intent):
+                and not self.explicit and not self.style_request and not self.intent
+                and not self.candidate and not self._dialect_followed()):
             return ('\n【语音表达】默认按当前用户实际交谈语种自然回应；英语对话用英语，中文对话用中文，'
                     '不要把基础人格的中文描述误当作输出语言约束。'
                     '这一轮整句是外语时就用该语言回答，不要改用中文点评。'
@@ -298,6 +363,9 @@ class ReplyLanguageState:
         return ('\n【语音表达】目标语种=' + selected['language'] + '；方言=' + selected['dialect']
                 + ('；当前用户用此语种交流，优先用对应语种自然回答；不因历史中文回复改回中文'
                    if selected['source'] in {'typed_text', 'asr_text_heuristic'} else '')
+                + ('；用户正用这种方言说话（说了“' + self.asr_dialect['evidence']
+                   + '”），用它地道的口语词回答，不要只换一两个词'
+                   if selected['source'] == 'asr_lexicon' and self.asr_dialect else '')
                 + ('；新候选首次跟随一句，之后按语境自然延续或恢复默认' if self.first_pending else '')
                 + ('；最近观察=' + self.candidate['language'] + '/' + self.candidate['dialect']
                    + '，非首次可按语境继续或恢复保存默认，不强制每轮跟随' if self.candidate else '')
@@ -320,7 +388,10 @@ class ReplyLanguageState:
         confirmed = self.confirmed_revision == self.revision
         # A direct typed-language target is known locally even while a provider
         # prompt update is unconfirmed. This does not verify actual LLM wording.
-        if not confirmed and selected['source'] not in {'explicit_user', 'typed_text'}:
+        # Dialect words in this very utterance are local evidence too: the
+        # voice follows now, the wording catches up once the prompt lands.
+        if not confirmed and selected['source'] not in {'explicit_user', 'typed_text',
+                                                        'asr_lexicon'}:
             selected = self.default_selection()
         self.response = {**selected, 'delivery': 'contextual', **self.style_request,
                          **({'source': 'explicit_user'} if self.style_request else {}),
@@ -331,7 +402,8 @@ class ReplyLanguageState:
             self._intent_emotion_pending = False
         self.application = 'current' if confirmed else 'unknown'
         self.last_decision = dict(self.response)
-        if confirmed and self.first_pending and not self.explicit:
+        if ((confirmed or selected['source'] == 'asr_lexicon')
+                and self.first_pending and not self.explicit):
             self.first_pending = False
             self.seen_candidates.add((selected["language"], selected["dialect"]))
             self._refresh_revision()
@@ -382,6 +454,8 @@ class ReplyLanguageState:
         return {'input': {**self.observation, 'age_ms': round(age, 1)} if self.observation else None,
                 'typed_input': dict(self.typed_observation) if self.typed_observation else None,
                 'asr_text_input': dict(self.asr_text_observation) if self.asr_text_observation else None,
+                'asr_dialect': ({k: v for k, v in self.asr_dialect.items() if k != 'at'}
+                                if self._dialect_followed() else None),
                 'preferences': self.preferences,
                 'target': self.selection(), 'llm_decision': self.last_decision,
                 'revision': self.revision, 'confirmed_revision': self.confirmed_revision,

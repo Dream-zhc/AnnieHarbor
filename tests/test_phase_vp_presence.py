@@ -19,7 +19,8 @@ class Clock:
 class PresenceTests(unittest.TestCase):
     def setUp(self):
         self.clock = Clock()
-        self.policy = DialoguePresence(clock=self.clock)
+        # Window mechanics with the historical 8 s follow-up; the default is config.
+        self.policy = DialoguePresence(clock=self.clock, followup_ms=8000)
 
     def wake(self):
         self.assertTrue(self.policy.wake_detected())
@@ -152,6 +153,28 @@ class PresenceTests(unittest.TestCase):
         self.clock.advance(1)
         self.policy.speech_stopped(item_id="noise", invalid=True)
         self.assertEqual(self.policy.state, "SLEEP")
+
+    def test_side_talk_restarts_the_window_up_to_a_limit(self):
+        policy = DialoguePresence(clock=self.clock, followup_ms=8000, side_talk_listen_ms=20000)
+        policy.wake_detected()
+        policy.speech_started("u")
+        policy.speech_stopped(item_id="u")
+        self.assertTrue(policy.transcript_accepted("今天天气怎么样", item_id="u"))
+        policy.speaker_drained(verified=True)
+        self.clock.advance(7)
+        policy.speech_started("side")
+        self.clock.advance(5)  # people talk past the old 8 s deadline
+        policy.speech_stopped(item_id="side")
+        self.assertTrue(policy.side_talk(item_id="side"))
+        self.assertEqual(policy.state, "FOLLOWUP")
+        self.clock.advance(7.9)
+        self.assertTrue(policy.permits_pcm())  # a fresh 8 s from the side talk
+        policy.speech_started("side2")
+        self.clock.advance(1)
+        policy.speech_stopped(item_id="side2")
+        policy.side_talk(item_id="side2")
+        self.clock.advance(0.2)  # 21.1 s after the window opened: past the 20 s cap
+        self.assertEqual(policy.state, "SLEEP")
 
     def test_close_revokes_late_response_and_reconnect(self):
         self.wake()

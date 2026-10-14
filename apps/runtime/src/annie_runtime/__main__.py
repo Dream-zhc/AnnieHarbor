@@ -250,6 +250,7 @@ def main():
         wake_detector=wake_detector,
         wake_wait_ms=int(runtime_defaults["duplex"]["wake_wait_ms"]),
         wake_followup_ms=int(runtime_defaults["duplex"]["followup_ms"]),
+        side_talk_listen_ms=int(runtime_defaults["duplex"].get("side_talk_listen_ms", 120000)),
         cloud_aec_robots=(tuple(item.strip() for item in os.environ.get(
             "ANNIE_CLOUD_AEC_ROBOTS", "annie-a").split(",") if item.strip())
             if os.environ.get("ANNIE_CLOUD_AEC_ENABLED") == "1" else ()),

@@ -1415,6 +1415,9 @@
 :root[data-theme="light"] .card-body.ambient {
   color: #656d76 !important;
 }
+:root[data-theme="light"] .card-body.decision.declined {
+  color: #9a6700 !important;
+}
 
 :root[data-theme="light"] .messages {
   background: #ffffff !important;
@@ -2527,6 +2530,18 @@ details summary::-webkit-details-marker {
 .live-cockpit-card .card-body.ambient {
   color: #64748b;
   font-size: 11px;
+}
+/* Decisions read as one sentence, so they take the full row. */
+.live-cockpit-card.decision-card {
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+.live-cockpit-card .card-body.decision {
+  font-size: 11px;
+  color: var(--text-sub);
+}
+.live-cockpit-card .card-body.decision.declined {
+  color: #d29922;
 }
 
 /* Conversation / Messages list - THE HERO SCROLLER */

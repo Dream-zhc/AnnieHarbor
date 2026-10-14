@@ -11,7 +11,11 @@ eye_enabled = true
 enabled = false
 mode = "wake"
 wake_wait_ms = 5000
-followup_ms = 8000
+# 机器人说完后免唤醒继续听的时间（真实扬声器播完才开始计时）。
+followup_ms = 20000
+# 决策模型判定“旁人之间在聊、不是对机器人说”时窗口重新计时，
+# 但从窗口打开起最多继续听这么久，之后需要重新喊“小安妮”。
+side_talk_listen_ms = 120000
 pcm_source = "web"
 
 [tts]

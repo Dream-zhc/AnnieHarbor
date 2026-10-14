@@ -92,9 +92,9 @@ class ContextSelectionTests(unittest.TestCase):
             self.assertNotIn("退下由Runtime门控负责", text)
             self.assertNotIn("不能用一句口头答应代替状态变更", text)
             self.assertNotIn("普通闲聊通常一到三句", text)
-        self.assertIn("有主见的熟人", instructions[0])
+        self.assertIn("生活观察家", instructions[0])
         self.assertIn("知心朋友", instructions[1])
-        self.assertIn("反差、双关或荒诞", instructions[2])
+        self.assertIn("好笑的外号", instructions[2])
         self.assertIn("硬核损友", instructions[3])
         self.assertIn("严禁机械重复", instructions[3])
         self.assertIn("绝不攻击真实智商", instructions[3])
@@ -543,7 +543,7 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(.01)
         self.assertEqual(a.persona_snapshot["label"], "机灵互怼")
-        self.assertIn("抓包现场", a.socket.outbound[0]["session"]["instructions"])
+        self.assertIn("招牌三连", a.socket.outbound[0]["session"]["instructions"])
         self.assertEqual(b.persona_snapshot["style_id"], "annie")
         self.assertEqual((await self.runtime.load_conversation(
             "annie-a", original["chat_id"], original["persona_id"]))["turns"], earlier["turns"])

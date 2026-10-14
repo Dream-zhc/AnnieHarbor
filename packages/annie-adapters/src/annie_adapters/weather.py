@@ -8,8 +8,11 @@ import httpx
 
 
 class AmapWeather:
-    def __init__(self, key: str, *, client=None, timeout_ms=1200, cache_sec=180):
+    def __init__(self, key: str, *, client=None, timeout_ms=1200, cache_sec=180,
+                 default_city=None):
         self.key = key
+        # The robot's configured home city, used only when the user names none.
+        self.default_city = self._city(default_city) if default_city else None
         self.timeout = timeout_ms / 1000
         self.cache_sec = cache_sec
         self.client = client or httpx.AsyncClient(

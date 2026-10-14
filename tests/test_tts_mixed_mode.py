@@ -60,7 +60,10 @@ def test_mixed_single_room_monotonic_samples_and_real_run_task_style(size):
             assert output.snapshot()["mixed_sentences_submitted"] == 2
             assert len(FakeTts.instances) - seen == 3
             sockets = FakeTts.instances[seen:]
-            assert all(sock.closed for sock in sockets)
+            # The first duplex connection is parked for the next reply (provider
+            # guidance: reuse across tasks); one-shot sentence sockets close.
+            assert not sockets[0].closed and output.snapshot()['connection']['warm_ready']
+            assert all(sock.closed for sock in sockets[1:])
             assert [len([p for p in sock.sent if p['header']['action']=='run-task'])
                     for sock in sockets] == [1, 1, 1]
             assert "语气俏皮" in sockets[1].sent[0]['payload']['parameters']['instruction']

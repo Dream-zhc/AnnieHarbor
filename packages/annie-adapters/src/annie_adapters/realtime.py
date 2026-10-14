@@ -2,12 +2,27 @@
 
 import base64
 import json
+import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from websockets.asyncio.client import connect
 
 MODEL = "qwen-audio-3.0-realtime-flash"
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+# Same Qwen-Audio Realtime wire family (3.0 flash/plus, 3.1 plus); other model
+# families use different protocols and must not be selected by a typo.
+_MODEL_NAME = re.compile(r"qwen-audio-\d+(?:\.\d+)*-realtime-(?:flash|plus)")
+
+
+def validate_model(model: str) -> str:
+    if not isinstance(model, str) or not _MODEL_NAME.fullmatch(model):
+        raise ValueError("Realtime model must be a qwen-audio-*-realtime-flash/plus model")
+    return model
+
+
+def url_model(url: str) -> str:
+    """The model already pinned in a validated Realtime URL, else the default."""
+    return (parse_qs(urlparse(url).query).get("model") or [MODEL])[0]
 
 
 def realtime_url(base_url: str, model: str = MODEL) -> str:
@@ -61,18 +76,12 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "type": "function", "function": {
                 "name": "select_voice",
                 "description": (
-                    "Only when the CURRENT user explicitly asks to switch TTS voices. "
-                    "If they say '换一个音色' without naming a voice, still call this "
-                    "tool with a catalog voice name: the Runtime chooses automatically "
-                    "only if exactly one other candidate exists; otherwise tool returns "
-                    "needs_selection and you MUST ask which. Use scope=chat normally, "
-                    "scope=robot ONLY for explicitly permanent/all-chats requests. "
-                    "You MUST inspect the tool result: ONLY status=selected means a "
-                    "new voice was selected; needs_selection or rejected means NOTHING "
-                    "changed. Never claim the voice was changed without status=selected. "
-                    "Never pick a new voice merely because emotion, dialect, "
-                    "speaker identity or persona changed. Takes effect for the next "
-                    "TTS task; it cannot change already synthesized speech."
+                    "Only when the CURRENT user explicitly asks to switch TTS voices; never because "
+                    "emotion, dialect, speaker or persona changed. If no voice is named, still call "
+                    "with a catalog name: needs_selection means ask which. scope=chat normally, "
+                    "scope=robot only for explicit permanent/all-chats requests. ONLY status=selected "
+                    "means the voice changed (from the next reply); otherwise NOTHING changed, so "
+                    "never say it did."
                 ),
                 "parameters": {"type": "object", "properties": {
                     "voice_name": {"type": "string", "description": "Exact configured voice name or 默认音色"},
@@ -88,18 +97,12 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "type": "function", "function": {
                 "name": "select_persona_style",
                 "description": (
-                    "Only when the CURRENT user explicitly asks to change the personality "
-                    "style of THIS chat. Do not create a new chat or reconnect. "
-                    "Available styles: " + "、".join(persona_labels) + ". "
-                    "If they name one, pass that exact label as style_name. "
-                    "If they ask to switch but name none, pass style_name as an empty string; "
-                    "needs_selection means NOTHING changed and you must ask once which style. "
-                    "Never invent a style, and never call this for voice, dialect or language. "
-                    "ONLY status=selected means the style changed. "
-                    "already_selected, needs_selection or rejected means it did not. "
-                    "Call this before speaking. After selected, say one new sentence in that "
-                    "style that answers what they just said. Do not recite a fixed confirmation "
-                    "or the style rules."
+                    "Only when the CURRENT user explicitly asks to change THIS chat's personality "
+                    "style (not voice, dialect or language). Do not create a new chat. Styles: "
+                    + "、".join(persona_labels) + ". Pass the exact label they named, or an empty "
+                    "string if they named none (needs_selection: ask once which). ONLY "
+                    "status=selected means it changed. Call before speaking; after selected, answer "
+                    "them in one new sentence in that style instead of reciting a confirmation."
                 ),
                 "parameters": {"type": "object", "properties": {
                     "style_name": {"type": "string",
@@ -113,8 +116,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "recall_memory",
                 "description": "Look up confirmed long-term user preferences or experiences ONLY when "
-                               "the user's current question needs an older memory. "
-                               "Never invent a memory when this tool returns no evidence.",
+                               "the answer is not already in this conversation. If it returns no "
+                               "evidence, say you don't remember instead of inventing one.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -158,32 +161,18 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "perform_action",
                 "description": (
-                    "For ordinary scripts, ONLY when the CURRENT user explicitly requests "
-                    "that physical action. The five expressive scripts surprise, smirk, "
-                    "proud, skeptical and shy may ALSO be selected once when the CURRENT "
-                    "lighthearted conversation strongly fits their catalog descriptions, "
-                    "without an explicit command. Do not infer an action from earlier "
-                    "turns, force one every turn, or use playful expressions for distress, "
-                    "serious news, negation or cancellation. shy is a different facial "
-                    "script from shy_retract. All five expressive scripts MUST include "
-                    "anchor_text, even when explicitly requested, or the tool will reject "
-                    "them. Choose an exact word you will speak in your subsequent reply. "
-                    "Other scripts may omit anchor_text to use the legacy first-PCM "
-                    "trigger; when supplied, the Runtime sends ONE indexed "
-                    "action_prepare as soon as your real spoken reply contains the "
-                    "exact anchor. The device independently listens to reb_sam for "
-                    "acoustic timing; do not wait for a ForcedAligner result. "
-                    "anchor_occurrence selects its nonoverlapping occurrence from 1. "
-                    "Never guess milliseconds or samples, and never speak tool fields. "
-                    "If you choose a word not spoken in your reply, no action is "
-                    "sent; a late audio trigger is dropped by the device. "
-                    "An accepted tool result means the command is scheduled for async "
-                    "publication; immediately respond naturally without waiting for "
-                    "device playback or a motor receipt. Successful Room publication "
-                    "completes cloud dispatch, not physical execution. Do not narrate "
-                    "delivery, hardware uncertainty, past imagined failures or "
-                    "unfinished movement. Do not claim the motor completed either. "
-                    "Enabled catalog: " +
+                    "Physical robot action. Ordinary scripts ONLY when the CURRENT user explicitly "
+                    "asks for that action. Expressive scripts surprise, smirk, proud, skeptical, shy "
+                    "may also be used once when the CURRENT lighthearted talk clearly fits their "
+                    "catalog description; never for distress, serious news, negation or "
+                    "cancellation, and never inferred from earlier turns. These five REQUIRE "
+                    "anchor_text: an exact word you will say in this reply (anchor_occurrence picks "
+                    "which occurrence, from 1); the action fires when your speech reaches it and is "
+                    "dropped if you never say it. Other scripts may omit it and start with your "
+                    "first audio. shy is a facial script, not shy_retract. Never guess milliseconds "
+                    "or samples, never speak tool fields. accepted means scheduled: reply naturally "
+                    "at once; never narrate delivery, hardware state, imagined failures or motor "
+                    "completion. Enabled catalog: " +
                     "; ".join(
                         f"{script_id}: {(action_descriptions or {}).get(script_id, script_id)}"
                         for script_id in actions
@@ -208,10 +197,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "set_expression",
                 "description": (
-                    "ONLY when explicitly asked to show a facial expression. "
-                    "An accepted tool request is handled asynchronously. "
-                    "Respond naturally without waiting for device acknowledgement "
-                    "or narrating transport, hardware uncertainty or motor completion."
+                    "ONLY when explicitly asked to show a facial expression. accepted means "
+                    "scheduled: reply naturally without narrating delivery or hardware state."
                 ),
                 "parameters": {
                     "type": "object",
@@ -228,14 +215,16 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "get_weather",
                 "description": (
-                    "Use ONLY when user requests current weather for an explicitly named city. "
-                    "Never invent weather or choose a location on behalf of the user."
+                    "Use ONLY when the CURRENT user asks about current weather. Pass the city "
+                    "the user named. If they named no city, omit city: the robot's configured "
+                    "home city is used and the result names it, so say which city it is. "
+                    "Never invent weather."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {"city": {"type": "string",
-                                            "description": "User-named city or adcode"}},
-                    "required": ["city"],
+                                            "description": "User-named city or adcode; omit if none"}},
+                    "required": [],
                 },
             },
         })
@@ -245,12 +234,10 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "create_reminder",
                 "description": (
-                    "Create a real one-time reminder ONLY when the CURRENT user explicitly "
-                    "asks to be reminded. Call this tool BEFORE claiming a reminder is set. "
-                    "Convert a stated relative delay to seconds; 1..86400 only. "
-                    "Do not invent a time; ask when if not specified. "
-                    "Only status=scheduled with task_id confirms successful creation. "
-                    "A conversational promise alone does NOT create a reminder."
+                    "Create a real one-time reminder ONLY when the CURRENT user explicitly asks to "
+                    "be reminded, before saying it is set. Convert the stated relative delay to "
+                    "seconds (1..86400); ask when if no time was given. Only status=scheduled "
+                    "with task_id means it exists; a spoken promise alone creates nothing."
                 ),
                 "parameters": {
                     "type": "object",
@@ -267,22 +254,20 @@ def session_update(instructions: str, history_turns: int = 20, *,
     if language_preferences:
         for name, description, properties, required in (
             ('set_language_preference',
-             'Save ONLY a CURRENT explicit user language preference. scope=chat for this Chat; '
-             'scope=robot for all future Chats of THIS robot. Never persist automatic inference. '
-             'Call before claiming saved; status=set confirms committed success.',
+             'Save ONLY a CURRENT explicit user language preference (scope=chat: this Chat; '
+             'scope=robot: all future Chats of this robot). Never save an inference. Only '
+             'status=set means saved.',
              {'scope': {'type': 'string', 'enum': ['chat', 'robot']},
               'language': {'type': 'string'}, 'dialect': {'type': 'string'}},
              ['scope', 'language', 'dialect']),
             ('clear_language_preference',
-             'Clear ONLY when the CURRENT user explicitly requests clearing a saved language '
-             'preference and names Chat or robot scope. status=cleared confirms committed success.',
+             'Clear a saved language preference ONLY on an explicit CURRENT request naming '
+             'Chat or robot scope. Only status=cleared means cleared.',
              {'scope': {'type': 'string', 'enum': ['chat', 'robot']}}, ['scope']),
             ('select_reply_style',
-             'OPTIONAL context choice, never required before speaking. Select reply language and '
-             'expression; for province dialect inference supply an EXACT stable user acoustic '
-             'phrase as evidence. Do not infer from place names. Never persists preference. '
-             'Quoted/translated/ambiguous speech may decline following with reason. Late choices '
-             'affect next reply only. Output spoken text without control tags.',
+             'OPTIONAL, never needed before speaking: pick reply language/emotion. Dialect '
+             'inference needs an EXACT phrase the user said as evidence, never a place name. '
+             'Not saved; a late choice affects the next reply only.',
              {'language': {'type': 'string'}, 'dialect': {'type': 'string'},
               'emotion': {'type': 'string', 'enum': ['neutral','warm','playful','sarcastic',
                                                     'curious','serious','sad','excited','calm']},
@@ -299,12 +284,10 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "enter_sleep",
                 "description": (
-                    "Call when the CURRENT user explicitly tells you to stop talking, "
-                    "be quiet, leave, or end this conversation, including paraphrases. "
-                    "Say one short acknowledgment. Listening closes after that sentence "
-                    "finishes playing. Do not call for questions, negation, quotations, "
-                    "or talk about someone else. Only status=accepted means this reply "
-                    "will enter sleep. Never claim you went quiet without status=accepted."
+                    "When the CURRENT user tells you to stop talking, be quiet, leave or end the "
+                    "conversation (paraphrases count; questions, negations, quotes and talk about "
+                    "others do not). Say one short acknowledgment; listening closes after it plays. "
+                    "Only status=accepted means you will go quiet."
                 ),
                 "parameters": {
                     "type": "object",
@@ -327,7 +310,7 @@ def audio_append(pcm: bytes) -> dict:
 
 class QwenRealtimeSocket:
     def __init__(self, url: str, api_key: str):
-        self.url = realtime_url(url)
+        self.url = realtime_url(url, validate_model(url_model(url)))
         self.api_key = api_key
         self.socket = None
 

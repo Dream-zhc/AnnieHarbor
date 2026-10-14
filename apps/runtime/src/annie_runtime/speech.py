@@ -25,6 +25,12 @@ FAILED_STOP_RETRY_SECONDS = .1
 # After the stop packet is published, worker and socket teardown must not hold
 # the Realtime receive loop. A mixed TaskGroup can ignore cancellation.
 CANCEL_CLEANUP_SECONDS = 1.0
+# Alibaba recommends reusing one TTS WebSocket across sequential tasks; the
+# handshake otherwise sits on every reply's first-audio path. The provider does
+# not document an idle timeout, so an idle connection is only trusted briefly
+# and must prove itself (task-started) before any text depends on it.
+WARM_SOCKET_MAX_IDLE_SECONDS = 25.0
+WARM_CONFIRM_SECONDS = 1.5
 
 
 def _tts_failure(exc):
@@ -170,6 +176,15 @@ class SpeechOutput:
         self.pending_controls = {}
         self.control_state = "unknown"
         self.voice_tasks = set()
+        self._warm_socket = None  # opened, no task in flight
+        self._warm_origin = None  # "prewarmed" or "reused"
+        self._warm_at = None
+        self._warm_task = None
+        self._close_tasks = set()
+        self._closing = False
+        self.connect_stats = {"fresh": 0, "prewarmed": 0, "reused": 0,
+                              "stale_dropped": 0, "reuse_failed": 0, "prewarm_failed": 0}
+        self.last_connect = None
 
         self._mixed_reset()
 
@@ -251,7 +266,96 @@ class SpeechOutput:
             "failure_stop_published": self.local_output_stopped_at is not None,
             "playback_control_state": self.control_state,
             "playback_control_pending": len(self.pending_controls),
+            "connection": {**self.connect_stats, "warm_ready": self._warm_socket is not None,
+                           "last": dict(self.last_connect) if self.last_connect else None},
         }
+
+    def prewarm(self):
+        """Open the next provider connection off the text path; starts no task."""
+        if self._closing:
+            return
+        if self._warm_task is not None and not self._warm_task.done():
+            return
+        if (self._warm_socket is not None
+                and time.monotonic() - self._warm_at < WARM_SOCKET_MAX_IDLE_SECONDS):
+            return
+        self._warm_task = asyncio.create_task(
+            self._open_warm(), name=f"tts-prewarm:{self.robot.config.robot_id}")
+
+    async def _open_warm(self):
+        stale, self._warm_socket = self._warm_socket, None
+        if stale is not None:
+            self.connect_stats["stale_dropped"] += 1
+            await self._close_idle(stale)
+        socket = self.socket_factory(self.url, self.key)
+        started = time.perf_counter()
+        try:
+            async with asyncio.timeout(8):
+                await socket.open()
+        except asyncio.CancelledError:
+            self._close_detached(socket)
+            raise
+        except Exception as exc:
+            await self._close_idle(socket)
+            self.connect_stats["prewarm_failed"] += 1
+            logger.info("tts_prewarm_failed robot=%s error=%s",
+                        self.robot.config.robot_id, _tts_failure(exc))
+            return
+        if self._closing:
+            await self._close_idle(socket)
+            return
+        connect_ms = round((time.perf_counter() - started) * 1000, 1)
+        logger.info("tts_prewarm robot=%s connect_ms=%.1f", self.robot.config.robot_id, connect_ms)
+        await self._park(socket, "prewarmed")
+
+    async def _park(self, socket, origin):
+        old, self._warm_socket = self._warm_socket, socket
+        self._warm_origin, self._warm_at = origin, time.monotonic()
+        if old is not None and old is not socket:
+            await self._close_idle(old)
+
+    def _close_detached(self, socket):
+        task = asyncio.create_task(socket.close(), name="tts-idle-close")
+        self._close_tasks.add(task)  # strong reference until the abort finishes
+        task.add_done_callback(self._close_tasks.discard)
+
+    async def _close_idle(self, socket):
+        """An idle provider close must not hold a reply or shutdown path."""
+        task = asyncio.create_task(socket.close(), name="tts-idle-close")
+        await self._abandon_tasks((task,), time.monotonic() + CANCEL_CLEANUP_SECONDS)
+
+    async def _acquire_socket(self, turn_id, identity):
+        """Return (socket, origin, connect_ms); origin is prewarmed/reused/fresh."""
+        task = self._warm_task
+        if task is not None and not task.done():
+            await asyncio.wait({task}, timeout=8)  # shared opener; never cancel it here
+        socket, self._warm_socket = self._warm_socket, None
+        if socket is not None:
+            idle = time.monotonic() - self._warm_at
+            if idle <= WARM_SOCKET_MAX_IDLE_SECONDS:
+                return socket, self._warm_origin, 0.0
+            self.connect_stats["stale_dropped"] += 1
+            await self._close_idle(socket)
+        started = time.perf_counter()
+        socket = self.socket_factory(self.url, self.key)
+        self.socket = socket
+        # Only retry connection establishment: no submitted text/PCM can duplicate.
+        for attempt in range(2):
+            try:
+                async with asyncio.timeout(8):
+                    await socket.open()
+                break
+            except (OSError, TimeoutError) as exc:
+                await socket.close()
+                if attempt:
+                    raise RuntimeError(f"provider_connect: {_tts_failure(exc)}") from exc
+                self._emit("tts.connect_retry", error=_tts_failure(exc), attempt=1)
+                await asyncio.sleep(.25)
+                if not self._current(turn_id, identity):
+                    return None, "fresh", None
+                socket = self.socket_factory(self.url, self.key)
+                self.socket = socket
+        return socket, "fresh", round((time.perf_counter() - started) * 1000, 1)
 
     def _emit(self, kind, **data):
         self.event(kind, **{**(self.identity or self.robot.session_state()),
@@ -578,6 +682,8 @@ class SpeechOutput:
         self._mixed_reset()
         if self._cancel_inflight is current:
             self._cancel_inflight = None
+        if was_active and reason not in {"runtime_stop", "realtime_disconnected"}:
+            self.prewarm()  # the interrupting turn's reply should not pay a handshake
 
     async def _abandon_tasks(self, tasks, deadline):
         pending = [task for task in tasks if task is not None and not task.done()]
@@ -601,7 +707,15 @@ class SpeechOutput:
                 )
 
     async def close(self):
+        self._closing = True
         await self.cancel("runtime_stop")
+        warm_task, self._warm_task = self._warm_task, None
+        if warm_task is not None:
+            warm_task.cancel()
+            await self._abandon_tasks((warm_task,), time.monotonic() + CANCEL_CLEANUP_SECONDS)
+        warm, self._warm_socket = self._warm_socket, None
+        if warm is not None:
+            await self._close_idle(warm)
         await self.publisher.close()
         # Give the queued stop signal a bounded chance to reach reb_voice
         # before closing its socket. Shutdown must not wait for a dead Room.
@@ -918,30 +1032,18 @@ class SpeechOutput:
 
     async def _synthesize_stream(self, turn_id, identity, *, first_only=False):
         """One provider task; receive and paced Room publication must not stall text."""
-        socket = self.socket_factory(self.url, self.key)
-        self.socket = socket
         started = time.perf_counter()
         task = task_id()
         segment_id = f"{turn_id}-1"  # one acoustic/text segment per provider task
         task_started = asyncio.Event()
         audio = asyncio.Queue(maxsize=48)  # bounded ~960ms ahead of Room publication
+        socket = None
+        clean = False  # task-finished received: the connection may serve the next task
         try:
-            # Only retry connection establishment: no submitted text/PCM can duplicate.
-            for attempt in range(2):
-                try:
-                    async with asyncio.timeout(8):
-                        await socket.open()
-                    break
-                except (OSError, TimeoutError) as exc:
-                    await socket.close()
-                    if attempt:
-                        raise RuntimeError(f"provider_connect: {_tts_failure(exc)}") from exc
-                    self._emit("tts.connect_retry", error=_tts_failure(exc), attempt=1)
-                    await asyncio.sleep(.25)
-                    if not self._current(turn_id, identity):
-                        return
-                    socket = self.socket_factory(self.url, self.key)
-                    self.socket = socket
+            socket, origin, connect_ms = await self._acquire_socket(turn_id, identity)
+            if socket is None:
+                return
+            self.socket = socket
             if not self._current(turn_id, identity):
                 return
             # No await/model call between the synchronous choice and this turn's run-task.
@@ -963,7 +1065,39 @@ class SpeechOutput:
                 raise ValueError("invalid selected TTS voice")
             self.locked_voice = selected_voice
             run_command = command("run-task", task, voice=selected_voice, style=style)
-            await socket.send(run_command)
+            if origin == "fresh":
+                await socket.send(run_command)
+            else:
+                # An idle connection may have been closed by the provider. Prove
+                # it with task-started before any text is queued on it; on
+                # failure nothing was submitted, so one fresh retry is safe.
+                try:
+                    await socket.send(run_command)
+                    async with asyncio.timeout(WARM_CONFIRM_SECONDS):
+                        reply = await socket.recv()
+                    header = (reply.get("header") or {}) if isinstance(reply, dict) else {}
+                    if header.get("event") != "task-started" or header.get("task_id") not in (None, task):
+                        raise ConnectionError(f"warm TTS answered {header.get('event') or type(reply).__name__}")
+                    task_started.set()
+                    self._emit("tts.task_started", task_id=task, segment_id=segment_id)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.connect_stats["reuse_failed"] += 1
+                    logger.info("tts_reuse_failed robot=%s origin=%s error=%s",
+                                self.robot.config.robot_id, origin, _tts_failure(exc))
+                    await self._close_idle(socket)
+                    socket, origin, connect_ms = await self._acquire_socket(turn_id, identity)
+                    if socket is None:
+                        return
+                    self.socket = socket
+                    if not self._current(turn_id, identity):
+                        return
+                    run_started = time.perf_counter()
+                    await socket.send(run_command)
+            self.connect_stats[origin] += 1
+            self.last_connect = {"origin": origin, "connect_ms": connect_ms, "turn_id": turn_id}
+            self._emit("tts.connection", origin=origin, connect_ms=connect_ms)
             self._emit("tts.run_task", task_id=task,
                        segment_id=segment_id, streaming=run_command["header"]["streaming"],
                        voice_fingerprint=sha256(selected_voice.encode()).hexdigest()[:12],
@@ -1003,6 +1137,7 @@ class SpeechOutput:
                         self.queue.task_done()
 
             async def receive():
+                nonlocal clean
                 tail = bytearray()
                 first = True
                 while self._current(turn_id, identity):
@@ -1039,6 +1174,7 @@ class SpeechOutput:
                             self._emit("tts.task_finished", task_id=task, segment_id=segment_id)
                             if len(tail) % 2:
                                 raise ValueError("TTS PCM has an odd total byte count")
+                            clean = True
                             if tail:
                                 await audio.put(bytes(tail))
                             await audio.put(None)
@@ -1062,10 +1198,17 @@ class SpeechOutput:
                                                           else self.submitted_text,
                                                           final=True, segment_id=segment_id))
                 self._emit("tts.segment_done", segment_id=segment_id, samples=self.samples)
+        except BaseException:
+            clean = False
+            raise
         finally:
-            await socket.close()
             if self.socket is socket:
                 self.socket = None
+            if socket is not None:
+                if clean and not self._closing:
+                    await self._park(socket, "reused")
+                else:
+                    await socket.close()
 
     async def _publish_pcm(self, pcm, text, segment_id, turn_id, identity, started):
         if not self._current(turn_id, identity):

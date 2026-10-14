@@ -7,13 +7,27 @@ from annie_brain.persona import COMPANION_CORE, load_personas, session_instructi
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "personas.toml"
 STYLE_MARKERS = {
-    "annie": ("自然陪伴", "反常细节与因果", "先给观察，再亮立场", "我倒觉得", "明确判断收住"),
-    "annie-calm": ("温柔知心", "没说透的顾虑", "先回应具体处境", "这事先不急着下结论", "小选择收束"),
-    "annie-lively": ("活泼俏皮", "反差、双关或荒诞", "短促接梗，再补一拍反转", "回应当轮真实情境", "包袱落在情境"),
-    "annie-roast": ("机灵互怼", "抓包现场", "短句起手", "用你的逻辑打你的脸", "严禁机械重复"),
-    "annie-weary": ("怨种搭档", "精神工伤", "叹气归叹气", "行，命给你了", "现实主义泼冷水"),
-    "annie-deadpan": ("优雅乐子人", "人类迷惑行为", "优雅递刀", "载入史册", "冷淡幽默"),
+    "annie": ("自然陪伴", "生活观察家", "冷知识", "不和稀泥", "先说一个具体发现"),
+    "annie-calm": ("温柔知心", "深夜电台", "对方当轮原话里的一个词", "是想说说，还是想听点建议", "小小的选择"),
+    "annie-lively": ("活泼俏皮", "小烟花", "好笑的外号", "拟声词", "小傲娇"),
+    "annie-roast": ("机灵互怼", "硬核损友", "抓包", "招牌三连", "刀子嘴后面是豆腐心"),
+    "annie-weary": ("怨种搭档", "工位", "抱怨一句工作量", "打工人词汇", "茶水间"),
+    "annie-deadpan": ("优雅乐子人", "纪录片解说员", "英式管家", "新闻播报", "越短越冷"),
 }
+# Each personality must visibly step out of its act when the user is hurting.
+SERIOUS_SWITCH = {
+    "annie": "把他稳稳接住",
+    "annie-calm": "一句话就够",
+    "annie-lively": "先收起烟花",
+    "annie-roast": "秒切靠谱同盟",
+    "annie-weary": "稳稳地和他一起扛",
+    "annie-deadpan": "卸下解说腔",
+}
+
+
+def test_header_forbids_reusing_style_wording():
+    instructions, _ = session_instructions("annie", load_personas(CONFIG), {})
+    assert "每次现编，不原样复用描述里的词句" in instructions
 
 
 def test_presets_keep_four_stable_ids_labels_schema_and_budget():
@@ -38,26 +52,16 @@ def test_each_style_has_own_observation_rhythm_voice_and_closure(style_id):
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)
 def test_idioms_are_occasional_not_a_repeated_script(style_id):
     style = load_personas(CONFIG)[style_id]["style"]
-    if style_id == "annie-lively":
-        assert "不固定套用口头禅" in style
-        assert "用户疲惫或吐露压力时先正常接话" in style
-        assert "好家伙，还有这一出" not in style
-        return
+    # Quotable sample lines were parroted verbatim in live tests; describe technique instead.
+    assert "示意" not in style and "“" not in style.replace("“抓包”", "").replace("“我只是AI”", "").replace("“随便都行”", "")
+    assert SERIOUS_SWITCH[style_id] in style
+    assert all(SERIOUS_SWITCH[style_id] not in other["style"]
+               for key, other in load_personas(CONFIG).items() if key != style_id)
+    for retired in ("好家伙，还有这一出", "这题算你会出", "还挺会挑时候", "这点倒挺有意思"):
+        assert retired not in style
     if style_id == "annie-roast":
         assert "严禁机械重复" in style
-        assert "秒切靠谱同盟模式" in style
-        assert "这题算你会出" not in style
-        assert "还挺会挑时候" not in style
-        return
-    if style_id == "annie-weary":
-        assert "偶尔自然调侃" in style
-        assert "不连续两轮重复" in style
-        return
-    if style_id == "annie-deadpan":
-        assert "打趣时克制使用" in style
-        return
-    for marker in ("偶尔", "不照搬示例", "不每轮必说", "不连续两轮重复"):
-        assert marker in style
+        assert "绝不攻击真实智商" in style
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

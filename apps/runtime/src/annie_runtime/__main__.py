@@ -256,6 +256,8 @@ def main():
         cloud_aec_sync_offset_ms=int(os.environ.get("ANNIE_CLOUD_AEC_SYNC_OFFSET_MS", "80")),
         cloud_aec_delay_ms=int(os.environ.get("ANNIE_CLOUD_AEC_DELAY_MS", "0")),
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
+        realtime_model=(os.environ.get("ANNIE_REALTIME_MODEL")
+                        or provider_defaults.get("realtime", {}).get("model") or None),
         acoustic_enabled=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_ENABLED", "0") == "1",
         acoustic_url=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_URL") or None,
         tts_expression_enabled=os.environ.get("ANNIE_TTS_EXPRESSION_ENABLED", "0") == "1",
@@ -295,6 +297,7 @@ def main():
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
         weather_timeout_ms=int(provider_defaults["weather"]["amap"]["timeout_ms"]),
         weather_cache_sec=int(provider_defaults["weather"]["amap"]["live_cache_sec"]),
+        weather_default_city=provider_defaults["weather"]["amap"].get("default_city"),
         speaker_embedder=speaker_embedder,
         speaker_threshold=speaker_threshold,
         speaker_margin=speaker_margin,

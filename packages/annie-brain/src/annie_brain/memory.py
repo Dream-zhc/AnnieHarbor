@@ -11,7 +11,7 @@ import re
 import sqlite3
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import httpx
@@ -27,6 +27,11 @@ MAX_CANDIDATES = 8
 MAX_EVIDENCE = 4
 EVIDENCE_BYTES = 256  # byte proxy, not a provider token measurement
 MEMORY_REINDEX_DEADLINE_SEC = 1.2
+# Session-start profile. A small store is cheaper to inject than to recall:
+# recall_memory costs an extra model round on the spoken path.
+BOOTSTRAP_BYTES = 1024
+BOOTSTRAP_LONG_FACTS = 6
+BEIJING = timezone(timedelta(hours=8))
 RECALL_DEADLINE_SEC = 1.2  # explicit memory tool only; normal chat never waits
 
 _EMPTY_FACT_KEY = re.compile(
@@ -400,7 +405,7 @@ class MemoryService:
             ("同角色历史原话", visits),
             ("长期事实", [row for row in longs if row.get("source_valid", True) and
                        row["kind"] != "episodes" and
-                       not is_meta_memory(row["fact_key"], row["text"])][:3]),
+                       not is_meta_memory(row["fact_key"], row["text"])][:BOOTSTRAP_LONG_FACTS]),
         )
         used = 0
         snippets = []
@@ -415,13 +420,13 @@ class MemoryService:
                     continue
                 if title == "同角色历史原话":
                     when = datetime.fromtimestamp(
-                        row["created_ms"] / 1000, timezone.utc,
-                    ).strftime("%Y-%m-%d %H:%M UTC")
+                        row["created_ms"] / 1000, BEIJING,
+                    ).strftime("%Y-%m-%d %H:%M 北京时间(UTC+8)")
                     snippet = f"[{title}，{when}] {content}"
                 else:
                     snippet = f"[{title}] {content}"
                 size = len(snippet.encode("utf-8"))
-                if size + used > 512:
+                if size + used > BOOTSTRAP_BYTES:
                     continue
                 snippets.append(snippet)
                 expiry = row.get("expires_at_ms")

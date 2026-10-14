@@ -109,7 +109,7 @@ def test_named_style_switch_updates_this_chat_without_reconnecting(tmp_path):
                              and event["item"].get("call_id") == "style-1")
             prompted = [index for index, event in enumerate(client.socket.outbound)
                         if event.get("type") == "session.update"
-                        and "抓包现场" in event.get("session", {}).get("instructions", "")]
+                        and "招牌三连" in event.get("session", {}).get("instructions", "")]
             assert prompted and prompted[0] < output_at
 
             client.robot.turn_cache[client.turn_id]["user_text"] = "换个性格"

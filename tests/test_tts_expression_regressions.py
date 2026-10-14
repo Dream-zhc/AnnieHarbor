@@ -145,7 +145,8 @@ def test_runtime_default_reaches_actual_run_task_with_sidecar_off(tmp_path):
                     'id': 'reply-'+turn, 'status': 'completed', 'output': [],
                 }}, c.robot.generation)
                 await asyncio.wait_for(output.worker, 1)
-                sent = FakeTts.instances[-1].sent[0]['payload']['parameters']
+                sent = [m for sock in FakeTts.instances for m in sock.sent
+                        if m['header']['action'] == 'run-task'][-1]['payload']['parameters']
                 proof = c._timeline_snapshot(turn)['tts']
                 assert proof['speech_style']['delivery'] == 'contextual'
                 assert proof['speech_style']['dialect'] == dialect

@@ -837,6 +837,7 @@ class HarborRuntime:
         persona_profiles: dict | None = None,
         realtime_key: str | None = None,
         realtime_url: str | None = None,
+        realtime_model: str | None = None,
         realtime_socket_factory=None,
         acoustic_enabled: bool = False,
         tts_expression_enabled: bool = False,
@@ -872,6 +873,7 @@ class HarborRuntime:
         weather_client=None,
         weather_timeout_ms: int = 1200,
         weather_cache_sec: int = 180,
+        weather_default_city: str | None = None,
         idle_model=None,
         idle_seconds: float = 60,
         idle_second_seconds: float = 120,
@@ -968,13 +970,14 @@ class HarborRuntime:
         self.viseme_sidecars = None
         self.realtime = {}
         if realtime_key:
-            from annie_adapters.realtime import DEFAULT_URL, QwenRealtimeSocket
+            from annie_adapters.realtime import DEFAULT_URL, MODEL, QwenRealtimeSocket, validate_model
             from annie_adapters.realtime import realtime_url as validate_url
 
-            url = validate_url(realtime_url or DEFAULT_URL)
+            model = validate_model(realtime_model or MODEL)
+            url = validate_url(realtime_url or DEFAULT_URL, model)
             self.realtime = {
                 robot_id: RealtimeRobot(
-                    robot, url=url, key=realtime_key,
+                    robot, url=url, key=realtime_key, model=model,
                     history_turns=realtime_history_turns,
                     restore_char_budget=realtime_restore_char_budget,
                     persona_profiles=self.persona_profiles,
@@ -1118,6 +1121,7 @@ class HarborRuntime:
             self.weather = AmapWeather(
                 weather_key or "", client=weather_client,
                 timeout_ms=weather_timeout_ms, cache_sec=weather_cache_sec,
+                default_city=weather_default_city,
             )
             for client in self.realtime.values():
                 client.weather = self.weather

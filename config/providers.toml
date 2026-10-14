@@ -7,6 +7,13 @@ api_key_env = "DASHSCOPE_API_KEY"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 chat_completions_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
+# Realtime 主脑（ASR/smart_turn/对话/Function Calling）。ANNIE_REALTIME_MODEL 可临时覆盖。
+# 只允许同一 wire 协议族：qwen-audio-3.0-realtime-flash / 3.0-realtime-plus / 3.1-realtime-plus。
+# 2026-10-13 实测：语音首响与 3.0-flash 持平，上下文与工具使用更好；文字输入首字慢约150ms。
+# 回退只需改回 qwen-audio-3.0-realtime-flash。证据见 docs/开发记录/2026-10-13/。
+[realtime]
+model = "qwen-audio-3.1-realtime-plus"
+
 [llm.main]
 model = "qwen3.8-flash"
 stream = true

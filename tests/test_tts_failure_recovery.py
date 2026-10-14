@@ -301,8 +301,9 @@ def test_cancel_during_failed_stop_retry_cannot_stop_replacement_turn():
             await output.feed('broken', identity, '讲故事。')
             await output.finish('broken')
             await asyncio.wait_for(publisher.entered.wait(), 1)
-            await asyncio.wait_for(output.cancel('valid_smart_turn'), .5)
+            # Swap the provider before cancel: cancel prewarms the next connection.
             output.socket_factory = FakeTts
+            await asyncio.wait_for(output.cancel('valid_smart_turn'), .5)
             await output.feed('new', identity, '新一轮。')
             await output.finish('new')
             await asyncio.wait_for(output.worker, 1)

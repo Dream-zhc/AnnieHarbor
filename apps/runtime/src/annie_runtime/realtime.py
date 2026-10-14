@@ -8,9 +8,11 @@ import math
 import re
 import time
 from collections import deque
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
 from uuid import NAMESPACE_OID, uuid4, uuid5
 
-from annie_adapters.realtime import QwenRealtimeSocket, audio_append, session_update
+from annie_adapters.realtime import MODEL, QwenRealtimeSocket, audio_append, session_update
 from annie_brain.context import (
     INTERRUPTED_USER_SOURCES,
     historical_user_evidence,
@@ -37,7 +39,23 @@ AUDIO_SEND_DEADLINE_SECONDS = 1.0
 VISUAL_CONTEXT_MIN_INTERVAL_SECONDS = 1.0
 VISUAL_CONTEXT_POLL_SECONDS = 0.5
 VISUAL_CONTEXT_MAX_CHARS = 2000
+MAX_EARLY_TOOL_CALLS = 4
 SLEEP_AFTER_REPLY_SECONDS = 20.0
+WEATHER_QUERY = re.compile(r"天气|气温|温度|下雨|下雪|刮风|冷不冷|热不热|带伞|穿什么|weather", re.I)
+LATENCY_LOG_EVENTS = frozenset({"turn.done", "tts.first_published", "tts.playback.started",
+                                "tool.result", "tool.followup"})
+BEIJING = timezone(timedelta(hours=8))
+WEEKDAYS = "一二三四五六日"
+
+
+def clock_instructions(now_ms):
+    """Minute-level wall clock. Refreshed only when a user turn begins, so the
+    prompt does not churn between turns."""
+    now = datetime.fromtimestamp(now_ms / 1000, BEIJING)
+    return (f"\n【当前时间】北京时间{now.year}年{now.month}月{now.day}日 "
+            f"星期{WEEKDAYS[now.weekday()]} {now:%H:%M}。"
+            "回答日期、时间以及理解今天、明天、周末时以此为准；"
+            "记忆和历史里的时间也按北京时间推算过去了多久。不主动报时。")
 
 
 def visual_instructions(base, description):
@@ -58,7 +76,7 @@ def visual_instructions(base, description):
 class RealtimeRobot:
     """One provider Session, one current Chat/Persona, bounded events and PCM."""
 
-    def __init__(self, robot, *, url: str, key: str, persona_profiles=None,
+    def __init__(self, robot, *, url: str, key: str, model: str = MODEL, persona_profiles=None,
                  history_turns: int = 8, restore_char_budget: int = 3000,
                  socket_factory=QwenRealtimeSocket, wake_detector=None,
                  wake_wait_ms=5000, wake_followup_ms=8000,
@@ -71,6 +89,7 @@ class RealtimeRobot:
         self._wake_candidate_pending = False
         self.url = url
         self.key = key
+        self.model = model
         self.persona_profiles = persona_profiles or {}
         self.socket_factory = socket_factory
         self.history_turns = history_turns
@@ -132,6 +151,11 @@ class RealtimeRobot:
         self._deferred_sleep_task = None
         self._sleep_closing = False
         self._tool_queue = deque()
+        # smart_turn may call a tool before the same utterance's final ASR. Such
+        # calls wait here (not in the tool queue, which a barge-in cancels) and
+        # are dispatched once the utterance is confirmed or rejected.
+        self._early_tool_events = []
+        self._early_tool_done = None
         self._pending_tool_ids = set()
         self._tool_worker = None
         self._tool_done_event = None
@@ -172,6 +196,7 @@ class RealtimeRobot:
         self._visual_confirmed_seq = 0
         self._visual_last_send_at = 0.0
         self._memory_bootstrap = ""
+        self._clock_text = ""
         self._memory_expires_at_ms = None
         self._memory_task = None
         self._memory_revision = 0
@@ -213,6 +238,10 @@ class RealtimeRobot:
             "endpoint_to_speaker_start_ms": ("speech_stopped_ms", "speaker_started_ms"),
             "first_pcm_to_room_ms": ("tts_first_pcm_ms", "room_first_publish_ms"),
             "room_to_speaker_drained_ms": ("room_first_publish_ms", "speaker_drained_ms"),
+            "endpoint_to_first_text_ms": ("speech_stopped_ms", "llm_first_text_ms"),
+            "asr_final_to_first_text_ms": ("asr_final_ms", "llm_first_text_ms"),
+            "first_text_to_room_ms": ("llm_first_text_ms", "room_first_publish_ms"),
+            "endpoint_to_room_ms": ("speech_stopped_ms", "room_first_publish_ms"),
         }
         durations = {}
         duration_sources = {}
@@ -475,6 +504,8 @@ class RealtimeRobot:
                         records.pop(0)
                     records.append(event)
         self.events.append(event)
+        if kind in LATENCY_LOG_EVENTS:
+            self._log_latency(kind, fields)
         if self.idle_observer is not None:
             self.idle_observer(event)
         if self.voice_event and kind in {
@@ -502,6 +533,53 @@ class RealtimeRobot:
                 callback()
         return event
 
+    def _prewarm_tts(self):
+        prewarm = getattr(self.speech, "prewarm", None)
+        if prewarm is not None:
+            prewarm()
+
+    def _log_latency(self, kind, fields):
+        """One INFO line per stage boundary: numbers and ids only, never dialogue."""
+        robot = self.robot.config.robot_id
+        if kind == "tool.result":
+            logger.info("tool_call robot=%s turn=%s name=%s valid=%s duration_ms=%s",
+                        robot, fields.get("turn_id"), fields.get("name"),
+                        fields.get("valid"), fields.get("duration_ms"))
+            return
+        if kind == "tool.followup":
+            logger.info("tool_followup robot=%s turn=%s response_create=1", robot, self.turn_id)
+            return
+        snap = self._timeline_snapshot(fields.get("turn_id")) if fields.get("turn_id") else None
+        if snap is None:
+            return
+        d = snap["durations"]
+        if kind == "turn.done":
+            logger.info(
+                "turn_latency robot=%s model=%s turn=%s input=%s status=%s "
+                "endpoint_to_asr_final_ms=%s endpoint_to_first_text_ms=%s "
+                "asr_final_to_first_text_ms=%s llm_request_to_first_text_ms=%s "
+                "tool_calls=%s reply_chars=%s",
+                robot, self.model, snap["turn_id"], snap["input_mode"], fields.get("status"),
+                d["endpoint_to_asr_final_ms"], d["endpoint_to_first_text_ms"],
+                d["asr_final_to_first_text_ms"], d["llm_request_to_first_text_ms"],
+                self.call_count, len(fields.get("text") or ""))
+        elif kind == "tts.first_published":
+            connect = getattr(self.speech, "last_connect", None) or {}
+            if connect.get("turn_id") != snap["turn_id"]:
+                connect = {}
+            logger.info(
+                "tts_latency robot=%s turn=%s connection=%s connect_ms=%s "
+                "tts_submit_to_pcm_ms=%s run_to_first_pcm_ms=%s first_text_to_room_ms=%s "
+                "endpoint_to_room_ms=%s",
+                robot, snap["turn_id"], connect.get("origin"), connect.get("connect_ms"),
+                d["tts_submit_to_pcm_ms"],
+                getattr(self.speech, "run_to_first_pcm_ms", None),
+                d["first_text_to_room_ms"], d["endpoint_to_room_ms"])
+        elif kind == "tts.playback.started" and fields.get("source") == "speaker":
+            logger.info("speaker_latency robot=%s turn=%s endpoint_to_speaker_start_ms=%s "
+                        "room_to_speaker_start_ms=%s", robot, snap["turn_id"],
+                        d["endpoint_to_speaker_start_ms"], d["room_to_speaker_start_ms"])
+
     def subscribe(self):
         queue = asyncio.Queue(maxsize=128)
         self.event_subscribers.add(queue)
@@ -516,6 +594,8 @@ class RealtimeRobot:
             "ready": self.ready,
             "state": "connected" if self.ready else "error" if self.error else "connecting" if self.task else "disabled",
             "error": self.error,
+            "model": self.model,
+            "endpoint_host": urlparse(self.url).netloc,
             "provider_session_id": self.session,
             "provider_history_turns": self.history_turns,
             "provider_history_turns_confirmed": self.history_turns_confirmed,
@@ -755,7 +835,7 @@ class RealtimeRobot:
         social = {key: value for key, value in self.social_state.items()
                   if value.get("generation", self.robot.generation) == self.robot.generation}
         return visual_instructions(
-            self._visual_base_instructions + self._memory_bootstrap
+            self._visual_base_instructions + self._memory_bootstrap + self._clock_text
             + (WAKE_ADDRESS_INSTRUCTIONS if self.wake else "")
             + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now)
             + self.language.instruction_hint()
@@ -765,15 +845,16 @@ class RealtimeRobot:
                + self.voices.label(self.voices.resolved(self.robot.session_state()))
                + "；可用克隆音色："
                + "、".join(row["name"] for row in self.voices.choices()[:20])
-               + "。用户明确要求换声线时调用select_voice；‘换一个音色’未指名时"
-               + "只能在唯一其他候选时自动切换，否则需要询问。"
-               + "只有工具结果status=selected才可告诉用户已安排下一次TTS换声；"
-               + "already_selected表示原本就是该声音；"
-               + "rejected、needs_selection或没调用工具都代表没有换。"
-               + "严禁把没切换的声音形容成已切换、让用户试听新音色。"
-               + "音色切换不改变人格、语言或情绪，也不能改变正在播出的PCM。"
+               + "。换声线用select_voice，只有status=selected才算换了、且从下一句起生效；"
+               + "already_selected表示本来就是它，其余结果或没调用都表示没换，"
+               + "这时不说已切换、不让用户试听。换声线不改变人格、语言或情绪。"
                if self.voices and self.voices.choices() else ""), description,
         )
+
+    def _refresh_clock(self):
+        text = clock_instructions(time.time_ns() // 1_000_000)
+        changed, self._clock_text = text != self._clock_text, text
+        return changed
 
     def memory_changed(self):
         """Canonical mutation invalidates old evidence immediately; reload off the hot path."""
@@ -869,6 +950,40 @@ class RealtimeRobot:
         finally:
             if epoch == self._tool_epoch:
                 self._tool_worker = None
+
+    async def _release_early_tools(self, *, confirmed, generation, item_id=None):
+        """Dispatch calls that arrived before ASR final, now that it is decided."""
+        stashed, self._early_tool_events = self._early_tool_events, []
+        done, self._early_tool_done = self._early_tool_done, None
+        if not stashed:
+            return
+        # Only the utterance the calls were made for can own them.
+        confirmed = confirmed and all(owner == item_id for owner, _ in stashed)
+        events = [event for _, event in stashed]
+        if not confirmed:
+            # Ambient or invalid speech: answer each call so the provider is not
+            # left waiting, but do not ask it to speak about that speech.
+            for event in events:
+                result = {"status": "rejected", "reason": "utterance_not_admitted",
+                          "real_device_executed": False}
+                self.publish("tool.result", call_id=event.get("call_id"), name=event.get("name"),
+                             arguments=event.get("arguments", ""), result=result, valid=False,
+                             provider_session_id=self.session, duration_ms=0)
+                if self.socket is not None and self.ready:
+                    await self.socket.send({"type": "conversation.item.create", "item": {
+                        "type": "function_call_output", "call_id": event.get("call_id"),
+                        "output": json.dumps(result, ensure_ascii=False)}})
+            if done is not None:
+                await self.handle(done, generation)
+            return
+        for event in events:
+            self._queue_tool_call(event)  # owner: the confirmed turn
+        if done is not None:
+            self._tool_done_event = done
+            if self._tool_worker is None:
+                self._tool_worker = asyncio.create_task(
+                    self._run_tool_queue(self._tool_epoch), name=f"tools:{self.robot.config.robot_id}",
+                )
 
     async def _cancel_tools(self):
         self._tool_epoch += 1
@@ -1268,7 +1383,10 @@ class RealtimeRobot:
                             else self.turn_id)
         unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
                    if self.speech and self.speech.turn_id else set())
-        response_id = self.response_id
+        # A response with no admitted turn belongs to the utterance being
+        # confirmed right now (smart_turn answered before its final ASR), not
+        # to the interrupted reply; cancelling it would drop the new answer.
+        response_id = self.response_id if self.turn_id else None
         if response_id:
             self._cancelled_response_ids.add(response_id)
             self.response_id = None
@@ -1320,6 +1438,7 @@ class RealtimeRobot:
                     self.robot.store.load_language_preferences,
                     self.robot.config.robot_id, self.robot.chat_id))
                 self.socket = self.socket_factory(self.url, self.key)
+                open_started = time.perf_counter()
                 self._opening = True
                 self._open_done.clear()
                 try:
@@ -1376,39 +1495,22 @@ class RealtimeRobot:
                 physical = bool(self.actions and self.actions.enabled and self.speech)
                 if physical:
                     tail += (
-                        "\nperform_action通常仅响应当前轮明确请求；"
-                        "只有surprise、smirk、proud、skeptical、shy五种夸张表情动作，"
-                        "才允许当前轻松聊天语境明显吻合目录描述时自然触发一次，不必等明确命令；"
-                        "shy是独立脸部脚本，不是shy_retract身体蜷缩。"
-                        "不要每轮强行动作，不因历史指令、普通寒暄或模糊情绪猜测触发，"
-                        "用户难过、严肃交谈或明确不愿意时不要自主使用夸张动作；"
-                        "set_expression仍仅响应当前轮明确请求；"
-                        "否定或取消的本轮不能调用动作。"
-                        "动作调用成功受理后，一旦实际回复文本包含锚点字词便提前向Room发布一次，"
-                        "由嵌入式订阅独立音素流确定采样位置并执行，不阻塞你生成自然回复，"
-                        "不必等嵌入式消费或电机完成；云端发布到所属Room即完成下发职责。"
-                        "工具accepted仅表示已受理，不表示Room已经发布；"
-                        "已发布也不等于电机完成，不虚构物理执行证据。"
-                        "只有工具明确rejected或unavailable才说明当前动作无法受理；"
-                        "其它中间状态及后续设备消费进度不向用户口播。"
-                        "动作工具返回的状态、Room、发送、发布、指令、通道等是内部信息，"
-                        "不要把‘动作已发出/已发送/指令已下发/动作已执行’当作给用户的回复。"
-                        "只用当轮人格自然简短接话，例如‘眨两下眼’答‘好嘞，眨两下～’，"
-                        "‘点个头’答‘好，点头～’；无须解释动作如何传输或重复报告执行状态。"
-                        "不要根据中间状态或以前的助手猜测，编造‘卡壳、没发出去、"
-                        "还没落地、心意到位、设备未执行’等故障或不确定性旁白；"
-                        "若已受理，直接用当轮自然口语接话，不要另加固定口号；"
+                        "\n【实体动作】perform_action和set_expression只响应本轮明确请求；"
+                        "例外是surprise、smirk、proud、skeptical、shy五种表情动作："
+                        "轻松聊天里语境明显吻合目录描述时可自然用一次，不必等命令，"
+                        "用户难过、严肃交谈、否定或取消时不用，也不每轮都用。"
+                        "这五种必须填anchor_text，选你接下来会原样说出的词，"
+                        "重复词用anchor_occurrence指定第几次，不自填毫秒或采样数。"
+                        "受理后用当轮人格简短接话，例如‘眨两下眼’答‘好嘞，眨两下～’；"
+                        "不要把‘动作已发出/已发送/指令已下发/动作已执行’当作给用户的回复，"
+                        "也不编造卡壳、没发出去等故障旁白；只有工具明确rejected或unavailable时才说做不了。"
                         "不要将上轮动作留给新一轮。"
-                        "surprise、smirk、proud、skeptical、shy五种动作必须填写anchor_text，"
-                        "包括用户明确要求时；选随后自然口语中会原样说出的词或字；"
-                        "重复词用anchor_occurrence指定从1开始的非重叠出现次序，默认首次。"
-                        "不可自填毫秒或采样数；未说出锚点不下发指令，"
-                        "音素缺失或迟到由设备丢弃，语音照常，不补做，不把这些字段说给用户。"
                     )
                 if self.weather is not None:
                     tail += (
-                        "\n当前用户明确询问指定城市的实时天气，必须先调用get_weather再回答；"
-                        "未提供城市先询问，接口失败或未配置不能编造天气。"
+                        "\n用户问实时天气时必须先调用get_weather再回答；没说城市就不传city，"
+                        "使用默认城市，回答时说明是哪座城市。查询要等一会儿，调用前可以先自然地说半句"
+                        "（如“我看看”），每次说法不同；接口失败或未配置不能编造天气。"
                         "接口返回非ok时直说暂时无法取得实时天气，不要把故障归因于系统卡顿，"
                         "不猜天气，不主动岔到旧话题或无关记忆，更不要拿所在地开玩笑。"
                     )
@@ -1427,13 +1529,12 @@ class RealtimeRobot:
                     )
                 if self.wake is not None:
                     tail += (
-                        "\n用户这一轮明确让你停止说话、闭嘴、退下、安静一会儿、别出声、歇会儿或结束交谈时，"
-                        "先用一句很短的口语答应，并调用enter_sleep。"
-                        "这是聆听门控，不是动作工具。只有返回status=accepted，这句说完才会真正休眠；"
-                        "问句、否定、转述或只是提到这些词时不要调用，也不要声称已经休眠。"
-                        "accepted之后不要追问，不要再解释。"
+                        "\n用户这一轮明确让你闭嘴、退下、安静、歇会儿或结束交谈时，"
+                        "用一句很短的口语答应并调用enter_sleep（聆听开关，不是动作）；"
+                        "accepted后不追问、不解释。问句、否定、转述时不调用。"
                     )
                 self._instruction_tail = tail
+                self._refresh_clock()
                 instructions = persona_text + tail
                 self._visual_base_instructions = instructions
                 initial_visual = self._fresh_visual()
@@ -1561,7 +1662,16 @@ class RealtimeRobot:
                 self.ready = True
                 self.error = None
                 retry = 1
-                self.publish("session.ready", model="qwen-audio-3.0-realtime-flash")
+                self.publish("session.ready", model=self.model)
+                logger.info(
+                    "realtime_ready robot=%s model=%s host=%s handshake_ms=%.0f "
+                    "history_turns=%s instructions_chars=%d tools=%d tool_schema_chars=%d "
+                    "restored_turns=%d memory_bootstrap_chars=%d",
+                    self.robot.config.robot_id, self.model, urlparse(self.url).netloc,
+                    (time.perf_counter() - open_started) * 1000, self.history_turns_confirmed,
+                    len(self.prompt_snapshot["instructions"]), len(update["session"]["tools"]),
+                    len(json.dumps(update["session"]["tools"], ensure_ascii=False)),
+                    len(self.prompt_snapshot["restored_turns"]), len(self._memory_bootstrap))
                 # A new scene can arrive during handshake; a preexisting scene
                 # also needs an expiry watcher even if it never changes.
                 self.visual_changed()
@@ -1620,6 +1730,8 @@ class RealtimeRobot:
                 self.publish("session.error", error=self.error)
             finally:
                 self.ready = False
+                self._early_tool_events.clear()
+                self._early_tool_done = None
                 await self._cancel_tools()
                 await self._stop_memory_task()
                 await self._stop_visual_task()
@@ -2020,7 +2132,10 @@ class RealtimeRobot:
         self._external_text_only = text_only
         if source == "user":
             self.language.user_request(text, input_source="typed")
+            self._refresh_clock()
             self.visual_changed()
+        if not text_only:
+            self._prewarm_tts()
         self._create_turn(text, source=source)
         owned_turn = self.turn_id
         owned_socket, owned_identity = self.socket, dict(self.turn_identity)
@@ -2372,6 +2487,11 @@ class RealtimeRobot:
                                 response_id != self.response_id):
                 self.publish("response.stale", response_id=response_id, event_kind=kind)
                 return
+        if kind == "response.done" and background_tools and self._early_tool_events:
+            if (event.get("response") or {}).get("status") == "completed":
+                self._early_tool_done = dict(event)  # replayed after the ASR verdict
+                return
+            self._early_tool_events.clear()
         if kind == "response.done" and background_tools and (self._pending_tool_ids or self.followup_needed):
             if (event.get("response") or {}).get("status") == "completed":
                 self._tool_done_event = dict(event)
@@ -2402,6 +2522,10 @@ class RealtimeRobot:
             self.language.style_request = {}
             self.language.serious_context = False
             self.audio_turn_id = None
+            if not self.turn_id:
+                # A late final ASR of the previous utterance must not become the
+                # user text of a reply created before this utterance's ASR.
+                self.transcript = ""
             self.speech_active = True
             if self.speakers is not None:
                 self.speakers.begin()
@@ -2419,6 +2543,10 @@ class RealtimeRobot:
             self._last_conversation_activity_t = time.monotonic()
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
+            if self._refresh_clock():
+                self.visual_changed()  # lands before smart_turn ends this utterance
+            if not (self.wake and self.wake.state == "SLEEP"):
+                self._prewarm_tts()  # TTS handshake overlaps the user still speaking
             if self.wake:
                 self._wake_candidate_pending = self.wake.speech_started(new_item_id)
             # A finished LLM turn may still be speaking. Freeze its local
@@ -2437,6 +2565,7 @@ class RealtimeRobot:
                 if invalid:
                     await self._reject_wake_response("turn_invalid")
             if invalid:
+                await self._release_early_tools(confirmed=False, generation=generation)
                 self.speech_active = False
                 self._candidate_playback_turn_id = None
                 self.invalid_turns += 1
@@ -2457,6 +2586,7 @@ class RealtimeRobot:
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
             final_text = str(event.get("transcript", "")).strip()
+            await self._release_early_tools(confirmed=False, generation=generation)
             if self.wake:
                 self.wake.speech_stopped(event.get("item_id"), invalid=True)
                 await self._reject_wake_response("ambient_audio")
@@ -2592,6 +2722,8 @@ class RealtimeRobot:
                 self.audio_item_turns[item_id] = target
                 if len(self.audio_item_turns) > 128:
                     self.audio_item_turns.pop(next(iter(self.audio_item_turns)))
+            await self._release_early_tools(confirmed=bool(target), generation=generation,
+                                            item_id=item_id)
             if self.wake:
                 await self._release_wake_response(generation, background_tools=background_tools)
         elif kind == "response.created":
@@ -2668,7 +2800,12 @@ class RealtimeRobot:
             self.language.response_text_done(self.text)
             self.publish("text.done", turn_id=self.turn_id, text=self.text)
         elif kind == "response.function_call_arguments.done":
-            if background_tools:
+            if (background_tools and self.turn_id is None and self.pending_audio_item_id
+                    and len(self._early_tool_events) < MAX_EARLY_TOOL_CALLS):
+                self._early_tool_events.append((self.pending_audio_item_id, dict(event)))
+                self.publish("tool.awaiting_asr", call_id=event.get("call_id"),
+                             name=event.get("name"), item_id=self.pending_audio_item_id)
+            elif background_tools:
                 self._queue_tool_call(event)
             else:
                 await self._tool_call(event)
@@ -2831,19 +2968,28 @@ class RealtimeRobot:
                 result = {"status": task["status"], "task_id": task["task_id"],
                           "due_ms": task["due_ms"], "text": task["text"]}
             elif name == "get_weather" and self.weather is not None:
-                if set(args) != {"city"}:
-                    raise ValueError("expected exactly city")
+                if not set(args) <= {"city"}:
+                    raise ValueError("expected only city")
                 if self.turn_identity != self.robot.session_state():
                     raise ValueError("stale weather request")
-                if not isinstance(args["city"], str):
+                city = args.get("city")
+                if city is not None and not isinstance(city, str):
                     raise ValueError("invalid city")
                 current = self.robot.turn_cache.get(self.turn_id) or {}
                 utterance = str(current.get("user_text") or self.transcript or "")
-                if (args["city"] not in utterance and not (
-                    args["city"].endswith("市") and args["city"][:-1] in utterance
-                )):
-                    raise ValueError("weather requires current user query")
-                result = await self.weather.current(args["city"])
+                if not city:
+                    default = getattr(self.weather, "default_city", None)
+                    if not default:
+                        raise ValueError("city required: no configured home city")
+                    if not WEATHER_QUERY.search(utterance):
+                        raise ValueError("weather requires current user query")
+                    result = {**await self.weather.current(default), "default_city": True}
+                else:
+                    if (city not in utterance and not (
+                        city.endswith("市") and city[:-1] in utterance
+                    )):
+                        raise ValueError("weather requires current user query")
+                    result = await self.weather.current(city)
             elif name in {"perform_action", "set_expression"} and self.actions is not None:
                 is_action = name != "set_expression"
                 expected = {"script_id"} if is_action else {"expression"}
@@ -3023,7 +3169,11 @@ class RealtimeRobot:
             "item": {"type": "function_call_output", "call_id": call_id,
                      "output": json.dumps(model_result, ensure_ascii=False)},
         })
-        self.followup_needed = not (
-            name == "enter_sleep" and valid and isinstance(result, dict)
-            and result.get("status") == "accepted" and bool(self.text.strip())
-        )
+        spoken = bool(self.text.strip())
+        settled = spoken and valid and isinstance(model_result, dict) and (
+            # The reply is already speaking: an accepted motion or sleep needs
+            # no second model round, which would only append or repeat words.
+            name in {"perform_action", "set_expression"}
+            and model_result.get("status") == "accepted"
+            or name == "enter_sleep" and result.get("status") == "accepted")
+        self.followup_needed = self.followup_needed or not settled

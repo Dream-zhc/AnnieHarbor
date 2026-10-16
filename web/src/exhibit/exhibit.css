@@ -94,6 +94,31 @@
    1. Top Navigation Bar (Header)
    ========================================================================== */
 
+/* Overlay, so the fixed screen grid keeps its rows. */
+.ex-device-alert {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: min(960px, 90%);
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 82, 82, 0.85);
+  background: rgba(64, 8, 14, 0.94);
+  box-shadow: 0 0 24px rgba(255, 64, 64, 0.45);
+  color: #ffd7d7;
+  font-size: 15px;
+  text-align: center;
+}
+.ex-device-alert strong {
+  color: #ff6b6b;
+  letter-spacing: 0.04em;
+}
+
 .ex-topbar {
   display: flex;
   justify-content: space-between;

@@ -1,8 +1,18 @@
 #!/bin/sh
-# 独立扬声器。改下面三行即可换房间。A=roomv2，B=roomv3。
-# 同一 Room 不要同时开网页调试扬声器。
+# 独立扬声器（可选麦克风）。改下面三行即可换房间。A=roomv2，B=roomv3。
+# 机器人板上同时开麦克风：ROOM_MIC=1 sh start.sh（或 sh start.sh --mic）。
+# 只开麦克风：ROOM_MIC=1 ROOM_SPEAKER=0 sh start.sh。选设备：MIC_DEVICE=名称片段，
+# 多声道阵列取第几路：MIC_CHANNEL=0。先用 sh start.sh --list-devices 看设备。
+# 一个 Room 只留一个麦克风、一个扬声器：同时开网页麦克风或网页调试扬声器会在大屏提醒。
 set -eu
 cd "$(dirname "$0")"
+# 板子上的固定配置（房间、设备、是否开麦克风）放在同目录 room-audio.env，
+# 手动启动和开机自启（install-service.sh）读的是同一份。
+if [ -f ./room-audio.env ]; then
+  set -a
+  . ./room-audio.env
+  set +a
+fi
 export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
 SPEAKER_HOST="${SPEAKER_HOST:-192.168.1.47}"
@@ -32,7 +42,7 @@ if [ ! -x .venv/bin/python ]; then
   fi
 fi
 
-if ! .venv/bin/python -c "import sounddevice, websockets" >/dev/null 2>&1; then
+if ! .venv/bin/python -c "import sounddevice, websockets, numpy" >/dev/null 2>&1; then
   .venv/bin/python -m pip install -r requirements.txt
 fi
 

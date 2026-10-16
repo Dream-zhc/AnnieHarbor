@@ -37,3 +37,5 @@ companion_context_enabled = true
 shared_attention_ttl_ms = 45000
 realtime_on_query = false
 attach_frame_to_main_brain = true
+# 认出的熟人来到面前时主动打招呼；同一个人在这段时间内只打一次（分钟）。挥手不触发回应。
+greet_known_cooldown_minutes = 30

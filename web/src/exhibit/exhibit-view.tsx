@@ -21,6 +21,7 @@ import {eventStages, latestPreview, showMetric} from './telemetry';
 import type {ExhibitSnapshot} from './telemetry';
 import {eventBelongsToSession, type Session, type RealtimeEvent} from '../api';
 import {wakeLabel, wakePresentation} from '../wake-state';
+import {conflictMessages} from '../audio-devices';
 import './exhibit.css';
 
 const RobotTwin = lazy(() => import('./robot-twin').then(m => ({default: m.RobotTwin})));
@@ -253,6 +254,7 @@ function ExhibitView({currentRobotId, onSelectRobot, onSwitchMode}: Props) {
     snapshot?.realtime.user_text ||
     '暂无用户对话';
 
+  const deviceWarnings = conflictMessages(snapshot?.audio.devices ?? null, snapshot?.robot.room_id);
   const assistantSpeechText =
     liveAssistantText ||
     snapshot?.realtime.assistant_text ||
@@ -265,6 +267,13 @@ function ExhibitView({currentRobotId, onSelectRobot, onSwitchMode}: Props) {
       {/* ====================================================================
           1. Top Navigation Bar (Header)
           ==================================================================== */}
+      {deviceWarnings.length > 0 && (
+        <div className="ex-device-alert" role="alert">
+          <strong>音频设备冲突 · ONE MIC &amp; ONE SPEAKER PER ROOM</strong>
+          {deviceWarnings.map((text) => <span key={text}>{text}</span>)}
+        </div>
+      )}
+
       <header className="ex-topbar">
         {/* Brand */}
         <div className="ex-brand">

@@ -4,8 +4,9 @@ cd /d "%~dp0"
 chcp 65001 >nul
 set "PYTHONIOENCODING=utf-8"
 set "PYTHONUNBUFFERED=1"
-rem 独立扬声器。改下面三行即可换房间。A=roomv2，B=roomv3。
-rem 同一 Room 不要同时开网页调试扬声器。
+rem 独立扬声器（可选麦克风）。改下面三行即可换房间。A=roomv2，B=roomv3。
+rem 同时开麦克风：set ROOM_MIC=1 后运行，或 start.bat --mic；选设备 --mic-device 名称片段。
+rem 一个 Room 只留一个麦克风、一个扬声器：同时开网页麦克风或网页调试扬声器会在大屏提醒。
 if not defined SPEAKER_HOST set "SPEAKER_HOST=192.168.1.47"
 if not defined SPEAKER_PORT set "SPEAKER_PORT=8090"
 if not defined SPEAKER_ROOM set "SPEAKER_ROOM=roomv2"
@@ -26,7 +27,7 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
   )
 )
-".venv\Scripts\python.exe" -c "import sounddevice,websockets" >nul 2>&1
+".venv\Scripts\python.exe" -c "import sounddevice,websockets,numpy" >nul 2>&1
 if errorlevel 1 (
   ".venv\Scripts\python.exe" -m pip install -r "%~dp0requirements.txt"
   if errorlevel 1 (

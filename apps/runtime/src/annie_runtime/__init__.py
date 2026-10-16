@@ -18,11 +18,14 @@ from annie_adapters import (
     normalize_room_event,
     parse_mic_start,
 )
+from annie_adapters.playback import PLAYBACK_EVENTS as PLAYBACK_RECEIPTS
+from annie_adapters.playback import playback_receipt
 from annie_brain import FakeBrain
 from annie_brain.persona import CHAT_PREFERENCES
 from annie_core import (
     AudioFormat,
     InputRejectedError,
+    NormalizedEvent,
     PcmFrame,
     RobotConfig,
     RobotQueueFullError,
@@ -32,6 +35,7 @@ from annie_core import (
 )
 from annie_observability import ProcessProbe, Recorder, RuntimeEvent
 
+from annie_runtime.audio_devices import RoomAudioDevices
 from annie_runtime.events import EventService
 from annie_runtime.idle import IdleService
 from annie_runtime.realtime import RealtimeRobot
@@ -41,6 +45,7 @@ from annie_runtime.speech import SpeechOutput
 from annie_runtime.viseme import VisemeSidecars
 
 logger = logging.getLogger(__name__)
+PERCEPTION_REPEAT_SECONDS = 5.0
 
 
 @dataclass
@@ -855,6 +860,7 @@ class HarborRuntime:
         wake_wait_ms: int = 5000,
         wake_followup_ms: int = 20000,
         side_talk_listen_ms: int = 120000,
+        greet_known_cooldown_minutes: float = 30,
         cloud_aec_robots: tuple[str, ...] = (),
         cloud_aec_sync_offset_ms: int = 80,
         cloud_aec_delay_ms: int = 0,
@@ -959,8 +965,16 @@ class HarborRuntime:
             )
             for c in configs
         }
+        # One microphone and one speaker per Room: observed, never enforced.
+        self.audio_devices = {
+            robot_id: RoomAudioDevices(
+                on_change=lambda status, snapshot, robot_id=robot_id:
+                self._audio_devices_changed(robot_id, status, snapshot))
+            for robot_id in self.robots
+        }
         self.input_bindings: dict[str, tuple[str, ...]] = {}
         self.local_input_sources: set[str] = set()
+        self._perception_last = {}  # (robot_id, kind) -> (signature, monotonic)
         self.room_server = room_server
         self.room_connections = {}
         self.room_sources = {}
@@ -1175,7 +1189,7 @@ class HarborRuntime:
             self.memory.on_change = self._memory_changed
         self.started = False
         self.start_time = time.time()
-        self.events = EventService(self)
+        self.events = EventService(self, greet_cooldown_ms=int(greet_known_cooldown_minutes * 60_000))
         self.reminders = ReminderService(self)
         self.idle = IdleService(self, idle_model, idle_seconds=idle_seconds,
                                 second_seconds=idle_second_seconds,
@@ -1407,6 +1421,7 @@ class HarborRuntime:
         )
         if robot_id in self.cloud_aec:
             stats["aec"] = self.cloud_aec[robot_id].snapshot()
+        stats["audio_devices"] = self.audio_devices[robot_id].snapshot()
         return stats
 
     def debug_ingest_room_pcm(self, robot_id: str, source_id: str, frame: bytes):
@@ -1435,6 +1450,7 @@ class HarborRuntime:
             )
             return
         robot = self.robots[robot_id]
+        self.audio_devices[robot_id].mic_frame()
         aec = self.cloud_aec.get(robot_id)
         if aec is not None:
             # Native DSP never executes in the websocket reader. The worker
@@ -1531,6 +1547,13 @@ class HarborRuntime:
             self.smallbrain_tasks.add(task)
             task.add_done_callback(self.smallbrain_tasks.discard)
             return
+        if str(message.get("type", "")) in PLAYBACK_RECEIPTS:
+            try:
+                # A second speaker's receipts are rejected below as stale;
+                # they still prove that it is playing in this Room.
+                self.audio_devices[robot_id].playback_receipt(playback_receipt(message))
+            except ValueError:
+                pass
         if client.speech is None or not str(message.get("type", "")).startswith("tts.playback."):
             return
         try:
@@ -1545,6 +1568,7 @@ class HarborRuntime:
     def _room_voice_event(self, robot_id, message):
         """reb_voice carries device status; microphone status never triggers ASR."""
         kind = message.get("type", "")
+        self.audio_devices[robot_id].report(message)
         if isinstance(kind, str) and kind.startswith("tts.playback."):
             # Commands from Brain also pass through this subscription. Only
             # device reports are accepted; avoid treating our own hold as ACK.
@@ -1559,6 +1583,18 @@ class HarborRuntime:
                 self.realtime[robot_id].publish(
                     "voice.microphone", event_kind=kind, source="microphone",
                 )
+
+    def _audio_devices_changed(self, robot_id, status, snapshot):
+        """A second microphone/speaker appeared or went away: tell the screens."""
+        reasons = ";".join(f"{item['role']}:{item['reason']}" for item in snapshot["conflicts"])
+        robot = self.robots.get(robot_id)
+        if robot is not None:
+            robot.record("audio_devices_" + status, error=reasons or None, source="room_audio")
+        client = self.realtime.get(robot_id) if hasattr(self, "realtime") else None
+        if client is not None:
+            client.publish("audio.devices." + status, conflicts=snapshot["conflicts"],
+                           microphones=len(snapshot["microphones"]),
+                           speakers=len(snapshot["speakers"]))
 
     def _send_voice_event(self, robot_id, kind, event):
         """Relay Qwen's observations asynchronously; it does not talk to Room."""
@@ -1616,11 +1652,39 @@ class HarborRuntime:
             "face", "object", "gesture",
         }:
             return
+        if self._repeated_perception(robot_id, message):
+            return
         source = f"room:{self.robots[robot_id].config.room_id}:{channel}-event"
         try:
             self.dispatch_room_event(source, message, target_robot_id=robot_id)
         except InputRejectedError:
             logger.warning("Room external event rejected robot=%s channel=%s", robot_id, channel)
+
+    def _repeated_perception(self, robot_id, message):
+        """Vision streams face/gesture ~27 times a second, nearly always unchanged.
+
+        Each one used to be a trace row and an INFO line while the policy only
+        keeps it as context. Forward a change at once, a repeat every 5 s.
+        """
+        kind = message.get("kind") if message.get("type") == "vision.perception" \
+            else message.get("type")
+        if kind == "gesture":
+            gesture = message.get("gesture") or {}
+            signature = (gesture.get("state"), gesture.get("name"), gesture.get("gesture")) \
+                if isinstance(gesture, dict) else None
+        elif kind == "face":
+            tracks = message.get("tracks")
+            signature = tuple(sorted(
+                (str(item.get("name")), str(item.get("expression")))
+                for item in tracks if isinstance(item, dict))) if isinstance(tracks, list) else None
+        else:
+            return False
+        now = time.monotonic()
+        last = self._perception_last.get((robot_id, kind))
+        if last is not None and last[0] == signature and now - last[1] < PERCEPTION_REPEAT_SECONDS:
+            return True
+        self._perception_last[(robot_id, kind)] = (signature, now)
+        return False
 
     def _room_sam_event(self, robot_id, message):
         self.room_monitors[robot_id].on_sam(message)
@@ -1630,11 +1694,19 @@ class HarborRuntime:
             client.speech.on_mouth_script(message)
 
     def _room_visual_event(self, robot_id, message):
-        if self.room_monitors[robot_id].on_visual(message):
+        monitor = self.room_monitors[robot_id]
+        if monitor.on_visual(message):
             self.idle.observe_visual(
                 robot_id,
-                message if self.room_monitors[robot_id].visual_facts_accepted else {},
+                message if monitor.visual_facts_accepted else {},
             )
+            transport = f"room:{monitor.room_id}:visualllm"
+            for arrival in monitor.known_arrivals:
+                # Settled by the runtime's smoothing; the policy decides to greet.
+                self.events.route(robot_id, NormalizedEvent(
+                    kind="vision.known_arrival", source="vision",
+                    payload={"id": arrival["subject_id"], "name": arrival["name"]},
+                    ts_ms=time.time_ns() // 1_000_000, ttl_ms=10_000), transport)
             client = self.realtime.get(robot_id)
             if client is not None:
                 client.visual_changed()

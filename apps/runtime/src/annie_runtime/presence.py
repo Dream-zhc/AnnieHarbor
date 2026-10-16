@@ -191,6 +191,26 @@ class DialoguePresence:
         self._expire()
         return True
 
+    def robot_spoke_first(self):
+        """The robot greets someone unprompted: listen afterwards like after a reply.
+
+        The greeting turn is authorised like an admitted utterance, so its
+        verified speaker drain opens the normal follow-up window. A safety
+        deadline closes the gate if the greeting never completes.
+        """
+        self._expire()
+        if self.state == "ACTIVE":
+            return False  # already in a conversation
+        self.epoch += 1
+        self.state = "ACTIVE"
+        self._candidate = False
+        self._candidate_item_id = None
+        self._first_wake_transcript = False
+        self._reply_admitted = True
+        self._listen_since = self.clock()
+        self.deadline = self.clock() + 60.0
+        return True
+
     @staticmethod
     def is_wake_only(text):
         normalized = _PUNCTUATION.sub(

@@ -15,6 +15,8 @@ class EventPolicy:
     seen: OrderedDict = field(default_factory=OrderedDict)
     cooldown: dict = field(default_factory=dict)
     history: deque = field(default_factory=lambda: deque(maxlen=80))
+    # One greeting per recognised person in this window (user decision 2026-10-16).
+    greet_cooldown_ms: int = 30 * 60_000
 
     def snapshot(self, now_ms: int):
         self._prune(now_ms)
@@ -77,6 +79,24 @@ class EventPolicy:
                     "不要使用固定套话，不要复述这段说明，不要提及传感器、雷达或具体数字，不要执行物理动作。"
                 )
                 self.cooldown[key] = now_ms + 15_000
+        elif not reason and event.kind == "vision.known_arrival":
+            # A face the vision side recognised and the runtime saw arrive and
+            # stay. Gestures (waving) stay context only, by user decision.
+            name = str(event.payload.get("name") or "").strip()
+            name = "".join(ch for ch in name if ch.isprintable() and ch not in "\r\n")[:24]
+            greet_key = (event.kind, transport, name)
+            if not name:
+                reason = "context_only"
+            elif greet_key in self.cooldown:
+                decision, reason = "dropped", "cooldown"
+            else:
+                decision = "need_response"
+                prompt = (
+                    f"现场情况：你认出{name}刚来到你面前。这不是用户说的话，也不是要你照念的台词。"
+                    "按你当前的性格，用一句很短、自然的话跟TA打招呼，可以叫名字。"
+                    "不要提摄像头、识别或画面，不要复述这段说明，不要执行物理动作。"
+                )
+                self.cooldown[greet_key] = now_ms + self.greet_cooldown_ms
         elif not reason:
             reason = "context_only"
 
@@ -105,6 +125,8 @@ class EventPolicy:
             "decision": decision, "reason": reason, "transport": transport,
             "observed_ms": when, "expires_at_ms": when + ttl,
             "prompt": prompt, "status": "observed", "summary": fact["summary"],
+            # After a greeting the person usually answers: listen like after a reply.
+            "listen_after": decision == "need_response" and event.kind == "vision.known_arrival",
         }
         self.history.append(row)
         return row

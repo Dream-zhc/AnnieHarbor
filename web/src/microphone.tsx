@@ -2,11 +2,12 @@ import {useEffect,useRef,useState} from 'react';
 import {pcmFrame} from './pcm-format';
 import {waitForCaptureReady} from './capture-ready';
 import {acquireAudioContext,loadAudioWorklet,releaseAudioContext} from './shared-audio-context';
+import {browserInstanceId} from './audio-devices';
 
 type Route={room_id:string;mic_url:string;urls?:Record<string,string>};
 type Microphone={ws:WebSocket;stream:MediaStream;context:AudioContext;
   source:MediaStreamAudioSourceNode;processor:AudioWorkletNode;silent:GainNode;watchdog:number;
-  voiceWs:WebSocket|null};
+  voiceWs:WebSocket|null;instanceId:string;heartbeat:number|null};
 export type MicDiagnostics={dbfs:number;noiseFloor:number;snr:number;clipped:boolean};
 type InputDevice={deviceId:string;label:string};
 
@@ -87,8 +88,10 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
     startupAbort.current?.abort();startupAbort.current=null;
     const old=active.current;active.current=null;
     if(old){
+      if(old.heartbeat!==null)window.clearInterval(old.heartbeat);
       if(old.voiceWs?.readyState===WebSocket.OPEN){
-        old.voiceWs.send(JSON.stringify({type:'mic.capture.stopped',data:{sender:'microphone'}}));
+        old.voiceWs.send(JSON.stringify({type:'mic.capture.stopped',data:{sender:'microphone',
+          source:'microphone',instance_id:old.instanceId,host:'browser',reason:'stopped'}}));
       }
       old.voiceWs?.close();
       window.clearTimeout(old.watchdog);
@@ -192,7 +195,9 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
         setStatus('3 秒未收到麦克风音频回调：AudioContext='+state+
           '；设备='+ (track?.readyState??'none')+'；请检查浏览器麦克风授权与音频设备');
       },3000);
-      active.current={ws,stream,context,source,processor,silent,watchdog,voiceWs:null};
+      const instanceId=browserInstanceId('microphone');
+      active.current={ws,stream,context,source,processor,silent,watchdog,voiceWs:null,
+        instanceId,heartbeat:null};
       handedOff=true;
       source.connect(processor);
       if(route.urls?.voice){
@@ -206,8 +211,19 @@ export function RealtimeMicrophone({route,onLevel,onDiagnostics,onActive}:{
             };
             if(message.type==='WELCOME'&&message.ok===true&&
                message.room===roomId&&message.robotId==='reb_voice'){
-              voiceWs.send(JSON.stringify({type:'mic.capture.started',
-                data:{sender:'microphone'}}));
+              // The same report shape as the board microphone: Brain counts
+              // microphones per Room and warns when there is more than one.
+              const report=(kind:'started'|'progress')=>voiceWs.send(JSON.stringify({
+                type:'mic.capture.'+kind,data:{sender:'microphone',source:'microphone',
+                  instance_id:instanceId,host:'browser',
+                  device_name:captureStream.getAudioTracks()[0]?.label||'浏览器麦克风',
+                  sample_rate:16000,sent_frames:sent,
+                  room_connected:captureWs.readyState===WebSocket.OPEN}}));
+              report('started');
+              if(active.current?.ws===captureWs&&active.current.heartbeat===null)
+                active.current.heartbeat=window.setInterval(()=>{
+                  if(voiceWs.readyState===WebSocket.OPEN)report('progress');
+                },2000);
             }
           }catch{/* mic PCM must not be blocked by optional status signaling */}
         };

@@ -1,3 +1,4 @@
+import type {AudioDevices} from '../audio-devices';
 import type {WakeState} from '../wake-state';
 
 export type ActionPreview = {
@@ -37,6 +38,7 @@ export type ExhibitSnapshot = {
     aec?: {enabled?: boolean; status?: string; processed?: number;
       bypassed?: number; missing_reference?: number; errors?: number;
       speaker_receipt_age_ms?: number | null; speaker_played_samples?: number | null};
+    devices?: AudioDevices;
   };
   vision: { description: string | null; updated_at_ms: number | null; availability: string };
   actions: ActionPreview[];

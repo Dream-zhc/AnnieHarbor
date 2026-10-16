@@ -2601,7 +2601,7 @@ class RealtimeRobot:
         return False
 
     async def submit_text(self, text, *, source="user", expected_identity=None,
-                          text_only=False):
+                          text_only=False, listen_after=False):
         if text_only and source != "external":
             raise ValueError("text-only output is only for internal external turns")
         if not self.ready or not self.socket:
@@ -2635,6 +2635,11 @@ class RealtimeRobot:
             self._prewarm_tts()
         self._create_turn(text, source=source)
         owned_turn = self.turn_id
+        if listen_after and self.wake is not None and source == "external" and not text_only:
+            # A greeting: whoever was greeted can answer without saying 小安妮.
+            if self.wake.presence.robot_spoke_first():
+                self.wake.authorized_turn_id = owned_turn
+                self.publish("wakeword.greeting_listen", turn_id=owned_turn)
         owned_socket, owned_identity = self.socket, dict(self.turn_identity)
         def ensure_owned():
             if (self.turn_id != owned_turn or self.socket is not owned_socket or not self.ready

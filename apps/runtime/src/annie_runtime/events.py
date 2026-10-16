@@ -6,11 +6,14 @@ from collections import deque
 
 from annie_brain.event_policy import EventPolicy
 
+GREETING_QUIET_SECONDS = 20  # no greeting within this long of the last conversation
+
 
 class EventService:
-    def __init__(self, runtime):
+    def __init__(self, runtime, *, greet_cooldown_ms=30 * 60_000):
         self.runtime = runtime
-        self.policies = {robot_id: EventPolicy() for robot_id in runtime.robots}
+        self.policies = {robot_id: EventPolicy(greet_cooldown_ms=greet_cooldown_ms)
+                         for robot_id in runtime.robots}
         self.pending = {robot_id: deque(maxlen=16) for robot_id in runtime.robots}
         self.wakeups = {robot_id: asyncio.Event() for robot_id in runtime.robots}
         self.tasks = {}
@@ -99,6 +102,12 @@ class EventService:
                     playback_active=bool(speech and (speech.turn_id or
                         speech.worker and not speech.worker.done())),
                 )
+                if (blocked is None and row.get("listen_after")
+                        and time.monotonic() - client._last_conversation_activity_t
+                        < GREETING_QUIET_SECONDS):
+                    # Do not greet a newcomer into someone else's conversation;
+                    # if it keeps going past the event TTL, the greeting lapses.
+                    blocked = "conversation_active"
             if blocked is None:
                 pending.popleft()
                 row["status"] = "submitting"
@@ -109,6 +118,7 @@ class EventService:
                     result = await client.submit_text(
                         "【外部事件，非用户发言】" + row["prompt"],
                         source="external", expected_identity=row,
+                        listen_after=bool(row.get("listen_after")),
                     )
                     row.update(status="submitted_unknown", turn_id=result["turn_id"])
                 except Exception as exc:

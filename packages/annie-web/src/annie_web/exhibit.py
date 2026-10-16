@@ -104,6 +104,8 @@ async def exhibit_snapshot(runtime, robot_id: str):
             "frames_dropped": inputs.get("dropped"),
             "mic_connected": inputs.get("connected"),
             "aec": _mapping(inputs.get("aec")),
+            # One microphone and one speaker per Room; the big screen warns.
+            "devices": _mapping(inputs.get("audio_devices")),
         },
         "vision": {
             "description": description,

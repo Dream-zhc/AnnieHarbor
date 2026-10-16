@@ -1,13 +1,23 @@
 import {useEffect,useRef,useState} from 'react';
 import {decodeRoomTts,type RoomTtsPacket} from './room-tts-pcm';
 import {acquireAudioContext,loadAudioWorklet,releaseAudioContext} from './shared-audio-context';
+import {browserInstanceId} from './audio-devices';
 
 type Speaker={
   ws:WebSocket|null;voiceWs:WebSocket|null;voiceReady:boolean;
   context:AudioContext;node:AudioWorkletNode|null;gain:GainNode|null;
   timer:number|null;stream:string;stopped:string;seq:number;endSample:number;
   frames:number;final:boolean;held:boolean;playbackId:string;reportSeq:number;
+  instanceId:string;heartbeat:number|null;
 };
+
+/** The audition is a speaker in the Room too; Brain warns if another one plays. */
+function presence(s:Speaker,state?:string){
+  if(s.voiceWs?.readyState!==WebSocket.OPEN)return;
+  s.voiceWs.send(JSON.stringify({type:'speaker.presence',description:'网页试听在线',ts:Date.now(),
+    data:{protocol_version:1,sender:'browser_test',source:'browser_test',instance_id:s.instanceId,
+      host:'browser',device_name:'网页试听',state:state??(s.held?'held':s.stream?'playing':'idle')}}));
+}
 
 /** Mac/browser audition reports ONLY browser_test, never claims physical speaker success. */
 export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer,onActive}:{url?:string;voiceUrl?:string;roomId?:string;
@@ -66,6 +76,8 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
     const s=active.current;active.current=null;
     if(s){
       if(s.timer!==null)window.clearTimeout(s.timer);
+      if(s.heartbeat!==null)window.clearInterval(s.heartbeat);
+      presence(s,'stopped');
       if(s.ws){s.ws.onmessage=s.ws.onerror=s.ws.onclose=null;s.ws.close();}
       if(s.voiceWs){s.voiceWs.onmessage=s.voiceWs.onerror=s.voiceWs.onclose=null;s.voiceWs.close();}
       clearAudio(s);s.node?.disconnect();s.gain?.disconnect();releaseAudioContext(s.context);
@@ -130,7 +142,7 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
       const context=acquireAudioContext();
       s={context,ws:null,voiceWs:null,voiceReady:false,node:null,gain:null,timer:null,
         stream:'',stopped:'',seq:0,endSample:0,frames:0,final:false,held:false,
-        playbackId:'',reportSeq:0};
+        playbackId:'',reportSeq:0,instanceId:browserInstanceId('speaker'),heartbeat:null};
       active.current=s;setStatus('正在连接 Room TTS…');setFrames(0);
       await context.resume();
       if(active.current!==s)return;
@@ -182,7 +194,11 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
               const data=signal.data as {what?:string;subscriptions?:string[]}|undefined;
               if(signal.type!=='ACK'||data?.what!=='subscribed'||
                 !data.subscriptions?.includes('*'))throw Error('reb_voice 订阅失败');
-              voiceStage='listening';current.voiceReady=true;return;
+              voiceStage='listening';current.voiceReady=true;
+              presence(current);
+              if(current.heartbeat===null)
+                current.heartbeat=window.setInterval(()=>presence(current),2000);
+              return;
             }
             if(!['tts.playback.hold','tts.playback.resume','tts.playback.stop'].includes(
               String(signal.type)))return;

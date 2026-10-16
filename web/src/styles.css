@@ -2531,6 +2531,31 @@ details summary::-webkit-details-marker {
   color: #64748b;
   font-size: 11px;
 }
+/* A second microphone/speaker in the Room: warn, never block. */
+.device-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  margin: 6px 14px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 81, 73, 0.6);
+  background: rgba(248, 81, 73, 0.14);
+  color: #ffa198;
+  font-size: 12.5px;
+}
+.device-conflict strong {
+  color: #ff7b72;
+}
+:root[data-theme="light"] .device-conflict {
+  background: #ffebe9 !important;
+  border-color: #ff8182 !important;
+  color: #82071e !important;
+}
+:root[data-theme="light"] .device-conflict strong {
+  color: #cf222e !important;
+}
 /* Decisions read as one sentence, so they take the full row. */
 .live-cockpit-card.decision-card {
   grid-column: 1 / -1;

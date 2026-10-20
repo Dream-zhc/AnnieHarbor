@@ -109,8 +109,9 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "ask once which (needs_selection); if you asked and they let you choose "
                     "(你选/随便/那你换吧), pick one offered label and call again. Call it once per "
                     "decision, never retry after selected or already_selected. ONLY "
-                    "status=selected means it changed. Call before speaking; after selected, answer "
-                    "them in one new sentence in that style instead of reciting a confirmation."
+                    "status=selected means it changed. Call before speaking, and never say you "
+                    "switched (换好了/切换成…) unless this call returned selected; after selected, "
+                    "answer them in one new sentence in that style instead of reciting a confirmation."
                 ),
                 "parameters": {"type": "object", "properties": {
                     "style_name": {"type": "string",

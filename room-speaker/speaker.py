@@ -21,6 +21,7 @@ import logging
 import os
 import queue
 import re
+import signal
 import sys
 import threading
 import time
@@ -1051,6 +1052,23 @@ async def serve(tts_url, voice_url, room, playback, events, *, speaker_identity=
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+async def until_stopped(coroutine):
+    """systemctl stop/restart sends SIGTERM: leave like Ctrl+C, with the goodbye reports.
+
+    Without them Brain keeps the old instance for 6 s and sees two devices.
+    """
+    task = asyncio.ensure_future(coroutine)
+    try:
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+    except (NotImplementedError, RuntimeError, AttributeError):
+        pass  # Windows: no SIGTERM handler in asyncio
+    try:
+        return await task
+    except asyncio.CancelledError:
+        logger.info("收到停止信号，已发出停止回执")
+        return None
+
+
 def import_sounddevice():
     try:
         import sounddevice as sd
@@ -1281,9 +1299,10 @@ def main(argv=None):
             logger.info("回执 source=microphone。请关闭同一 Room 的网页麦克风。")
         logger.info("回执 %s。直连 Room，不走系统代理。", voice_url)
         try:
-            result = asyncio.run(serve(tts_url, voice_url, args.room, playback, events,
-                                       speaker_identity=speaker_identity, mic=mic, head=head,
-                                       volume_store=volume_store))
+            result = asyncio.run(until_stopped(serve(
+                tts_url, voice_url, args.room, playback, events,
+                speaker_identity=speaker_identity, mic=mic, head=head,
+                volume_store=volume_store)))
         except KeyboardInterrupt:
             logger.info("已退出。播放中断开不补发 stopped。")
     finally:

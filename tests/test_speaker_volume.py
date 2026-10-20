@@ -175,3 +175,53 @@ def test_proactive_lines_are_not_repeated_after_the_user_talks():
     assert spoken.latest("a").startswith("今天天气")
     clock[0] += 3 * 3600
     assert not spoken.repeated("a", "今天天气感觉挺舒服的，适合出来走走")
+
+
+def test_what_the_user_calls_annie_is_not_remembered_as_their_name():
+    from annie_brain.memory import is_meta_memory, prepare_extracted_fact
+
+    # From the 10/14 chat: "那行，小bug，我把这勾勾改一改就行了。"
+    for text in ("用户称呼当前AI角色为“小bug”。", "用户称呼当前AI角色为“小安妮”。",
+                 "用户叫助手小bug。", "用户管机器人叫小bug。"):
+        assert is_meta_memory("user_call_ai_xiaobug", text), text
+        assert prepare_extracted_fact({"kind": "persona", "key": "user_call_ai",
+                                       "text": text}, "那行，小bug，我改一改") is None
+    assert not is_meta_memory("user_name", "用户叫张三。")
+
+
+def test_change_your_personality_is_an_explicit_request():
+    from pathlib import Path
+
+    from annie_brain.persona import load_personas, resolve_persona_style_request
+
+    profiles = load_personas(Path(__file__).resolve().parents[1] / "config/personas.toml")
+    social = {"persona_style": {"value": "annie-weary", "source": "user_setting"}}
+    for said in ("小安妮，换一个你的性格。", "换个性格", "给你换换风格"):
+        style, options = resolve_persona_style_request("annie", profiles, social, "", said)
+        assert style is None and "活泼俏皮" in options, said
+    style, _ = resolve_persona_style_request("annie", profiles, social, "活泼俏皮",
+                                             "小安妮，换一个你的性格。")
+    assert style == "annie-lively"
+    with pytest.raises(ValueError):
+        resolve_persona_style_request("annie", profiles, social, "活泼俏皮", "你的性格挺好")
+
+
+def test_systemctl_stop_sends_the_goodbye_like_ctrl_c():
+    import os
+    import signal
+
+    said = []
+
+    async def board():
+        try:
+            await asyncio.sleep(30)
+        finally:
+            said.append("goodbye")  # serve() sends its stop reports here
+
+    async def run():
+        task = asyncio.create_task(speaker.until_stopped(board()))
+        await asyncio.sleep(.05)  # the SIGTERM handler is in place
+        os.kill(os.getpid(), signal.SIGTERM)
+        return await asyncio.wait_for(task, 2)
+
+    assert asyncio.run(run()) is None and said == ["goodbye"]

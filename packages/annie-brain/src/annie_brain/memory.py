@@ -55,6 +55,10 @@ _INCOMPLETE_PREFERENCE = re.compile(r"^(?:我)?不喜欢(?:带|吃|穿|用|看|�
 _PLAN_CAR = re.compile(r"我.{0,12}(?:准备|打算|计划).{0,12}看车")
 _PLAN_CAR_CANCEL = re.compile(r"(?:我.{0,8})?(?:不准备|不打算|不想|取消|放弃).{0,6}看车|(?:车已经买|已经买车|买好车了)")
 _PLAN_KEY = "ongoing_plan_car_viewing"
+# What the user calls Annie is not a fact about the user; a model once read
+# "用户称呼当前AI角色为“小bug”" as the user's own name and greeted them with it.
+_ASSISTANT_NICKNAME = re.compile(
+    r"用户(?:称呼|叫|管)(?:当前|这个)?(?:的)?(?:AI|ai|助手|机器人|角色|小安妮|你)")
 _PLAN_LIFETIME_MS = 30 * 86_400_000
 
 
@@ -87,6 +91,7 @@ def is_meta_memory(key, value):
                 or value.startswith(("placeholder", "用户询问", "用户曾询问",
                                      "用户问过", "用户只是询问", "用户提及地点为",
                                      "用户称呼助手", "本轮没有", "本轮未"))
+                or _ASSISTANT_NICKNAME.search(value)
                 or (_REMINDER_REQUEST.search(value) and "用户要求" in value)
                 or value in {"用户不喜欢带。", "用户不喜欢吃。", "用户不喜欢穿。"}
                 or (key.startswith("chat_") and "用户最近准备去看车" in value)
@@ -113,6 +118,7 @@ def prepare_extracted_fact(fact, user_text):
             _SINGLE_LOCATION.fullmatch(original) or
             _INCOMPLETE_PREFERENCE.fullmatch(original) or
             "用户提及地点" in value or "用户称呼助手" in value or
+            _ASSISTANT_NICKNAME.search(value) or
             "用户要求" in value and _REMINDER_REQUEST.search(value)):
         return None
     if _PLAN_CAR_CANCEL.search(original):

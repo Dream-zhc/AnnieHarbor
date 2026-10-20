@@ -28,7 +28,9 @@ FRAME_RATE_LIMIT = 62  # one 20 ms stream is 50 frames/s
 FRAME_RATE_SECONDS = 3  # consecutive seconds above the limit
 PLAYBACK_WINDOW_SECONDS = 5.0
 HEAD_TTL_SECONDS = 6.0  # robot.head.active comes every 2 s
-HANDOVER_GRACE_SECONDS = 5.0  # the older board stops within ~1 s of hearing the newer
+# The older board stops within ~1 s; one that died without its stop reports
+# lingers until DEVICE_TTL_SECONDS, so the grace outlasts that.
+HANDOVER_GRACE_SECONDS = DEVICE_TTL_SECONDS + 1.0
 HEAD_KINDS = ("robot.head.active", "robot.head.released")
 HEAD_FIELDS = ("head_id", "head_name", "host", "address")
 ROLES = ("microphone", "speaker")

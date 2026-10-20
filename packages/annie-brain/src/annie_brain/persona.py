@@ -189,8 +189,8 @@ def resolve_persona_style_request(persona_id, profiles, social, requested_name, 
              if not any(style_id != other and profiles[style_id]["label"] in profiles[other]["label"]
                         and profiles[other]["label"] in user_text for other in named)]
     names_style = bool(re.search(
-        r"(?:换成|改成|切换成|切换到|变成|调成|换个|改个|换一个|换一种|切换)"
-        r"(?:这个|那个|一下)?(?:新的?)?(?:性格|风格|人格|人设)"
+        r"(?:换成|改成|切换成|切换到|变成|调成|换个|改个|换一个|换一种|换换|切换)"
+        r"(?:一下)?(?:你的?|自己的?)?(?:这个|那个|一下)?(?:新的?)?(?:性格|风格|人格|人设)"
         r"|(?:性格|风格|人格|人设).{0,8}(?:换成|改成|切换)",
         user_text,
     ))

@@ -1,0 +1,57 @@
+.......F                                                                 [100%]
+=================================== FAILURES ===================================
+________________ test_fast_completed_response_remains_accepted _________________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-142/test_fast_completed_response_r0')
+
+    def test_fast_completed_response_remains_accepted(tmp_path):
+        async def run():
+            class FastSocket(FakeSocket):
+                async def send(self,event):
+                    await super().send(event)
+                    if event['type']=='response.create':
+                        c=runtime.realtime['a'];gen=c.robot.generation
+                        await c.handle({'type':'response.created','response':{'id':'fast'}},gen)
+                        await c.handle({'type':'response.text.delta','response_id':'fast','delta':'Hello!'},gen)
+                        await c.handle({'type':'response.done','response':{'id':'fast','status':'completed','output':[]}},gen)
+            runtime=HarborRuntime([RobotConfig('a','r')],tmp_path/'db',realtime_key='fixture',
+                                 realtime_socket_factory=FastSocket)
+            await runtime.start()
+            try:
+                await ready(runtime)
+                result=await runtime.realtime['a'].submit_text('hello')
+                assert result['status']=='accepted'
+                assert runtime.robots['a'].turn_cache[result['turn_id']]['status']=='completed'
+            finally:await runtime.close()
+>       asyncio.run(run())
+
+tests/test_browser_followup_regressions.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_browser_followup_regressions.py:191: in run
+    result=await runtime.realtime['a'].submit_text('hello')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+apps/runtime/src/annie_runtime/realtime.py:1751: in submit_text
+    ensure_owned()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def ensure_owned():
+        if (self.turn_id != owned_turn or self.socket is not owned_socket or not self.ready
+                or self.turn_identity != owned_identity
+                or self.robot.session_state() != owned_identity
+                or self.speech_active or speech_at != self._last_provider_speech_started_t):
+>           raise RobotUnavailableError("text submission cancelled or preempted")
+E           annie_core.RobotUnavailableError: text submission cancelled or preempted
+
+apps/runtime/src/annie_runtime/realtime.py:1728: RobotUnavailableError
+=========================== short test summary info ============================
+FAILED tests/test_browser_followup_regressions.py::test_fast_completed_response_remains_accepted
+1 failed, 7 passed in 0.32s

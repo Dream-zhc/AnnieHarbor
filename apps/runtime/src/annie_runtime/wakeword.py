@@ -1,9 +1,12 @@
 """Per-robot streaming sherpa KWS and Qwen audio admission."""
 
 import asyncio
+import logging
 import time
 
 from annie_runtime.presence import DialoguePresence
+
+logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 FRAME_BYTES = SAMPLE_RATE * 2 // 50  # Room contract: 20ms s16le mono
@@ -57,6 +60,7 @@ class WakeAdmission:
         self.last_keyword_tokens = []
         self.last_keyword_token_times_ms = []
         self._batch_started_at = None
+        self.on_display_wake = None
 
     @property
     def state(self):
@@ -86,8 +90,29 @@ class WakeAdmission:
         self._was_awake = False
         self._batch_started_at = None
 
+    def _display_mark(self):
+        deadline = self.presence.deadline
+        remaining = None if deadline is None else int(max(0, deadline - self.clock()))
+        return (self.presence.state, self.presence._candidate, self.error, remaining)
+
+    def _notify_display_wake(self, before):
+        callback = self.on_display_wake
+        if callback is None or self._display_mark() == before:
+            return
+        try:
+            callback()
+        except Exception as exc:
+            logger.warning("display wake notify failed: %s", type(exc).__name__)
+
     async def frames(self, pcm: bytes) -> tuple[bytes, ...]:
         """Only locally buffer sleep audio; sherpa decoding runs in a task."""
+        before = self._display_mark()
+        try:
+            return await self._consume_frame(pcm)
+        finally:
+            self._notify_display_wake(before)
+
+    async def _consume_frame(self, pcm: bytes) -> tuple[bytes, ...]:
         if len(pcm) != FRAME_BYTES:
             raise ValueError("wake PCM must contain one 20ms/640B frame")
         if self.error is not None:

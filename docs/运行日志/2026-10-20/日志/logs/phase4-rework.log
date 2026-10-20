@@ -1,0 +1,33 @@
+INFO:     Started server process [94590]
+INFO:     Waiting for application startup.
+2026-09-20 18:38:33,380 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-09-20 18:38:33,382 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8780 (Press CTRL+C to quit)
+2026-09-20 18:38:33,426 INFO annie_adapters room_pcm connected room=roomv3 url=ws://192.168.1.47:8090/robot/roomv3/reb_mic
+2026-09-20 18:38:33,432 INFO annie_adapters room_pcm connected room=roomv2 url=ws://192.168.1.47:8090/robot/roomv2/reb_mic
+[INFO] stopping existing Annie Harbor pid=58248 on 127.0.0.1:8780 ...
+[INFO] old Annie Harbor pid=58248 stopped; starting replacement.
+INFO:     127.0.0.1:62602 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62967 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62968 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-09-20 18:41:11,423 INFO annie_runtime.realtime realtime_shutdown robot=annie-a opening=False ready=True
+2026-09-20 18:41:11,426 INFO annie_runtime.realtime realtime_shutdown robot=annie-a awaiting_tasks
+2026-09-20 18:41:11,429 INFO annie_runtime.realtime realtime_cleanup robot=annie-a begin
+2026-09-20 18:41:11,431 INFO annie_runtime.realtime realtime_cleanup robot=annie-a audio_done
+2026-09-20 18:41:11,432 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_begin
+2026-09-20 18:41:11,433 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_done
+2026-09-20 18:41:11,440 INFO annie_runtime.realtime realtime_shutdown robot=annie-a complete
+2026-09-20 18:41:11,440 INFO annie_runtime.realtime realtime_shutdown robot=annie-b opening=False ready=True
+2026-09-20 18:41:11,441 INFO annie_runtime.realtime realtime_shutdown robot=annie-b awaiting_tasks
+2026-09-20 18:41:11,441 INFO annie_runtime.realtime realtime_cleanup robot=annie-b begin
+2026-09-20 18:41:11,441 INFO annie_runtime.realtime realtime_cleanup robot=annie-b audio_done
+2026-09-20 18:41:11,441 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_begin
+2026-09-20 18:41:11,441 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_done
+2026-09-20 18:41:11,441 INFO annie_runtime.realtime realtime_shutdown robot=annie-b complete
+2026-09-20 18:41:11,661 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-09-20 18:41:11,663 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [94590]

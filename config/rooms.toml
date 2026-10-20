@@ -17,6 +17,7 @@ vision = "reb_vision"
 sam = "reb_sam"
 visualllm = "reb_visualllm"
 voice = "reb_voice" # 同一个 roomv2 下，麦克风/扬声器控制与回执，不承载 PCM
+display = "reb_display" # 大屏内部事件。异步旁路，不承载 PCM，也不参与播放控制
 
 [urls]
 main = "ws://192.168.1.47:8090/robot/roomv2/reb_main"
@@ -27,6 +28,7 @@ vision = "ws://192.168.1.47:8090/robot/roomv2/reb_vision"
 sam = "ws://192.168.1.47:8090/robot/roomv2/reb_sam"
 visualllm = "ws://192.168.1.47:8090/robot/roomv2/reb_visualllm"
 voice = "ws://192.168.1.47:8090/robot/roomv2/reb_voice"
+display = "ws://192.168.1.47:8090/robot/roomv2/reb_display"
 
 [protocol]
 asr_types = ["asr", "ASR_RESULT"]

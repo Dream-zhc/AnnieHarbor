@@ -1,0 +1,820 @@
+TAP version 13
+# (node:23389) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: selected historical TTS never borrows latest speech output or a different turn
+not ok 1 - selected historical TTS never borrows latest speech output or a different turn
+  ---
+  duration_ms: 1.62925
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:18:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - {
+    -   parameters: {
+    -     enable_ssml: false,
+    -     format: 'pcm',
+    -     instruction: '用四川话按故事情节自然起伏。',
+    -     language_hints: [
+    -       'zh'
+    -     ],
+    -     pitch: 1,
+    -     rate: 1,
+    -     sample_rate: 24000,
+    -     text_type: 'PlainText',
+    -     volume: 50
+    -   },
+    -   segment_count: 2,
+    -   segment_id: 'speech-old',
+    -   segments: [
+    -     {
+    -       chars: 4,
+    -       end_char: 4,
+    -       index: 0,
+    -       segment_id: 'speech-old',
+    -       start_char: 0,
+    -       task_id: 'tts-old',
+    -       text: '第一句。',
+    -       ts_ms: 100
+    -     },
+    -     {
+    -       chars: 4,
+    -       end_char: 8,
+    -       index: 1,
+    -       segment_id: 'speech-old',
+    -       start_char: 4,
+    -       task_id: 'tts-old',
+    -       text: '第二句。',
+    -       ts_ms: 120
+    -     }
+    -   ],
+    -   segments_omitted: 0,
+    -   speech_style: {
+    -     delivery: 'expressive',
+    -     dialect: 'sichuan',
+    -     emotion: 'neutral',
+    -     instruction: '用四川话按故事情节自然起伏。',
+    -     language: 'zh',
+    -     pitch: 1,
+    -     rate: 1,
+    -     source: 'explicit_user',
+    -     volume: 50
+    -   },
+    -   state: 'completed',
+    -   streaming: 'duplex',
+    -   submitted_chars: 8,
+    -   submitted_text: '第一句。第二句。',
+    -   task_id: 'tts-old',
+    -   text_truncated: false
+    - }
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    task_id: 'tts-old'
+    segment_id: 'speech-old'
+    streaming: 'duplex'
+    state: 'completed'
+    speech_style:
+      language: 'zh'
+      dialect: 'sichuan'
+      emotion: 'neutral'
+      delivery: 'expressive'
+      source: 'explicit_user'
+      instruction: '用四川话按故事情节自然起伏。'
+      rate: 1
+      pitch: 1
+      volume: 50
+    parameters:
+      text_type: 'PlainText'
+      format: 'pcm'
+      sample_rate: 24000
+      enable_ssml: false
+      instruction: '用四川话按故事情节自然起伏。'
+      rate: 1
+      pitch: 1
+      volume: 50
+      language_hints:
+        0: 'zh'
+    submitted_text: '第一句。第二句。'
+    submitted_chars: 8
+    segments:
+      0:
+        index: 0
+        text: '第一句。'
+        start_char: 0
+        end_char: 4
+        chars: 4
+        task_id: 'tts-old'
+        segment_id: 'speech-old'
+        ts_ms: 100
+      1:
+        index: 1
+        text: '第二句。'
+        start_char: 4
+        end_char: 8
+        chars: 4
+        task_id: 'tts-old'
+        segment_id: 'speech-old'
+        ts_ms: 120
+    segment_count: 2
+    segments_omitted: 0
+    text_truncated: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:21:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: mismatched robot, Chat, Persona, epoch or generation cannot supply TTS or events
+not ok 2 - mismatched robot, Chat, Persona, epoch or generation cannot supply TTS or events
+  ---
+  duration_ms: 0.184709
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:26:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    robot_id
+    + actual - expected
+    
+    + undefined
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:31:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: old unrecorded evidence remains unknown and does not invent provider defaults
+not ok 3 - old unrecorded evidence remains unknown and does not invent provider defaults
+  ---
+  duration_ms: 0.47125
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:36:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    必须提供本轮 TTS 证据视图，而非当前 speech 状态
+    + actual - expected
+    
+    + 'undefined'
+    - 'function'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'function'
+  actual: 'undefined'
+  operator: 'strictEqual'
+  stack: |-
+    view (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:14:10)
+    async TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:37:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: expressive delivery is distinct from neutral emotion and displays actual raw parameters
+not ok 4 - expressive delivery is distinct from neutral emotion and displays actual raw parameters
+  ---
+  duration_ms: 0.247834
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:46:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    必须提供本轮 TTS 证据视图，而非当前 speech 状态
+    + actual - expected
+    
+    + 'undefined'
+    - 'function'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'function'
+  actual: 'undefined'
+  operator: 'strictEqual'
+  stack: |-
+    view (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:14:10)
+    async TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:47:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: actual submitted parameters are not reconstructed from style and voice/key are excluded
+not ok 5 - actual submitted parameters are not reconstructed from style and voice/key are excluded
+  ---
+  duration_ms: 0.739708
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:62:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    必须提供本轮 TTS 证据视图，而非当前 speech 状态
+    + actual - expected
+    
+    + 'undefined'
+    - 'function'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'function'
+  actual: 'undefined'
+  operator: 'strictEqual'
+  stack: |-
+    view (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:14:10)
+    async TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:63:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: cancelled, failed and retained-text truncation are explicit, never playback proof
+not ok 6 - cancelled, failed and retained-text truncation are explicit, never playback proof
+  ---
+  duration_ms: 0.149375
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:70:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    必须提供本轮 TTS 证据视图，而非当前 speech 状态
+    + actual - expected
+    
+    + 'undefined'
+    - 'function'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'function'
+  actual: 'undefined'
+  operator: 'strictEqual'
+  stack: |-
+    view (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:14:10)
+    async TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:71:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: diagnostics renders readable per-turn TTS and names continue-task pieces honestly
+not ok 7 - diagnostics renders readable per-turn TTS and names continue-task pieces honestly
+  ---
+  duration_ms: 5.856083
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:80:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /本轮 TTS 文本与表达参数/. Input:
+    
+    "import {useState} from 'react';\n" +
+      "import type {RealtimeDiagnostics,TurnTimeline} from './api';\n" +
+      "import {selectTurnEvidence} from './turn-evidence';\n" +
+      "import {CustomSelect} from './custom-select';\n" +
+      "import './turn-diagnostics.css';\n" +
+      '\n' +
+      "export type DiagnosticTurn={turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;status:string;created_ms?:number;\n" +
+      '  assistant_generated_text?:string|null;assistant_published_text?:string|null;\n' +
+      '  assistant_spoken_text?:string|null;playback_evidence_status?:string};\n' +
+      '\n' +
+      "const text=(value:unknown)=>typeof value==='string'&&value.trim()?value:'未记录';\n" +
+      'const pretty=(value:unknown)=>JSON.stringify(value,null,2);\n' +
+      "const since=(times:TurnTimeline['times']|undefined,from:string,to:string)=>{\n" +
+      '  const a=times?.[from],b=times?.[to];\n' +
+      "  return a!=null&&b!=null&&b>=a?`${b-a} ms`:'未记录';\n" +
+      '};\n' +
+      'const endState=(status?:string)=>{\n' +
+      "  if(!status)return '未记录';\n" +
+      "  if(status==='published_unknown')return '云端下发完成（设备执行未核验）';\n" +
+      "  if(status==='awaiting_audio_anchor')return '等待首帧音频';\n" +
+      "  if(status==='awaiting_text_anchor')return '等待回复包含目标词';\n" +
+      "  if(status==='awaiting_word_alignment')return '旧协议：等待声学对齐';\n" +
+      "  if(status==='call_observed')return '仅观察到工具调用';\n" +
+      "  if(status==='queued')return '已排队';\n" +
+      "  if(status==='send_unknown')return '发送结果不确定';\n" +
+      "  if(status==='rejected_late')return '已错过触发点，动作未发布';\n" +
+      "  if(status==='expired_no_text_anchor')return '回复未出现目标词，未发布动作';\n" +
+      "  if(status==='expired_no_alignment')return '旧协议：字词对齐超时';\n" +
+      "  if(status.startsWith('rejected')||status.startsWith('cancelled')||status.startsWith('expired'))return `未发布：${status}`;\n" +
+      '  return status;\n' +
+      '};\n' +
+      '\n' +
+      'function Detail({label,value}:{label:string;value:unknown}){\n' +
+      '  return (\n' +
+      '    <details className="turn-detail">\n' +
+      '      <summary><span className="turn-detail-chevron">▶</span>{label}</summary>\n' +
+      "      <pre>{typeof value==='string'?text(value):pretty(value)}</pre>\n" +
+      '    </details>\n' +
+      '  );\n' +
+      '}\n' +
+      '\n' +
+      'export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{\n' +
+      '  turns:DiagnosticTurn[];diagnostics:RealtimeDiagnostics|null;latestTurnId?:string|null;\n' +
+      '  liveUser?:{turnId:string;text:string}|null;\n' +
+      '}){\n' +
+      "  const [choice,setChoice]=useState('latest');\n" +
+      "  const turnId=choice==='latest'?(latestTurnId??turns.at(-1)?.turn_id):choice;\n" +
+      '  const turn=turns.find(item=>item.turn_id===turnId);\n' +
+      '  const {timeline,prompt,tools,events}=selectTurnEvidence(diagnostics,turnId);\n' +
+      '  const user=(liveUser?.turnId===turnId?liveUser?.text:null)||turn?.user_text||timeline?.user_text;\n' +
+      "  const toolCalls=tools.filter(item=>item.kind==='tool.called');\n" +
+      "  const recall=tools.filter(item=>item.kind==='tool.result'&&item.name==='recall_memory');\n" +
+      "  const actions=events.filter(item=>item.kind==='action.state');\n" +
+      "  const mouth=events.filter(item=>item.kind==='viseme.aligned');\n" +
+      "  const tts=events.filter(item=>item.kind.startsWith('tts.'));\n" +
+      "  const browserReceipts=tts.filter(item=>item.kind.startsWith('tts.playback.')&&\n" +
+      "    item.source==='browser_test');\n" +
+      '  const latestBrowser=browserReceipts.at(-1);\n' +
+      '  const duration=timeline?.times;\n' +
+      '  const latencyWindow=diagnostics?.latency_window;\n' +
+      '  const percentiles=diagnostics?.latency_percentiles;\n' +
+      '  const measured=(name:string,start:string,end:string)=>{\n' +
+      '    const value=timeline?.durations?.[name];\n' +
+      '    return value!=null?`${value} ms`:since(duration,start,end);\n' +
+      '  };\n' +
+      '  const memoryEvidence=recall.flatMap(item=>{\n' +
+      '    const result=item.result as {evidence?:unknown[]}|undefined;\n' +
+      '    return Array.isArray(result?.evidence)?result.evidence:[];\n' +
+      '  });\n' +
+      "  const actionCalls=toolCalls.filter(item=>item.name==='perform_action'||item.name==='set_expression');\n" +
+      "  const weatherCalls=toolCalls.filter(item=>item.name==='get_weather');\n" +
+      "  const weatherResults=tools.filter(item=>item.kind==='tool.result'&&item.name==='get_weather');\n" +
+      '  const planning=diagnostics?.idle_planning;\n' +
+      '  const plans=[...(planning?.continuation.recent??[]),...(planning?.recent??[])]\n' +
+      '    .filter(item=>item.source_turn_id===turnId||item.result_turn_id===turnId)\n' +
+      '    .sort((a,b)=>a.ts_ms-b.ts_ms);\n' +
+      '  const waitingPlan=planning&&turnId&&planning.continuation.turn_id===turnId?\n' +
+      '    planning.continuation:null;\n' +
+      '\n' +
+      '  return (\n' +
+      '    <section className="turn-diagnostic">\n' +
+      '      <header className="turn-diagnostic-head">\n' +
+      '        <div className="turn-head-title-row">\n' +
+      '          <h3>回合诊断</h3>\n' +
+      '          <span className="turn-head-badge">{turns.length} 轮记录</span>\n' +
+      '        </div>\n' +
+      '        <label className="turn-select-label">\n' +
+      '          <span>选择回合</span>\n' +
+      '          <CustomSelect\n' +
+      '            aria-label="选择诊断回合"\n' +
+      '            ariaLabel="选择诊断回合"\n' +
+      '            value={choice}\n' +
+      '            onChange={val=>setChoice(val)}\n' +
+      '            options={[\n' +
+      "              {value:'latest',label:'最近一轮 (Latest)'},\n" +
+      '              ...turns.slice(-30).reverse().map(item=>({\n' +
+      '                value:item.turn_id,\n' +
+      "                label:`${item.turn_source==='external'?'内部事件':item.user_text.slice(0,36)||item.turn_id} · ${item.status}`\n" +
+      '              }))\n' +
+      '            ]}\n' +
+      '          />\n' +
+      '        </label>\n' +
+      '      </header>\n' +
+      '\n' +
+      '      {latencyWindow&&<details className="turn-diagnostic-section">\n' +
+      '        <summary>Phase 9 · 最近 {latencyWindow.turns}/{latencyWindow.window_capacity} 轮性能统计</summary>\n' +
+      '        <div className="turn-diagnostic-line"><span>语音 / 文字 / 外部</span>\n' +
+      '          <strong>{latencyWindow.by_input.audio??0} / {latencyWindow.by_input.text??0} / {latencyWindow.by_input.external??0}</strong></div>\n' +
+      '        <div className="turn-diagnostic-line"><span>完成 / 取消 / 失败 / 未结束</span>\n' +
+      '          <strong>{latencyWindow.statuses.completed??0} / {latencyWindow.statuses.cancelled??0} / {latencyWindow.statuses.failed??0} / {latencyWindow.statuses.running??0}</strong></div>\n' +
+      '        <div className="turn-diagnostic-line"><span>已生成但无真机播完回执</span>\n' +
+      '          <strong>{latencyWindow.speaker_receipt_missing} 轮（不等于设备未播放）</strong></div>\n' +
+      '        {Object.entries(percentiles??{}).map(([name,stats])=><div className="turn-diagnostic-line" key={name}>\n' +
+      "          <span>{name}</span><strong>n={stats.samples} · P50 {stats.p50_ms??'—'} / P95 {stats.p95_ms??'—'} ms · 缺失 {stats.missing??'—'}</strong>\n" +
+      '        </div>)}\n' +
+      '        <small>有界近128轮，未观测不按0ms计算；分位数只取有证据的样本，缺失和失败单列。</small>\n' +
+      '      </details>}\n' +
+      '\n' +
+      '      {!turnId ? (\n' +
+      '        <div className="turn-empty-state"><p>暂无回合数据</p></div>\n' +
+      '      ) : (\n' +
+      '        <>\n' +
+      '          <div className="turn-diagnostic-id">\n' +
+      "            <span className={`turn-id-dot dot-${turn?.status??'running'}`} />\n" +
+      `            <span className="turn-status-text">{turn?.status??'进行中'}</span>\n` +
+      '            <span className="turn-id-sep">/</span>\n' +
+      '            <code className="turn-id-hash">{turnId}</code>\n' +
+      '          </div>\n' +
+      '\n' +
+      '          <div className="turn-qa">\n' +
+      '            <div className="turn-card turn-card-user">\n' +
+      '              <div className="turn-card-head">\n' +
+      `                <span className="turn-badge badge-user">{turn?.turn_source==='external'?'内部触发（非用户发言）':'👤 用户输入'}</span>\n` +
+      '              </div>\n' +
+      `              <p className="turn-card-body">{turn?.turn_source==='external'?'事件触发的模型回合':text(user)}</p>\n` +
+      `              {turn?.turn_source==='external'&&<Detail label="Runtime 提交的内部提示（仅诊断）" value={turn.external_prompt}/>}\n` +
+      '            </div>\n' +
+      '\n' +
+      '            <div className="turn-card turn-card-assistant">\n' +
+      '              <div className="turn-card-head">\n' +
+      '                <span className="turn-badge badge-assistant">✨ LLM 生成回复</span>\n' +
+      `                {turn?.status==='running'&&!turn.assistant_generated_text&&<span className="turn-streaming-tag">生成中…</span>}\n` +
+      '              </div>\n' +
+      '              <p className="turn-card-body assistant-body">\n' +
+      "                {turn?.status==='running'&&!turn.assistant_generated_text?'回复中…':text(turn?.assistant_generated_text)}\n" +
+      '              </p>\n' +
+      '            </div>\n' +
+      '\n' +
+      '            <div className="turn-card turn-card-playback">\n' +
+      '              <div className="turn-card-head">\n' +
+      '                <span className="turn-badge badge-playback">🔊 实际播报</span>\n' +
+      "                <span className={`evidence-badge ${turn?.playback_evidence_status==='speaker_reported_drained'?'badge-good':'badge-muted'}`}>\n" +
+      "                  真机回执: {turn?.playback_evidence_status??'未记录'}\n" +
+      '                </span>\n' +
+      '              </div>\n' +
+      '              <p className="turn-card-body">{text(turn?.assistant_spoken_text)}</p>\n' +
+      "              <small>播放证据：{turn?.playback_evidence_status??'未记录'}</small>\n" +
+      '              <small>网页试听回执：{latestBrowser\n' +
+      "                ?`${latestBrowser.kind.replace('tts.playback.','')}（仅 browser_test，非真机）`\n" +
+      "                :'未记录'}</small>\n" +
+      '            </div>\n' +
+      '          </div>\n' +
+      '\n' +
+      '          <div className="turn-diagnostic-section">\n' +
+      '            <div className="section-head">\n' +
+      '              <span className="section-icon">🧠</span>\n' +
+      '              <h4>LLM 输入与上下文</h4>\n' +
+      '            </div>\n' +
+      '            {prompt ? (\n' +
+      '              <>\n' +
+      '                <Detail label="Session 实际发送的完整 instructions" value={prompt.instructions}/>\n' +
+      '                <Detail label={`Session 建立时注入的历史（${prompt.restored_turns?.length??0} 轮）`} value={prompt.restored_turns??[]}/>\n' +
+      '                <div className="turn-diagnostic-line">\n' +
+      '                  <span className="line-label">注入历史字符：</span>\n' +
+      "                  <strong>{prompt.restored_chars_used??'未记录'} / {prompt.restored_char_budget??'未记录'}</strong>\n" +
+      `                  <span className="line-sub">；较旧省略：{prompt.restored_older_omitted??'未记录'} 轮</span>\n` +
+      '                </div>\n' +
+      '                <div className="turn-diagnostic-line">\n' +
+      '                  <span className="line-label">Provider 历史窗口：</span>\n' +
+      "                  <strong>请求 {prompt.history_turns_requested} / 回执 {prompt.history_turns_confirmed??'未返回'} 轮</strong>\n" +
+      '                </div>\n' +
+      '                <div className="turn-diagnostic-line">\n' +
+      '                  <span className="line-label">Session ID：</span>\n' +
+      '                  <code>{prompt.provider_session_id}</code>\n' +
+      '                </div>\n' +
+      '                <small>这是本轮所属 Session 实际发送的指令与重连历史；云端后续滚动上下文不可读取，不能声称是本轮完整云端输入。</small>\n' +
+      '              </>\n' +
+      '            ) : (\n' +
+      '              <p className="turn-unrecorded">本轮 Session 提示词 / 注入上下文未留存，不展示其他回合的内容。</p>\n' +
+      '            )}\n' +
+      '          </div>\n' +
+      '\n' +
+      '          <div className="turn-diagnostic-section">\n' +
+      '            <div className="section-head">\n' +
+      '         '... 7210 more characters
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    import {useState} from 'react';
+    import type {RealtimeDiagnostics,TurnTimeline} from './api';
+    import {selectTurnEvidence} from './turn-evidence';
+    import {CustomSelect} from './custom-select';
+    import './turn-diagnostics.css';
+    
+    export type DiagnosticTurn={turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;status:string;created_ms?:number;
+      assistant_generated_text?:string|null;assistant_published_text?:string|null;
+      assistant_spoken_text?:string|null;playback_evidence_status?:string};
+    
+    const text=(value:unknown)=>typeof value==='string'&&value.trim()?value:'未记录';
+    const pretty=(value:unknown)=>JSON.stringify(value,null,2);
+    const since=(times:TurnTimeline['times']|undefined,from:string,to:string)=>{
+      const a=times?.[from],b=times?.[to];
+      return a!=null&&b!=null&&b>=a?`${b-a} ms`:'未记录';
+    };
+    const endState=(status?:string)=>{
+      if(!status)return '未记录';
+      if(status==='published_unknown')return '云端下发完成（设备执行未核验）';
+      if(status==='awaiting_audio_anchor')return '等待首帧音频';
+      if(status==='awaiting_text_anchor')return '等待回复包含目标词';
+      if(status==='awaiting_word_alignment')return '旧协议：等待声学对齐';
+      if(status==='call_observed')return '仅观察到工具调用';
+      if(status==='queued')return '已排队';
+      if(status==='send_unknown')return '发送结果不确定';
+      if(status==='rejected_late')return '已错过触发点，动作未发布';
+      if(status==='expired_no_text_anchor')return '回复未出现目标词，未发布动作';
+      if(status==='expired_no_alignment')return '旧协议：字词对齐超时';
+      if(status.startsWith('rejected')||status.startsWith('cancelled')||status.startsWith('expired'))return `未发布：${status}`;
+      return status;
+    };
+    
+    function Detail({label,value}:{label:string;value:unknown}){
+      return (
+        <details className="turn-detail">
+          <summary><span className="turn-detail-chevron">▶</span>{label}</summary>
+          <pre>{typeof value==='string'?text(value):pretty(value)}</pre>
+        </details>
+      );
+    }
+    
+    export function TurnDiagnostics({turns,diagnostics,latestTurnId,liveUser}:{
+      turns:DiagnosticTurn[];diagnostics:RealtimeDiagnostics|null;latestTurnId?:string|null;
+      liveUser?:{turnId:string;text:string}|null;
+    }){
+      const [choice,setChoice]=useState('latest');
+      const turnId=choice==='latest'?(latestTurnId??turns.at(-1)?.turn_id):choice;
+      const turn=turns.find(item=>item.turn_id===turnId);
+      const {timeline,prompt,tools,events}=selectTurnEvidence(diagnostics,turnId);
+      const user=(liveUser?.turnId===turnId?liveUser?.text:null)||turn?.user_text||timeline?.user_text;
+      const toolCalls=tools.filter(item=>item.kind==='tool.called');
+      const recall=tools.filter(item=>item.kind==='tool.result'&&item.name==='recall_memory');
+      const actions=events.filter(item=>item.kind==='action.state');
+      const mouth=events.filter(item=>item.kind==='viseme.aligned');
+      const tts=events.filter(item=>item.kind.startsWith('tts.'));
+      const browserReceipts=tts.filter(item=>item.kind.startsWith('tts.playback.')&&
+        item.source==='browser_test');
+      const latestBrowser=browserReceipts.at(-1);
+      const duration=timeline?.times;
+      const latencyWindow=diagnostics?.latency_window;
+      const percentiles=diagnostics?.latency_percentiles;
+      const measured=(name:string,start:string,end:string)=>{
+        const value=timeline?.durations?.[name];
+        return value!=null?`${value} ms`:since(duration,start,end);
+      };
+      const memoryEvidence=recall.flatMap(item=>{
+        const result=item.result as {evidence?:unknown[]}|undefined;
+        return Array.isArray(result?.evidence)?result.evidence:[];
+      });
+      const actionCalls=toolCalls.filter(item=>item.name==='perform_action'||item.name==='set_expression');
+      const weatherCalls=toolCalls.filter(item=>item.name==='get_weather');
+      const weatherResults=tools.filter(item=>item.kind==='tool.result'&&item.name==='get_weather');
+      const planning=diagnostics?.idle_planning;
+      const plans=[...(planning?.continuation.recent??[]),...(planning?.recent??[])]
+        .filter(item=>item.source_turn_id===turnId||item.result_turn_id===turnId)
+        .sort((a,b)=>a.ts_ms-b.ts_ms);
+      const waitingPlan=planning&&turnId&&planning.continuation.turn_id===turnId?
+        planning.continuation:null;
+    
+      return (
+        <section className="turn-diagnostic">
+          <header className="turn-diagnostic-head">
+            <div className="turn-head-title-row">
+              <h3>回合诊断</h3>
+              <span className="turn-head-badge">{turns.length} 轮记录</span>
+            </div>
+            <label className="turn-select-label">
+              <span>选择回合</span>
+              <CustomSelect
+                aria-label="选择诊断回合"
+                ariaLabel="选择诊断回合"
+                value={choice}
+                onChange={val=>setChoice(val)}
+                options={[
+                  {value:'latest',label:'最近一轮 (Latest)'},
+                  ...turns.slice(-30).reverse().map(item=>({
+                    value:item.turn_id,
+                    label:`${item.turn_source==='external'?'内部事件':item.user_text.slice(0,36)||item.turn_id} · ${item.status}`
+                  }))
+                ]}
+              />
+            </label>
+          </header>
+    
+          {latencyWindow&&<details className="turn-diagnostic-section">
+            <summary>Phase 9 · 最近 {latencyWindow.turns}/{latencyWindow.window_capacity} 轮性能统计</summary>
+            <div className="turn-diagnostic-line"><span>语音 / 文字 / 外部</span>
+              <strong>{latencyWindow.by_input.audio??0} / {latencyWindow.by_input.text??0} / {latencyWindow.by_input.external??0}</strong></div>
+            <div className="turn-diagnostic-line"><span>完成 / 取消 / 失败 / 未结束</span>
+              <strong>{latencyWindow.statuses.completed??0} / {latencyWindow.statuses.cancelled??0} / {latencyWindow.statuses.failed??0} / {latencyWindow.statuses.running??0}</strong></div>
+            <div className="turn-diagnostic-line"><span>已生成但无真机播完回执</span>
+              <strong>{latencyWindow.speaker_receipt_missing} 轮（不等于设备未播放）</strong></div>
+            {Object.entries(percentiles??{}).map(([name,stats])=><div className="turn-diagnostic-line" key={name}>
+              <span>{name}</span><strong>n={stats.samples} · P50 {stats.p50_ms??'—'} / P95 {stats.p95_ms??'—'} ms · 缺失 {stats.missing??'—'}</strong>
+            </div>)}
+            <small>有界近128轮，未观测不按0ms计算；分位数只取有证据的样本，缺失和失败单列。</small>
+          </details>}
+    
+          {!turnId ? (
+            <div className="turn-empty-state"><p>暂无回合数据</p></div>
+          ) : (
+            <>
+              <div className="turn-diagnostic-id">
+                <span className={`turn-id-dot dot-${turn?.status??'running'}`} />
+                <span className="turn-status-text">{turn?.status??'进行中'}</span>
+                <span className="turn-id-sep">/</span>
+                <code className="turn-id-hash">{turnId}</code>
+              </div>
+    
+              <div className="turn-qa">
+                <div className="turn-card turn-card-user">
+                  <div className="turn-card-head">
+                    <span className="turn-badge badge-user">{turn?.turn_source==='external'?'内部触发（非用户发言）':'👤 用户输入'}</span>
+                  </div>
+                  <p className="turn-card-body">{turn?.turn_source==='external'?'事件触发的模型回合':text(user)}</p>
+                  {turn?.turn_source==='external'&&<Detail label="Runtime 提交的内部提示（仅诊断）" value={turn.external_prompt}/>}
+                </div>
+    
+                <div className="turn-card turn-card-assistant">
+                  <div className="turn-card-head">
+                    <span className="turn-badge badge-assistant">✨ LLM 生成回复</span>
+                    {turn?.status==='running'&&!turn.assistant_generated_text&&<span className="turn-streaming-tag">生成中…</span>}
+                  </div>
+                  <p className="turn-card-body assistant-body">
+                    {turn?.status==='running'&&!turn.assistant_generated_text?'回复中…':text(turn?.assistant_generated_text)}
+                  </p>
+                </div>
+    
+                <div className="turn-card turn-card-playback">
+                  <div className="turn-card-head">
+                    <span className="turn-badge badge-playback">🔊 实际播报</span>
+                    <span className={`evidence-badge ${turn?.playback_evidence_status==='speaker_reported_drained'?'badge-good':'badge-muted'}`}>
+                      真机回执: {turn?.playback_evidence_status??'未记录'}
+                    </span>
+                  </div>
+                  <p className="turn-card-body">{text(turn?.assistant_spoken_text)}</p>
+                  <small>播放证据：{turn?.playback_evidence_status??'未记录'}</small>
+                  <small>网页试听回执：{latestBrowser
+                    ?`${latestBrowser.kind.replace('tts.playback.','')}（仅 browser_test，非真机）`
+                    :'未记录'}</small>
+                </div>
+              </div>
+    
+              <div className="turn-diagnostic-section">
+                <div className="section-head">
+                  <span className="section-icon">🧠</span>
+                  <h4>LLM 输入与上下文</h4>
+                </div>
+                {prompt ? (
+                  <>
+                    <Detail label="Session 实际发送的完整 instructions" value={prompt.instructions}/>
+                    <Detail label={`Session 建立时注入的历史（${prompt.restored_turns?.length??0} 轮）`} value={prompt.restored_turns??[]}/>
+                    <div className="turn-diagnostic-line">
+                      <span className="line-label">注入历史字符：</span>
+                      <strong>{prompt.restored_chars_used??'未记录'} / {prompt.restored_char_budget??'未记录'}</strong>
+                      <span className="line-sub">；较旧省略：{prompt.restored_older_omitted??'未记录'} 轮</span>
+                    </div>
+                    <div className="turn-diagnostic-line">
+                      <span className="line-label">Provider 历史窗口：</span>
+                      <strong>请求 {prompt.history_turns_requested} / 回执 {prompt.history_turns_confirmed??'未返回'} 轮</strong>
+                    </div>
+                    <div className="turn-diagnostic-line">
+                      <span className="line-label">Session ID：</span>
+                      <code>{prompt.provider_session_id}</code>
+                    </div>
+                    <small>这是本轮所属 Session 实际发送的指令与重连历史；云端后续滚动上下文不可读取，不能声称是本轮完整云端输入。</small>
+                  </>
+                ) : (
+                  <p className="turn-unrecorded">本轮 Session 提示词 / 注入上下文未留存，不展示其他回合的内容。</p>
+                )}
+              </div>
+    
+              <div className="turn-diagnostic-section">
+                <div className="section-head">
+                  <span className="section-icon">💾</span>
+                  <h4>记忆</h4>
+                </div>
+                {prompt ? (
+                  <Detail label={`Session 启动记忆（${prompt.bootstrap_count} 条）`} value={prompt.bootstrap_text||'无'}/>
+                ) : (
+                  <p className="turn-unrecorded">Session 启动记忆未记录</p>
+                )}
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">本轮显式召回：</span>
+                  <strong>
+                    {recall.length
+                      ? `${recall.length} 次，${recall.some(item=>!item.valid)?'含失败 / 拒绝请求，':''}返回 ${memoryEvidence.length} 条证据`
+                      : '无调用记录（不等于检索失败）'}
+                  </strong>
+                </div>
+                {recall.map(item=>(
+                  <Detail
+                    key={item.call_id??item.seq}
+                    label={`recall_memory · ${item.valid?'已返回':'异常 / 未确认'} · ${item.duration_ms??'—'} ms`}
+                    value={{arguments:item.arguments,result:item.result}}
+                  />
+                ))}
+              </div>
+    
+              <div className="turn-diagnostic-section">
+                <div className="section-head"><h4>实时天气工具</h4></div>
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">Session 可用性：</span>
+                  <strong>{!prompt?'未记录':prompt.tool_names.includes('get_weather')?'已配置':'未提供 get_weather'}</strong>
+                </div>
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">本轮调用：</span>
+                  <strong>{weatherCalls.length?`${weatherCalls.length} 次`:'未见调用证据'}</strong>
+                </div>
+                {weatherCalls.map(call=>{
+                  const result=weatherResults.find(item=>item.call_id===call.call_id);
+                  const output=result?.result as {status?:string;reason?:string}|undefined;
+                  return <Detail key={call.call_id??call.seq}
+                    label={`get_weather · ${output?.status??'未见结果'}${output?.reason?' / '+output.reason:''} · ${result?.duration_ms??'—'} ms`}
+                    value={{arguments:call.arguments,result:result?.result??'无结果记录'}}/>;
+                })}
+                <small>没有工具记录不等于没有调用：诊断是有界 Session 缓存，重连后旧轮工具明细可能丢失。天气失败须看具体 status/reason。</small>
+              </div>
+    
+              <div className="turn-diagnostic-section">
+                <div className="section-head"><h4>主动追问 / 独立规划</h4></div>
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">本轮来源：</span>
+                  <strong>{turn?.turn_source==='external'?'外部触发回合':turn?.turn_source==='user'?'用户输入 → Realtime 主模型':'未知'}</strong>
+                </div>
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">独立规划：</span>
+                  <strong>{plans.length?`${plans.length} 次决策记录`:waitingPlan?.status==='planning'?'正在评估':
+                    '本轮无独立规划调用记录'}</strong>
+                </div>
+                {waitingPlan&&!plans.length&&<div className="turn-diagnostic-line">
+                  <span className="line-label">短时续聊准入：</span>
+                  <strong>{waitingPlan.status} · {waitingPlan.reason??'未记录'}</strong>
+                </div>}
+                {plans.map((record,index)=><Detail key={`${record.mode}-${record.ts_ms}-${index}`}
+                  label={`${record.mode==='short_continuation'?'15秒短时续聊':'8C空闲主动交谈'} · ${record.decision??record.status} · ${record.model_ms??'—'} ms`}
+                  value={{model:planning?.model,thinking_enabled:planning?.thinking_enabled,
+                    source_turn_id:record.source_turn_id,result_turn_id:record.result_turn_id,
+                    decision:record.decision,topic:record.topic,status:record.status,
+                    reason:record.reason,model_ms:record.model_ms,ts_ms:record.ts_ms,
+                    channel:record.channel}}/>)}
+                <small>普通回合内模型自己生成的问句不代表 LangGraph 审核。仅标记实际发生的独立规划；历史记录最多保留32次/类型，Runtime重启后不保留。</small>
+              </div>
+    
+              <div className="turn-diagnostic-section">
+                <div className="section-head">
+                  <span className="section-icon">🎭</span>
+                  <h4>动作与嘴型</h4>
+                </div>
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">动作 / 表情：</span>
+                  <strong>{actionCalls.length?`${actionCalls.length} 次 Function Calling`:'无调用记录'}</strong>
+                </div>
+                {actionCalls.map(call=>{
+                  const result=tools.find(item=>item.kind==='tool.result'&&item.call_id===call.call_id);
+                  const related=actions.filter(item=>item.call_id===call.call_id);
+                  const last=related.at(-1);
+                  return (
+                    <Detail
+                      key={call.call_id??call.seq}
+                      label={`${call.name} · ${last?endState(last.status):endState((result?.result as {status?:string}|undefined)?.status)}`}
+                      value={{arguments:call.arguments,tool_result:result?.result??'未记录',room_events:related,
+                        device_completion:last?.device_completion??'unknown'}}
+                    />
+                  );
+                })}
+                {actions.length>0&&<Detail label={`Room 动作状态（${actions.length} 条）`} value={actions}/>}
+                <div className="turn-diagnostic-line">
+                  <span className="line-label">声学嘴型：</span>
+                  <strong>{timeline?.viseme_count?`收到 ${timeline.viseme_count} 个 Aligner 音素`:'无音素回执记录'}</strong>
+                </div>
+                {mouth.length>0&&<Detail label="嘴型对齐证据" value={mouth}/>}
+                <small>云端动作以成功发布到 Room 为下发完成，不等待设备回执；字级动作由设备按流 epoch 与实际播放采样点执行，物理动作仍待核验。</small>
+              </div>
+    
+              <div className="turn-diagnostic-section">
+                <div className="section-head">
+                  <span className="section-icon">⏱️</span>
+                  <h4>本轮耗时</h4>
+                </div>
+                {([
+                  ['起声 → ASR 最终','speech_started_ms','asr_final_ms','speech_to_asr_final_ms'],
+                  ['语音结束 → ASR 最终','speech_stopped_ms','asr_final_ms','endpoint_to_asr_final_ms'],
+                  ['LLM 请求 → 首文本','llm_request_ms','llm_first_text_ms','llm_request_to_first_text_ms'],
+                  ['TTS 提交 → 首 PCM','tts_submit_ms','tts_first_pcm_ms','tts_submit_to_pcm_ms'],
+                  ['首 PCM → Room 首帧','tts_first_pcm_ms','room_first_publish_ms','first_pcm_to_room_ms'],
+                  ['Room 首帧 → 扬声器回执','room_first_publish_ms','speaker_started_ms','room_to_speaker_start_ms'],
+                  ['Room 首帧 → 扬声器播完','room_first_publish_ms','speaker_drained_ms','room_to_speaker_drained_ms'],
+                  ['Room 首帧 → 网页试听开始','room_first_publish_ms','browser_started_ms',''],
+                ] as const).map(([label,start,end,name])=>(
+                  <div className="turn-diagnostic-metric" key={label}>
+                    <span>{label}</span>
+                    <strong>{measured(name,start,end)}</strong>
+                  </div>
+                ))}
+                {timeline&&<Detail label="原始时间戳 / 耗时" value={timeline}/>}
+                {tts.length>0&&<Detail label="音频 / 播放回执" value={tts}/>}
+                <small>仅显示当前回合实际观测时间戳；未记录不填推测数值。</small>
+              </div>
+    
+              {toolCalls.length>0&&(
+                <div className="turn-diagnostic-section">
+                  <Detail label={`其他工具调用（${toolCalls.length} 次）`} value={tools}/>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      );
+    }
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:82:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 0
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 157.618334

@@ -1,0 +1,16 @@
+INFO:     Started server process [58003]
+INFO:     Waiting for application startup.
+2026-10-09 16:13:42,466 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-09 16:13:42,467 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:56295 (Press CTRL+C to quit)
+2026-10-09 16:13:42,483 INFO annie_adapters room_pcm connected room=roomv2 url=ws://127.0.0.1:56294/robot/roomv2/reb_mic
+2026-10-09 16:13:42,483 INFO annie_adapters room_pcm connected room=roomv3 url=ws://127.0.0.1:56294/robot/roomv3/reb_mic
+INFO:     127.0.0.1:56311 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56313 - "GET / HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-09 16:13:42,688 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-09 16:13:42,689 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [58003]

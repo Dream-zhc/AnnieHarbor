@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {decisionEntry,formatDecision,isProviderAmbient} from '../src/decision-log.ts';
+import {decisionEntry,formatDecision,isProviderAmbient,parseDecision} from '../src/decision-log.ts';
 
 test('declined side talk reads as a decision that keeps listening',()=>{
   const entry=decisionEntry({seq:3,kind:'addressee.decided',verdict:'not_robot',choice:'person',
@@ -33,4 +33,30 @@ test('recovered calls are listed; unrelated events are not',()=>{
 test('only Qwen ambient audio stays in the ambient card',()=>{
   assert.equal(isProviderAmbient({kind:'transcript.ambient'}),true);
   assert.equal(isProviderAmbient({kind:'transcript.ambient',reason:'not_addressed'}),false);
+});
+
+test('parseDecision clarifies expressions when no motion is triggered',()=>{
+  const entry=decisionEntry({seq:7,kind:'action.auto_decided',choice:'none',script:null,confidence:0.62,latency_ms:92,text:'你休息吧。'});
+  assert(entry);
+  const parsed=parseDecision(entry);
+  assert.equal(parsed.topicLabel,'表情动作');
+  assert.equal(parsed.outcomeText,'保持自然');
+  assert.equal(parsed.outcomeSub,'无需动作');
+  assert.equal(parsed.outcomeType,'quiet');
+  assert.deepEqual(parsed.metrics,['置信 0.62','92 ms']);
+});
+
+test('parseDecision formats active motion and declined side talk',()=>{
+  const active=decisionEntry({seq:5,kind:'action.auto_decided',choice:'surprise',script:'surprise',confidence:0.71,latency_ms:352,text:'我中了五百万'});
+  assert(active);
+  const parsedActive=parseDecision(active);
+  assert.equal(parsedActive.outcomeText,'执行动作：惊讶');
+  assert.equal(parsedActive.outcomeType,'action');
+
+  const declined=decisionEntry({seq:3,kind:'addressee.decided',verdict:'not_robot',choice:'person',confidence:.318,latency_ms:409.6,text:'老王，周末一起去钓鱼吧'});
+  assert(declined);
+  const parsedDeclined=parseDecision(declined);
+  assert.equal(parsedDeclined.outcomeText,'旁话忽略');
+  assert.equal(parsedDeclined.outcomeSub,'判定：对别人说');
+  assert.equal(parsedDeclined.outcomeType,'declined');
 });

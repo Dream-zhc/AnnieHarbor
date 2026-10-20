@@ -11,7 +11,7 @@ import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
-import {decisionEntry,formatDecision,isProviderAmbient,type DecisionEntry} from './decision-log';
+import {decisionEntry,formatDecision,isProviderAmbient,parseDecision,type DecisionEntry} from './decision-log';
 import {audioDevices,conflictMessages} from './audio-devices';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
@@ -139,6 +139,46 @@ function getTurnActions(
   return Array.from(map.values());
 }
 
+function DecisionItem({ entry, isExpanded }: { entry: DecisionEntry; isExpanded?: boolean }){
+  const parsed = parseDecision(entry);
+  return (
+    <div className={`decision-item-container topic-${parsed.topicKind} outcome-${parsed.outcomeType} ${isExpanded ? 'is-expanded' : 'is-compact'}`}>
+      {isExpanded && (
+        <span className={`decision-pill topic-pill topic-${parsed.topicKind}`}>
+          <span className="pill-emoji">{parsed.topicIcon}</span>
+          <span className="pill-text">{parsed.topicLabel}</span>
+        </span>
+      )}
+
+      <span className={`decision-pill outcome-pill outcome-${parsed.outcomeType}`}>
+        {!isExpanded && <span className="pill-emoji">{parsed.topicIcon}</span>}
+        <span className="outcome-title">{parsed.outcomeText}</span>
+        {parsed.outcomeSub && isExpanded && <span className="outcome-detail">· {parsed.outcomeSub}</span>}
+      </span>
+
+      {entry.text && (
+        <span className="decision-quote">
+          <span className="quote-mark">“</span>
+          <span className="quote-body">{entry.text}</span>
+          <span className="quote-mark">”</span>
+        </span>
+      )}
+
+      {parsed.metrics.length > 0 && (
+        <div className="decision-metrics-wrap">
+          {isExpanded ? (
+            parsed.metrics.map((m, i) => (
+              <span key={i} className="decision-metric-tag">{m}</span>
+            ))
+          ) : (
+            <span className="decision-metric-tag">{parsed.metrics[parsed.metrics.length - 1]}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 'workbench') => void } = {}){
   const root=useRef<HTMLDivElement>(null);
   useGSAP(()=>{
@@ -209,6 +249,19 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
   const [finalTranscript,setFinalTranscript]=useState<{turnId:string;text:string}|null>(null);
   const [ambient,setAmbient]=useState<string[]>([]);
   const [decisions,setDecisions]=useState<DecisionEntry[]>([]);
+  const [decisionPopoverOpen,setDecisionPopoverOpen]=useState(false);
+  const decisionCardRef=useRef<HTMLDivElement>(null);
+
+  useEffect(()=>{
+    if(!decisionPopoverOpen)return;
+    const handleOutsideClick=(e:MouseEvent)=>{
+      if(decisionCardRef.current&&!decisionCardRef.current.contains(e.target as Node)){
+        setDecisionPopoverOpen(false);
+      }
+    };
+    window.addEventListener('mousedown',handleOutsideClick);
+    return ()=>window.removeEventListener('mousedown',handleOutsideClick);
+  },[decisionPopoverOpen]);
   const [lastFirstText,setLastFirstText]=useState<number|null>(null);
   const [systemError,setSystemError]=useState<string|null>(null);
   const [toast,setToast]=useState<{message:string;type:'error'|'info'}|null>(null);
@@ -844,15 +897,17 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
           <div className="stage-header">
             <div className="stage-header-left">
-              <span className="eyebrow">REALTIME</span>
+              <span className="eyebrow" title="Qwen 全双工实时语音会话通道">实时对讲</span>
               <h1>{session?.chat_id??'实时对话'}</h1>
               {session&&<span className="room-tag" title="当前机器人唯一的实时会话">已激活 · {instances.find(role=>role.persona_id===session.persona_id)?.display_name??session.persona_id}</span>}
-              <span className="room-tag">{selectedRobot?.room_id??route?.room_id??session?.room_id??'—'}</span>
-              <State value={realtime?.state} good={realtime?.ready}/>
-              <span className="voice-mode" role="status">{voiceMode}</span>
-              <WakeIndicator key={`${robotId}:${session?.generation??'none'}`}
-                robotId={robotId} generation={session?.generation}
-                ready={!!realtime?.ready} initial={realtime?.wakeword}/>
+              <span className="room-tag" title="绑定的声学房间通道">{selectedRobot?.room_id??route?.room_id??session?.room_id??'—'}</span>
+              <div className="stage-status-cluster" title="实时连接状态">
+                <State value={realtime?.state} good={realtime?.ready}/>
+                <span className="voice-mode" role="status">{voiceMode}</span>
+                <WakeIndicator key={`${robotId}:${session?.generation??'none'}`}
+                  robotId={robotId} generation={session?.generation}
+                  ready={!!realtime?.ready} initial={realtime?.wakeword}/>
+              </div>
             </div>
             <div className="stage-header-tools">
               <label className="persona-live-switch">当前性格
@@ -882,36 +937,94 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                 <span>ASR 增量</span>
                 <span className={'status-dot '+(previewTranscript?'dot-good':'')}/>
               </div>
-              <div className={'card-body '+(previewTranscript?'partial':'')} title={previewTranscript||'点击麦克风直接说话'}>
+              <div className={'card-body '+(previewTranscript?'partial':'')}>
                 {previewTranscript||'点击麦克风直接说话'}
               </div>
             </div>
             <div className="live-cockpit-card">
               <div className="card-label"><span>你的最终文本</span></div>
-              <div className="card-body" title={finalTranscript?.text||lastUserText||'—'}>
+              <div className="card-body">
                 {finalTranscript?.text||lastUserText||'—'}
               </div>
+            </div>
+            <div className="live-cockpit-card decision-card" ref={decisionCardRef} aria-label="对话决策">
+              <div className="card-label">
+                <div className="decision-label-left">
+                  <span>对话决策</span>
+                  {decisions.length > 0 && (
+                    <span className="decision-count-badge">{decisions.length}</span>
+                  )}
+                </div>
+                {decisions.length > 1 && (
+                  <button
+                    type="button"
+                    className={`decision-toggle-btn ${decisionPopoverOpen ? 'expanded' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDecisionPopoverOpen(prev => !prev);
+                    }}
+                    aria-label="查看决策流水"
+                  >
+                    {decisionPopoverOpen ? '收起 ▴' : `流水 (${decisions.length}) ▾`}
+                  </button>
+                )}
+              </div>
+              <div className="card-body decision is-single">
+                {decisions.length === 0 ? (
+                  <span className="decision-empty-text">待命 · 伴随对话触发</span>
+                ) : (
+                  <DecisionItem entry={decisions[0]} />
+                )}
+              </div>
+              {decisionPopoverOpen && decisions.length > 0 && (
+                <div className="decision-history-popover" role="dialog" aria-label="最近决策流水">
+                  <div className="decision-popover-head">
+                    <div className="decision-popover-title-row">
+                      <span className="decision-popover-icon">🧠</span>
+                      <span className="decision-popover-title">最近决策流水</span>
+                      <span className="decision-popover-count">共 {decisions.length} 条</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="decision-popover-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDecisionPopoverOpen(false);
+                      }}
+                      aria-label="关闭"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="decision-popover-stream">
+                    {decisions.map((entry, idx) => (
+                      <div
+                        key={entry.seq ?? idx}
+                        className={`decision-stream-row ${idx === 0 ? 'is-latest' : 'is-history'}`}
+                      >
+                        <span className="decision-seq-tag">
+                          {idx === 0 ? '最新' : `#${decisions.length - idx}`}
+                        </span>
+                        <DecisionItem entry={entry} isExpanded={true} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="live-cockpit-card">
               <div className="card-label">
                 <span>AI 流式回答</span>
                 <span className={'status-dot '+(liveText?'dot-good':'')}/>
               </div>
-              <div className="card-body assistant" title={liveText||lastAssistantReply||'—'}>
+              <div className="card-body assistant">
                 {liveText||lastAssistantReply||'—'}
               </div>
             </div>
             <div className="live-cockpit-card">
               <div className="card-label"><span>smart_turn 忽略的环境音</span></div>
-              <div className="card-body ambient" title={ambient.length>0?ambient.slice(-4).join(' / '):'—'}>
+              <div className="card-body ambient">
                 {ambient.length>0?ambient.slice(-4).join(' / '):'—'}
-              </div>
-            </div>
-            <div className="live-cockpit-card decision-card" aria-label="对话决策">
-              <div className="card-label"><span>对话决策</span><span>{decisions.length?decisions.length+' 条':''}</span></div>
-              <div className={'card-body decision '+(decisions[0]?.outcome.startsWith('不回复')?'declined':'')}
-                title={decisions.length?decisions.map(formatDecision).join('\n'):'暂无决策'}>
-                {decisions[0]?formatDecision(decisions[0]):'—'}
               </div>
             </div>
           </div>

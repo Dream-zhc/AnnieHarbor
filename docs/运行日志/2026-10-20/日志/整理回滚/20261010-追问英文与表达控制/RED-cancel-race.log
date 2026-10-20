@@ -1,0 +1,21 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_cancel_during_typed_instruction_send_does_not_resurrect_response _____
+tests/test_browser_followup_regressions.py:123: in test_cancel_during_typed_instruction_send_does_not_resurrect_response
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_browser_followup_regressions.py:118: in run
+    assert isinstance(result[0],Exception)
+E   AssertionError: assert False
+E    +  where False = isinstance({'status': 'accepted', 'turn_id': 'fcd0e7033d294e9c83960745f41fd90f', 'robot_id': 'a', 'room_id': 'r', ...}, Exception)
+=========================== short test summary info ============================
+FAILED tests/test_browser_followup_regressions.py::test_cancel_during_typed_instruction_send_does_not_resurrect_response
+1 failed, 4 deselected in 0.21s

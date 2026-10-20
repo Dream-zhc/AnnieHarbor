@@ -1,0 +1,10 @@
+{"variant": "baseline", "file": "10", "hit_input_ms": 2080.0, "tokens": ["x", "iǎo", "ài", "n", "ǐ"], "token_times_ms": [960.0, 1040.0, 1280.0, 1480.0, 1640.0]}
+{"variant": "baseline", "file": "23", "hit_input_ms": 1760.0, "tokens": ["x", "iǎo", "ài", "n", "ǐ"], "token_times_ms": [960.0, 1040.0, 1200.0, 1400.0, 1480.0]}
+{"variant": "baseline", "file": "36", "hit_input_ms": 2080.0, "tokens": ["x", "iǎo", "ài", "n", "ǐ"], "token_times_ms": [1040.0, 1160.0, 1320.0, 1520.0, 1560.0]}
+{"variant": "baseline", "file": "46", "hit_input_ms": null, "tokens": [], "token_times_ms": []}
+{"variant": "modified", "file": "10", "hit_input_ms": 2080.0, "tokens": ["x", "iǎo", "ài", "n", "ǐ"], "token_times_ms": [960.0, 1080.0, 1280.0, 1480.0, 1640.0]}
+{"variant": "modified", "file": "23", "hit_input_ms": 1760.0, "tokens": ["x", "iǎo", "ài", "n", "ǐ"], "token_times_ms": [960.0, 1040.0, 1200.0, 1400.0, 1480.0]}
+{"variant": "modified", "file": "36", "hit_input_ms": null, "tokens": [], "token_times_ms": []}
+{"variant": "modified", "file": "46", "hit_input_ms": null, "tokens": [], "token_times_ms": []}
+baseline_worklet_hits=3/4
+modified_worklet_hits=2/4

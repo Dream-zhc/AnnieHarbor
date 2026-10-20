@@ -1,0 +1,108 @@
+.........FF.F                                                            [100%]
+=================================== FAILURES ===================================
+______ test_invalid_first_candidate_does_not_filter_second_real_utterance ______
+
+    def test_invalid_first_candidate_does_not_filter_second_real_utterance():
+        policy = DialoguePresence()
+        policy.wake_detected()
+        policy.speech_started("invalid")
+        policy.speech_stopped(item_id="invalid", invalid=True)
+>       assert finish(policy, "想爱你。", "second")
+E       AssertionError: assert False
+E        +  where False = finish(<annie_runtime.presence.DialoguePresence object at 0x10ac2ae10>, '想爱你。', 'second')
+
+tests/test_wake_initial_alias.py:64: AssertionError
+_____ test_replaced_first_candidate_does_not_filter_second_real_utterance ______
+
+    def test_replaced_first_candidate_does_not_filter_second_real_utterance():
+        policy = DialoguePresence()
+        policy.wake_detected()
+        policy.speech_started("replaced")
+        policy.speech_started("new")
+>       assert policy.transcript_accepted("想爱你。", item_id="new")
+E       AssertionError: assert False
+E        +  where False = transcript_accepted('想爱你。', item_id='new')
+E        +    where transcript_accepted = <annie_runtime.presence.DialoguePresence object at 0x10ac1fd10>.transcript_accepted
+
+tests/test_wake_initial_alias.py:72: AssertionError
+______ test_ambient_first_candidate_is_retired_before_next_real_utterance ______
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-42/test_ambient_first_candidate_i0')
+
+    def test_ambient_first_candidate_is_retired_before_next_real_utterance(tmp_path):
+        async def run():
+            runtime = HarborRuntime(
+                [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+                tmp_path / "ambient.db", realtime_key="fake-test-key",
+                realtime_socket_factory=FakeSocket,
+            )
+            await runtime.start()
+            try:
+                client = runtime.realtime["annie-a"]
+                for _ in range(100):
+                    if client.ready:
+                        break
+                    await asyncio.sleep(.01)
+                assert client.ready
+                client.wake = WakeAdmission(object())
+                client.wake.presence.wake_detected()
+                gen = client.robot.generation
+                await client.handle({"type": "input_audio_buffer.speech_started",
+                                     "item_id": "ambient"}, gen)
+                await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
+                                     "item_id": "ambient", "transcript": "环境声"}, gen)
+                assert not client.wake.snapshot()["candidate_speech"]
+                assert client.wake.snapshot()["deadline_remaining_ms"] is not None
+                await client.handle({"type": "input_audio_buffer.speech_started",
+                                     "item_id": "real"}, gen)
+                await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                                     "item_id": "real", "transcript": "想爱你。"}, gen)
+                assert client.robot.turn_cache[client.turn_id]["user_text"] == "想爱你。"
+            finally:
+                await runtime.close()
+    
+>       asyncio.run(run())
+
+tests/test_wake_initial_alias.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        runtime = HarborRuntime(
+            [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+            tmp_path / "ambient.db", realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+        )
+        await runtime.start()
+        try:
+            client = runtime.realtime["annie-a"]
+            for _ in range(100):
+                if client.ready:
+                    break
+                await asyncio.sleep(.01)
+            assert client.ready
+            client.wake = WakeAdmission(object())
+            client.wake.presence.wake_detected()
+            gen = client.robot.generation
+            await client.handle({"type": "input_audio_buffer.speech_started",
+                                 "item_id": "ambient"}, gen)
+            await client.handle({"type": "conversation.item.ambient_audio_transcription.completed",
+                                 "item_id": "ambient", "transcript": "环境声"}, gen)
+>           assert not client.wake.snapshot()["candidate_speech"]
+E           assert not True
+
+tests/test_wake_initial_alias.py:165: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_wake_initial_alias.py::test_invalid_first_candidate_does_not_filter_second_real_utterance
+FAILED tests/test_wake_initial_alias.py::test_replaced_first_candidate_does_not_filter_second_real_utterance
+FAILED tests/test_wake_initial_alias.py::test_ambient_first_candidate_is_retired_before_next_real_utterance
+3 failed, 10 passed in 0.13s

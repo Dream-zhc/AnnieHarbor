@@ -51,8 +51,8 @@ class RoomServerConfig:
         required_channels = {"main", "tts", "mic", "visualdata", "vision", "sam"}
         if (not required_channels.issubset(self.channels)
                 or set(self.channels) != set(self.default_urls)
-                or set(self.channels) - required_channels - {"visualllm", "voice"}):
-            raise ValueError("Room config requires six base channels and optional visualllm/voice, with matching URLs")
+                or set(self.channels) - required_channels - {"visualllm", "voice", "display"}):
+            raise ValueError("Room config requires six base channels and optional visualllm/voice/display, with matching URLs")
         if not all(self._path_segment(value) for value in self.channels.values()):
             raise ValueError("Room channel names must be URL path segments")
         if not all(urlparse(value).scheme in {"ws", "wss"} for value in self.default_urls.values()):

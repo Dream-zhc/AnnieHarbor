@@ -1,0 +1,2 @@
+2026-09-20T18:58:22.215Z|0x708223f000|E|EventsSDK.SQLiteDB|Failed to prepare SQL statement "PRAGMA auto_vacuum=FULL": 261 (database is locked)
+2026-09-20T18:58:45.182Z|0x70872c7000|E|EventsSDK.Storage|Failed to lock

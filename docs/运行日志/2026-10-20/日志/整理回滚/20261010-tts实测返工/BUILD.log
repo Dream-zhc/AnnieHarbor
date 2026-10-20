@@ -1,0 +1,34 @@
+
+> annie-harbor-dashboard@0.4.0 build
+> tsc --noEmit && vite build --outDir /Users/dream/Documents/zhc/python/brainv2/var/tmp/20261010-tts-rework/build
+
+vite v8.3.0 building client environment for production...
+transforming...
+✓ 1619 modules transformed.
+rendering chunks...
+computing gzip size...
+../var/tmp/20261010-tts-rework/build/index.html                                              0.37 kB │ gzip:   0.28 kB
+../var/tmp/20261010-tts-rework/build/assets/rajdhani-latin-ext-400-normal-Der7ynDE.woff      9.08 kB
+../var/tmp/20261010-tts-rework/build/assets/rajdhani-latin-400-normal-C6_q4usG.woff         11.76 kB
+../var/tmp/20261010-tts-rework/build/assets/orbitron-latin-wght-normal-Du7j2Vp2.woff2       11.80 kB
+../var/tmp/20261010-tts-rework/build/assets/rajdhani-latin-ext-400-normal-DACPYgMx.woff2    12.38 kB
+../var/tmp/20261010-tts-rework/build/assets/rajdhani-latin-400-normal-CurJOxDW.woff2        14.97 kB
+../var/tmp/20261010-tts-rework/build/assets/rajdhani-devanagari-400-normal-BdIzgbsr.woff    55.80 kB
+../var/tmp/20261010-tts-rework/build/assets/rajdhani-devanagari-400-normal-CTuj2HZW.woff2   75.74 kB
+../var/tmp/20261010-tts-rework/build/assets/exhibit-view-Dc2KYiEe.css                       23.93 kB │ gzip:   5.75 kB
+../var/tmp/20261010-tts-rework/build/assets/workbench-CX4bnEN3.css                          29.83 kB │ gzip:   6.31 kB
+../var/tmp/20261010-tts-rework/build/assets/index-HPlHdHvs.css                              77.87 kB │ gzip:  14.14 kB
+../var/tmp/20261010-tts-rework/build/assets/wake-state-BYtgtdgF.js                           1.45 kB │ gzip:   0.78 kB
+../var/tmp/20261010-tts-rework/build/assets/exhibit-view-DFn5BuN4.js                        26.63 kB │ gzip:   8.96 kB
+../var/tmp/20261010-tts-rework/build/assets/robot-twin-CX_anRt4.js                          53.72 kB │ gzip:  16.05 kB
+../var/tmp/20261010-tts-rework/build/assets/index-CzZiFFGI.js                              222.52 kB │ gzip:  69.86 kB
+../var/tmp/20261010-tts-rework/build/assets/workbench-Dj9aslgt.js                          231.31 kB │ gzip:  78.11 kB
+../var/tmp/20261010-tts-rework/build/assets/official-livekit-C8i277DD.js                   521.85 kB │ gzip: 136.40 kB
+../var/tmp/20261010-tts-rework/build/assets/three.module-l0Y0qDlF.js                       535.73 kB │ gzip: 134.30 kB
+
+✓ built in 355ms
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.

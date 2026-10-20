@@ -1,0 +1,78 @@
+TAP version 13
+# (node:24647) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: selected historical TTS never borrows latest speech output or a different turn
+ok 1 - selected historical TTS never borrows latest speech output or a different turn
+  ---
+  duration_ms: 0.726375
+  type: 'test'
+  ...
+# Subtest: mismatched robot, Chat, Persona, epoch or generation cannot supply TTS or events
+ok 2 - mismatched robot, Chat, Persona, epoch or generation cannot supply TTS or events
+  ---
+  duration_ms: 0.1535
+  type: 'test'
+  ...
+# Subtest: old unrecorded evidence remains unknown and does not invent provider defaults
+ok 3 - old unrecorded evidence remains unknown and does not invent provider defaults
+  ---
+  duration_ms: 4.469
+  type: 'test'
+  ...
+# Subtest: expressive delivery is distinct from neutral emotion and displays actual raw parameters
+ok 4 - expressive delivery is distinct from neutral emotion and displays actual raw parameters
+  ---
+  duration_ms: 0.119167
+  type: 'test'
+  ...
+# Subtest: actual submitted parameters are not reconstructed from style and voice/key are excluded
+ok 5 - actual submitted parameters are not reconstructed from style and voice/key are excluded
+  ---
+  duration_ms: 0.386584
+  type: 'test'
+  ...
+# Subtest: cancelled, failed and retained-text truncation are explicit, never playback proof
+ok 6 - cancelled, failed and retained-text truncation are explicit, never playback proof
+  ---
+  duration_ms: 0.145125
+  type: 'test'
+  ...
+# Subtest: diagnostics renders readable per-turn TTS and names continue-task pieces honestly
+ok 7 - diagnostics renders readable per-turn TTS and names continue-task pieces honestly
+  ---
+  duration_ms: 0.500958
+  type: 'test'
+  ...
+# Subtest: default contextual delivery communicates semantic variation, not a fixed neutral reading
+not ok 8 - default contextual delivery communicates semantic variation, not a fixed neutral reading
+  ---
+  duration_ms: 0.518042
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:90:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'contextual'
+    - '随语义表达（未指定固定情绪）'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '随语义表达（未指定固定情绪）'
+  actual: 'contextual'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/turn-tts-evidence.test.mjs:93:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 7
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 111.115625

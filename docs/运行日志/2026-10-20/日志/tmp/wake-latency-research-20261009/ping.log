@@ -1,0 +1,15 @@
+PING 192.168.1.47 (192.168.1.47): 56 data bytes
+64 bytes from 192.168.1.47: icmp_seq=0 ttl=128 time=0.670 ms
+64 bytes from 192.168.1.47: icmp_seq=1 ttl=128 time=0.732 ms
+64 bytes from 192.168.1.47: icmp_seq=2 ttl=128 time=0.555 ms
+64 bytes from 192.168.1.47: icmp_seq=3 ttl=128 time=0.769 ms
+64 bytes from 192.168.1.47: icmp_seq=4 ttl=128 time=1.165 ms
+64 bytes from 192.168.1.47: icmp_seq=5 ttl=128 time=0.747 ms
+64 bytes from 192.168.1.47: icmp_seq=6 ttl=128 time=1.255 ms
+64 bytes from 192.168.1.47: icmp_seq=7 ttl=128 time=1.055 ms
+64 bytes from 192.168.1.47: icmp_seq=8 ttl=128 time=0.733 ms
+64 bytes from 192.168.1.47: icmp_seq=9 ttl=128 time=2.851 ms
+
+--- 192.168.1.47 ping statistics ---
+10 packets transmitted, 10 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 0.555/1.053/2.851/0.637 ms

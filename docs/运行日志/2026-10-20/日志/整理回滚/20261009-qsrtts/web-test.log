@@ -1,0 +1,506 @@
+
+> annie-harbor-dashboard@0.4.0 test
+> node --experimental-strip-types --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: Phase 7 action view loads only the selected robot and never directly sends motor calls
+ok 1 - Phase 7 action view loads only the selected robot and never directly sends motor calls
+  ---
+  duration_ms: 0.4015
+  type: 'test'
+  ...
+# Subtest: Room publication is distinct from physical execution and queued or uncertain send
+ok 2 - Room publication is distinct from physical execution and queued or uncertain send
+  ---
+  duration_ms: 0.152666
+  type: 'test'
+  ...
+# Subtest: UI does not infer Room publication from a tool call alone
+ok 3 - UI does not infer Room publication from a tool call alone
+  ---
+  duration_ms: 2.450083
+  type: 'test'
+  ...
+# Subtest: cloud-triggered actions display an action icon and badge next to 小安妮
+ok 4 - cloud-triggered actions display an action icon and badge next to 小安妮
+  ---
+  duration_ms: 0.431125
+  type: 'test'
+  ...
+# (node:9136) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: status events request a snapshot immediately, without a polling timer
+ok 5 - status events request a snapshot immediately, without a polling timer
+  ---
+  duration_ms: 74.21
+  type: 'test'
+  ...
+# Subtest: an event during a snapshot queues one immediate trailing read, not concurrent reads
+ok 6 - an event during a snapshot queues one immediate trailing read, not concurrent reads
+  ---
+  duration_ms: 3.556583
+  type: 'test'
+  ...
+# Subtest: hidden pages and stopped robot subscriptions do not schedule more reads
+ok 7 - hidden pages and stopped robot subscriptions do not schedule more reads
+  ---
+  duration_ms: 4.454792
+  type: 'test'
+  ...
+# Subtest: workbench reuses the scoped SSE connection and pod retains identity and cleanup guards
+ok 8 - workbench reuses the scoped SSE connection and pod retains identity and cleanup guards
+  ---
+  duration_ms: 15.917042
+  type: 'test'
+  ...
+# (node:9137) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: workbench halo phases reflect actual wake, speech and verified playback state
+ok 9 - workbench halo phases reflect actual wake, speech and verified playback state
+  ---
+  duration_ms: 0.396041
+  type: 'test'
+  ...
+# Subtest: state pod is workbench-only, read-only and releases its poll on switch
+ok 10 - state pod is workbench-only, read-only and releases its poll on switch
+  ---
+  duration_ms: 14.1795
+  type: 'test'
+  ...
+# (node:9138) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: new robot generation never replays an action from a prior generation
+ok 11 - new robot generation never replays an action from a prior generation
+  ---
+  duration_ms: 0.332917
+  type: 'test'
+  ...
+# Subtest: stale events do not pretend that a realtime pipeline is currently active
+ok 12 - stale events do not pretend that a realtime pipeline is currently active
+  ---
+  duration_ms: 1.8585
+  type: 'test'
+  ...
+# Subtest: holographic state follows realtime receipts rather than TTS estimates
+ok 13 - holographic state follows realtime receipts rather than TTS estimates
+  ---
+  duration_ms: 0.189167
+  type: 'test'
+  ...
+# (node:9139) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: decoding FPS is not presented FPS; real bitrate, drop and loss
+ok 14 - decoding FPS is not presented FPS; real bitrate, drop and loss
+  ---
+  duration_ms: 1.351334
+  type: 'test'
+  ...
+# Subtest: first observation, counter reset, no stats and long gaps stay unknown
+ok 15 - first observation, counter reset, no stats and long gaps stay unknown
+  ---
+  duration_ms: 0.216041
+  type: 'test'
+  ...
+# (node:9140) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a 2ms provider event gap cannot masquerade as end-to-end latency
+ok 16 - a 2ms provider event gap cannot masquerade as end-to-end latency
+  ---
+  duration_ms: 0.846333
+  type: 'test'
+  ...
+# Subtest: latency values require ordered same-turn events and speaker receipt
+ok 17 - latency values require ordered same-turn events and speaker receipt
+  ---
+  duration_ms: 1.0465
+  type: 'test'
+  ...
+# Subtest: dashboard and diagnostics show provenance instead of fabricated ASR/LLM latency
+ok 18 - dashboard and diagnostics show provenance instead of fabricated ASR/LLM latency
+  ---
+  duration_ms: 1.171791
+  type: 'test'
+  ...
+# Subtest: browser receipt is separately visible without claiming a physical speaker
+ok 19 - browser receipt is separately visible without claiming a physical speaker
+  ---
+  duration_ms: 1.811833
+  type: 'test'
+  ...
+# (node:9141) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: memory is scoped and only active, nonexpired facts are shown
+ok 20 - memory is scoped and only active, nonexpired facts are shown
+  ---
+  duration_ms: 0.67175
+  type: 'test'
+  ...
+# Subtest: legacy extraction summaries and capability probes never count as memories
+ok 21 - legacy extraction summaries and capability probes never count as memories
+  ---
+  duration_ms: 0.131375
+  type: 'test'
+  ...
+# Subtest: human-facing text stays factual and canonical storage remains untouched
+ok 22 - human-facing text stays factual and canonical storage remains untouched
+  ---
+  duration_ms: 0.573459
+  type: 'test'
+  ...
+# (node:9142) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 44100 Hz PCM is independent of audio callback block size
+ok 23 - 44100 Hz PCM is independent of audio callback block size
+  ---
+  duration_ms: 49.388417
+  type: 'test'
+  ...
+# Subtest: 48000 Hz PCM is independent of audio callback block size
+ok 24 - 48000 Hz PCM is independent of audio callback block size
+  ---
+  duration_ms: 48.209834
+  type: 'test'
+  ...
+# Subtest: a capture pump rejects mid-stream sample rate changes
+ok 25 - a capture pump rejects mid-stream sample rate changes
+  ---
+  duration_ms: 0.6505
+  type: 'test'
+  ...
+# (node:9143) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: capture initialization settles and removes listeners: ready
+ok 26 - capture initialization settles and removes listeners: ready
+  ---
+  duration_ms: 67.775334
+  type: 'test'
+  ...
+# Subtest: capture initialization settles and removes listeners: error
+ok 27 - capture initialization settles and removes listeners: error
+  ---
+  duration_ms: 1.951292
+  type: 'test'
+  ...
+# Subtest: capture initialization settles and removes listeners: processorerror
+ok 28 - capture initialization settles and removes listeners: processorerror
+  ---
+  duration_ms: 0.484542
+  type: 'test'
+  ...
+# Subtest: capture initialization settles and removes listeners: abort
+ok 29 - capture initialization settles and removes listeners: abort
+  ---
+  duration_ms: 0.190666
+  type: 'test'
+  ...
+# Subtest: capture initialization settles and removes listeners: timeout
+ok 30 - capture initialization settles and removes listeners: timeout
+  ---
+  duration_ms: 10.696334
+  type: 'test'
+  ...
+# Subtest: capture initialization settles and removes listeners: already-aborted
+ok 31 - capture initialization settles and removes listeners: already-aborted
+  ---
+  duration_ms: 0.55125
+  type: 'test'
+  ...
+# Subtest: BEST capture suppresses aliasing and bounds first PCM: 44100
+ok 32 - BEST capture suppresses aliasing and bounds first PCM: 44100
+  ---
+  duration_ms: 164.529833
+  type: 'test'
+  ...
+# Subtest: BEST capture suppresses aliasing and bounds first PCM: 48000
+ok 33 - BEST capture suppresses aliasing and bounds first PCM: 48000
+  ---
+  duration_ms: 88.962083
+  type: 'test'
+  ...
+# Subtest: capture selects BEST once, destroys on stop, and reports decoder errors
+ok 34 - capture selects BEST once, destroys on stop, and reports decoder errors
+  ---
+  duration_ms: 2.300708
+  type: 'test'
+  ...
+# Subtest: vendored worklet matches pinned package and startup gates microphone connection
+ok 35 - vendored worklet matches pinned package and startup gates microphone connection
+  ---
+  duration_ms: 3.280042
+  type: 'test'
+  ...
+# Subtest: Room closed during capture initialization never activates microphone
+ok 36 - Room closed during capture initialization never activates microphone
+  ---
+  duration_ms: 1.206375
+  type: 'test'
+  ...
+# (node:9145) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: short reply remains one bubble
+ok 37 - short reply remains one bubble
+  ---
+  duration_ms: 1.616292
+  type: 'test'
+  ...
+# Subtest: a natural long reply remains one bubble with original punctuation
+ok 38 - a natural long reply remains one bubble with original punctuation
+  ---
+  duration_ms: 0.132375
+  type: 'test'
+  ...
+# Subtest: missing punctuation does not invent multiple turns
+ok 39 - missing punctuation does not invent multiple turns
+  ---
+  duration_ms: 0.094
+  type: 'test'
+  ...
+# Subtest: newlines within a single turn are preserved in one bubble
+ok 40 - newlines within a single turn are preserved in one bubble
+  ---
+  duration_ms: 0.077292
+  type: 'test'
+  ...
+# Subtest: Room player keeps a continuous queue across delayed packets and hold/resume
+ok 41 - Room player keeps a continuous queue across delayed packets and hold/resume
+  ---
+  duration_ms: 17.079708
+  type: 'test'
+  ...
+# Subtest: Room player waits for 100ms before recovering from starvation
+ok 42 - Room player waits for 100ms before recovering from starvation
+  ---
+  duration_ms: 11.8205
+  type: 'test'
+  ...
+# Subtest: 44100Hz capture worklet generates identical PCM for different audio blocks
+ok 43 - 44100Hz capture worklet generates identical PCM for different audio blocks
+  ---
+  duration_ms: 141.362292
+  type: 'test'
+  ...
+# Subtest: 48000Hz capture worklet generates identical PCM for different audio blocks
+ok 44 - 48000Hz capture worklet generates identical PCM for different audio blocks
+  ---
+  duration_ms: 105.745417
+  type: 'test'
+  ...
+# Subtest: mic enhancement changes the actual Room PCM and clamps live gain updates
+ok 45 - mic enhancement changes the actual Room PCM and clamps live gain updates
+  ---
+  duration_ms: 22.875042
+  type: 'test'
+  ...
+# Subtest: Demo-style mic noise/SNR uses measured PCM rather than a fixed fake floor
+ok 46 - Demo-style mic noise/SNR uses measured PCM rather than a fixed fake floor
+  ---
+  duration_ms: 19.28275
+  type: 'test'
+  ...
+# (node:9147) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Room PCM decoder respects published 24k mono S16LE and sample cursors
+ok 47 - Room PCM decoder respects published 24k mono S16LE and sample cursors
+  ---
+  duration_ms: 1.254333
+  type: 'test'
+  ...
+# Subtest: Room stop and stream-final are distinct and never synthesize silence
+ok 48 - Room stop and stream-final are distinct and never synthesize silence
+  ---
+  duration_ms: 0.154084
+  type: 'test'
+  ...
+# Subtest: reject invalid PCM without inserting an invented second playback track
+ok 49 - reject invalid PCM without inserting an invented second playback track
+  ---
+  duration_ms: 0.317166
+  type: 'test'
+  ...
+# (node:9148) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Demo-style mic and TTS share one context without duplicate worklet registrations
+ok 50 - Demo-style mic and TTS share one context without duplicate worklet registrations
+  ---
+  duration_ms: 67.179333
+  type: 'test'
+  ...
+# (node:9149) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: late robot, Chat, Persona, epoch, generation and request results are rejected
+ok 51 - late robot, Chat, Persona, epoch, generation and request results are rejected
+  ---
+  duration_ms: 0.415125
+  type: 'test'
+  ...
+# Subtest: input ASR dialect candidates never become LLM decisions or audible TTS proof
+ok 52 - input ASR dialect candidates never become LLM decisions or audible TTS proof
+  ---
+  duration_ms: 0.171625
+  type: 'test'
+  ...
+# Subtest: TTS wire parameters and independent first PCM, Room publication and speaker evidence stay distinct
+ok 53 - TTS wire parameters and independent first PCM, Room publication and speaker evidence stay distinct
+  ---
+  duration_ms: 0.073708
+  type: 'test'
+  ...
+# Subtest: disabled and failed sidecars preserve preferences and accurately show states
+ok 54 - disabled and failed sidecars preserve preferences and accurately show states
+  ---
+  duration_ms: 0.080208
+  type: 'test'
+  ...
+# Subtest: explicit selection writes only chosen scope and active identity; clear does not claim all preferences
+ok 55 - explicit selection writes only chosen scope and active identity; clear does not claim all preferences
+  ---
+  duration_ms: 0.35775
+  type: 'test'
+  ...
+# Subtest: workbench panel is folded, cancelable, identity scoped and explicitly selects before saving
+ok 56 - workbench panel is folded, cancelable, identity scoped and explicitly selects before saving
+  ---
+  duration_ms: 0.610791
+  type: 'test'
+  ...
+# Subtest: older backend partial language and empty input display unknown without throwing
+ok 57 - older backend partial language and empty input display unknown without throwing
+  ---
+  duration_ms: 0.213875
+  type: 'test'
+  ...
+# Subtest: observation source is allowlisted and monotonic stamp is not displayed as wall time
+ok 58 - observation source is allowlisted and monotonic stamp is not displayed as wall time
+  ---
+  duration_ms: 0.069375
+  type: 'test'
+  ...
+# (node:9150) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: per-turn diagnostics separate direct Realtime replies from actual planner calls
+ok 59 - per-turn diagnostics separate direct Realtime replies from actual planner calls
+  ---
+  duration_ms: 0.596125
+  type: 'test'
+  ...
+# Subtest: a selected turn never borrows the latest turn prompt, tools, or motion
+ok 60 - a selected turn never borrows the latest turn prompt, tools, or motion
+  ---
+  duration_ms: 0.663083
+  type: 'test'
+  ...
+# Subtest: an unavailable historical session is not replaced by the current session
+ok 61 - an unavailable historical session is not replaced by the current session
+  ---
+  duration_ms: 0.138042
+  type: 'test'
+  ...
+# (node:9151) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: actual sleep is not mislabelled as audio idle or realtime offline
+ok 62 - actual sleep is not mislabelled as audio idle or realtime offline
+  ---
+  duration_ms: 0.365708
+  type: 'test'
+  ...
+# Subtest: wake wait and followup distinguish candidate speech, and countdown is measured
+ok 63 - wake wait and followup distinguish candidate speech, and countdown is measured
+  ---
+  duration_ms: 0.072208
+  type: 'test'
+  ...
+# Subtest: disabled, invalid and failed wake modules show truthful states
+ok 64 - disabled, invalid and failed wake modules show truthful states
+  ---
+  duration_ms: 0.081833
+  type: 'test'
+  ...
+# (node:9152) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: production panels use compact labels rather than repeated explanatory copy
+ok 65 - production panels use compact labels rather than repeated explanatory copy
+  ---
+  duration_ms: 3.224917
+  type: 'test'
+  ...
+# Subtest: memory panel separates public, persona-only and current-chat records
+ok 66 - memory panel separates public, persona-only and current-chat records
+  ---
+  duration_ms: 1.262541
+  type: 'test'
+  ...
+# Subtest: memory management remains reachable in the active workbench
+ok 67 - memory management remains reachable in the active workbench
+  ---
+  duration_ms: 1.699417
+  type: 'test'
+  ...
+# Subtest: robot and session routing preserves all isolation dimensions
+ok 68 - robot and session routing preserves all isolation dimensions
+  ---
+  duration_ms: 0.411666
+  type: 'test'
+  ...
+# Subtest: Realtime stream is visible only within matching robot, chat, persona, epoch and generation
+ok 69 - Realtime stream is visible only within matching robot, chat, persona, epoch and generation
+  ---
+  duration_ms: 0.264459
+  type: 'test'
+  ...
+# Subtest: internal prompts do not render user bubbles, including live turns
+ok 70 - internal prompts do not render user bubbles, including live turns
+  ---
+  duration_ms: 1.725958
+  type: 'test'
+  ...
+# Subtest: same-origin API sends exact scoped payload and shows server errors
+ok 71 - same-origin API sends exact scoped payload and shows server errors
+  ---
+  duration_ms: 19.165875
+  type: 'test'
+  ...
+# Subtest: Room PCM format retains Phase 2 MIC_AUDIO wire contract
+ok 72 - Room PCM format retains Phase 2 MIC_AUDIO wire contract
+  ---
+  duration_ms: 0.170375
+  type: 'test'
+  ...
+# Subtest: live microphone pump emits actual 20ms Room frames across audio callbacks
+ok 73 - live microphone pump emits actual 20ms Room frames across audio callbacks
+  ---
+  duration_ms: 14.004042
+  type: 'test'
+  ...
+# Subtest: microphone PCM pump retains nonzero signal at 16k and 48k
+ok 74 - microphone PCM pump retains nonzero signal at 16k and 48k
+  ---
+  duration_ms: 4.603791
+  type: 'test'
+  ...
+# Subtest: React build is the only production page and serves local assets
+ok 75 - React build is the only production page and serves local assets
+  ---
+  duration_ms: 7.617167
+  type: 'test'
+  ...
+# Subtest: production drawer has no obsolete phase test links
+ok 76 - production drawer has no obsolete phase test links
+  ---
+  duration_ms: 0.358459
+  type: 'test'
+  ...
+# Subtest: real conversation has an explicitly authorized browser microphone and no test PCM control
+ok 77 - real conversation has an explicitly authorized browser microphone and no test PCM control
+  ---
+  duration_ms: 1.072125
+  type: 'test'
+  ...
+1..77
+# tests 77
+# suites 0
+# pass 77
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 591.736042

@@ -1,0 +1,26 @@
+{
+  "result": "passed",
+  "browser": "Chromium headless",
+  "desktop": "1440x900",
+  "narrow": "390x844",
+  "backend": "real_local_fake_runtime",
+  "physical_audio": "not_tested",
+  "checks": [
+    "save",
+    "refresh_persistence",
+    "robot_isolation",
+    "scoped_clear",
+    "latest_tts_wire_instruction",
+    "pending_task_no_borrow",
+    "latest_identity_isolation",
+    "not_configured",
+    "unknown",
+    "pending_audible",
+    "narrow_no_overflow",
+    "keyboard_tab",
+    "injected_503",
+    "recovery"
+  ],
+  "page_errors": [],
+  "screenshots": "/Users/dream/Documents/zhc/python/brainv2/var/整理回滚/20261010-追问英文与表达控制/浏览器证据"
+}

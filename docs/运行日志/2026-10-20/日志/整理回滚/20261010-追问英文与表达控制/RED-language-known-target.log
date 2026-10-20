@@ -1,0 +1,18 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_unconfirmed_typed_language_keeps_known_target_without_claiming_prompt_application _
+
+    def test_unconfirmed_typed_language_keeps_known_target_without_claiming_prompt_application():
+        s = state()
+        s.user_request('hello', input_source='typed')
+        s.first_text('turn')
+>       assert s.style_for('turn').language == 'en'
+E       AssertionError: assert 'zh' == 'en'
+E         
+E         - en
+E         + zh
+
+tests/test_typed_language_follow.py:86: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_typed_language_follow.py::test_unconfirmed_typed_language_keeps_known_target_without_claiming_prompt_application
+1 failed in 0.05s

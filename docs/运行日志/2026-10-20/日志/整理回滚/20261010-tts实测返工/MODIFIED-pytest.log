@@ -1,0 +1,70 @@
+........................................................................ [  9%]
+.................................................................F...... [ 18%]
+........................................................................ [ 28%]
+........................................................ [ 35%]
+.......................................................... [ 43%]
+........................................................................ [ 52%]
+........................................................................ [ 62%]
+........................................................................ [ 71%]
+............................................................ [ 79%]
+........................................................................ [ 88%]
+........................................................................ [ 98%]
+..............                                                           [100%]
+=================================== FAILURES ===================================
+_ DialogueSessionTests.test_dialogue_state_expiry_is_sent_when_new_user_arrives _
+
+self = <tests.test_dialogue_behavior.DialogueSessionTests testMethod=test_dialogue_state_expiry_is_sent_when_new_user_arrives>
+
+    async def test_dialogue_state_expiry_is_sent_when_new_user_arrives(self):
+        class Socket:
+            def __init__(self):
+                self.sent = []
+    
+            async def send(self, event):
+                self.sent.append(event)
+    
+        robot = SimpleNamespace(
+            config=SimpleNamespace(robot_id="a"), generation=1, turn_cache={},
+            session_state=lambda: {"robot_id": "a", "chat_id": "one"},
+        )
+        client = RealtimeRobot(robot, url="", key="")
+        client.socket = Socket()
+        client.ready = True
+        client._visual_base_instructions = "BASE"
+        with patch("annie_brain.dialogue.time.monotonic", return_value=100.0):
+            client.dialogue.observe_user("1", "好")
+            client.dialogue.observe_user("2", "嗯")
+            old_hint = client.dialogue.instruction_hint()
+            client._visual_sent_instructions = "BASE" + old_hint
+            client._dialogue_sent_hint = old_hint
+        with patch("annie_brain.dialogue.time.monotonic", return_value=300.0):
+            client.dialogue.observe_user("3", "好")
+            self.assertEqual(client.dialogue.instruction_hint(), "")
+            # A stale provider hint must be cleared even though the local hint
+            # expired before observe_user() compared its before/after state.
+            if client._dialogue_sent_hint != client.dialogue.instruction_hint():
+                client._dialogue_changed()
+        for _ in range(50):
+            if client.socket.sent:
+                break
+            await asyncio.sleep(.005)
+>       self.assertEqual(client.socket.sent[-1]["session"]["instructions"], "BASE")
+E       AssertionError: 'BASE\n【语音表达】默认根据语境、人格与表达意图使用自然口语、重音与标点节奏，不写情绪[61 chars]再开口。' != 'BASE'
+E       - BASE
+E       ?     -
+E       + BASE- 【语音表达】默认根据语境、人格与表达意图使用自然口语、重音与标点节奏，不写情绪标签/JSON/旁白；明确情绪要求优先。select_reply_style可选提前提出具体语气，不必每轮调用，不等待工具再开口。
+
+tests/test_dialogue_behavior.py:112: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/starlette/testclient.py:53
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+.venv/lib/python3.11/site-packages/trustcall/_base.py:46
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/trustcall/_base.py:46: LangGraphDeprecatedSinceV10: Importing Send from langgraph.constants is deprecated. Please use 'from langgraph.types import Send' instead. Deprecated in LangGraph V1.0 to be removed in V2.0.
+    from langgraph.constants import Send
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_dialogue_behavior.py::DialogueSessionTests::test_dialogue_state_expiry_is_sent_when_new_user_arrives
+1 failed, 763 passed, 2 warnings, 42 subtests passed in 29.43s

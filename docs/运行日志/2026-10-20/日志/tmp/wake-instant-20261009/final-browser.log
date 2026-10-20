@@ -1,0 +1,13 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:8780/?view=workbench
+Call log:
+[2m  - navigating to "http://127.0.0.1:8780/?view=workbench", waiting until "domcontentloaded"[22m
+
+    at /Users/dream/Documents/zhc/python/brainv2/web/tests/annie-pod.browser.mjs:45:13 {
+  name: 'Error'
+}
+
+Node.js v22.16.0

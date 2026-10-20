@@ -46,6 +46,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                    spontaneous_expressions: bool = True,
                    sleep: bool = False,
                    overheard: bool = False,
+                   faces: bool = False,
+                   speaker_volume: bool = False,
                    persona_labels: tuple[str, ...] = (),
                    action_descriptions: dict[str, str] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
@@ -296,6 +298,9 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     'type': 'object', 'properties': properties, 'required': required,
                     'additionalProperties': False}}})
     if preferences:
+        # With speaker volume control, "大声点" goes to set_speaker_volume only.
+        volume_setting = "" if speaker_volume else (
+            "speech_volume (quieter|normal|louder; a small change only), ")
         session["tools"].append({
             "type": "function",
             "function": {
@@ -304,21 +309,44 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "Only when the CURRENT user explicitly asks to change how you talk in THIS "
                     "chat. Settings: question_pressure (active|normal|low|none: how often you ask "
                     "follow-up questions), humor_level (none|low|normal|high), reply_length "
-                    "(short|normal|detailed), speech_rate (slower|normal|faster), speech_volume "
-                    "(quieter|normal|louder; a small change only), spontaneous_motions (on|off: "
-                    "unprompted expressive actions), home_city (city used when weather is asked "
-                    "without one). Only status=set means it changed; unchanged means it already "
-                    "was. Then simply talk the new way instead of announcing the setting."
+                    "(short|normal|detailed), speech_rate (slower|normal|faster), " + volume_setting
+                    + "spontaneous_motions (on|off: unprompted expressive actions), home_city "
+                    "(city used when weather is asked without one). A topic word alone (说话的语速) "
+                    "is not a request. Only status=set means it changed; unchanged means it "
+                    "already was. Then simply talk the new way instead of announcing the setting."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "setting": {"type": "string", "enum": [
                             "question_pressure", "humor_level", "reply_length", "speech_rate",
-                            "speech_volume", "spontaneous_motions", "home_city"]},
+                            *(() if speaker_volume else ("speech_volume",)),
+                            "spontaneous_motions", "home_city"]},
                         "value": {"type": "string"},
                     },
                     "required": ["setting", "value"],
+                    "additionalProperties": False,
+                },
+            },
+        })
+    if speaker_volume:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "set_speaker_volume",
+                "description": (
+                    "When the CURRENT user asks you to be louder or quieter, or to set your "
+                    "volume (大声点、小声点、音量调到一半、声音调到最大). change=up/down for one "
+                    "step; level=10-100 for a named level (一半=50, 最大=100, 最小=10). Never for "
+                    "talk about volume or about other people. The answer you say next already "
+                    "plays at the new volume; status=at_limit means it cannot go further."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "change": {"type": "string", "enum": ["up", "down"]},
+                        "level": {"type": "integer", "minimum": 10, "maximum": 100},
+                    },
                     "additionalProperties": False,
                 },
             },
@@ -339,6 +367,46 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "parameters": {"type": "object", "properties": {}},
             },
         })
+    if faces:
+        session["tools"] += [{
+            "type": "function",
+            "function": {
+                "name": "remember_face",
+                "description": (
+                    "When the CURRENT user explicitly asks you to remember them / their face / "
+                    "get to know them (记住我、认识一下我、记住我的脸) and has told you their name "
+                    "(this turn or the one before). Records the face you are looking at. If "
+                    "they did not say a name, ask for it first; never invent or guess one, and "
+                    "never call it for someone who is not asking. Only status=started means it "
+                    "began; you will be told when it is done, so do not say you remember yet."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {
+                        "type": "string",
+                        "description": "The name exactly as the user said it, e.g. 小明"}},
+                    "required": ["name"],
+                    "additionalProperties": False,
+                },
+            },
+        }, {
+            "type": "function",
+            "function": {
+                "name": "forget_face",
+                "description": (
+                    "When the CURRENT user asks you to forget their face / stop recognising them "
+                    "(忘掉我的脸、别再认我、不要记住我是谁). Not for forgetting things that were "
+                    "said. Ask once to confirm before calling. name is the name you know them by "
+                    "in front of you now."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                    "additionalProperties": False,
+                },
+            },
+        }]
     if sleep:
         session["tools"].append({
             "type": "function",

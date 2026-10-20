@@ -21,7 +21,9 @@ PREFERENCE_REQUEST = {
     "question_pressure": r"追问|问我|提问|问题|反问|问来问去|多问|少问",
     "humor_level": r"玩笑|幽默|逗|搞笑|正经|严肃|贫嘴|皮一?点",
     "reply_length": r"简短|短一?点|简单点|啰嗦|话多|详细|多说|长一?点|展开|一句话",
-    "speech_rate": r"慢|快|语速",
+    # A direction, not just the topic: "说话的语速" alone changes nothing.
+    "speech_rate": r"(?:说|讲|语速)[^。？?]{0,6}(?:慢|快)|(?:慢|快)一?(?:点|些)|放慢|加快|"
+                   r"(?:正常|恢复)[^。？?]{0,4}语速|语速[^。？?]{0,4}(?:正常|恢复)",
     "speech_volume": r"大声|小声|声音|音量|轻一?点|响一?点|吵",
     "spontaneous_motions": r"动作|表情|别动|乱动|动来动去|摇头晃脑",
     "home_city": r"我在|住在|我们这|这边|城市|天气",

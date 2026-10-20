@@ -8,14 +8,55 @@ from collections import deque
 PERSON_KINDS = {"person", "human", "人物", "人"}
 PUBLIC_KINDS = {"cup", "book", "cat", "dog", "plant", "tea", "杯子", "书", "猫", "狗", "植物", "茶"}
 IDENTITY = ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
+TOPIC_MEMORY_SECONDS = 2 * 3600  # a proactive line is not said again within this
+GROUNDED_ONLY = "不说画面和对话里没有的事实，尤其不凭空说天气、气温或冷热。"
+
+
+def _topic_key(text):
+    return re.sub(r"\W", "", text or "")
+
+
+def _similar(first, second):
+    """Same idea in other words: containment or most character pairs shared."""
+    if not first or not second:
+        return False
+    if first in second or second in first:
+        return True
+    pairs = lambda text: {text[i:i + 2] for i in range(len(text) - 1)}  # noqa: E731
+    a, b = pairs(first), pairs(second)
+    return bool(a and b) and len(a & b) / min(len(a), len(b)) >= .6
+
+
+class SpokenTopics:
+    """What Annie said on her own recently, kept across user turns, per robot."""
+
+    def __init__(self, robots, *, seconds=TOPIC_MEMORY_SECONDS, clock=time.monotonic):
+        self.seconds, self.clock = seconds, clock
+        self.items = {robot_id: deque(maxlen=8) for robot_id in robots}
+
+    def _fresh(self, robot_id):
+        now = self.clock()
+        return [topic for at, topic in self.items[robot_id] if now - at <= self.seconds]
+
+    def repeated(self, robot_id, topic):
+        key = _topic_key(topic)
+        return any(_similar(key, _topic_key(old)) for old in self._fresh(robot_id))
+
+    def latest(self, robot_id):
+        fresh = self._fresh(robot_id)
+        return fresh[-1] if fresh else ""
+
+    def add(self, robot_id, topic):
+        self.items[robot_id].append((self.clock(), topic))
 
 
 class ShortContinuation:
     """One private, consented follow-up per freshly delivered user reply."""
 
     def __init__(self, runtime, graph, *, enabled=False, delay=15, window=35,
-                 timeout=12):
+                 timeout=12, spoken=None):
         self.runtime = runtime
+        self.spoken = spoken or SpokenTopics(runtime.robots)
         self.graph = graph if enabled else None
         self.delay = delay
         self.window = window
@@ -241,11 +282,16 @@ class ShortContinuation:
                 self._record(robot_id, topic=result.get("topic", ""))
                 return
             topic = result["topic"].strip()
+            if self.spoken.repeated(robot_id, topic):
+                row.update(status="model_no_speak", reason="repeated_topic")
+                self._record(robot_id, topic=topic)
+                return
             row.update(status="submitting", reason=None)
+            self.spoken.add(robot_id, topic)
             submitted = await client.submit_text(
                 "【内部短时续聊规划，非用户发言】仅在刚刚的话题上自然补一句新观察或一个"
                 "不催促的简短问题；如果刚才已经问过，不要催促回答，也不要再重复提问。"
-                "不重复上句，不执行旧任务，不调用工具。续聊方向：" + topic,
+                "不重复上句，不执行旧任务，不调用工具。" + GROUNDED_ONLY + "续聊方向：" + topic,
                 source="external", expected_identity=identity,
                 text_only=row["channel"] == "text")
             if (row["turn_id"] != turn_id or row["identity"] != identity or
@@ -282,9 +328,10 @@ class IdleService:
             from annie_brain.idle_plan import build_idle_graph
 
             self.graph = build_idle_graph(model)
+        self.spoken = SpokenTopics(runtime.robots)
         self.short = ShortContinuation(
             runtime, self.graph, enabled=continuation_enabled,
-            delay=continuation_seconds, timeout=timeout,
+            delay=continuation_seconds, timeout=timeout, spoken=self.spoken,
         )
         self.idle_seconds = idle_seconds
         self.second_seconds = second_seconds
@@ -510,8 +557,10 @@ class IdleService:
         source_turn_id = getattr(self.runtime.realtime[robot_id], "_last_user_turn_id", None)
         try:
             model_started_at = time.monotonic()
+            # The row is reset when the user talks; what was said before is not.
+            previous_topic = row["previous"] or self.spoken.latest(robot_id)
             result = await asyncio.wait_for(self.graph.ainvoke({
-                "attempt": attempt, "scene": row["scene"], "previous": row["previous"],
+                "attempt": attempt, "scene": row["scene"], "previous": previous_topic,
             }), self.timeout)
             elapsed_ms = round((time.monotonic() - model_started_at) * 1000)
             reason = self._eligible(robot_id, time.monotonic())
@@ -537,7 +586,8 @@ class IdleService:
             normalized = re.sub(r"\W", "", topic)
             previous = re.sub(r"\W", "", row["previous"])
             if (not topic or attempt == 2 and result.get("new_value") is not True
-                    or previous and (normalized in previous or previous in normalized)):
+                    or previous and (normalized in previous or previous in normalized)
+                    or self.spoken.repeated(robot_id, topic)):
                 row["attempts"] = 2
                 self._status(robot_id, "suppressed", "repeated_or_empty", "NO_SPEAK")
                 self._record(robot_id, source_turn_id)
@@ -545,10 +595,11 @@ class IdleService:
             # Do not include user history or memory: the visible person is not identified.
             client = self.runtime.realtime[robot_id]
             self._status(robot_id, "submitting", decision="SPEAK")
+            self.spoken.add(robot_id, topic)
             result = await client.submit_text(
                 "【内部主动交谈规划，非用户发言】现场有身份未知的人。"
                 "仅基于公共场景自然说一句，不透露任何聊天或私人记忆，"
-                "不要求回答，不调用动作或工具。话题：" + topic,
+                "不要求回答，不调用动作或工具。" + GROUNDED_ONLY + "话题：" + topic,
                 source="external", expected_identity=identity,
             )
             # speech.started can race with the second socket send. The user

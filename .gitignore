@@ -21,3 +21,4 @@ sidecars/**/output*/
 
 # room-speaker 板端本地配置（房间/设备），只在板子上
 room-speaker/room-audio.env
+room-speaker/.speaker-volume

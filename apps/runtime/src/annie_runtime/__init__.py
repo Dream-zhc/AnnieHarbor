@@ -41,6 +41,7 @@ from annie_runtime.idle import IdleService
 from annie_runtime.realtime import RealtimeRobot
 from annie_runtime.reminders import ReminderService
 from annie_runtime.room_monitor import RoomMonitor
+from annie_runtime.speaker_volume import SpeakerVolume
 from annie_runtime.speech import SpeechOutput
 from annie_runtime.viseme import VisemeSidecars
 
@@ -861,6 +862,9 @@ class HarborRuntime:
         wake_followup_ms: int = 20000,
         side_talk_listen_ms: int = 120000,
         greet_known_cooldown_minutes: float = 30,
+        face_api_urls: dict[str, str] | None = None,
+        face_registries: dict | None = None,
+        face_samples: int = 18,
         cloud_aec_robots: tuple[str, ...] = (),
         cloud_aec_sync_offset_ms: int = 80,
         cloud_aec_delay_ms: int = 0,
@@ -969,7 +973,9 @@ class HarborRuntime:
         self.audio_devices = {
             robot_id: RoomAudioDevices(
                 on_change=lambda status, snapshot, robot_id=robot_id:
-                self._audio_devices_changed(robot_id, status, snapshot))
+                self._audio_devices_changed(robot_id, status, snapshot),
+                on_head=lambda kind, details, robot_id=robot_id:
+                self._robot_head_changed(robot_id, kind, details))
             for robot_id in self.robots
         }
         self.input_bindings: dict[str, tuple[str, ...]] = {}
@@ -1085,6 +1091,8 @@ class HarborRuntime:
                     room_server, client.robot.config.room_id, channel="voice",
                 )
                 self.voice_publishers[robot_id] = publisher
+                # "大声点" turns the board speaker itself up (room-speaker).
+                client.speaker_volume = SpeakerVolume(self.audio_devices[robot_id], publisher)
                 client.voice_event = (
                     lambda kind, event, robot_id=robot_id:
                     self._send_voice_event(robot_id, kind, event)
@@ -1190,6 +1198,21 @@ class HarborRuntime:
         self.started = False
         self.start_time = time.time()
         self.events = EventService(self, greet_cooldown_ms=int(greet_known_cooldown_minutes * 60_000))
+        # "记住我/忘掉我" in conversation, on each robot's own camera service.
+        self.faces = None
+        registries = dict(face_registries or {})
+        if face_api_urls:
+            from annie_adapters.face_registry import FaceRegistry
+
+            for robot_id, url in face_api_urls.items():
+                if robot_id in self.robots and robot_id not in registries and url:
+                    registries[robot_id] = FaceRegistry(url)
+        if registries:
+            from annie_runtime.faces import FaceService
+
+            self.faces = FaceService(self, registries, samples=face_samples)
+            for client in self.realtime.values():
+                client.faces = self.faces
         self.reminders = ReminderService(self)
         self.idle = IdleService(self, idle_model, idle_seconds=idle_seconds,
                                 second_seconds=idle_second_seconds,
@@ -1596,6 +1619,26 @@ class HarborRuntime:
                            microphones=len(snapshot["microphones"]),
                            speakers=len(snapshot["speakers"]))
 
+    def _robot_head_changed(self, robot_id, kind, details):
+        """Which robot head (board) serves this Room: online, handover or offline."""
+        robot = self.robots.get(robot_id)
+        if kind == "handover":
+            older, newer = details.get("from") or {}, details.get("to") or {}
+            fields = {"from_name": older.get("head_name"), "from_address": older.get("address"),
+                      "to_name": newer.get("head_name"), "to_address": newer.get("address")}
+            note = f"{fields['to_name']}接管，{fields['from_name']}已停止"
+        else:
+            fields = {"head_name": details.get("head_name"), "address": details.get("address"),
+                      "head_id": details.get("head_id")}
+            note = None
+        if robot is not None:
+            # A handover means both boards were started: worth a warning line.
+            robot.record("robot_head_" + kind, error=note, source="room_audio")
+        client = self.realtime.get(robot_id) if hasattr(self, "realtime") else None
+        if client is not None:
+            client.publish("robot.head." + kind,
+                           **{key: value for key, value in fields.items() if value is not None})
+
     def _send_voice_event(self, robot_id, kind, event):
         """Relay Qwen's observations asynchronously; it does not talk to Room."""
         publisher = self.voice_publishers.get(robot_id)
@@ -1846,6 +1889,8 @@ class HarborRuntime:
                 await self.actions.close()
             if self.weather is not None:
                 await self.weather.close()
+            if self.faces is not None:
+                await self.faces.close()
             if self.decision is not None and self._owns_decision:
                 await self.decision.close()
             if self.memory:
@@ -2496,6 +2541,7 @@ class HarborRuntime:
                 "transport_errors": dict(self.actions.connection_errors) if self.actions else {},
             },
             "weather": {"configured": self.weather is not None, "source": "amap"},
+            "faces": {"configured_robots": sorted(self.faces.registries) if self.faces else []},
             "room_gateway": {
                 "configured": room_required,
                 "ready": room_ready,

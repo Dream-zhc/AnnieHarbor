@@ -45,9 +45,11 @@ from annie_brain.persona import (
 from annie_core import RobotUnavailableError
 
 from annie_runtime.display import DISPLAY_NOTIFY_KINDS
+from annie_runtime.faces import face_name
 from annie_runtime.language import ReplyLanguageState, explicit_language_request
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
-from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream
+from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
+from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
 from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,11 @@ EXPLICIT_MOTION = re.compile(
     r"动作|表情|点头|点个头|摇头|眨|歪头|转头|看左|看右|往上看|惊讶|坏笑|得意|害羞|怀疑|做个|来个|演示")
 SLEEP_AFTER_REPLY_SECONDS = 20.0
 WEATHER_QUERY = re.compile(r"天气|气温|温度|下雨|下雪|刮风|冷不冷|热不热|带伞|穿什么|weather", re.I)
+REMEMBER_FACE = re.compile(r"记住|记下|记一下|认识一下|认识我|认一下|认得我|记得我")
+VOLUME_REQUEST = re.compile(
+    r"大声|小声|大点声|小点声|响一?点|轻一?点|音量|声音.{0,6}(?:大|小|高|低|轻|响|调)|"
+    r"太吵|吵死|听不(?:清|见|到)")
+FORGET_FACE = re.compile(r"忘掉|忘了我|忘记我|别再认|不要再认|别认|别记|不要记|删掉|删除")
 LATENCY_LOG_EVENTS = frozenset({"turn.done", "tts.first_published", "tts.playback.started",
                                 "tool.result", "tool.followup"})
 BEIJING = timezone(timedelta(hours=8))
@@ -156,6 +163,7 @@ class RealtimeRobot:
         self.expression_enabled = expression_enabled
         self.expression = None
         self._expression_raw = ""
+        self._stage = StageDirections()
         self._last_expression = None
         self._last_expression_identity = None
         self.socket = None
@@ -269,6 +277,8 @@ class RealtimeRobot:
         self.reminders = None  # explicit user reminder tool; no idle Graph in chat path
         self.actions = None  # physical dispatch only if operator explicitly enables it
         self.weather = None
+        self.faces = None  # face registration on the robot's vision service, if configured
+        self.speaker_volume = None  # board speaker volume over reb_voice, if a Room has one
         self._stopping = False
         self._opening = False
         self._open_done = asyncio.Event()
@@ -1043,6 +1053,28 @@ class RealtimeRobot:
         logger.info("turn_recovered robot=%s turn=%s chars=%d", self.robot.config.robot_id,
                     turn_id, len(self.transcript))
 
+    def _stage_filter(self, text, *, final=False):
+        """Stage directions like 【眨眼】 are never spoken or shown."""
+        before = len(self._stage.dropped)
+        cleaned = self._stage.feed(text) + (self._stage.finish() if final else "")
+        if len(self._stage.dropped) != before and self.turn_id:
+            self.publish("speech.stage_direction.dropped", turn_id=self.turn_id,
+                         text=self._stage.dropped[-1][:24])
+        return cleaned
+
+    def _faces_available(self):
+        return self.faces is not None and self.faces.available(self.robot.config.robot_id)
+
+    def _recent_user_texts(self):
+        """This turn's words and the user turn before: a name often comes one turn later."""
+        current = self.robot.turn_cache.get(self.turn_id) or {}
+        texts = [str(current.get("user_text") or self.transcript or "")]
+        for turn in reversed(list(self.robot.turn_cache.values())):
+            if turn.get("turn_id") != self.turn_id and turn.get("turn_source", "user") == "user":
+                texts.append(str(turn.get("user_text") or ""))
+                break
+        return texts
+
     def _overhearing(self):
         """Side talk is kept by ambient listening or by declined utterances.
 
@@ -1633,6 +1665,49 @@ class RealtimeRobot:
         self.publish("chat.preference.set", setting=setting, value=value)
         return {"status": "set", "setting": setting, "value": value, "scope": "chat"}
 
+    async def _set_speaker_volume(self, args):
+        if not args or not set(args) <= {"change", "level"} or len(args) != 1:
+            raise ValueError("expected change or level")
+        if self.turn_identity != self.robot.session_state():
+            raise ValueError("stale volume change")
+        current = self.robot.turn_cache.get(self.turn_id) or {}
+        if not VOLUME_REQUEST.search(str(current.get("user_text") or self.transcript or "")):
+            raise ValueError("volume change requires an explicit current request")
+        speaker = self.speaker_volume
+        volume = speaker.current() if speaker is not None else None
+        if volume is None:
+            return await self._speech_volume_fallback(args)
+        target = volume_target(volume, change=args.get("change"), level=args.get("level"))
+        if target == volume:
+            return {"status": "at_limit" if "change" in args else "unchanged", "volume": volume,
+                    "limit": "max" if volume == 100 else "min" if volume <= VOLUME_MIN else None}
+        result = await speaker.set(target)
+        self.publish("speaker.volume.changed", previous=volume, volume=result["volume"],
+                     status=result["status"], via="speaker")
+        return {**result, "previous": volume, "via": "speaker"}
+
+    async def _speech_volume_fallback(self, args):
+        """No board speaker that takes a volume: the TTS volume preference, one small step."""
+        order = ("quieter", "normal", "louder")
+        now = chat_preference(self.social_state, "speech_volume") or "normal"
+        if "change" in args:
+            if args["change"] not in {"up", "down"}:
+                raise ValueError("invalid volume change")
+            index = order.index(now) + (1 if args["change"] == "up" else -1)
+            if not 0 <= index < len(order):
+                return {"status": "at_limit", "via": "voice_style", "value": now}
+            value = order[index]
+        else:
+            level = args["level"]
+            if type(level) is not int or not 0 <= level <= 100:
+                raise ValueError("invalid volume level")
+            value = "louder" if level >= 70 else "quieter" if level <= 40 else "normal"
+        if value == now:
+            return {"status": "unchanged", "via": "voice_style", "value": now}
+        await self._commit_user_setting("speech_volume", value)
+        self.publish("chat.preference.set", setting="speech_volume", value=value)
+        return {"status": "set", "via": "voice_style", "value": value}
+
     async def _select_persona_style(self, args):
         if set(args) != {"style_name"}:
             raise ValueError("expected style_name")
@@ -1805,6 +1880,7 @@ class RealtimeRobot:
             self._last_expression_identity = dict(self.turn_identity) if self.turn_identity else None
         self.expression = None
         self._expression_raw = ""
+        self._stage = StageDirections()
         self.turn_id = self.response_id = None
         self.external_turn_id = None
         self._external_text_only = False
@@ -1977,8 +2053,10 @@ class RealtimeRobot:
                 if physical and self.auto_expression_enabled and self.decision is not None:
                     tail += (
                         "\n【实体动作】点头、摇头、看左右、眨眼和惊讶、坏笑、得意、怀疑、害羞等"
-                        "动作与表情由系统根据对话自动执行。用户要你做动作时，用一句很短的话答应，"
-                        "说的就是用户要的那个动作，不要改成别的动作，不要描述动作过程，"
+                        "动作与表情由系统根据对话自动执行。用户要你做动作时，动作已经在做了，"
+                        "你只用一句很短、符合当前性格的口头话自然接一下（例如“好嘞，看我的～”），"
+                        "如果提到动作，必须是用户要的那个，不要改成别的动作；"
+                        "不要只回一个动作名，不要用【】、括号或星号写动作或表情，不要描述动作过程，"
                         "也不要把‘动作已发出/已执行’当作回复。"
                     )
                 elif physical:
@@ -1993,6 +2071,13 @@ class RealtimeRobot:
                         "不要把‘动作已发出/已发送/指令已下发/动作已执行’当作给用户的回复，"
                         "也不编造卡壳、没发出去等故障旁白；只有工具明确rejected或unavailable时才说做不了。"
                         "不要将上轮动作留给新一轮。"
+                    )
+                if self._faces_available():
+                    tail += (
+                        "\n有人明确要你记住TA（记住我、认识一下我）时，先确认知道TA的名字，不知道就先问，"
+                        "再调用remember_face；开始后请TA正对着你，记好或没记住时会有现场情况告诉你，"
+                        "那时再告诉TA。有人要你忘掉TA的脸时，先确认一次再调用forget_face。"
+                        "不要主动提出记人脸。"
                     )
                 if self.weather is not None:
                     tail += (
@@ -2052,6 +2137,8 @@ class RealtimeRobot:
                                                  and self.decision is not None),
                     sleep=self.wake is not None,
                     overheard=self._overhearing(),
+                    faces=self._faces_available(),
+                    speaker_volume=self.speech is not None,
                     persona_labels=tuple(profile["label"] for profile in self.persona_profiles.values()),
                 )
                 self._visual_sent_text = initial_visual
@@ -2485,6 +2572,7 @@ class RealtimeRobot:
             "cancel_source": None,
         })
         self.turn_id = turn_id
+        self._stage = StageDirections()
         if self.expression_enabled:
             self.expression = ExpressionStream()
             self._expression_raw = ""
@@ -3349,6 +3437,7 @@ class RealtimeRobot:
                 if before != (self.expression.changes, len(self.expression.issues)):
                     self.publish("speech.expression.observed", turn_id=self.turn_id,
                                  **self.expression.snapshot())
+            chunk = self._stage_filter(chunk)
             self.text += chunk
             if chunk and self.first_text_ms is None and self.began is not None:
                 self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
@@ -3370,7 +3459,8 @@ class RealtimeRobot:
                 suffix = (complete[len(self._expression_raw):]
                           if complete.startswith(self._expression_raw) else "")
                 before = self.expression.changes, len(self.expression.issues)
-                extra = self.expression.feed(suffix) + self.expression.finish()
+                extra = self._stage_filter(self.expression.feed(suffix) + self.expression.finish(),
+                                           final=True)
                 if self.speech and getattr(self.speech, "mixed_enabled", False) and not self._external_text_only:
                     events = self.expression.take_events()
                     if events:
@@ -3387,6 +3477,11 @@ class RealtimeRobot:
                     if self.speech and not self._external_text_only:
                         await self.speech.feed(self.turn_id, self.turn_identity, extra)
                 complete = self.text
+            else:
+                # The full text replaces the streamed one: the same cleanup.
+                whole = StageDirections()
+                complete = whole.feed(complete) + whole.finish()
+                self._stage = StageDirections()
             if (self.speech and not self._external_text_only
                     and not self.text and complete and self.turn_id):
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)
@@ -3423,7 +3518,7 @@ class RealtimeRobot:
             if self.expression is not None and self.turn_id:
                 # response.text.done is not guaranteed on all provider paths.
                 # Never discard a trailing ordinary bracketed utterance.
-                tail = self.expression.finish()
+                tail = self._stage_filter(self.expression.finish(), final=True)
                 if tail:
                     self.text += tail
                     self.publish("text.delta", turn_id=self.turn_id, delta=tail,
@@ -3511,16 +3606,17 @@ class RealtimeRobot:
                 "perform_action", "set_expression", "preview_action",
                 "forget_memory", "correct_memory", "recall_memory", "create_reminder",
                 "get_weather", "select_persona_style", "enter_sleep", "update_chat_preference",
-                "recall_overheard",
+                "recall_overheard", "remember_face", "forget_face", "set_speaker_volume",
             }:
                 raise ValueError("external_event_no_motion" if name in {
                     "perform_action", "set_expression", "preview_action"
                 } else "external_event_no_reminder" if name == "create_reminder"
-                else "external_event_no_tools" if name == "get_weather"
+                else "external_event_no_tools" if name in {"get_weather", "set_speaker_volume"}
                 else "external_event_no_persona" if name in {"select_persona_style",
                                                              "update_chat_preference"}
                 else "external_event_no_sleep" if name == "enter_sleep"
                 else "external_event_no_memory" if name == "recall_overheard"
+                else "external_event_no_faces" if name in {"remember_face", "forget_face"}
                 else "external_event_no_memory_write")
             if name in {"set_language_preference", "clear_language_preference", "select_reply_style"}:
                 result = await self._language_tool(name, args, call_id)
@@ -3635,6 +3731,27 @@ class RealtimeRobot:
                         "anchor_occurrence": args.get("anchor_occurrence", 1)}
                        if "anchor_text" in args else {}),
                 )
+            elif name == "set_speaker_volume" and self.speech is not None:
+                result = await self._set_speaker_volume(args)
+            elif name in {"remember_face", "forget_face"} and self._faces_available():
+                if set(args) != {"name"}:
+                    raise ValueError("expected exactly name")
+                if self.turn_identity != self.robot.session_state():
+                    raise ValueError("stale face request")
+                face = face_name(args["name"])
+                if face is None:
+                    raise ValueError("invalid face name")
+                texts = [re.sub(r"\s+", "", text) for text in self._recent_user_texts()]
+                intent = REMEMBER_FACE if name == "remember_face" else FORGET_FACE
+                if not any(intent.search(text) for text in texts):
+                    raise ValueError("face request requires the user's explicit request")
+                robot_id = self.robot.config.robot_id
+                if name == "remember_face":
+                    if not any(face in text for text in texts):
+                        raise ValueError("face name must be the one the user said")
+                    result = await self.faces.remember(robot_id, face)
+                else:
+                    result = await self.faces.forget(robot_id, face)
             elif name == "recall_overheard" and self._overhearing():
                 if args:
                     raise ValueError("expected no arguments")

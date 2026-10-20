@@ -150,6 +150,49 @@ class ExpressionStream:
                 "tts_applied": False, "controls_observed": self.changes}
 
 
+STAGE_HOLD_LIMIT = 24  # longer than any stage direction: release it as speech
+
+
+class StageDirections:
+    """Drop 【眨眼】-style stage directions the model sometimes writes as its reply.
+
+    Full-width square brackets are never spoken content. A bracketed span is held
+    (at most STAGE_HOLD_LIMIT characters) and dropped once it closes; a stray
+    【 or 】 is dropped on its own. Works at arbitrary token splits.
+    """
+
+    def __init__(self):
+        self._held = ""
+        self.dropped = []
+
+    def feed(self, delta: str) -> str:
+        out = []
+        for char in delta:
+            if self._held:
+                if char == "】":
+                    self.dropped.append(self._held[1:])
+                    self._held = ""
+                elif char == "【":
+                    out.append(self._held[1:])  # an unclosed one was ordinary text
+                    self._held = char
+                else:
+                    self._held += char
+                    if len(self._held) > STAGE_HOLD_LIMIT:
+                        out.append(self._held[1:])
+                        self._held = ""
+            elif char == "【":
+                self._held = char
+            elif char == "】":
+                self.dropped.append("")
+            else:
+                out.append(char)
+        return "".join(out)
+
+    def finish(self) -> str:
+        tail, self._held = self._held[1:], ""
+        return tail
+
+
 EXPRESSION_HINT = (
     "\n【多句TTS情绪协议】第一句立刻输出自然可朗读正文，"
     "首句前禁止任何标记或等待情绪判断；只有一句的短回复不要添加字段。"

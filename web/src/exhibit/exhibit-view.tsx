@@ -1,5 +1,6 @@
 import {lazy, Suspense, useEffect, useMemo, useRef, useState} from 'react';
 import {
+  Bot,
   Activity,
   BrainCircuit,
   Camera,
@@ -21,7 +22,7 @@ import {eventStages, latestPreview, showMetric} from './telemetry';
 import type {ExhibitSnapshot} from './telemetry';
 import {eventBelongsToSession, type Session, type RealtimeEvent} from '../api';
 import {wakeLabel, wakePresentation} from '../wake-state';
-import {conflictMessages} from '../audio-devices';
+import {conflictMessages,handoverMessage,headLabel} from '../audio-devices';
 import './exhibit.css';
 
 const RobotTwin = lazy(() => import('./robot-twin').then(m => ({default: m.RobotTwin})));
@@ -255,6 +256,9 @@ function ExhibitView({currentRobotId, onSelectRobot, onSwitchMode}: Props) {
     '暂无用户对话';
 
   const deviceWarnings = conflictMessages(snapshot?.audio.devices ?? null, snapshot?.robot.room_id);
+  // Big head or obj doll: the board started last serves the Room.
+  const currentHead = snapshot?.audio.devices?.head?.current ?? null;
+  const handoverNotice = handoverMessage(snapshot?.audio.devices?.head);
   const assistantSpeechText =
     liveAssistantText ||
     snapshot?.realtime.assistant_text ||
@@ -267,10 +271,15 @@ function ExhibitView({currentRobotId, onSelectRobot, onSwitchMode}: Props) {
       {/* ====================================================================
           1. Top Navigation Bar (Header)
           ==================================================================== */}
-      {deviceWarnings.length > 0 && (
+      {deviceWarnings.length > 0 ? (
         <div className="ex-device-alert" role="alert">
           <strong>音频设备冲突 · ONE MIC &amp; ONE SPEAKER PER ROOM</strong>
           {deviceWarnings.map((text) => <span key={text}>{text}</span>)}
+        </div>
+      ) : handoverNotice && (
+        <div className="ex-device-alert ex-head-handover" role="status">
+          <strong>机器人头已切换 · HEAD HANDOVER</strong>
+          <span>{handoverNotice}</span>
         </div>
       )}
 
@@ -344,6 +353,12 @@ function ExhibitView({currentRobotId, onSelectRobot, onSwitchMode}: Props) {
           ==================================================================== */}
       <div className="ex-statusbar">
         <span className="ex-room-pill">ROOM {snapshot?.robot.room_id ?? 'roomv2'}</span>
+        {currentHead && (
+          <span className="ex-head-pill" title={[currentHead.microphone, currentHead.speaker]
+            .filter(Boolean).join(' · ')}>
+            <Bot size={11} /> 当前：{headLabel(currentHead)}
+          </span>
+        )}
         <span>
           <Radio size={11} /> REALTIME {snapshot?.realtime.state ?? 'connected'}
         </span>

@@ -12,7 +12,8 @@ import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
 import {decisionEntry,formatDecision,isProviderAmbient,parseDecision,type DecisionEntry} from './decision-log';
-import {audioDevices,conflictMessages} from './audio-devices';
+import {audioDevices,conflictMessages,handoverEventMessage,handoverMessage,headLabel} from './audio-devices';
+import {faceNotice,volumeNotice} from './notices';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
 import {CustomSelect} from './custom-select';
 import {WakeIndicator} from './wake-indicator';
@@ -305,7 +306,12 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
   const selectedRobot=health?.robots.find(item=>item.robot_id===robotId);
   // One microphone and one speaker per Room: Brain observes, the page warns.
-  const deviceWarnings=conflictMessages(audioDevices(pcm),selectedRobot?.room_id??session?.room_id);
+  const roomDevices=audioDevices(pcm);
+  const deviceWarnings=conflictMessages(roomDevices,selectedRobot?.room_id??session?.room_id);
+  // Two boards may serve one Room (big head, obj doll); the later one takes over.
+  const currentHead=roomDevices?.head?.current??null;
+  const headVolume=roomDevices?.speakers.find(item=>item.head_instance===currentHead?.instance_id)?.volume;
+  const handoverNotice=handoverMessage(roomDevices?.head);
   const route=routes.find(item=>item.robot_id===robotId);
   const realtime=selectedRobot?.realtime;
   const speech=realtime?.speech_output;
@@ -549,13 +555,18 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
               if(isProviderAmbient(item)&&item.text?.trim())
                 setAmbient(previous=>[...previous,item.text!.trim()].slice(-5));
             }
-            if(item.kind==='audio.devices.conflict'||item.kind==='audio.devices.ok'){
+            if(item.kind==='audio.devices.conflict'||item.kind==='audio.devices.ok'||
+               item.kind.startsWith('robot.head.')){
               // Refresh at once instead of waiting for the 6 s /inputs poll.
               void api<unknown>(robotPath(robotId)+'/inputs')
                 .then(inputs=>{if(active)setPcm(inputs);}).catch(()=>{});
               if(item.kind==='audio.devices.conflict')
                 notify('同一房间检测到多个麦克风或扬声器，请只保留一个','error');
+              if(item.kind==='robot.head.handover')
+                notify(handoverEventMessage(item),'info');
             }
+            const notice=faceNotice(item)??volumeNotice(item);
+            if(notice)notify(notice.text,notice.type);
             const decision=decisionEntry(item);
             if(decision)setDecisions(previous=>[decision,...previous].slice(0,6));
             if(item.kind==='persona.style.selected'||item.kind==='chat.preference.set'){
@@ -927,6 +938,13 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             </div>
           </div>
 
+          {currentHead&&<div className="head-strip" role="status">
+            <strong>机器人头</strong>
+            <span>{headLabel(currentHead)}</span>
+            {currentHead.microphone&&<span>麦克风 {currentHead.microphone}</span>}
+            {currentHead.speaker&&<span>扬声器 {currentHead.speaker}{headVolume!=null&&` · 音量 ${headVolume}`}</span>}
+            {handoverNotice&&<em>{handoverNotice}</em>}
+          </div>}
           {deviceWarnings.length>0&&<div className="device-conflict" role="alert">
             <strong>⚠ 音频设备冲突</strong>
             {deviceWarnings.map(text=><span key={text}>{text}</span>)}

@@ -21,7 +21,9 @@ PREFERENCE_REQUEST = {
     "question_pressure": r"追问|问我|提问|问题|反问|问来问去|多问|少问",
     "humor_level": r"玩笑|幽默|逗|搞笑|正经|严肃|贫嘴|皮一?点",
     "reply_length": r"简短|短一?点|简单点|啰嗦|话多|详细|多说|长一?点|展开|一句话",
-    "speech_rate": r"慢|快|语速",
+    # A direction, not just the topic: "说话的语速" alone changes nothing.
+    "speech_rate": r"(?:说|讲|语速)[^。？?]{0,6}(?:慢|快)|(?:慢|快)一?(?:点|些)|放慢|加快|"
+                   r"(?:正常|恢复)[^。？?]{0,4}语速|语速[^。？?]{0,4}(?:正常|恢复)",
     "speech_volume": r"大声|小声|声音|音量|轻一?点|响一?点|吵",
     "spontaneous_motions": r"动作|表情|别动|乱动|动来动去|摇头晃脑",
     "home_city": r"我在|住在|我们这|这边|城市|天气",
@@ -187,8 +189,8 @@ def resolve_persona_style_request(persona_id, profiles, social, requested_name, 
              if not any(style_id != other and profiles[style_id]["label"] in profiles[other]["label"]
                         and profiles[other]["label"] in user_text for other in named)]
     names_style = bool(re.search(
-        r"(?:换成|改成|切换成|切换到|变成|调成|换个|改个|换一个|换一种|切换)"
-        r"(?:这个|那个|一下)?(?:新的?)?(?:性格|风格|人格|人设)"
+        r"(?:换成|改成|切换成|切换到|变成|调成|换个|改个|换一个|换一种|换换|切换)"
+        r"(?:一下)?(?:你的?|自己的?)?(?:这个|那个|一下)?(?:新的?)?(?:性格|风格|人格|人设)"
         r"|(?:性格|风格|人格|人设).{0,8}(?:换成|改成|切换)",
         user_text,
     ))

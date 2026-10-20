@@ -2688,6 +2688,39 @@ details summary::-webkit-details-marker {
 :root[data-theme="light"] .device-conflict strong {
   color: #cf222e !important;
 }
+/* Which robot head (board) serves the Room; a handover note after a misstart. */
+.head-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  margin: 6px 14px 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 139, 253, 0.45);
+  background: rgba(56, 139, 253, 0.1);
+  color: #9ecbff;
+  font-size: 12.5px;
+}
+.head-strip strong {
+  color: #58a6ff;
+}
+.head-strip em {
+  flex-basis: 100%;
+  font-style: normal;
+  color: #e3b341;
+}
+:root[data-theme="light"] .head-strip {
+  background: #ddf4ff !important;
+  border-color: #54aeff !important;
+  color: #0a3069 !important;
+}
+:root[data-theme="light"] .head-strip strong {
+  color: #0969da !important;
+}
+:root[data-theme="light"] .head-strip em {
+  color: #9a6700 !important;
+}
 /* Decisions: Structured Decision Cockpit Deck */
 .live-cockpit-card.decision-card {
   position: relative;

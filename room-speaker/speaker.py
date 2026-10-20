@@ -4,7 +4,9 @@ Speaker: play reb_tts and report source=speaker on reb_voice. With --mic the
 same process also sends the board microphone to reb_mic (microphone.py).
 Cloud AEC stays in Brain. This process only plays, captures and reports what
 the audio callbacks really did. One Room has one speaker and one microphone:
-do not also run the browser audition or the web microphone.
+do not also run the browser audition or the web microphone. With --head the
+program names its robot head, and of two heads in one Room the one started
+later takes over (head.py).
 """
 
 from __future__ import annotations
@@ -13,10 +15,13 @@ import argparse
 import array
 import asyncio
 import base64
+import importlib
 import json
 import logging
 import os
 import queue
+import re
+import signal
 import sys
 import threading
 import time
@@ -266,6 +271,8 @@ class Playback:
         self.underruns = 0
         self.faults = 0
         self.port_status = ""
+        self.volume = 100  # 0-100, set by voice through Brain; 100 = unchanged loudness
+        self.volume_gain = 1.0
         self._clear_stream()
         self.blocked = set()
         self.block_order = deque()
@@ -316,6 +323,14 @@ class Playback:
     def pull(self, frames):
         with self.lock:
             return self._pull(frames)
+
+    def set_volume(self, volume):
+        """Software volume after the device mixer; square law, so 50 is about -12 dB."""
+        if type(volume) is not int or not 0 <= volume <= 100:
+            raise ValueError("音量需要是 0 到 100 的整数")
+        with self.lock:
+            self.volume = volume
+            self.volume_gain = (volume / 100) ** 2
 
     def room_played(self):
         with self.lock:
@@ -591,7 +606,7 @@ class Playback:
                 self.last_progress_played = self._room_played()
             self._commit()
             gain = self._fade_step(events)
-            mixed = int(sample * gain)
+            mixed = int(sample * gain * self.volume_gain)
             if mixed > 32767:
                 mixed = 32767
             elif mixed < -32768:
@@ -610,13 +625,20 @@ class Playback:
         return out, events
 
 
-def mic_module():
-    """microphone.py next to this file, also when loaded by path in tests."""
+def _sibling(name):
+    """A module next to this file, also when this file is loaded by path in tests."""
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
         sys.path.insert(0, here)
-    import microphone
-    return microphone
+    return importlib.import_module(name)
+
+
+def mic_module():
+    return _sibling("microphone")
+
+
+def head_module():
+    return _sibling("head")
 
 
 def build_speaker_presence(identity, playback, *, state=None):
@@ -627,7 +649,7 @@ def build_speaker_presence(identity, playback, *, state=None):
         "data": {
             "protocol_version": 1, "sender": "speaker", "source": "speaker", **identity,
             "state": state or playback.state, "underruns": playback.underruns,
-            "faults": playback.faults,
+            "faults": playback.faults, "volume": playback.volume,
         },
     }
 
@@ -639,6 +661,50 @@ async def report_presence(voice, identity, playback, *, interval=2.0):
             await voice.send(json.dumps(build_speaker_presence(identity, playback),
                                         ensure_ascii=False))
         await asyncio.sleep(interval)
+
+
+def parse_volume(message):
+    """speaker.volume.set from Brain: {"volume": 0-100, "request_id"}; None if not one."""
+    if not isinstance(message, dict) or message.get("type") != "speaker.volume.set":
+        return None
+    data = message.get("data")
+    if not isinstance(data, dict) or data.get("sender") != "brain":
+        return None
+    volume, request_id = data.get("volume"), data.get("request_id")
+    if type(volume) is not int or not 0 <= volume <= 100:
+        raise ValueError("音量无效")
+    if not isinstance(request_id, str) or not 1 <= len(request_id) <= 64:
+        raise ValueError("request_id 无效")
+    return volume, request_id
+
+
+class VolumeStore:
+    """The last volume set by voice, kept across restarts in one small file."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def load(self, default):
+        try:
+            with open(self.path, encoding="utf-8") as handle:
+                value = int(handle.read().strip())
+        except (OSError, ValueError):
+            return default
+        return value if 0 <= value <= 100 else default
+
+    def save(self, volume):
+        try:
+            with open(self.path, "w", encoding="utf-8") as handle:
+                handle.write(f"{volume}\n")
+        except OSError as exc:
+            logger.warning("音量没有保存：%s", exc)
+
+
+def build_volume_ack(identity, playback, request_id):
+    return {"type": "speaker.volume", "description": "扬声器音量已调整",
+            "ts": time.time_ns() // 1_000_000,
+            "data": {"protocol_version": 1, "sender": "speaker", "source": "speaker",
+                     **identity, "volume": playback.volume, "request_id": request_id}}
 
 
 def handle_tts(playback: Playback, gate: CommandGate, message):
@@ -864,11 +930,23 @@ async def run_channel(url, room, robot_id, types, on_message, events, voice=None
         delay = min(15.0, delay * 2)
 
 
+async def _flush(events, seconds=0.3):
+    """Give report_receipts a moment to send a stop receipt already queued."""
+    deadline = time.monotonic() + seconds
+    while not events.empty() and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+
+
 async def serve(tts_url, voice_url, room, playback, events, *, speaker_identity=None,
-                mic=None):
-    """playback=None runs the microphone alone; mic=(url, capture, identity[, recover])."""
+                mic=None, head=None, volume_store=None):
+    """playback=None runs the microphone alone; mic=(url, capture, identity[, recover]).
+
+    With head (head.py) this program announces its robot head and returns
+    "taken_over" once a head started later takes the Room.
+    """
     voice = VoiceLink()
     gate = CommandGate()
+    taken_over = asyncio.Event()
 
     def on_tts(message):
         kind = str(message.get("type") or "") if isinstance(message, dict) else ""
@@ -876,12 +954,37 @@ async def serve(tts_url, voice_url, room, playback, events, *, speaker_identity=
             return handle_control(playback, gate, message)
         return handle_tts(playback, gate, message)
 
+    acks = set()
+
+    def on_volume(message):
+        volume, request_id = parse_volume(message)
+        playback.set_volume(volume)
+        if volume_store is not None:
+            volume_store.save(volume)
+        logger.info("音量 %s", volume)
+        if speaker_identity is not None:
+            ack = json.dumps(build_volume_ack(speaker_identity, playback, request_id),
+                             ensure_ascii=False)
+            task = asyncio.get_running_loop().create_task(voice.send(ack))
+            acks.add(task)
+            task.add_done_callback(acks.discard)
+
     def on_voice(message):
+        if head is not None and head.hear(message):
+            taken_over.set()
+            if playback is not None and playback.key is not None:
+                return playback.stop(playback.key[0], playback.key[1], "taken_over")
+            return []
+        if playback is not None and parse_volume(message) is not None:
+            on_volume(message)
+            return []
         return handle_control(playback, gate, message) if playback is not None else []
 
     tasks = [asyncio.create_task(run_channel(
         voice_url, room, "reb_voice", ["*"], on_voice, events, voice,
     ), name="reb_voice")]
+    # With a head, device reports wait until the head is announced (head.py).
+    reports = voice if head is None else head_module().AnnouncedLink(voice, head)
     if playback is not None:
         tasks += [
             asyncio.create_task(run_channel(
@@ -891,7 +994,7 @@ async def serve(tts_url, voice_url, room, playback, events, *, speaker_identity=
         ]
         if speaker_identity is not None:
             tasks.append(asyncio.create_task(
-                report_presence(voice, speaker_identity, playback), name="presence"))
+                report_presence(reports, speaker_identity, playback), name="presence"))
     if mic is not None:
         module = mic_module()
         mic_url, capture, mic_identity, *rest = mic
@@ -899,23 +1002,45 @@ async def serve(tts_url, voice_url, room, playback, events, *, speaker_identity=
         tasks += [
             asyncio.create_task(module.run_mic_channel(mic_url, room, capture, link),
                                 name="reb_mic"),
-            asyncio.create_task(module.report_mic(capture, link, voice, mic_identity,
+            asyncio.create_task(module.report_mic(capture, link, reports, mic_identity,
                                                   recover=rest[0] if rest else None),
                                 name="mic_receipts"),
         ]
+    if head is not None:
+        tasks.append(asyncio.create_task(head_module().report_head(voice, head), name="head"))
+    waiter = asyncio.create_task(taken_over.wait(), name="taken_over")
     try:
         # Not gather(): cancelling gather() cancels the children at once, and
         # the reb_voice link would be gone before the goodbye below is sent.
-        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        done, _ = await asyncio.wait([*tasks, waiter], return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            task.result()
+            if task is not waiter:
+                task.result()
+        if waiter not in done:
+            return None
+        logger.warning("%s（%s）后启动，已接管本房间；本机停止麦克风和扬声器并退出。"
+                       "要让本机重新接管：sudo systemctl restart annie-room-audio",
+                       head.taken_over_by.get("head_name", "另一个头"),
+                       head.taken_over_by.get("address") or head.taken_over_by.get("host", "?"))
+        return "taken_over"
     finally:
+        reason = "taken_over" if taken_over.is_set() else "exit"
+        # Sound and audio stop first; the reports below still need reb_voice.
+        media = [task for task in tasks if task.get_name() in {"reb_tts", "reb_mic"}]
+        for task in media + [waiter]:
+            task.cancel()
+        await asyncio.gather(*media, waiter, return_exceptions=True)
+
         async def goodbye():
+            if playback is not None:
+                await _flush(events)
             if mic is not None:
-                await mic_module().send_mic_stopped(voice, mic[2], mic[1])
+                await mic_module().send_mic_stopped(voice, mic[2], mic[1], reason)
             if playback is not None and speaker_identity is not None:
                 await voice.send(json.dumps(build_speaker_presence(
                     speaker_identity, playback, state="stopped"), ensure_ascii=False))
+            if head is not None:
+                await voice.send(json.dumps(head.released_message(reason), ensure_ascii=False))
 
         try:
             # Best effort: a clean exit tells Brain at once instead of a 6 s timeout.
@@ -925,6 +1050,23 @@ async def serve(tts_url, voice_url, room, playback, events, *, speaker_identity=
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def until_stopped(coroutine):
+    """systemctl stop/restart sends SIGTERM: leave like Ctrl+C, with the goodbye reports.
+
+    Without them Brain keeps the old instance for 6 s and sees two devices.
+    """
+    task = asyncio.ensure_future(coroutine)
+    try:
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+    except (NotImplementedError, RuntimeError, AttributeError):
+        pass  # Windows: no SIGTERM handler in asyncio
+    try:
+        return await task
+    except asyncio.CancelledError:
+        logger.info("收到停止信号，已发出停止回执")
+        return None
 
 
 def import_sounddevice():
@@ -1065,13 +1207,29 @@ def parse_args(argv):
     parser.add_argument("--mic-device", default=env_text("MIC_DEVICE", ""))
     parser.add_argument("--mic-channel", type=int, default=env_int("MIC_CHANNEL", 0),
                         help="多声道麦克风取第几路，从 0 开始")
+    parser.add_argument("--head", default=env_text("ROBOT_HEAD", ""),
+                        help="机器人头标识，如 big_head。设置后同一 Room 里后启动的头接管，"
+                             "先启动的自动停止")
+    parser.add_argument("--head-name", default=env_text("ROBOT_HEAD_NAME", ""),
+                        help="工作台和大屏显示的名字，如 大头机器人")
+    parser.add_argument("--volume", type=int, default=env_int("SPEAKER_VOLUME", 100),
+                        help="首次启动的音量 0-100（100 = 不改变响度）；之后用对话调的音量")
+    parser.add_argument("--volume-file", default=env_text(
+        "SPEAKER_VOLUME_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                            ".speaker-volume")))
     parser.add_argument("--list-devices", action="store_true")
     args = parser.parse_args(argv)
     if not args.list_devices:
+        if args.head and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", args.head):
+            raise SystemExit("--head 只能用字母、数字、下划线和短横线，最多 40 个字符")
+        if args.head_name and not args.head:
+            raise SystemExit("--head-name 需要同时设置 --head")
         if args.no_speaker and not args.mic:
             raise SystemExit("--no-speaker 需要同时加 --mic，否则什么也不做")
         if args.mic_channel < 0:
             raise SystemExit("--mic-channel 不能是负数")
+        if not 0 <= args.volume <= 100:
+            raise SystemExit("--volume 需要在 0 到 100 之间")
         if not args.room or any(char in args.room for char in "/\\ \t"):
             raise SystemExit("room 无效")
         if not 0 <= args.prebuffer_ms <= 1000:
@@ -1093,7 +1251,16 @@ def main(argv=None):
     tts_url = args.tts_url or room_url(args.host, args.port, args.room, "reb_tts")
     voice_url = args.voice_url or room_url(args.host, args.port, args.room, "reb_voice")
     streams = []
-    playback = speaker_identity = mic = None
+    playback = speaker_identity = mic = head = volume_store = None
+    head_identity = {}
+    if args.head:
+        module = head_module()
+        head = module.Head(args.head, args.head_name,
+                           address=module.local_address(args.host, args.port))
+        head_identity = head.identity()
+        logger.info("机器人头 %s（%s）。同一 Room 里后启动的头接管，先启动的自动停止。",
+                    head.head_name, head.address or head.host)
+    result = None
     try:
         if not args.no_speaker:
             device = resolve_device(args.device)
@@ -1103,11 +1270,15 @@ def main(argv=None):
                                     progress_ms=args.progress_ms)
             except ValueError as exc:
                 raise SystemExit(str(exc)) from exc
+            volume_store = VolumeStore(args.volume_file)
+            playback.set_volume(volume_store.load(args.volume))
             streams.append(start_stream(playback, events, device, rate))
-            speaker_identity = mic_module().device_identity("speaker", name)
+            speaker_identity = {**mic_module().device_identity("speaker", name), **head_identity}
+            if head is not None:
+                head.speaker = name[:80]
             logger.info("扬声器 %s", args.room)
             logger.info("播放 %s", tts_url)
-            logger.info("设备 %s @ %s Hz", name, rate)
+            logger.info("设备 %s @ %s Hz，音量 %s（对话可调）", name, rate, playback.volume)
             logger.info("回执 source=speaker。请关闭同一 Room 的网页调试扬声器。")
         if args.mic:
             module = mic_module()
@@ -1118,22 +1289,27 @@ def main(argv=None):
             streams.append(mic_input)
             mic_url = args.mic_url or room_url(args.host, args.port, args.room, "reb_mic")
             mic = (mic_url, mic_input.capture,
-                   module.device_identity("microphone", mic_input.name), mic_input.reopen)
+                   {**module.device_identity("microphone", mic_input.name), **head_identity},
+                   mic_input.reopen)
+            if head is not None:
+                head.microphone = mic_input.name[:80]
             logger.info("麦克风 %s", mic_url)
             logger.info("设备 %s @ %s Hz × %s 声道，取第 %s 路，发送 16 kHz 单声道",
                         mic_input.name, mic_input.rate, mic_input.channels, args.mic_channel)
             logger.info("回执 source=microphone。请关闭同一 Room 的网页麦克风。")
         logger.info("回执 %s。直连 Room，不走系统代理。", voice_url)
         try:
-            asyncio.run(serve(tts_url, voice_url, args.room, playback, events,
-                              speaker_identity=speaker_identity, mic=mic))
+            result = asyncio.run(until_stopped(serve(
+                tts_url, voice_url, args.room, playback, events,
+                speaker_identity=speaker_identity, mic=mic, head=head,
+                volume_store=volume_store)))
         except KeyboardInterrupt:
             logger.info("已退出。播放中断开不补发 stopped。")
     finally:
         for stream in streams:
             stream.stop()
             stream.close()
-    return 0
+    return head_module().EXIT_TAKEN_OVER if result == "taken_over" else 0
 
 
 if __name__ == "__main__":

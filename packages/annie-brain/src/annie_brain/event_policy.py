@@ -97,6 +97,25 @@ class EventPolicy:
                     "不要提摄像头、识别或画面，不要复述这段说明，不要执行物理动作。"
                 )
                 self.cooldown[greet_key] = now_ms + self.greet_cooldown_ms
+        elif not reason and event.kind == "vision.face_registered":
+            # The person asked to be remembered and is waiting for the answer.
+            name = str(event.payload.get("name") or "").strip()
+            name = "".join(ch for ch in name if ch.isprintable() and ch not in "\r\n")[:24]
+            state = event.payload.get("state")
+            why = str(event.payload.get("reason") or "").strip()[:40]
+            if not name or state not in {"completed", "failed"}:
+                reason = "context_only"
+            else:
+                decision = "need_response"
+                prompt = (
+                    f"现场情况：你刚刚记住了{name}的脸，以后见面能认出TA。"
+                    "这不是用户说的话，也不是要你照念的台词。按你当前的性格，"
+                    "用一句很短、自然的话告诉TA你记住了，可以叫名字。"
+                    if state == "completed" else
+                    f"现场情况：刚才没能记住{name}的脸（{why or '没采到清楚的正脸'}）。"
+                    "这不是用户说的话，也不是要你照念的台词。按你当前的性格，用一句很短的话"
+                    "告诉TA没记住，请TA正对着你、离近一点，再跟你说一次。"
+                ) + "不要提摄像头、样本、注册或系统，不要复述这段说明，不要执行物理动作。"
         elif not reason:
             reason = "context_only"
 
@@ -125,8 +144,13 @@ class EventPolicy:
             "decision": decision, "reason": reason, "transport": transport,
             "observed_ms": when, "expires_at_ms": when + ttl,
             "prompt": prompt, "status": "observed", "summary": fact["summary"],
-            # After a greeting the person usually answers: listen like after a reply.
-            "listen_after": decision == "need_response" and event.kind == "vision.known_arrival",
+            # After a greeting or a face result the person usually answers:
+            # listen like after a reply.
+            "listen_after": decision == "need_response" and event.kind in {
+                "vision.known_arrival", "vision.face_registered"},
+            # A greeting must not cut into someone else's conversation; a face
+            # result answers the person who is waiting for it.
+            "wait_for_quiet": decision == "need_response" and event.kind == "vision.known_arrival",
         }
         self.history.append(row)
         return row

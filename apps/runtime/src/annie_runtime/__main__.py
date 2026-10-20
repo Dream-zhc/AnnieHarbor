@@ -253,6 +253,8 @@ def main():
         side_talk_listen_ms=int(runtime_defaults["duplex"].get("side_talk_listen_ms", 120000)),
         greet_known_cooldown_minutes=float(
             runtime_defaults["vision"].get("greet_known_cooldown_minutes", 30)),
+        face_api_urls=dict(runtime_defaults["vision"].get("face", {}).get("api_urls", {})),
+        face_samples=int(runtime_defaults["vision"].get("face", {}).get("samples", 18)),
         cloud_aec_robots=(tuple(item.strip() for item in os.environ.get(
             "ANNIE_CLOUD_AEC_ROBOTS", "annie-a").split(",") if item.strip())
             if os.environ.get("ANNIE_CLOUD_AEC_ENABLED") == "1" else ()),

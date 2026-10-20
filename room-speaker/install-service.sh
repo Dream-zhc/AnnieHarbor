@@ -31,6 +31,9 @@ WorkingDirectory=$DIR
 ExecStart=/bin/sh $DIR/start.sh
 Restart=always
 RestartSec=5
+# 10 = 同一 Room 里后启动的机器人头接管了本机（head.py）：算正常停止，不自动重启抢回
+SuccessExitStatus=10
+RestartPreventExitStatus=10
 Environment=PYTHONUNBUFFERED=1
 
 [Install]

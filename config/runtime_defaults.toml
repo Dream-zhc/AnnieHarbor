@@ -39,3 +39,10 @@ realtime_on_query = false
 attach_frame_to_main_brain = true
 # 认出的熟人来到面前时主动打招呼；同一个人在这段时间内只打一次（分钟）。挥手不触发回应。
 greet_known_cooldown_minutes = 30
+
+[vision.face]
+# 各机器人自己摄像头的视觉服务（人脸库接口）。配置了的机器人，对话里可以说“记住我，我叫…”和“忘掉我”。
+# 视觉端 192.168.1.13 是 A 机器人（roomv2）的摄像头；B 机器人暂无。
+api_urls = { "annie-a" = "http://192.168.1.13:8766" }
+# 每次注册采集的样本数（视觉端 1–100，默认 18）
+samples = 18

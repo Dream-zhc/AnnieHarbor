@@ -35,6 +35,23 @@ sudo systemctl disable --now annie-room-audio   # 停用自启
 
 服务以安装时的普通用户运行（加入 `audio` 组），读同目录的 `room-audio.env`，异常退出 5 秒后自动重启；开机时 USB 声卡还没就绪也会自动重试。建议直接用声卡硬件名（`--list-devices` 里带 `hw:` 的那几项），不经过 PulseAudio，扬声器回执才贴近声卡实际播放。
 
+### 两个机器人头共用一个 Room
+
+大头机器人（`192.168.1.188`）和 obj 娃娃小机器人（`192.168.1.143`）都接 `roomv2`，平时只开一个。各自在 `room-audio.env` 里写上自己是哪个头：
+
+```sh
+ROBOT_HEAD=big_head
+ROBOT_HEAD_NAME=大头机器人
+```
+
+万一两块板都开了，**后启动的接管**：先启动的那块听到对方后停止播放和采集，发出 `robot.head.released`，然后以退出码 10 退出，systemd 把它记为正常停止、不会再拉起来（`SuccessExitStatus=10`、`RestartPreventExitStatus=10`）。要让它重新接管，在它上面执行 `sudo systemctl restart annie-room-audio`，或者给它断电重启。谁先谁后按各自进程的运行时长比较，与两块板的系统时间是否准确无关。
+
+两块板每 2 秒在 `reb_voice` 发一次 `robot.head.active`（头名、板子地址、麦克风和扬声器）。工作台会显示当前用的是哪个头，大屏顶部状态栏显示“当前：大头机器人（192.168.1.188）”；接管后 10 分钟内两处都会提示是谁接管了谁。其他监听 Room 的前端也可以直接订阅这条消息。没设置 `ROBOT_HEAD` 的程序（例如 Windows 上临时开的扬声器）不参与接管，多开时照旧显示红色冲突提醒。
+
+### 用说话调音量
+
+对小安妮说“大声点 / 小声点 / 音量调到一半”，Brain 会发 `speaker.volume.set`，本程序按 0–100 调软件音量（100 = 声卡原来的响度，只能往小调或调回来），并保存在 `.speaker-volume`，重启后沿用。声卡本身的硬件音量不改；要整体更响，用 `alsamixer` 或 `amixer -c <声卡> sset PCM 100%` 调硬件音量。
+
 ### 机器人上的 Jieli USB 麦克风
 
 这个 USB 麦克风自带降噪/自动增益（`amixer -c Device sget 'Auto Gain Control'`）。开着时房间一安静就输出精确的零，回执里没有峰值，日志在持续 60 秒时提示一次，属正常现象，不会重开设备；只有完全收不到声卡数据才会自动重新打开。是否关闭这个控件见开发记录。
@@ -70,7 +87,10 @@ SPEAKER_ROOM=roomv2
 | `--no-speaker` / `ROOM_SPEAKER=0` | 只开麦克风（须同时开 `--mic`） |
 | `--mic-device` / `MIC_DEVICE` | 麦克风设备编号或名称片段 |
 | `--mic-channel` / `MIC_CHANNEL` | 多声道麦克风阵列取第几路，从 0 开始，默认 0 |
+| `--head` / `ROBOT_HEAD` | 机器人头标识（字母、数字、下划线），设置后参与“后启动的接管” |
+| `--head-name` / `ROBOT_HEAD_NAME` | 工作台和大屏显示的头名，如 `大头机器人` |
 | `--prebuffer-ms`、`--progress-ms` | 扬声器预缓冲、进度回执间隔（原有） |
+| `--volume` / `SPEAKER_VOLUME` | 首次启动的音量 0–100，默认 100（= 声卡原来的响度）；之后用对话调的音量保存在同目录 `.speaker-volume` |
 
 麦克风先按 16 kHz 单声道打开；声卡不支持时按它自己的采样率打开，低通后重采样到 16 kHz。网络慢或断线时最多缓存 500 ms，超过的音频直接丢掉、不补发（Brain 本来也会丢）。
 

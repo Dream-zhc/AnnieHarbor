@@ -102,7 +102,7 @@ class EventService:
                     playback_active=bool(speech and (speech.turn_id or
                         speech.worker and not speech.worker.done())),
                 )
-                if (blocked is None and row.get("listen_after")
+                if (blocked is None and row.get("wait_for_quiet")
                         and time.monotonic() - client._last_conversation_activity_t
                         < GREETING_QUIET_SECONDS):
                     # Do not greet a newcomer into someone else's conversation;

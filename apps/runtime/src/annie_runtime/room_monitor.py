@@ -24,6 +24,7 @@ WARMUP_MESSAGES = 3  # who is already there at start is not an arrival
 # settled within this many messages of arriving; nobody is greeted mid-stay.
 GREET_WINDOW_MESSAGES = 10
 _UNKNOWN_LABELS = ("一位朋友", "另一位朋友", "又一位朋友")
+PEOPLE_VIEW_SECONDS = 5.0  # observations come every second
 # Only clear, positive expressions reach the model. Measured 2026-10-16: a
 # person simply working at a computer was read as 厌恶 for 7 s, then 愤怒 for
 # 3 s. Neutral says nothing; a wrong negative invites "你怎么一脸嫌弃".
@@ -253,6 +254,18 @@ class RoomMonitor:
         self._environment = None
         self.known_arrivals = []
         self.observation_updates = 0
+        self.people_in_view = []  # smoothed rows, for face tools
+        self.people_at = None
+
+    def people_view(self, *, max_age=PEOPLE_VIEW_SECONDS):
+        """Who is in view now (smoothed); None without fresh observations v1."""
+        if self.people_at is None or self.clock() - self.people_at > max_age:
+            return None
+        rows = self.people_in_view
+        return {"count": len(rows),
+                "names": [row["label"] for row in rows if row["known"]],
+                "gaze_name": next((row["label"] for row in rows
+                                   if row["gaze"] and row["known"]), None)}
 
     def on_sam(self, message):
         kind = message.get("type")
@@ -279,6 +292,9 @@ class RoomMonitor:
         now = self.clock()
         people, changes = self._smoother.update(people)
         self.known_arrivals = list(self._smoother.known_arrivals)
+        self.people_in_view = [{"label": row["label"], "known": row["label"] not in _UNKNOWN_LABELS,
+                                "gaze": bool(row["gaze"])} for row in people]
+        self.people_at = now
         self._environments.append(_phrase(observations.get("environment"), 40))
         if len(self._environments) == 2 and self._environments[0] == self._environments[1]:
             self._environment = self._environments[0]  # wording changes every frame
@@ -349,6 +365,7 @@ class RoomMonitor:
         self._environments.clear()
         self._environment = None
         self.known_arrivals = []
+        self.people_at = None
         self.visual_at = self.clock()
         return True
 

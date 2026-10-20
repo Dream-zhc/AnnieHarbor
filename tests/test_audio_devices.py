@@ -64,7 +64,8 @@ def test_a_device_that_stops_reporting_expires():
     assert registry.snapshot()["status"] == "conflict"
     clock.now += DEVICE_TTL_SECONDS + .1
     assert registry.snapshot() == {"status": "ok", "conflicts": [], "microphones": [],
-                                   "speakers": [], "mic_frames_per_second": None}
+                                   "speakers": [], "mic_frames_per_second": None,
+                                   "head": {"current": None, "heads": [], "handover": None}}
 
 
 def test_old_microphones_without_reports_are_caught_by_frame_rate():

@@ -1,0 +1,363 @@
+FFFFFFFFFFFFFFFFFFFFFFF                                                  [100%]
+=================================== FAILURES ===================================
+_ test_typed_english_updates_hint_and_confirmed_tts_selection[Have an iced drink at a small shop.] _
+
+text = 'Have an iced drink at a small shop.'
+
+    @pytest.mark.parametrize('text', [
+        'Have an iced drink at a small shop.', 'What would you like to drink?',
+        "I'm happy to see you!", 'hello', 'no', 'Thanks!',
+    ])
+    def test_typed_english_updates_hint_and_confirmed_tts_selection(text):
+        s = state()
+>       assert s.user_request(text, input_source='typed')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:23: TypeError
+_ test_typed_english_updates_hint_and_confirmed_tts_selection[What would you like to drink?] _
+
+text = 'What would you like to drink?'
+
+    @pytest.mark.parametrize('text', [
+        'Have an iced drink at a small shop.', 'What would you like to drink?',
+        "I'm happy to see you!", 'hello', 'no', 'Thanks!',
+    ])
+    def test_typed_english_updates_hint_and_confirmed_tts_selection(text):
+        s = state()
+>       assert s.user_request(text, input_source='typed')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:23: TypeError
+_ test_typed_english_updates_hint_and_confirmed_tts_selection[I'm happy to see you!] _
+
+text = "I'm happy to see you!"
+
+    @pytest.mark.parametrize('text', [
+        'Have an iced drink at a small shop.', 'What would you like to drink?',
+        "I'm happy to see you!", 'hello', 'no', 'Thanks!',
+    ])
+    def test_typed_english_updates_hint_and_confirmed_tts_selection(text):
+        s = state()
+>       assert s.user_request(text, input_source='typed')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:23: TypeError
+______ test_typed_english_updates_hint_and_confirmed_tts_selection[hello] ______
+
+text = 'hello'
+
+    @pytest.mark.parametrize('text', [
+        'Have an iced drink at a small shop.', 'What would you like to drink?',
+        "I'm happy to see you!", 'hello', 'no', 'Thanks!',
+    ])
+    def test_typed_english_updates_hint_and_confirmed_tts_selection(text):
+        s = state()
+>       assert s.user_request(text, input_source='typed')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:23: TypeError
+_______ test_typed_english_updates_hint_and_confirmed_tts_selection[no] ________
+
+text = 'no'
+
+    @pytest.mark.parametrize('text', [
+        'Have an iced drink at a small shop.', 'What would you like to drink?',
+        "I'm happy to see you!", 'hello', 'no', 'Thanks!',
+    ])
+    def test_typed_english_updates_hint_and_confirmed_tts_selection(text):
+        s = state()
+>       assert s.user_request(text, input_source='typed')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:23: TypeError
+_____ test_typed_english_updates_hint_and_confirmed_tts_selection[Thanks!] _____
+
+text = 'Thanks!'
+
+    @pytest.mark.parametrize('text', [
+        'Have an iced drink at a small shop.', 'What would you like to drink?',
+        "I'm happy to see you!", 'hello', 'no', 'Thanks!',
+    ])
+    def test_typed_english_updates_hint_and_confirmed_tts_selection(text):
+        s = state()
+>       assert s.user_request(text, input_source='typed')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:23: TypeError
+_______ test_continuous_typed_english_remains_english_without_persisting _______
+
+    def test_continuous_typed_english_remains_english_without_persisting():
+        s = state()
+        for i, text in enumerate(['Have an iced drink at a small shop.', 'no', 'hello']):
+>           s.user_request(text, input_source='typed')
+E           TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:38: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[https://example.com/have/an/iced/drink] _
+
+text = 'https://example.com/have/an/iced/drink'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[Paris] _
+
+text = 'Paris'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[OpenAI] _
+
+text = 'OpenAI'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[`Have an iced drink at a small shop.`] _
+
+text = '`Have an iced drink at a small shop.`'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence["Have an iced drink at a small shop."] _
+
+text = '"Have an iced drink at a small shop."'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[print("hello world")] _
+
+text = 'print("hello world")'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[const drink = "iced tea";] _
+
+text = 'const drink = "iced tea";'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[\u8bf7\u7ffb\u8bd1 Have an iced drink at a small shop.] _
+
+text = '请翻译 Have an iced drink at a small shop.'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[\u8fd9\u53e5\u8bdd hello \u662f\u4ec0\u4e48\u610f\u601d] _
+
+text = '这句话 hello 是什么意思'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[SELECT * FROM drinks] _
+
+text = 'SELECT * FROM drinks'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_ test_urls_code_names_quotes_and_other_language_are_not_english_evidence[Bonjour tout le monde] _
+
+text = 'Bonjour tout le monde'
+
+    @pytest.mark.parametrize('text', [
+        'https://example.com/have/an/iced/drink', 'Paris', 'OpenAI',
+        '`Have an iced drink at a small shop.`', '"Have an iced drink at a small shop."',
+        'print("hello world")', 'const drink = "iced tea";',
+        '请翻译 Have an iced drink at a small shop.', '这句话 hello 是什么意思',
+        'SELECT * FROM drinks', 'Bonjour tout le monde',
+    ])
+    def test_urls_code_names_quotes_and_other_language_are_not_english_evidence(text):
+        s = state()
+>       s.user_request(text, input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:59: TypeError
+_______ test_saved_explicit_preferences_override_typed_observation[chat] _______
+
+scope = 'chat'
+
+    @pytest.mark.parametrize('scope', ['chat', 'robot'])
+    def test_saved_explicit_preferences_override_typed_observation(scope):
+        s = state()
+        s.load_preferences({scope: {'language': 'zh', 'dialect': 'sichuan'}})
+>       s.user_request('Have an iced drink at a small shop.', input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:68: TypeError
+______ test_saved_explicit_preferences_override_typed_observation[robot] _______
+
+scope = 'robot'
+
+    @pytest.mark.parametrize('scope', ['chat', 'robot'])
+    def test_saved_explicit_preferences_override_typed_observation(scope):
+        s = state()
+        s.load_preferences({scope: {'language': 'zh', 'dialect': 'sichuan'}})
+>       s.user_request('Have an iced drink at a small shop.', input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:68: TypeError
+_______ test_asr_transcript_never_masquerades_as_typed_language_evidence _______
+
+    def test_asr_transcript_never_masquerades_as_typed_language_evidence():
+        s = state()
+        s.user_request('Have an iced drink at a small shop.')
+>       assert s.snapshot()['typed_input'] is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'typed_input'
+
+tests/test_typed_language_follow.py:79: KeyError
+______ test_unconfirmed_typed_language_does_not_claim_prompt_application _______
+
+    def test_unconfirmed_typed_language_does_not_claim_prompt_application():
+        s = state()
+>       s.user_request('hello', input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:85: TypeError
+_________ test_asr_next_input_and_identity_reset_retire_typed_evidence _________
+
+    def test_asr_next_input_and_identity_reset_retire_typed_evidence():
+        s = state()
+>       s.user_request('hello', input_source='typed')
+E       TypeError: ReplyLanguageState.user_request() got an unexpected keyword argument 'input_source'
+
+tests/test_typed_language_follow.py:93: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_typed_language_follow.py::test_typed_english_updates_hint_and_confirmed_tts_selection[Have an iced drink at a small shop.]
+FAILED tests/test_typed_language_follow.py::test_typed_english_updates_hint_and_confirmed_tts_selection[What would you like to drink?]
+FAILED tests/test_typed_language_follow.py::test_typed_english_updates_hint_and_confirmed_tts_selection[I'm happy to see you!]
+FAILED tests/test_typed_language_follow.py::test_typed_english_updates_hint_and_confirmed_tts_selection[hello]
+FAILED tests/test_typed_language_follow.py::test_typed_english_updates_hint_and_confirmed_tts_selection[no]
+FAILED tests/test_typed_language_follow.py::test_typed_english_updates_hint_and_confirmed_tts_selection[Thanks!]
+FAILED tests/test_typed_language_follow.py::test_continuous_typed_english_remains_english_without_persisting
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[https://example.com/have/an/iced/drink]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[Paris]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[OpenAI]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[`Have an iced drink at a small shop.`]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence["Have an iced drink at a small shop."]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[print("hello world")]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[const drink = "iced tea";]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[\u8bf7\u7ffb\u8bd1 Have an iced drink at a small shop.]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[\u8fd9\u53e5\u8bdd hello \u662f\u4ec0\u4e48\u610f\u601d]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[SELECT * FROM drinks]
+FAILED tests/test_typed_language_follow.py::test_urls_code_names_quotes_and_other_language_are_not_english_evidence[Bonjour tout le monde]
+FAILED tests/test_typed_language_follow.py::test_saved_explicit_preferences_override_typed_observation[chat]
+FAILED tests/test_typed_language_follow.py::test_saved_explicit_preferences_override_typed_observation[robot]
+FAILED tests/test_typed_language_follow.py::test_asr_transcript_never_masquerades_as_typed_language_evidence
+FAILED tests/test_typed_language_follow.py::test_unconfirmed_typed_language_does_not_claim_prompt_application
+FAILED tests/test_typed_language_follow.py::test_asr_next_input_and_identity_reset_retire_typed_evidence
+23 failed in 0.10s

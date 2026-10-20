@@ -1,0 +1,26 @@
+INFO:     Started server process [29263]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/starlette/routing.py", line 648, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-web/src/annie_web/__init__.py", line 29, in lifespan
+    await runtime.start()
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__init__.py", line 160, in start
+    await asyncio.to_thread(self.store.migrate)
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/__init__.py", line 45, in migrate
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.DatabaseError: file is not a database
+
+ERROR:    Application startup failed. Exiting.
+[INFO] stopping existing Annie Harbor pid=29256 on 127.0.0.1:53373 ...
+[INFO] old Annie Harbor pid=29256 stopped; starting replacement.

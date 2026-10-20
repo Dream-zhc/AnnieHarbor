@@ -1,0 +1,19 @@
+{
+  "result": "PASS",
+  "provider": "deterministic_fixture",
+  "http": "real_local_runtime",
+  "physical_audio": "not_tested",
+  "checks": [
+    "actual_submit",
+    "dialect",
+    "explicit_emotion",
+    "expressive",
+    "historical_isolation",
+    "one_based_segments",
+    "collapsed_json",
+    "wire_sample_rate",
+    "390px_no_overflow",
+    "keyboard_tab"
+  ],
+  "page_errors": []
+}

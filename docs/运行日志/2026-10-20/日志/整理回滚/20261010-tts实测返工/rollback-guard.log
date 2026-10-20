@@ -1,0 +1,3 @@
+ROLLBACK_CONFLICT apps/runtime/src/annie_runtime/language.py
+EXIT=2
+PREFLIGHT_NO_PARTIAL_WRITES=PASS

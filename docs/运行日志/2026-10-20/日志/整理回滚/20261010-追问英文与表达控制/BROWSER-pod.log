@@ -1,0 +1,38 @@
+{
+  "result": "PASS",
+  "scope": "Chromium production build with HTTP/SSE fixtures; 950ms timer disabled; no physical microphone",
+  "timings": [
+    {
+      "state": "WAKE_WAIT",
+      "fixture_event_to_observation_ms": 7
+    },
+    {
+      "state": "LISTEN",
+      "fixture_event_to_observation_ms": 5
+    },
+    {
+      "state": "THINK",
+      "fixture_event_to_observation_ms": 4
+    },
+    {
+      "state": "TEXT_RESPONSE",
+      "fixture_event_to_observation_ms": 4
+    },
+    {
+      "state": "TEXT_TTS",
+      "fixture_event_to_observation_ms": 4
+    },
+    {
+      "state": "FOLLOWUP_REPLY",
+      "fixture_event_to_observation_ms": 3
+    },
+    {
+      "state": "SPEAK",
+      "fixture_event_to_observation_ms": 24
+    },
+    {
+      "state": "FOLLOWUP",
+      "fixture_event_to_observation_ms": 26
+    }
+  ]
+}

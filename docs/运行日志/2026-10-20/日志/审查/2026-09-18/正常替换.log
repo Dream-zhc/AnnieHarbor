@@ -1,0 +1,13 @@
+INFO:     Started server process [29256]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:53373 (Press CTRL+C to quit)
+[INFO] stopping existing Annie Harbor pid=29244 on 127.0.0.1:53373 ...
+[INFO] old Annie Harbor pid=29244 stopped; starting replacement.
+INFO:     127.0.0.1:53415 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53416 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53417 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29256]

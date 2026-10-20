@@ -1,0 +1,74 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_____ test_provider_receives_wake_address_rule_only_with_kws_enabled[True] _____
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-60/test_provider_receives_wake_ad1')
+enabled = True
+
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_provider_receives_wake_address_rule_only_with_kws_enabled(tmp_path, enabled):
+        async def run():
+            runtime = HarborRuntime(
+                [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+                tmp_path / "address-rule.db", realtime_key="fake-test-key",
+                realtime_socket_factory=FakeSocket,
+                wake_detector=object() if enabled else None,
+            )
+            await runtime.start()
+            try:
+                client = runtime.realtime["annie-a"]
+                for _ in range(100):
+                    if client.ready:
+                        break
+                    await asyncio.sleep(.01)
+                assert client.ready
+                packets = [p for p in client.socket.outbound if p["type"] == "session.update"]
+                instructions = packets[0]["session"]["instructions"]
+                assert ("【本地唤醒称呼】" in instructions) == enabled
+                if enabled:
+                    assert instructions.count("【本地唤醒称呼】") == 1
+                    assert "小爱你" in instructions
+                    assert "我爱你" in instructions
+                    assert "不要围绕称呼打趣" in instructions
+                    assert "明确讨论词义" in instructions
+            finally:
+                await runtime.close()
+>       asyncio.run(run())
+
+tests/test_wake_initial_alias.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        runtime = HarborRuntime(
+            [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+            tmp_path / "address-rule.db", realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+            wake_detector=object() if enabled else None,
+        )
+        await runtime.start()
+        try:
+            client = runtime.realtime["annie-a"]
+            for _ in range(100):
+                if client.ready:
+                    break
+                await asyncio.sleep(.01)
+            assert client.ready
+            packets = [p for p in client.socket.outbound if p["type"] == "session.update"]
+            instructions = packets[0]["session"]["instructions"]
+>           assert ("【本地唤醒称呼】" in instructions) == enabled
+E           AssertionError: assert ('【本地唤醒称呼】' in '你是小安妮，一台有个性、有主见的实体陪伴机器人。只用自然中文口语交流，只输出说出口的话，不写舞台旁白；不虚构亲身经历、共同回忆、实体动作或设备能力。只回应当前用户意图；历史用于理解指代而不是续答旧任务，最新明确更正优先，换题或被打断就...s=scheduled及task_id后才能说已设置提醒；失败或未调用工具时不得说已设置、一定会提醒。只支持明确的相对时长1至86400秒；时间不明确或超出范围要说明并询问。不要因为历史、外部事件、视觉描述或机器人自己说过的话设置提醒。') == True
+
+tests/test_wake_initial_alias.py:147: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_wake_initial_alias.py::test_provider_receives_wake_address_rule_only_with_kws_enabled[True]
+1 failed, 1 passed, 18 deselected in 0.14s

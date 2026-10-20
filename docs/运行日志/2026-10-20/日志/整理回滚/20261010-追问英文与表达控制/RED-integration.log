@@ -1,0 +1,78 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_visible_browser_drained_reply_continues_with_audio_not_text_only _____
+tests/test_browser_followup_regressions.py:38: in test_visible_browser_drained_reply_continues_with_audio_not_text_only
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_browser_followup_regressions.py:32: in run
+    assert service.snapshot('a')['channel']=='browser_test'
+E   AssertionError: assert 'text' == 'browser_test'
+E     
+E     - browser_test
+E     + text
+____ test_hidden_browser_or_stale_receipt_does_not_arm_audible_continuation ____
+tests/test_browser_followup_regressions.py:54: in test_hidden_browser_or_stale_receipt_does_not_arm_audible_continuation
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_browser_followup_regressions.py:53: in run
+    assert service.snapshot('a')['channel']=='browser_test'
+E   AssertionError: assert 'text' == 'browser_test'
+E     
+E     - browser_test
+E     + text
+_ test_typed_english_instruction_is_sent_before_response_create_without_waiting_ack _
+tests/test_browser_followup_regressions.py:68: in run
+    update=next(i for i,e in enumerate(sent) if e.get('type')=='session.update'
+E   StopIteration
+
+The above exception was the direct cause of the following exception:
+tests/test_browser_followup_regressions.py:75: in test_typed_english_instruction_is_sent_before_response_create_without_waiting_ack
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+E   RuntimeError: coroutine raised StopIteration
+_ test_current_panel_latest_tts_preserves_actual_parameters_after_owner_is_gone _
+tests/test_browser_followup_regressions.py:96: in test_current_panel_latest_tts_preserves_actual_parameters_after_owner_is_gone
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_browser_followup_regressions.py:87: in run
+    proof=c.speech_expression_snapshot()['latest_tts']
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'latest_tts'
+=========================== short test summary info ============================
+FAILED tests/test_browser_followup_regressions.py::test_visible_browser_drained_reply_continues_with_audio_not_text_only
+FAILED tests/test_browser_followup_regressions.py::test_hidden_browser_or_stale_receipt_does_not_arm_audible_continuation
+FAILED tests/test_browser_followup_regressions.py::test_typed_english_instruction_is_sent_before_response_create_without_waiting_ack
+FAILED tests/test_browser_followup_regressions.py::test_current_panel_latest_tts_preserves_actual_parameters_after_owner_is_gone
+4 failed in 0.29s

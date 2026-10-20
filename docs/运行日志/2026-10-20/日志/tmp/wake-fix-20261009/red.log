@@ -1,0 +1,152 @@
+FFF.....FF                                                               [100%]
+=================================== FAILURES ===================================
+_ test_observed_alias_is_rejected_only_as_first_kws_utterance[\u60f3\u7231\u4f60\u3002] _
+
+text = '想爱你。'
+
+    @pytest.mark.parametrize("text", ["想爱你。", "想爱你！", " 想 爱 你 "])
+    def test_observed_alias_is_rejected_only_as_first_kws_utterance(text):
+        policy = DialoguePresence()
+        policy.wake_detected()
+>       assert not finish(policy, text)
+E       AssertionError: assert not True
+E        +  where True = finish(<annie_runtime.presence.DialoguePresence object at 0x10c20f810>, '想爱你。')
+
+tests/test_wake_initial_alias.py:23: AssertionError
+_ test_observed_alias_is_rejected_only_as_first_kws_utterance[\u60f3\u7231\u4f60\uff01] _
+
+text = '想爱你！'
+
+    @pytest.mark.parametrize("text", ["想爱你。", "想爱你！", " 想 爱 你 "])
+    def test_observed_alias_is_rejected_only_as_first_kws_utterance(text):
+        policy = DialoguePresence()
+        policy.wake_detected()
+>       assert not finish(policy, text)
+E       AssertionError: assert not True
+E        +  where True = finish(<annie_runtime.presence.DialoguePresence object at 0x10c20d010>, '想爱你！')
+
+tests/test_wake_initial_alias.py:23: AssertionError
+_ test_observed_alias_is_rejected_only_as_first_kws_utterance[ \u60f3 \u7231 \u4f60 ] _
+
+text = ' 想 爱 你 '
+
+    @pytest.mark.parametrize("text", ["想爱你。", "想爱你！", " 想 爱 你 "])
+    def test_observed_alias_is_rejected_only_as_first_kws_utterance(text):
+        policy = DialoguePresence()
+        policy.wake_detected()
+>       assert not finish(policy, text)
+E       AssertionError: assert not True
+E        +  where True = finish(<annie_runtime.presence.DialoguePresence object at 0x10c058b10>, ' 想 爱 你 ')
+
+tests/test_wake_initial_alias.py:23: AssertionError
+_____________ test_stale_final_does_not_consume_initial_kws_guard ______________
+
+    def test_stale_final_does_not_consume_initial_kws_guard():
+        policy = DialoguePresence()
+        policy.wake_detected()
+        policy.speech_started("current")
+        assert not policy.transcript_accepted("想爱你", item_id="stale")
+>       assert not policy.transcript_accepted("想爱你", item_id="current")
+E       AssertionError: assert not True
+E        +  where True = transcript_accepted('想爱你', item_id='current')
+E        +    where transcript_accepted = <annie_runtime.presence.DialoguePresence object at 0x10c238410>.transcript_accepted
+
+tests/test_wake_initial_alias.py:53: AssertionError
+____ test_runtime_rejects_speculative_output_and_deletes_false_user_context ____
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-38/test_runtime_rejects_speculati0')
+
+    def test_runtime_rejects_speculative_output_and_deletes_false_user_context(tmp_path):
+        async def run():
+            runtime = HarborRuntime(
+                [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+                tmp_path / "runtime.db", realtime_key="fake-test-key",
+                realtime_socket_factory=FakeSocket,
+            )
+            await runtime.start()
+            try:
+                client = runtime.realtime["annie-a"]
+                for _ in range(100):
+                    if client.ready:
+                        break
+                    await asyncio.sleep(.01)
+                assert client.ready
+                client.wake = WakeAdmission(object())
+                client.wake.presence.wake_detected()
+                gen = client.robot.generation
+                for event in (
+                    {"type": "input_audio_buffer.speech_started", "item_id": "wake"},
+                    {"type": "response.created", "response": {"id": "unwanted"}},
+                    {"type": "response.text.delta", "response_id": "unwanted", "delta": "这话太甜了"},
+                    {"type": "conversation.item.input_audio_transcription.completed",
+                     "item_id": "wake", "transcript": "想爱你。"},
+                ):
+                    await client.handle(event, gen)
+                assert client.turn_id is None
+                assert client.robot.recent_context() == []
+                assert client.wake.state == "WAKE_WAIT"
+                assert {"type": "conversation.item.delete", "item_id": "wake"} in client.socket.outbound
+                assert any(p["type"] == "response.cancel" for p in client.socket.outbound)
+                assert not any(e["kind"] == "text.delta" for e in client.events)
+    
+                # The next utterance, even the same words, is genuine user input.
+                await client.handle({"type": "input_audio_buffer.speech_started",
+                                     "item_id": "question"}, gen)
+                await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                                     "item_id": "question", "transcript": "想爱你。"}, gen)
+                assert client.robot.turn_cache[client.turn_id]["user_text"] == "想爱你。"
+            finally:
+                await runtime.close()
+    
+>       asyncio.run(run())
+
+tests/test_wake_initial_alias.py:124: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        runtime = HarborRuntime(
+            [RobotConfig("annie-a", room_id="roomv2", listen_enabled=True)],
+            tmp_path / "runtime.db", realtime_key="fake-test-key",
+            realtime_socket_factory=FakeSocket,
+        )
+        await runtime.start()
+        try:
+            client = runtime.realtime["annie-a"]
+            for _ in range(100):
+                if client.ready:
+                    break
+                await asyncio.sleep(.01)
+            assert client.ready
+            client.wake = WakeAdmission(object())
+            client.wake.presence.wake_detected()
+            gen = client.robot.generation
+            for event in (
+                {"type": "input_audio_buffer.speech_started", "item_id": "wake"},
+                {"type": "response.created", "response": {"id": "unwanted"}},
+                {"type": "response.text.delta", "response_id": "unwanted", "delta": "这话太甜了"},
+                {"type": "conversation.item.input_audio_transcription.completed",
+                 "item_id": "wake", "transcript": "想爱你。"},
+            ):
+                await client.handle(event, gen)
+>           assert client.turn_id is None
+E           AssertionError: assert 'e1a54a61bb5a41ff95a553f772127057' is None
+E            +  where 'e1a54a61bb5a41ff95a553f772127057' = <annie_runtime.realtime.RealtimeRobot object at 0x10c25d2d0>.turn_id
+
+tests/test_wake_initial_alias.py:108: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_wake_initial_alias.py::test_observed_alias_is_rejected_only_as_first_kws_utterance[\u60f3\u7231\u4f60\u3002]
+FAILED tests/test_wake_initial_alias.py::test_observed_alias_is_rejected_only_as_first_kws_utterance[\u60f3\u7231\u4f60\uff01]
+FAILED tests/test_wake_initial_alias.py::test_observed_alias_is_rejected_only_as_first_kws_utterance[ \u60f3 \u7231 \u4f60 ]
+FAILED tests/test_wake_initial_alias.py::test_stale_final_does_not_consume_initial_kws_guard
+FAILED tests/test_wake_initial_alias.py::test_runtime_rejects_speculative_output_and_deletes_false_user_context
+5 failed, 5 passed in 0.14s

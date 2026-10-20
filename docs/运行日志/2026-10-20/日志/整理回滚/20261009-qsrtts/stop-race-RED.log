@@ -1,0 +1,23 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_stop_flag_during_completed_receive_does_not_reenter_read_loop ______
+tests/test_speech_expression_integration.py:223: in test_stop_flag_during_completed_receive_does_not_reenter_read_loop
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_speech_expression_integration.py:218: in run
+    assert done, 'stopping flag must leave receive loop even if receive completed concurrently'
+E   AssertionError: stopping flag must leave receive loop even if receive completed concurrently
+E   assert set()
+------------------------------ Captured log call -------------------------------
+WARNING  annie_runtime.realtime:realtime.py:1241 Realtime robot=a disconnected: ConnectionError: session generation changed
+=========================== short test summary info ============================
+FAILED tests/test_speech_expression_integration.py::test_stop_flag_during_completed_receive_does_not_reenter_read_loop
+1 failed in 0.36s

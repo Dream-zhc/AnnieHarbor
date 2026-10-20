@@ -1,0 +1,4 @@
+{"file": "23", "wake_address_rule": false, "transcript": "", "response": "你好呀！今天过得怎么样？", "scope": "isolated Qwen + seeded mistaken-name history; no Room/TTS/device"}
+{"file": "23", "wake_address_rule": true, "transcript": "", "response": "你好呀！", "scope": "isolated Qwen + seeded mistaken-name history; no Room/TTS/device"}
+{"file": "36", "wake_address_rule": false, "transcript": "", "response": "北京今天天气不错，阳光挺足的，不过早晚有点凉，出门记得多穿件外套。", "scope": "isolated Qwen + seeded mistaken-name history; no Room/TTS/device"}
+{"file": "36", "wake_address_rule": true, "transcript": "小爱你，北京今天天气怎么样？", "response": "北京今天挺晴朗的，阳光正好，气温大概在二十度左右，穿件薄外套刚刚好。", "scope": "isolated Qwen + seeded mistaken-name history; no Room/TTS/device"}

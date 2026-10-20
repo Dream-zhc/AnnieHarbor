@@ -1,0 +1,116 @@
+TAP version 13
+# (node:46796) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: workbench halo phases reflect actual wake, speech and verified playback state
+ok 1 - workbench halo phases reflect actual wake, speech and verified playback state
+  ---
+  duration_ms: 0.375375
+  type: 'test'
+  ...
+# Subtest: state pod is workbench-only, read-only and releases its poll on switch
+ok 2 - state pod is workbench-only, read-only and releases its poll on switch
+  ---
+  duration_ms: 3.550333
+  type: 'test'
+  ...
+# Subtest: text and assistant continuation activity outrank idle microphone wake state
+ok 3 - text and assistant continuation activity outrank idle microphone wake state
+  ---
+  duration_ms: 0.162167
+  type: 'test'
+  ...
+# (node:46797) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: late robot, Chat, Persona, epoch, generation and request results are rejected
+ok 4 - late robot, Chat, Persona, epoch, generation and request results are rejected
+  ---
+  duration_ms: 0.460833
+  type: 'test'
+  ...
+# Subtest: input ASR dialect candidates never become LLM decisions or audible TTS proof
+ok 5 - input ASR dialect candidates never become LLM decisions or audible TTS proof
+  ---
+  duration_ms: 0.182917
+  type: 'test'
+  ...
+# Subtest: TTS wire parameters and independent first PCM, Room publication and speaker evidence stay distinct
+ok 6 - TTS wire parameters and independent first PCM, Room publication and speaker evidence stay distinct
+  ---
+  duration_ms: 0.074959
+  type: 'test'
+  ...
+# Subtest: disabled and failed sidecars preserve preferences and accurately show states
+ok 7 - disabled and failed sidecars preserve preferences and accurately show states
+  ---
+  duration_ms: 0.132292
+  type: 'test'
+  ...
+# Subtest: explicit selection writes only chosen scope and active identity; clear does not claim all preferences
+ok 8 - explicit selection writes only chosen scope and active identity; clear does not claim all preferences
+  ---
+  duration_ms: 0.645417
+  type: 'test'
+  ...
+# Subtest: workbench panel is folded, cancelable, identity scoped and explicitly selects before saving
+ok 9 - workbench panel is folded, cancelable, identity scoped and explicitly selects before saving
+  ---
+  duration_ms: 1.055083
+  type: 'test'
+  ...
+# Subtest: older backend partial language and empty input display unknown without throwing
+ok 10 - older backend partial language and empty input display unknown without throwing
+  ---
+  duration_ms: 0.305833
+  type: 'test'
+  ...
+# Subtest: observation source is allowlisted and monotonic stamp is not displayed as wall time
+ok 11 - observation source is allowlisted and monotonic stamp is not displayed as wall time
+  ---
+  duration_ms: 0.070209
+  type: 'test'
+  ...
+# Subtest: disabled unconfigured sidecar remains not connected and cannot enable; preferences remain visible
+ok 12 - disabled unconfigured sidecar remains not connected and cannot enable; preferences remain visible
+  ---
+  duration_ms: 0.310208
+  type: 'test'
+  ...
+# Subtest: input age uses only server supplied duration and marks observation staleness without browser clock
+ok 13 - input age uses only server supplied duration and marks observation staleness without browser clock
+  ---
+  duration_ms: 0.332709
+  type: 'test'
+  ...
+# Subtest: finished owner does not erase latest same-session actual TTS instruction and parameters
+ok 14 - finished owner does not erase latest same-session actual TTS instruction and parameters
+  ---
+  duration_ms: 0.451833
+  type: 'test'
+  ...
+# Subtest: latest TTS never crosses robot, room, chat, persona, revision, epoch or generation
+ok 15 - latest TTS never crosses robot, room, chat, persona, revision, epoch or generation
+  ---
+  duration_ms: 0.084125
+  type: 'test'
+  ...
+# Subtest: current pending TTS never borrows previous task wire or claims style intent was sent
+ok 16 - current pending TTS never borrows previous task wire or claims style intent was sent
+  ---
+  duration_ms: 0.050666
+  type: 'test'
+  ...
+# Subtest: wire instruction absent, explicitly empty, and safe text preview remain distinct
+ok 17 - wire instruction absent, explicitly empty, and safe text preview remain distinct
+  ---
+  duration_ms: 0.134209
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 122.272625

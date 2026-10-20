@@ -1,0 +1,98 @@
+.FF.FFFFFFFFF                                                            [100%]
+=================================== FAILURES ===================================
+_ test_reported_dialect_requests_reach_policy[\u8bb2\u4e2a\u56db\u5ddd\u8bdd-sichuan] _
+tests/test_tts_expression_regressions.py:20: in test_reported_dialect_requests_reach_policy
+    assert explicit_language_request(text)['dialect'] == dialect
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: 'NoneType' object is not subscriptable
+_ test_reported_dialect_requests_reach_policy[\u6362\u6210\u56db\u5ddd\u8bdd-sichuan] _
+tests/test_tts_expression_regressions.py:20: in test_reported_dialect_requests_reach_policy
+    assert explicit_language_request(text)['dialect'] == dialect
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   TypeError: 'NoneType' object is not subscriptable
+_ test_expressive_request_is_delivery_not_a_fake_emotion_class[\u8bb2\u4e2a\u60c5\u7eea\u4e30\u5bcc\u7684] _
+tests/test_tts_expression_regressions.py:29: in test_expressive_request_is_delivery_not_a_fake_emotion_class
+    assert style.delivery == 'expressive'
+           ^^^^^^^^^^^^^^
+E   AttributeError: 'SpeechStyle' object has no attribute 'delivery'
+_ test_expressive_request_is_delivery_not_a_fake_emotion_class[\u8bed\u6c14\u6709\u611f\u60c5\u4e00\u70b9] _
+tests/test_tts_expression_regressions.py:29: in test_expressive_request_is_delivery_not_a_fake_emotion_class
+    assert style.delivery == 'expressive'
+           ^^^^^^^^^^^^^^
+E   AttributeError: 'SpeechStyle' object has no attribute 'delivery'
+_ test_expressive_request_is_delivery_not_a_fake_emotion_class[\u8bb2\u5f97\u6709\u6291\u626c\u987f\u632b] _
+tests/test_tts_expression_regressions.py:29: in test_expressive_request_is_delivery_not_a_fake_emotion_class
+    assert style.delivery == 'expressive'
+           ^^^^^^^^^^^^^^
+E   AttributeError: 'SpeechStyle' object has no attribute 'delivery'
+_ test_explicit_emotion_synonyms_are_not_lost[\u5f00\u5fc3\u5730\u8bf4\u4e00\u6bb5-excited] _
+tests/test_tts_expression_regressions.py:42: in test_explicit_emotion_synonyms_are_not_lost
+    assert state.style_for('turn').emotion == emotion
+E   AssertionError: assert 'neutral' == 'excited'
+E     
+E     - excited
+E     + neutral
+_ test_explicit_emotion_synonyms_are_not_lost[\u7528\u4f24\u5fc3\u7684\u8bed\u6c14\u8bf4-sad] _
+tests/test_tts_expression_regressions.py:42: in test_explicit_emotion_synonyms_are_not_lost
+    assert state.style_for('turn').emotion == emotion
+E   AssertionError: assert 'serious' == 'sad'
+E     
+E     - sad
+E     + serious
+_ test_explicit_emotion_synonyms_are_not_lost[\u7528\u5632\u8bbd\u7684\u8bed\u6c14\u8bf4-sarcastic] _
+tests/test_tts_expression_regressions.py:42: in test_explicit_emotion_synonyms_are_not_lost
+    assert state.style_for('turn').emotion == emotion
+E   AssertionError: assert 'neutral' == 'sarcastic'
+E     
+E     - sarcastic
+E     + neutral
+____ test_expressive_delivery_does_not_override_serious_context_or_default _____
+tests/test_tts_expression_regressions.py:51: in test_expressive_delivery_does_not_override_serious_context_or_default
+    assert state.style_for('turn').delivery == 'natural'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'SpeechStyle' object has no attribute 'delivery'
+_____ test_sent_tts_events_contain_actual_text_and_sanitized_run_contract ______
+tests/test_tts_expression_regressions.py:80: in test_sent_tts_events_contain_actual_text_and_sanitized_run_contract
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_tts_expression_regressions.py:70: in run
+    assert run_event['parameters'] == {k: v for k, v in sent[0]['payload']['parameters'].items()
+           ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'parameters'
+____ test_actual_tts_contract_is_retained_per_turn_bounded_and_not_borrowed ____
+tests/test_tts_expression_regressions.py:116: in test_actual_tts_contract_is_retained_per_turn_bounded_and_not_borrowed
+    asyncio.run(run())
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_tts_expression_regressions.py:100: in run
+    old = next(t for t in c.diagnostic_snapshot()['turn_timelines'] if t['turn_id'] == 'old')['tts']
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'tts'
+=========================== short test summary info ============================
+FAILED tests/test_tts_expression_regressions.py::test_reported_dialect_requests_reach_policy[\u8bb2\u4e2a\u56db\u5ddd\u8bdd-sichuan]
+FAILED tests/test_tts_expression_regressions.py::test_reported_dialect_requests_reach_policy[\u6362\u6210\u56db\u5ddd\u8bdd-sichuan]
+FAILED tests/test_tts_expression_regressions.py::test_expressive_request_is_delivery_not_a_fake_emotion_class[\u8bb2\u4e2a\u60c5\u7eea\u4e30\u5bcc\u7684]
+FAILED tests/test_tts_expression_regressions.py::test_expressive_request_is_delivery_not_a_fake_emotion_class[\u8bed\u6c14\u6709\u611f\u60c5\u4e00\u70b9]
+FAILED tests/test_tts_expression_regressions.py::test_expressive_request_is_delivery_not_a_fake_emotion_class[\u8bb2\u5f97\u6709\u6291\u626c\u987f\u632b]
+FAILED tests/test_tts_expression_regressions.py::test_explicit_emotion_synonyms_are_not_lost[\u5f00\u5fc3\u5730\u8bf4\u4e00\u6bb5-excited]
+FAILED tests/test_tts_expression_regressions.py::test_explicit_emotion_synonyms_are_not_lost[\u7528\u4f24\u5fc3\u7684\u8bed\u6c14\u8bf4-sad]
+FAILED tests/test_tts_expression_regressions.py::test_explicit_emotion_synonyms_are_not_lost[\u7528\u5632\u8bbd\u7684\u8bed\u6c14\u8bf4-sarcastic]
+FAILED tests/test_tts_expression_regressions.py::test_expressive_delivery_does_not_override_serious_context_or_default
+FAILED tests/test_tts_expression_regressions.py::test_sent_tts_events_contain_actual_text_and_sanitized_run_contract
+FAILED tests/test_tts_expression_regressions.py::test_actual_tts_contract_is_retained_per_turn_bounded_and_not_borrowed
+11 failed, 2 passed in 0.43s

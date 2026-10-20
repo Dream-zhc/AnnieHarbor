@@ -1,0 +1,408 @@
+INFO:     Started server process [32792]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18791 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64649 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /assets/index-CzZiFFGI.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /assets/index-HPlHdHvs.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /assets/wake-state-BYtgtdgF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /assets/workbench-Dj9aslgt.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /assets/workbench-CX4bnEN3.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64917 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64916 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64917 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64916 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64918 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64918 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64916 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64918 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64918 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64916 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64916 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64918 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/context HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64912 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64913 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64911 - "GET /api/robots/annie-a/coordinator HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64916 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64910 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64959 - "GET /assets/index-HPlHdHvs.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /assets/index-CzZiFFGI.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /assets/workbench-CX4bnEN3.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64959 - "GET /assets/wake-state-BYtgtdgF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /assets/workbench-Dj9aslgt.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64959 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64959 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64959 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64968 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64968 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64968 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/context HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64961 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64960 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64958 - "GET /api/robots/annie-a/coordinator HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64966 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64967 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64976 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64979 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65004 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65009 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65010 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64995 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65011 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /assets/index-CzZiFFGI.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /assets/index-HPlHdHvs.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /assets/wake-state-BYtgtdgF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /assets/workbench-CX4bnEN3.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /assets/workbench-Dj9aslgt.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65077 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65077 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65078 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65078 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65078 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/context HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65073 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65076 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65070 - "GET /api/robots/annie-a/coordinator HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65071 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65072 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /assets/index-CzZiFFGI.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /assets/index-HPlHdHvs.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /assets/wake-state-BYtgtdgF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /assets/workbench-Dj9aslgt.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /assets/workbench-CX4bnEN3.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65277 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65277 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65270 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/conversations/default?persona_id=annie HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/context HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65271 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65269 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65268 - "GET /api/robots/annie-a/coordinator HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65276 - "GET /api/robots/annie-a/diagnostics HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65272 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49183 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49185 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+SQLite trace write failed
+Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-observability/src/annie_observability/__init__.py", line 50, in _write
+    await asyncio.to_thread(self.write_batch, batch)
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/__init__.py", line 852, in write_batch
+    with self.connect() as db:
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/__init__.py", line 562, in connect
+    db = sqlite3.connect(self.path, timeout=5)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: unable to open database file
+SQLite trace write failed
+Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-observability/src/annie_observability/__init__.py", line 50, in _write
+    await asyncio.to_thread(self.write_batch, batch)
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/__init__.py", line 852, in write_batch
+    with self.connect() as db:
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/__init__.py", line 562, in connect
+    db = sqlite3.connect(self.path, timeout=5)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: unable to open database file
+INFO:     Application shutdown complete.
+INFO:     Finished server process [32792]

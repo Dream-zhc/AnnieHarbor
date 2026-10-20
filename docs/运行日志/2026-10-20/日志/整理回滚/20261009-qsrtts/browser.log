@@ -1,0 +1,23 @@
+{
+  "result": "passed",
+  "browser": "Chromium headless",
+  "desktop": "1440x900",
+  "narrow": "390x844",
+  "backend": "real_local_fake_runtime",
+  "physical_audio": "not_tested",
+  "checks": [
+    "save",
+    "refresh_persistence",
+    "robot_isolation",
+    "scoped_clear",
+    "not_configured",
+    "unknown",
+    "pending_audible",
+    "narrow_no_overflow",
+    "keyboard_tab",
+    "injected_503",
+    "recovery"
+  ],
+  "page_errors": [],
+  "screenshots": "/Users/dream/Documents/zhc/python/brainv2/docs/开发记录/2026-10-09/QSR语音表达/浏览器证据"
+}

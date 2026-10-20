@@ -1,0 +1,90 @@
+TAP version 13
+# Subtest: Room player keeps a continuous queue across delayed packets and hold/resume
+ok 1 - Room player keeps a continuous queue across delayed packets and hold/resume
+  ---
+  duration_ms: 12.0515
+  type: 'test'
+  ...
+# Subtest: Room player waits for 100ms before recovering from starvation
+ok 2 - Room player waits for 100ms before recovering from starvation
+  ---
+  duration_ms: 7.202333
+  type: 'test'
+  ...
+# Subtest: 44100Hz capture worklet generates identical PCM for different audio blocks
+ok 3 - 44100Hz capture worklet generates identical PCM for different audio blocks
+  ---
+  duration_ms: 70.213542
+  type: 'test'
+  ...
+# Subtest: 48000Hz capture worklet generates identical PCM for different audio blocks
+ok 4 - 48000Hz capture worklet generates identical PCM for different audio blocks
+  ---
+  duration_ms: 49.409208
+  type: 'test'
+  ...
+# Subtest: mic enhancement changes the actual Room PCM and clamps live gain updates
+ok 5 - mic enhancement changes the actual Room PCM and clamps live gain updates
+  ---
+  duration_ms: 4.764542
+  type: 'test'
+  ...
+# Subtest: Demo-style mic noise/SNR uses measured PCM rather than a fixed fake floor
+ok 6 - Demo-style mic noise/SNR uses measured PCM rather than a fixed fake floor
+  ---
+  duration_ms: 5.507875
+  type: 'test'
+  ...
+# Subtest: 44100Hz capture rejects above-Nyquist input before 16k downsampling
+not ok 7 - 44100Hz capture rejects above-Nyquist input before 16k downsampling
+  ---
+  duration_ms: 8.408042
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/room-audio-worklets.test.mjs:132:3'
+  failureType: 'testCodeFailure'
+  error: '10kHz aliases into speech band: ratio=0.8470756450045466'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/room-audio-worklets.test.mjs:145:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 48000Hz capture rejects above-Nyquist input before 16k downsampling
+not ok 8 - 48000Hz capture rejects above-Nyquist input before 16k downsampling
+  ---
+  duration_ms: 8.456334
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/room-audio-worklets.test.mjs:132:3'
+  failureType: 'testCodeFailure'
+  error: '10kHz aliases into speech band: ratio=1.000003801387135'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/room-audio-worklets.test.mjs:145:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 6
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 222.761708

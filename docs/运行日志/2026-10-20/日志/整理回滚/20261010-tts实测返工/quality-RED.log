@@ -1,0 +1,62 @@
+.............FFFFFFF...                                                  [100%]
+=================================== FAILURES ===================================
+______ test_input_sadness_is_reference_not_an_override_of_explicit_acting ______
+tests/test_tts_expression_regressions.py:82: in test_input_sadness_is_reference_not_an_override_of_explicit_acting
+    assert state.style_for('turn').emotion == 'excited'
+E   AssertionError: assert 'warm' == 'excited'
+E     
+E     - excited
+E     + warm
+_ test_negated_or_quoted_style_is_not_positive_excitement[\u7528\u4e0d\u5f00\u5fc3\u7684\u8bed\u6c14\u8bf4\u4e00\u6bb5-sad] _
+tests/test_tts_expression_regressions.py:90: in test_negated_or_quoted_style_is_not_positive_excitement
+    assert explicit_style_request(utterance).get('emotion') == expected
+E   AssertionError: assert 'excited' == 'sad'
+E     
+E     - sad
+E     + excited
+_ test_negated_or_quoted_style_is_not_positive_excitement[\u7528\u4e0d\u9ad8\u5174\u7684\u8bed\u6c14\u8bf4\u4f60\u597d-sad] _
+tests/test_tts_expression_regressions.py:90: in test_negated_or_quoted_style_is_not_positive_excitement
+    assert explicit_style_request(utterance).get('emotion') == expected
+E   AssertionError: assert 'excited' == 'sad'
+E     
+E     - sad
+E     + excited
+_ test_negated_or_quoted_style_is_not_positive_excitement[\u300c\u8bb2\u4e2a\u60c5\u7eea\u4e30\u5bcc\u7684\u300d\u8fd9\u53e5\u8bdd\u662f\u4ec0\u4e48\u610f\u601d-None] _
+tests/test_tts_expression_regressions.py:92: in test_negated_or_quoted_style_is_not_positive_excitement
+    assert explicit_style_request(utterance) == {}
+E   AssertionError: assert {'delivery': 'expressive'} == {}
+E     
+E     Left contains 1 more item:
+E     {'delivery': 'expressive'}
+E     Use -v to get more diff
+_________ test_request_not_to_act_explicitly_selects_natural_delivery __________
+tests/test_tts_expression_regressions.py:96: in test_request_not_to_act_explicitly_selects_natural_delivery
+    assert explicit_style_request('不要表演，正常播报') == {'delivery': 'natural'}
+E   AssertionError: assert {} == {'delivery': 'natural'}
+E     
+E     Right contains 1 more item:
+E     {'delivery': 'natural'}
+E     Use -v to get more diff
+__________ test_early_emotion_is_not_replayed_on_unrelated_next_turn ___________
+tests/test_tts_expression_regressions.py:107: in test_early_emotion_is_not_replayed_on_unrelated_next_turn
+    assert state.style_for('two').emotion == 'neutral'
+E   AssertionError: assert 'sad' == 'neutral'
+E     
+E     - neutral
+E     + sad
+_______ test_late_frozen_turn_emotion_is_consumed_by_only_the_next_turn ________
+tests/test_tts_expression_regressions.py:123: in test_late_frozen_turn_emotion_is_consumed_by_only_the_next_turn
+    assert state.style_for('three').emotion == 'neutral'
+E   AssertionError: assert 'sad' == 'neutral'
+E     
+E     - neutral
+E     + sad
+=========================== short test summary info ============================
+FAILED tests/test_tts_expression_regressions.py::test_input_sadness_is_reference_not_an_override_of_explicit_acting
+FAILED tests/test_tts_expression_regressions.py::test_negated_or_quoted_style_is_not_positive_excitement[\u7528\u4e0d\u5f00\u5fc3\u7684\u8bed\u6c14\u8bf4\u4e00\u6bb5-sad]
+FAILED tests/test_tts_expression_regressions.py::test_negated_or_quoted_style_is_not_positive_excitement[\u7528\u4e0d\u9ad8\u5174\u7684\u8bed\u6c14\u8bf4\u4f60\u597d-sad]
+FAILED tests/test_tts_expression_regressions.py::test_negated_or_quoted_style_is_not_positive_excitement[\u300c\u8bb2\u4e2a\u60c5\u7eea\u4e30\u5bcc\u7684\u300d\u8fd9\u53e5\u8bdd\u662f\u4ec0\u4e48\u610f\u601d-None]
+FAILED tests/test_tts_expression_regressions.py::test_request_not_to_act_explicitly_selects_natural_delivery
+FAILED tests/test_tts_expression_regressions.py::test_early_emotion_is_not_replayed_on_unrelated_next_turn
+FAILED tests/test_tts_expression_regressions.py::test_late_frozen_turn_emotion_is_consumed_by_only_the_next_turn
+7 failed, 16 passed in 0.11s

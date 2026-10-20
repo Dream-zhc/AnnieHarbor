@@ -1,0 +1,85 @@
+........................................................................ [ 12%]
+..........F............................................................. [ 25%]
+.................................................................................................................. [ 45%]
+........................................................................ [ 58%]
+........................................................................ [ 71%]
+........................................................................ [ 83%]
+............................................................ [ 94%]
+................................                                         [100%]
+=================================== FAILURES ===================================
+____________ test_new_turn_revokes_word_during_durable_reservation _____________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-53/test_new_turn_revokes_word_dur1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d2877d0>
+
+    def test_new_turn_revokes_word_during_durable_reservation(tmp_path, monkeypatch):
+        import threading
+    
+        async def run():
+            actions, pubs, _events, robot, _b = coordinator(tmp_path)
+            speech = speech_for(robot)
+            entered, release = threading.Event(), threading.Event()
+            original = actions.store.reserve_action
+    
+            def paused_reservation(*args):
+                entered.set()
+                assert release.wait(timeout=2)
+                return original(*args)
+    
+            monkeypatch.setattr(actions.store, "reserve_action", paused_reservation)
+            await actions.start()
+            try:
+                pending = asyncio.create_task(request(actions, speech))
+                await wait_for(entered.is_set)
+                actions.on_turn_started({**speech.identity, "turn_id": "next-turn"})
+                release.set()
+                result = await pending
+                assert result["status"] == "cancelled_before_send"
+                actions.on_alignment(aligned(speech))
+                await asyncio.sleep(.03)
+                assert not pubs["A"].sent
+                assert actions.store.get_action("A", "call")["status"] == "cancelled_before_send"
+            finally:
+                release.set()
+                await actions.close()
+>       asyncio.run(run())
+
+tests/test_action_speech_anchor.py:663: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_action_speech_anchor.py:651: in run
+    await wait_for(entered.is_set)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = <bound method Event.is_set of <threading.Event at 0x10d46f450: unset>>
+
+    async def wait_for(condition):
+        for _ in range(80):
+            if condition():
+                return
+            await asyncio.sleep(.01)
+>       raise AssertionError("async action did not complete")
+E       AssertionError: async action did not complete
+
+tests/test_phase7_execution.py:69: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/starlette/testclient.py:53
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+.venv/lib/python3.11/site-packages/trustcall/_base.py:46
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/trustcall/_base.py:46: LangGraphDeprecatedSinceV10: Importing Send from langgraph.constants is deprecated. Please use 'from langgraph.types import Send' instead. Deprecated in LangGraph V1.0 to be removed in V2.0.
+    from langgraph.constants import Send
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_action_speech_anchor.py::test_new_turn_revokes_word_during_durable_reservation
+1 failed, 565 passed, 2 warnings, 42 subtests passed in 28.41s

@@ -1,0 +1,30 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ SherpaKeywordConfigTests.test_default_and_experimental_files_remain_separate _
+
+self = <tests.test_phase_vp_sherpa.SherpaKeywordConfigTests testMethod=test_default_and_experimental_files_remain_separate>
+
+    def test_default_and_experimental_files_remain_separate(self):
+        default = (ROOT / "config/小安妮唤醒词.tokens.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        experimental = (ROOT / "config/小安妮唤醒词_宽松实验.tokens.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+>       self.assertEqual(default, [
+            "x iǎo ān n ī :1.5 @小安妮",
+            "x iǎo ài n ǐ :1.5 #0.25 @小安妮",
+        ])
+E       AssertionError: Lists differ: ['x iǎo ān n ī :1.5 @小安妮'] != ['x iǎo ān n ī :1.5 @小安妮', 'x iǎo ài n ǐ :1.5 #0.25 @小安妮']
+E       
+E       Second list contains 1 additional elements.
+E       First extra element 1:
+E       'x iǎo ài n ǐ :1.5 #0.25 @小安妮'
+E       
+E       - ['x iǎo ān n ī :1.5 @小安妮']
+E       + ['x iǎo ān n ī :1.5 @小安妮', 'x iǎo ài n ǐ :1.5 #0.25 @小安妮']
+
+tests/test_phase_vp_sherpa.py:20: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_phase_vp_sherpa.py::SherpaKeywordConfigTests::test_default_and_experimental_files_remain_separate
+1 failed in 0.07s

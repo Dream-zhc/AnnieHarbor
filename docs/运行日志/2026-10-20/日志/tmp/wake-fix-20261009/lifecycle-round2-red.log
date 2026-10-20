@@ -1,0 +1,67 @@
+.............FFF..                                                       [100%]
+=================================== FAILURES ===================================
+_ test_unknown_item_replacement_does_not_filter_second_real_utterance[first-None] _
+
+first_item_id = 'first', second_item_id = None
+
+    @pytest.mark.parametrize("first_item_id, second_item_id", [
+        ("first", None), (None, "second"), (None, None),
+    ])
+    def test_unknown_item_replacement_does_not_filter_second_real_utterance(
+        first_item_id, second_item_id,
+    ):
+        policy = DialoguePresence()
+        policy.wake_detected()
+        assert policy.speech_started(first_item_id)
+        assert policy.speech_started(second_item_id)
+>       assert policy.transcript_accepted("想爱你。", item_id=second_item_id)
+E       AssertionError: assert False
+E        +  where False = transcript_accepted('想爱你。', item_id=None)
+E        +    where transcript_accepted = <annie_runtime.presence.DialoguePresence object at 0x10c9f1a50>.transcript_accepted
+
+tests/test_wake_initial_alias.py:102: AssertionError
+_ test_unknown_item_replacement_does_not_filter_second_real_utterance[None-second] _
+
+first_item_id = None, second_item_id = 'second'
+
+    @pytest.mark.parametrize("first_item_id, second_item_id", [
+        ("first", None), (None, "second"), (None, None),
+    ])
+    def test_unknown_item_replacement_does_not_filter_second_real_utterance(
+        first_item_id, second_item_id,
+    ):
+        policy = DialoguePresence()
+        policy.wake_detected()
+        assert policy.speech_started(first_item_id)
+        assert policy.speech_started(second_item_id)
+>       assert policy.transcript_accepted("想爱你。", item_id=second_item_id)
+E       AssertionError: assert False
+E        +  where False = transcript_accepted('想爱你。', item_id='second')
+E        +    where transcript_accepted = <annie_runtime.presence.DialoguePresence object at 0x10c8e0b50>.transcript_accepted
+
+tests/test_wake_initial_alias.py:102: AssertionError
+_ test_unknown_item_replacement_does_not_filter_second_real_utterance[None-None] _
+
+first_item_id = None, second_item_id = None
+
+    @pytest.mark.parametrize("first_item_id, second_item_id", [
+        ("first", None), (None, "second"), (None, None),
+    ])
+    def test_unknown_item_replacement_does_not_filter_second_real_utterance(
+        first_item_id, second_item_id,
+    ):
+        policy = DialoguePresence()
+        policy.wake_detected()
+        assert policy.speech_started(first_item_id)
+        assert policy.speech_started(second_item_id)
+>       assert policy.transcript_accepted("想爱你。", item_id=second_item_id)
+E       AssertionError: assert False
+E        +  where False = transcript_accepted('想爱你。', item_id=None)
+E        +    where transcript_accepted = <annie_runtime.presence.DialoguePresence object at 0x10c9f3710>.transcript_accepted
+
+tests/test_wake_initial_alias.py:102: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_wake_initial_alias.py::test_unknown_item_replacement_does_not_filter_second_real_utterance[first-None]
+FAILED tests/test_wake_initial_alias.py::test_unknown_item_replacement_does_not_filter_second_real_utterance[None-second]
+FAILED tests/test_wake_initial_alias.py::test_unknown_item_replacement_does_not_filter_second_real_utterance[None-None]
+3 failed, 15 passed in 0.12s

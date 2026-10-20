@@ -1,0 +1,129 @@
+TAP version 13
+# (node:47790) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: late robot, Chat, Persona, epoch, generation and request results are rejected
+ok 1 - late robot, Chat, Persona, epoch, generation and request results are rejected
+  ---
+  duration_ms: 0.537833
+  type: 'test'
+  ...
+# Subtest: input ASR dialect candidates never become LLM decisions or audible TTS proof
+ok 2 - input ASR dialect candidates never become LLM decisions or audible TTS proof
+  ---
+  duration_ms: 0.196458
+  type: 'test'
+  ...
+# Subtest: TTS wire parameters and independent first PCM, Room publication and speaker evidence stay distinct
+ok 3 - TTS wire parameters and independent first PCM, Room publication and speaker evidence stay distinct
+  ---
+  duration_ms: 0.093792
+  type: 'test'
+  ...
+# Subtest: disabled and failed sidecars preserve preferences and accurately show states
+ok 4 - disabled and failed sidecars preserve preferences and accurately show states
+  ---
+  duration_ms: 0.1755
+  type: 'test'
+  ...
+# Subtest: explicit selection writes only chosen scope and active identity; clear does not claim all preferences
+ok 5 - explicit selection writes only chosen scope and active identity; clear does not claim all preferences
+  ---
+  duration_ms: 0.672584
+  type: 'test'
+  ...
+# Subtest: workbench panel is folded, cancelable, identity scoped and explicitly selects before saving
+ok 6 - workbench panel is folded, cancelable, identity scoped and explicitly selects before saving
+  ---
+  duration_ms: 1.583708
+  type: 'test'
+  ...
+# Subtest: older backend partial language and empty input display unknown without throwing
+ok 7 - older backend partial language and empty input display unknown without throwing
+  ---
+  duration_ms: 0.243292
+  type: 'test'
+  ...
+# Subtest: observation source is allowlisted and monotonic stamp is not displayed as wall time
+ok 8 - observation source is allowlisted and monotonic stamp is not displayed as wall time
+  ---
+  duration_ms: 0.094167
+  type: 'test'
+  ...
+# Subtest: disabled unconfigured sidecar remains not connected and cannot enable; preferences remain visible
+ok 9 - disabled unconfigured sidecar remains not connected and cannot enable; preferences remain visible
+  ---
+  duration_ms: 0.312916
+  type: 'test'
+  ...
+# Subtest: input age uses only server supplied duration and marks observation staleness without browser clock
+ok 10 - input age uses only server supplied duration and marks observation staleness without browser clock
+  ---
+  duration_ms: 0.264375
+  type: 'test'
+  ...
+# Subtest: finished owner does not erase latest same-session actual TTS instruction and parameters
+ok 11 - finished owner does not erase latest same-session actual TTS instruction and parameters
+  ---
+  duration_ms: 1.648083
+  type: 'test'
+  ...
+# Subtest: latest TTS never crosses robot, room, chat, persona, revision, epoch or generation
+ok 12 - latest TTS never crosses robot, room, chat, persona, revision, epoch or generation
+  ---
+  duration_ms: 0.087875
+  type: 'test'
+  ...
+# Subtest: current pending TTS never borrows previous task wire or claims style intent was sent
+ok 13 - current pending TTS never borrows previous task wire or claims style intent was sent
+  ---
+  duration_ms: 0.059542
+  type: 'test'
+  ...
+# Subtest: wire instruction absent, explicitly empty, and safe text preview remain distinct
+ok 14 - wire instruction absent, explicitly empty, and safe text preview remain distinct
+  ---
+  duration_ms: 0.109459
+  type: 'test'
+  ...
+# Subtest: partial identities are not sufficient proof and latest failed task stays visibly failed
+not ok 15 - partial identities are not sufficient proof and latest failed task stays visibly failed
+  ---
+  duration_ms: 1.605
+  type: 'test'
+  location: '/Users/dream/Documents/zhc/python/brainv2/web/tests/speech-expression.test.mjs:166:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'TTS 失败'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'TTS 失败'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/dream/Documents/zhc/python/brainv2/web/tests/speech-expression.test.mjs:173:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: recent wire evidence never borrows latency or device proof from another owner
+ok 16 - recent wire evidence never borrows latency or device proof from another owner
+  ---
+  duration_ms: 0.037625
+  type: 'test'
+  ...
+1..16
+# tests 16
+# suites 0
+# pass 15
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 125.426208

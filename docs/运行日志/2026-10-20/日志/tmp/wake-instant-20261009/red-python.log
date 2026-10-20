@@ -1,0 +1,33 @@
+.F.......                                                                [100%]
+=================================== FAILURES ===================================
+_ SherpaKeywordConfigTests.test_real_model_reports_kws_audio_level_and_decoder_progress _
+
+self = <tests.test_phase_vp_sherpa.SherpaKeywordConfigTests testMethod=test_real_model_reports_kws_audio_level_and_decoder_progress>
+
+    def test_real_model_reports_kws_audio_level_and_decoder_progress(self):
+        import wave
+    
+        from annie_adapters.kws import SherpaWakeModel
+    
+        root = ROOT / "var/models/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+        if not (root / "test_wavs/zh_3.wav").is_file():
+            self.skipTest("optional official sherpa test fixture is not installed")
+        model = SherpaWakeModel(root, keywords=root / "test_wavs/keywords.txt")
+        stream = model.new_stream()
+        with wave.open(str(root / "test_wavs/zh_3.wav")) as wav:
+            pcm = wav.readframes(wav.getnframes())
+        triggered = any(stream._decode(pcm[i:i + 3200])
+                        for i in range(0, len(pcm), 3200))
+        self.assertTrue(triggered)
+        self.assertGreater(stream.decoded_batches, 0)
+        self.assertGreater(stream.input_dbfs, -55)
+        self.assertIsNotNone(stream.last_keyword)
+        self.assertIsNotNone(stream.last_decode_ms)
+>       self.assertTrue(stream.last_keyword_tokens)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'SherpaWakeStream' object has no attribute 'last_keyword_tokens'
+
+tests/test_phase_vp_sherpa.py:58: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_phase_vp_sherpa.py::SherpaKeywordConfigTests::test_real_model_reports_kws_audio_level_and_decoder_progress
+1 failed, 8 passed in 0.55s

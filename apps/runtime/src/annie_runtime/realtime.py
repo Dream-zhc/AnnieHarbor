@@ -44,6 +44,7 @@ from annie_brain.persona import (
 )
 from annie_core import RobotUnavailableError
 
+from annie_runtime.display import DISPLAY_NOTIFY_KINDS
 from annie_runtime.faces import face_name
 from annie_runtime.language import ReplyLanguageState, explicit_language_request
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
@@ -238,6 +239,7 @@ class RealtimeRobot:
         self.prompt_snapshot = None
         self.prompt_history = deque(maxlen=4)
         self.voice_event = None  # optional same-room reb_voice status relay
+        self.display_event = None  # optional reb_display relay; must not await the room
         self.voices = None  # optional persistent TTS voice catalog, no extra LLM
         self.speakers = None  # optional global voiceprint tracker, no extra LLM
         self.visual_observer = None  # fresh Room observation, not a second LLM
@@ -582,6 +584,12 @@ class RealtimeRobot:
             self._log_latency(kind, fields)
         if self.idle_observer is not None:
             self.idle_observer(event)
+        if self.display_event is not None and kind in DISPLAY_NOTIFY_KINDS:
+            try:
+                self.display_event(kind, event)
+            except Exception as exc:
+                logger.warning("display event dropped robot=%s kind=%s: %s",
+                               self.robot.config.robot_id, kind, type(exc).__name__)
         if self.voice_event and kind in {
             "speech.started", "speech.stopped", "transcript.done",
             "transcript.ambient", "transcript.ambient_promoted",

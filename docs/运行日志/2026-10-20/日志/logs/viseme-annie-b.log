@@ -1,0 +1,81 @@
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s][VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 2522.13it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=55828.1ms online_warm=-
+[G2PW            ] loading g2pW...
+[G2PW_WARN       ] warmup timeout after 8.0s
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=55828.1ms online_warm=372.0ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv3/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv3/reb_tts
+[VISEME] reb_tts connected + subscribed
+[VISEME] reb_sam connected + subscribed
+[VISEME] ready
+[G2PW            ] ready in 128669.9ms
+[VISEME] g2pW background engine=g2pw
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 2029.42it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=7973.7ms online_warm=-
+[G2PW            ] loading g2pW...
+[G2PW_WARN       ] warmup timeout after 8.0s
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=7973.7ms online_warm=2490.7ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv3/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv3/reb_tts
+[VISEME] reb_sam connected + subscribed
+[VISEME] reb_tts connected + subscribed
+[VISEME] ready
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[G2PW            ] ready in 21711.9ms
+[VISEME] g2pW background engine=g2pw
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 3454.59it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=6415.3ms online_warm=-
+[G2PW            ] loading g2pW...
+[G2PW_WARN       ] warmup timeout after 8.0s
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=6415.3ms online_warm=716.0ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv3/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv3/reb_tts
+[VISEME] reb_tts connected + subscribed
+[VISEME] reb_sam connected + subscribed
+[VISEME] ready
+[G2PW            ] ready in 18110.4ms
+[VISEME] g2pW background engine=g2pw
+[VISEME] stopping
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 2012.14it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=22942.6ms online_warm=-
+[G2PW            ] loading g2pW...
+[G2PW_WARN       ] warmup timeout after 8.0s
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=22942.6ms online_warm=920.5ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv3/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv3/reb_tts
+[VISEME] reb_tts connected + subscribed
+[VISEME] reb_sam connected + subscribed
+[VISEME] ready
+[G2PW            ] ready in 34709.2ms
+[VISEME] g2pW background engine=g2pw
+[VISEME] stopping
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 555.29it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=5551.8ms online_warm=-
+[G2PW            ] loading g2pW...
+[G2PW_WARN       ] warmup timeout after 8.0s
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=5551.8ms online_warm=6601.2ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv3/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv3/reb_tts
+[VISEME] reb_tts connected + subscribed
+[VISEME] reb_sam connected + subscribed
+[VISEME] ready
+[G2PW            ] ready in 19384.5ms
+[VISEME] g2pW background engine=g2pw
+[VISEME] stopping

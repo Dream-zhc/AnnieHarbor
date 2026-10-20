@@ -1,0 +1,12 @@
+{"voice": "A原始", "variant": "自然", "status": "completed", "path": "/Users/dream/Documents/zhc/python/brainv2/var/试听/20261010-原始当前音色对照/A原始-自然.wav", "duration_ms": 6500.0, "first_pcm_ms": 659.59, "task_finished": true}
+{"voice": "A原始", "variant": "调皮兴奋", "status": "completed", "path": "/Users/dream/Documents/zhc/python/brainv2/var/试听/20261010-原始当前音色对照/A原始-调皮兴奋.wav", "duration_ms": 8260.0, "first_pcm_ms": 881.29, "task_finished": true}
+{"voice": "B当前", "variant": "自然", "status": "completed", "path": "/Users/dream/Documents/zhc/python/brainv2/var/试听/20261010-原始当前音色对照/B当前-自然.wav", "duration_ms": 6340.0, "first_pcm_ms": 596.91, "task_finished": true}
+{"voice": "B当前", "variant": "调皮兴奋", "status": "completed", "path": "/Users/dream/Documents/zhc/python/brainv2/var/试听/20261010-原始当前音色对照/B当前-调皮兴奋.wav", "duration_ms": 8180.0, "first_pcm_ms": 393.15, "task_finished": true}
+AB_COMPLETED=4/4
+A原始 自然 WAV_REOPEN=PASS duration_ms=6500.0 rms_dbfs=-12.66 peak_dbfs=-0.0
+A原始 调皮兴奋 WAV_REOPEN=PASS duration_ms=8260.0 rms_dbfs=-12.36 peak_dbfs=-0.0
+B当前 自然 WAV_REOPEN=PASS duration_ms=6340.0 rms_dbfs=-12.25 peak_dbfs=-0.0
+B当前 调皮兴奋 WAV_REOPEN=PASS duration_ms=8180.0 rms_dbfs=-12.04 peak_dbfs=-0.0
+IDENTICAL_TEXT_CHUNKS_AND_NON_INSTRUCTION_PARAMETERS=PASS
+ROOM_CONNECTIONS=0; LISTENING=USER_PENDING
+PROBE_CLEANUP=PASS

@@ -1,0 +1,186 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+______________ test_preference_api_identity_reload_and_isolation _______________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-79/test_preference_api_identity_r0')
+
+    def test_preference_api_identity_reload_and_isolation(tmp_path):
+        async def run():
+            runtime = HarborRuntime([RobotConfig('a', 'r1'), RobotConfig('b', 'r2')],
+                                    tmp_path/'runtime.db', realtime_key='fixture',
+                                    realtime_socket_factory=FakeSocket)
+            await runtime.start()
+            try:
+                await ready(runtime)
+                identity = runtime.session_state('a')
+                result = await runtime.set_language_preference('a', scope='chat', language='zh',
+                        dialect='sichuan', request_id='click-1', expected_identity=identity)
+                assert result['status'] == 'set'
+                assert runtime.realtime['a'].language.preferences['chat']['dialect'] == 'sichuan'
+                assert runtime.realtime['b'].language.preferences['chat'] is None
+                await runtime.switch_session('a', chat_id='another', persona_id='default')
+                with pytest.raises(RobotUnavailableError):
+                    await runtime.set_language_preference('a', scope='robot', language='en',
+                        dialect='unknown', request_id='stale', expected_identity=identity)
+                await ready(runtime)
+                assert runtime.realtime['a'].language.preferences['chat'] is None
+            finally:
+                await runtime.close()
+>       asyncio.run(run())
+
+tests/test_speech_expression_integration.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        runtime = HarborRuntime([RobotConfig('a', 'r1'), RobotConfig('b', 'r2')],
+                                tmp_path/'runtime.db', realtime_key='fixture',
+                                realtime_socket_factory=FakeSocket)
+        await runtime.start()
+        try:
+            await ready(runtime)
+            identity = runtime.session_state('a')
+>           result = await runtime.set_language_preference('a', scope='chat', language='zh',
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    dialect='sichuan', request_id='click-1', expected_identity=identity)
+E                   AttributeError: 'HarborRuntime' object has no attribute 'set_language_preference'
+
+tests/test_speech_expression_integration.py:46: AttributeError
+_______________ test_tool_requires_matching_explicit_user_scope ________________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-79/test_tool_requires_matching_ex0')
+
+    def test_tool_requires_matching_explicit_user_scope(tmp_path):
+        async def run():
+            runtime = HarborRuntime([RobotConfig('a', 'r')], tmp_path/'runtime.db',
+                                    realtime_key='fixture', realtime_socket_factory=FakeSocket)
+            await runtime.start()
+            try:
+                await ready(runtime)
+                c = runtime.realtime['a']
+                await c.submit_text('我们去四川旅游吧')
+                await c._tool_call({'call_id':'bad','name':'set_language_preference',
+                                   'arguments':json.dumps(dict(scope='robot',language='zh',dialect='sichuan'))})
+                outputs=[e['item']['output'] for e in c.socket.outbound if e.get('item',{}).get('type')=='function_call_output']
+                assert json.loads(outputs[-1])['status'] == 'rejected'
+                assert runtime.store.load_language_preferences('a',c.robot.chat_id)['robot'] is None
+                await c.cancel()
+                await c.submit_text('以后你都用英语')
+                await c._tool_call({'call_id':'good','name':'set_language_preference',
+                                   'arguments':json.dumps(dict(scope='robot',language='en',dialect='unknown'))})
+                assert runtime.store.load_language_preferences('a',c.robot.chat_id)['robot']['language']=='en'
+            finally:
+                await runtime.close()
+>       asyncio.run(run())
+
+tests/test_speech_expression_integration.py:83: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        runtime = HarborRuntime([RobotConfig('a', 'r')], tmp_path/'runtime.db',
+                                realtime_key='fixture', realtime_socket_factory=FakeSocket)
+        await runtime.start()
+        try:
+            await ready(runtime)
+            c = runtime.realtime['a']
+            await c.submit_text('我们去四川旅游吧')
+            await c._tool_call({'call_id':'bad','name':'set_language_preference',
+                               'arguments':json.dumps(dict(scope='robot',language='zh',dialect='sichuan'))})
+            outputs=[e['item']['output'] for e in c.socket.outbound if e.get('item',{}).get('type')=='function_call_output']
+            assert json.loads(outputs[-1])['status'] == 'rejected'
+            assert runtime.store.load_language_preferences('a',c.robot.chat_id)['robot'] is None
+            await c.cancel()
+            await c.submit_text('以后你都用英语')
+            await c._tool_call({'call_id':'good','name':'set_language_preference',
+                               'arguments':json.dumps(dict(scope='robot',language='en',dialect='unknown'))})
+>           assert runtime.store.load_language_preferences('a',c.robot.chat_id)['robot']['language']=='en'
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           TypeError: 'NoneType' object is not subscriptable
+
+tests/test_speech_expression_integration.py:80: TypeError
+______ test_main_sidecar_association_uses_sample_window_not_text_or_item _______
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-79/test_main_sidecar_association_0')
+
+    def test_main_sidecar_association_uses_sample_window_not_text_or_item(tmp_path):
+        async def run():
+            runtime = HarborRuntime([RobotConfig('a','r')],tmp_path/'runtime.db',
+                                    realtime_key='fixture',realtime_socket_factory=FakeSocket)
+            await runtime.start()
+            try:
+                await ready(runtime)
+                c=runtime.realtime['a']; gen=c.robot.generation
+                await c.handle({'type':'input_audio_buffer.speech_started','item_id':'main-1',
+                                'audio_start_ms':100},gen)
+                await c.handle({'type':'input_audio_buffer.speech_stopped','item_id':'main-1',
+                                'audio_end_ms':500},gen)
+                base={**c.robot.session_state(),'source_id':None,
+                      'audio_stream_epoch':c.robot.audio.stream_epoch,
+                      'provider_item_id':'entirely-different', 'language':'en','emotion':'happy',
+                      'text':'hello friend','observed_monotonic_ms':time.monotonic()*1000,
+                      'main_sample_start':1600,'main_sample_end':8000}
+                assert c.accept_acoustic_observation(base)
+                assert c.language.observation['language']=='en'
+                assert not c.accept_acoustic_observation({**base,'main_sample_start':16000,'main_sample_end':20000})
+            finally:
+                await runtime.close()
+>       asyncio.run(run())
+
+tests/test_speech_expression_integration.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        runtime = HarborRuntime([RobotConfig('a','r')],tmp_path/'runtime.db',
+                                realtime_key='fixture',realtime_socket_factory=FakeSocket)
+        await runtime.start()
+        try:
+            await ready(runtime)
+            c=runtime.realtime['a']; gen=c.robot.generation
+            await c.handle({'type':'input_audio_buffer.speech_started','item_id':'main-1',
+                            'audio_start_ms':100},gen)
+            await c.handle({'type':'input_audio_buffer.speech_stopped','item_id':'main-1',
+                            'audio_end_ms':500},gen)
+            base={**c.robot.session_state(),'source_id':None,
+                  'audio_stream_epoch':c.robot.audio.stream_epoch,
+                  'provider_item_id':'entirely-different', 'language':'en','emotion':'happy',
+                  'text':'hello friend','observed_monotonic_ms':time.monotonic()*1000,
+                  'main_sample_start':1600,'main_sample_end':8000}
+>           assert c.accept_acoustic_observation(base)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'RealtimeRobot' object has no attribute 'accept_acoustic_observation'
+
+tests/test_speech_expression_integration.py:103: AttributeError
+=========================== short test summary info ============================
+FAILED tests/test_speech_expression_integration.py::test_preference_api_identity_reload_and_isolation
+FAILED tests/test_speech_expression_integration.py::test_tool_requires_matching_explicit_user_scope
+FAILED tests/test_speech_expression_integration.py::test_main_sidecar_association_uses_sample_window_not_text_or_item
+3 failed in 0.12s

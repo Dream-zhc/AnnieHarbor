@@ -1,0 +1,21 @@
+Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/var/tmp/wake-instant-20261009/probe-cloud-address.py", line 49, in <module>
+    asyncio.run(main())
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/var/tmp/wake-instant-20261009/probe-cloud-address.py", line 47, in main
+    for enabled in [False,True]:rows.append(await one(suffix,enabled))
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/var/tmp/wake-instant-20261009/probe-cloud-address.py", line 38, in one
+    await task
+  File "/Users/dream/Documents/zhc/python/brainv2/var/tmp/wake-instant-20261009/probe-cloud-address.py", line 29, in receive
+    if kind=='error':raise RuntimeError(json.dumps(event.get('error',{}),ensure_ascii=False))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: {"type": "invalid_request_error", "code": "invalid_value", "message": "assistant role only supports content type 'output_text', got 'text'.", "param": "conversation.item.create"}

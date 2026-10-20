@@ -1,0 +1,7 @@
+/Users/dream/Documents/zhc/python/brainv2/var/tmp/20261009-qsrtts-live/probe.py:1: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13
+  import asyncio, audioop, json, os, time, tomllib
+{"case": "baseline", "mode": "synthetic_cloud_contract", "physical_speaker": "not_tested", "audible_language": "unknown", "result": "passed", "task_started": true, "pcm_bytes": 156000, "run_to_first_pcm_ms": 565.4, "pcm_sample_rate": 24000}
+{"case": "henan_playful", "mode": "synthetic_cloud_contract", "physical_speaker": "not_tested", "audible_language": "unknown", "result": "passed", "task_started": true, "pcm_bytes": 198092, "run_to_first_pcm_ms": 438.39, "pcm_sample_rate": 24000}
+{"case": "sichuan_calm", "mode": "synthetic_cloud_contract", "physical_speaker": "not_tested", "audible_language": "unknown", "result": "passed", "task_started": true, "pcm_bytes": 188336, "run_to_first_pcm_ms": 425.91, "pcm_sample_rate": 24000}
+{"case": "cantonese", "mode": "synthetic_cloud_contract", "physical_speaker": "not_tested", "audible_language": "unknown", "result": "passed", "task_started": true, "pcm_bytes": 198240, "run_to_first_pcm_ms": 375.66, "pcm_sample_rate": 24000}
+{"case": "asr_synthetic_tts_loopback", "physical_microphone": "not_tested", "result": "passed", "language": "zh", "emotion": "neutral", "stable_chars": 15, "dialect": "unknown"}

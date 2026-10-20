@@ -1,0 +1,9 @@
+{"group": "开心", "variant": "plain", "status": "completed", "first_delta_ms": 80.44, "header_complete_ms": null, "first_body_ms": 80.44, "total_ms": 224.07, "header": null, "format_status": "not_applicable"}
+{"group": "开心", "variant": "style_header", "status": "completed", "first_delta_ms": 104.39, "header_complete_ms": 219.32, "first_body_ms": 233.69, "total_ms": 373.22, "header": {"emotion": "excited", "pace": "fast", "energy": "high"}, "format_status": "valid"}
+{"group": "安慰", "variant": "style_header", "status": "completed", "first_delta_ms": 125.31, "header_complete_ms": 241.46, "first_body_ms": 247.06, "total_ms": 376.0, "header": {"emotion": "warm", "pace": "slow", "energy": "low"}, "format_status": "valid"}
+{"group": "安慰", "variant": "plain", "status": "completed", "first_delta_ms": 80.54, "header_complete_ms": null, "first_body_ms": 80.54, "total_ms": 241.32, "header": null, "format_status": "not_applicable"}
+{"group": "英文", "variant": "plain", "status": "completed", "first_delta_ms": 84.84, "header_complete_ms": null, "first_body_ms": 84.84, "total_ms": 280.24, "header": null, "format_status": "not_applicable"}
+{"group": "英文", "variant": "style_header", "status": "completed", "first_delta_ms": 107.78, "header_complete_ms": 213.88, "first_body_ms": 225.21, "total_ms": 390.51, "header": {"emotion": "warm", "pace": "normal", "energy": "high"}, "format_status": "valid"}
+HEADER_VALID=3/3; COMPLETED=6/6
+[{"group": "开心", "header_format": "valid", "header_first_body_minus_plain_ms": 153.25, "header_stream_gate_ms": 129.3}, {"group": "安慰", "header_format": "valid", "header_first_body_minus_plain_ms": 166.52, "header_stream_gate_ms": 121.75}, {"group": "英文", "header_format": "valid", "header_first_body_minus_plain_ms": 140.37, "header_stream_gate_ms": 117.43}]
+JSON_REOPEN=PASS; PROBE_CLEANUP=PASS; REFERENCE_SCRIPT_EXECUTED=NO; ROOM_CONNECTIONS=0

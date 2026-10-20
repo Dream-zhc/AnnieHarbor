@@ -1,0 +1,19 @@
+{"broad": {"negative_hits": 4, "negative_samples": 12, "positive_hits": 6, "positive_samples": 6, "synthetic_onset_to_hit_p50_ms": 710.0, "synthetic_onset_to_hit_p95_ms": 720.0}, "full_name_variants": {"negative_hits": 2, "negative_samples": 12, "positive_hits": 6, "positive_samples": 6, "synthetic_onset_to_hit_p50_ms": 1030.0, "synthetic_onset_to_hit_p95_ms": 1040.0}, "narrow_2_full_names": {"negative_hits": 0, "negative_samples": 12, "positive_hits": 6, "positive_samples": 6, "synthetic_onset_to_hit_p50_ms": 1030.0, "synthetic_onset_to_hit_p95_ms": 1040.0}, "strict": {"negative_hits": 0, "negative_samples": 12, "positive_hits": 6, "positive_samples": 6, "synthetic_onset_to_hit_p50_ms": 1030.0, "synthetic_onset_to_hit_p95_ms": 1040.0}}
+Tingting 小安妮 strict={'input_at_hit_ms': 1440.0, 'keyword': '小安妮'} broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Tingting 小安妮你好呀 strict={'input_at_hit_ms': 1440.0, 'keyword': '小安妮'} broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Tingting 小安妮今天天气怎么样 strict={'input_at_hit_ms': 1440.0, 'keyword': '小安妮'} broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Tingting 想爱你 strict=None broad=None
+Tingting 我爱你 strict=None broad=None
+Tingting 小安 strict=None broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Tingting 安妮 strict=None broad={'input_at_hit_ms': 1120.0, 'keyword': '安妮'}
+Tingting 小爱同学 strict=None broad=None
+Tingting 小安宁 strict=None broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Meijia 小安妮 strict={'input_at_hit_ms': 1440.0, 'keyword': '小安妮'} broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Meijia 小安妮你好呀 strict={'input_at_hit_ms': 1440.0, 'keyword': '小安妮'} broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Meijia 小安妮今天天气怎么样 strict={'input_at_hit_ms': 1440.0, 'keyword': '小安妮'} broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}
+Meijia 想爱你 strict=None broad=None
+Meijia 我爱你 strict=None broad=None
+Meijia 小安 strict=None broad=None
+Meijia 安妮 strict=None broad=None
+Meijia 小爱同学 strict=None broad=None
+Meijia 小安宁 strict=None broad={'input_at_hit_ms': 1120.0, 'keyword': '小安'}

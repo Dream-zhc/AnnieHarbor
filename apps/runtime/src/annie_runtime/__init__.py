@@ -48,6 +48,14 @@ from annie_runtime.viseme import VisemeSidecars
 logger = logging.getLogger(__name__)
 PERCEPTION_REPEAT_SECONDS = 5.0
 
+# Tracking frames arrive many times a second. The snapshot and event policy
+# still see them; a per-frame runtime_event line only floods the console.
+_QUIET_INPUT_EVENTS = frozenset({
+    "vision.face",
+    "vision.object",
+    "vision.gesture",
+})
+
 
 @dataclass
 class Job:
@@ -996,6 +1004,7 @@ class HarborRuntime:
         self.playback_listeners = {}
         self.voice_publishers = {}
         self.voice_tasks = set()
+        self.display_outboxes = {}
         self.room_monitors = {
             robot_id: RoomMonitor(robot.config.room_id)
             for robot_id, robot in self.robots.items() if robot.config.enabled
@@ -1097,6 +1106,23 @@ class HarborRuntime:
                     lambda kind, event, robot_id=robot_id:
                     self._send_voice_event(robot_id, kind, event)
                 )
+        if room_server is not None and "display" in room_server.channels and self.realtime:
+            from annie_adapters.tts import RoomTtsPublisher
+
+            from annie_runtime.display import DisplayOutbox, wake_fields
+
+            for robot_id, client in self.realtime.items():
+                publisher = (room_tts_factory or RoomTtsPublisher)(
+                    room_server, client.robot.config.room_id, channel="display",
+                )
+                box = DisplayOutbox(
+                    publisher, robot_id, client.robot.config.room_id,
+                    lambda client=client: wake_fields(client),
+                )
+                self.display_outboxes[robot_id] = box
+                client.display_event = lambda kind, event, box=box: box.observe(kind, event)
+                if client.wake is not None:
+                    client.wake.on_display_wake = box.note_wake
         if tts_voice:
             if not realtime_key or room_server is None:
                 raise ValueError("TTS requires Realtime and a configured Room server")
@@ -1430,7 +1456,8 @@ class HarborRuntime:
             robot.snapshot.event_count += 1
             robot.snapshot.last_event_kind = event.kind
             robot.snapshot.last_input_source = source_id
-            robot.record(f"input_event:{event.kind}", source=source_id)
+            if event.kind not in _QUIET_INPUT_EVENTS:
+                robot.record(f"input_event:{event.kind}", source=source_id)
             self.events.route(robot_id, event, source_id)
         return {robot_id: event for robot_id in targets}
 
@@ -1911,6 +1938,8 @@ class HarborRuntime:
             await self.recorder.close()
             if ledger_error is not None:
                 raise ledger_error
+        for box in self.display_outboxes.values():
+            await box.close()
 
     async def submit(self, robot_id, text, *, fail=False):
         return await self.robots[robot_id].submit(text, fail=fail)

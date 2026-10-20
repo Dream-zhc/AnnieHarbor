@@ -40,6 +40,7 @@ class ProtocolAdapterTests(unittest.TestCase):
                 "sam": "ws://192.168.1.47:8090/robot/roomv2/reb_sam",
                 "visualllm": "ws://192.168.1.47:8090/robot/roomv2/reb_visualllm",
                 "voice": "ws://192.168.1.47:8090/robot/roomv2/reb_voice",
+                "display": "ws://192.168.1.47:8090/robot/roomv2/reb_display",
             },
         )
         self.assertEqual(
@@ -306,6 +307,21 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stats["last_event_kind"], "sensor.pressure")
             self.assertEqual(stats["event_count"], 1)
         self.assertIsNone(self.runtime.robots["annie-a"].snapshot.last_reply)
+
+    async def test_visual_tracking_frames_stay_out_of_the_runtime_log(self):
+        self.runtime.bind_input_source("device-events", ["annie-a"])
+        with self.assertNoLogs("annie_runtime", level="INFO"):
+            for contract in ("vision-face", "vision-object", "vision-gesture"):
+                self.runtime.dispatch_room_event("device-events", load_contract(contract))
+        stats = self.runtime.input_stats("annie-a")
+        self.assertEqual(stats["event_count"], 3)
+        self.assertEqual(stats["last_event_kind"], "vision.gesture")
+        await self.runtime.recorder.flush()
+        with sqlite3.connect(self.db) as db:
+            count = db.execute(
+                "select count(*) from runtime_events where kind like 'input_event:vision.%'"
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
 
     async def test_pcm_queue_wait_stays_in_memory_without_per_frame_trace(self):
         from annie_adapters import RuntimeStore

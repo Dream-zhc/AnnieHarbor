@@ -1,0 +1,22 @@
+INFO:     Started server process [29244]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:53373 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53385 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53387 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53389 - "GET /phase-tests/phase1.html HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53395 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53397 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53394 - "POST /api/robots/annie-a/turns HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53399 - "POST /api/robots/annie-a/cancel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53393 - "POST /api/robots/annie-b/turns HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53401 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53405 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53407 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53409 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53411 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29244]

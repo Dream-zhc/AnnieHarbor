@@ -49,3 +49,95 @@ export const isProviderAmbient=(event:{kind:string;reason?:string})=>
 export const formatDecision=(entry:DecisionEntry)=>
   `${entry.topic}：${entry.choice} → ${entry.outcome}`+(entry.detail?` · ${entry.detail}`:'')
   +(entry.text?` 「${entry.text}」`:'');
+
+export type ParsedDecision={
+  topicLabel:string;
+  topicIcon:string;
+  topicKind:'motion'|'addressee'|'recovery'|'other';
+  outcomeText:string;
+  outcomeSub:string;
+  outcomeType:'quiet'|'action'|'accepted'|'declined'|'recovery'|'other';
+  metrics:string[];
+};
+
+export function parseDecision(entry:DecisionEntry):ParsedDecision{
+  let topicLabel=entry.topic;
+  let topicIcon='💡';
+  let topicKind:ParsedDecision['topicKind']='other';
+
+  if(entry.topic==='表情动作'){
+    topicLabel='表情动作';
+    topicIcon='🎭';
+    topicKind='motion';
+  }else if(entry.topic==='对谁说话'){
+    topicLabel='目标判定';
+    topicIcon='🎯';
+    topicKind='addressee';
+  }else if(entry.topic==='判停补发'){
+    topicLabel='判停补发';
+    topicIcon='⚡';
+    topicKind='recovery';
+  }
+
+  let outcomeText='';
+  let outcomeSub='';
+  let outcomeType:ParsedDecision['outcomeType']='other';
+
+  if(entry.topic==='表情动作'){
+    if(entry.outcome==='不做'){
+      outcomeText='保持自然';
+      outcomeSub='无需动作';
+      outcomeType='quiet';
+    }else if(entry.outcome.startsWith('执行')){
+      const act=entry.outcome.slice(2);
+      outcomeText=act?`执行动作：${act}`:'执行动作';
+      outcomeSub='';
+      outcomeType='action';
+    }else{
+      outcomeText=entry.outcome;
+      outcomeSub=entry.choice;
+      outcomeType='other';
+    }
+  }else if(entry.topic==='对谁说话'){
+    if(entry.outcome==='回复'){
+      if(entry.choice==='决策失败'){
+        outcomeText='容错回复';
+        outcomeSub='决策异常';
+      }else{
+        outcomeText='命中回复';
+        outcomeSub='对机器人说';
+      }
+      outcomeType='accepted';
+    }else if(entry.outcome.startsWith('不回复')){
+      outcomeText='旁话忽略';
+      outcomeSub=entry.choice?`判定：${entry.choice}`:'不回复，继续听';
+      outcomeType='declined';
+    }else{
+      outcomeText=entry.outcome;
+      outcomeSub=entry.choice;
+      outcomeType='other';
+    }
+  }else if(entry.topic==='判停补发'){
+    outcomeText='已按终稿补发';
+    outcomeSub='点名提问挽回';
+    outcomeType='recovery';
+  }else{
+    outcomeText=`${entry.choice} → ${entry.outcome}`;
+    outcomeSub='';
+    outcomeType='other';
+  }
+
+  const metrics=entry.detail
+    ?entry.detail.split(' · ').map(s=>s.trim()).filter(Boolean)
+    :[];
+
+  return {
+    topicLabel,
+    topicIcon,
+    topicKind,
+    outcomeText,
+    outcomeSub,
+    outcomeType,
+    metrics,
+  };
+}

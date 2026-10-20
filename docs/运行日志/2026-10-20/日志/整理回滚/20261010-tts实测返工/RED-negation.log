@@ -1,0 +1,41 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_negative_emotion_commands_are_not_positive_acting_requests[\u522b\u8bf4\u5f97\u592a\u5174\u594b\uff0c\u5e73\u9759\u4e00\u70b9] _
+tests/test_tts_expression_regressions.py:229: in test_negative_emotion_commands_are_not_positive_acting_requests
+    assert explicit_style_request(utterance) == {}
+E   AssertionError: assert {'emotion': 'excited'} == {}
+E     
+E     Left contains 1 more item:
+E     {'emotion': 'excited'}
+E     Use -v to get more diff
+_ test_negative_emotion_commands_are_not_positive_acting_requests[\u522b\u5174\u594b\u5730\u8bf4] _
+tests/test_tts_expression_regressions.py:229: in test_negative_emotion_commands_are_not_positive_acting_requests
+    assert explicit_style_request(utterance) == {}
+E   AssertionError: assert {'emotion': 'excited'} == {}
+E     
+E     Left contains 1 more item:
+E     {'emotion': 'excited'}
+E     Use -v to get more diff
+_ test_negative_emotion_commands_are_not_positive_acting_requests[\u4e0d\u60f3\u7528\u5174\u594b\u7684\u8bed\u6c14\u8bf4] _
+tests/test_tts_expression_regressions.py:229: in test_negative_emotion_commands_are_not_positive_acting_requests
+    assert explicit_style_request(utterance) == {}
+E   AssertionError: assert {'emotion': 'excited'} == {}
+E     
+E     Left contains 1 more item:
+E     {'emotion': 'excited'}
+E     Use -v to get more diff
+_ test_negative_emotion_commands_are_not_positive_acting_requests[\u4e0d\u80fd\u7528\u5174\u594b\u7684\u8bed\u6c14\u8bf4] _
+tests/test_tts_expression_regressions.py:229: in test_negative_emotion_commands_are_not_positive_acting_requests
+    assert explicit_style_request(utterance) == {}
+E   AssertionError: assert {'emotion': 'excited'} == {}
+E     
+E     Left contains 1 more item:
+E     {'emotion': 'excited'}
+E     Use -v to get more diff
+=========================== short test summary info ============================
+FAILED tests/test_tts_expression_regressions.py::test_negative_emotion_commands_are_not_positive_acting_requests[\u522b\u8bf4\u5f97\u592a\u5174\u594b\uff0c\u5e73\u9759\u4e00\u70b9]
+FAILED tests/test_tts_expression_regressions.py::test_negative_emotion_commands_are_not_positive_acting_requests[\u522b\u5174\u594b\u5730\u8bf4]
+FAILED tests/test_tts_expression_regressions.py::test_negative_emotion_commands_are_not_positive_acting_requests[\u4e0d\u60f3\u7528\u5174\u594b\u7684\u8bed\u6c14\u8bf4]
+FAILED tests/test_tts_expression_regressions.py::test_negative_emotion_commands_are_not_positive_acting_requests[\u4e0d\u80fd\u7528\u5174\u594b\u7684\u8bed\u6c14\u8bf4]
+4 failed, 23 deselected in 0.05s
+RED_EXIT=1

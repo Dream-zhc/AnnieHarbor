@@ -1,0 +1,28 @@
+[
+  {
+    "room_id": "roomv2",
+    "url": "ws://192.168.1.47:8090/robot/roomv2/reb_mic",
+    "handshake_ms": 5.89,
+    "subscribe_ack_ms": 0.86,
+    "ping_samples": 30,
+    "ping_p50_ms": 0.92,
+    "ping_p95_ms": 1.95,
+    "ping_max_ms": 7.25,
+    "observed_binary_frames": 0,
+    "frame_sizes": [],
+    "caveat": "只读MIC订阅+WS控制帧往返；不是采集端到PCM转发单向延迟；未发送任何PCM。"
+  },
+  {
+    "room_id": "roomv3",
+    "url": "ws://192.168.1.47:8090/robot/roomv3/reb_mic",
+    "handshake_ms": 5.4,
+    "subscribe_ack_ms": 0.99,
+    "ping_samples": 30,
+    "ping_p50_ms": 0.8,
+    "ping_p95_ms": 1.01,
+    "ping_max_ms": 1.02,
+    "observed_binary_frames": 0,
+    "frame_sizes": [],
+    "caveat": "只读MIC订阅+WS控制帧往返；不是采集端到PCM转发单向延迟；未发送任何PCM。"
+  }
+]

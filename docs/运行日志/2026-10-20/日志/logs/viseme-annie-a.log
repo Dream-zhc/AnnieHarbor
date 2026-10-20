@@ -51571,3 +51571,18 @@ sam_to_listener_p50=-
 [MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
 [TTS_CTRL        ] type=tts stop=True conv=6f4edb3a
 [TTS_RESET       ] reason=stop conv=6f4edb3a count=1 reopen=False
+[VISEME] pypinyin warm 0ms
+Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/sidecars/tts_viseme/qwen_stream_room_g2pw.py", line 3275, in main
+    singleton.bind(("127.0.0.1", SINGLETON_PORT))
+OSError: [Errno 48] Address already in use
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/sidecars/tts_viseme/qwen_stream_room_g2pw.py", line 3387, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/sidecars/tts_viseme/qwen_stream_room_g2pw.py", line 3279, in main
+    raise RuntimeError(
+RuntimeError: another TTS Viseme publisher is already running (singleton port 37759 busy)

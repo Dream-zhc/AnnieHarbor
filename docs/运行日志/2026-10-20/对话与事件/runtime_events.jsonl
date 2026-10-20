@@ -112402,3 +112402,5 @@
 {"id": 112402, "robot_id": "annie-a", "room_id": "roomv2", "kind": "audio_devices_ok", "request_id": null, "ts_ms": 1792489074150, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
 {"id": 112403, "robot_id": "annie-a", "room_id": "roomv2", "kind": "audio_devices_conflict", "request_id": null, "ts_ms": 1792489088913, "elapsed_ms": null, "error": "microphone:multiple_devices", "queue_wait_ms": null, "source": "room_audio"}
 {"id": 112404, "robot_id": "annie-a", "room_id": "roomv2", "kind": "audio_devices_ok", "request_id": null, "ts_ms": 1792489090921, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112405, "robot_id": "annie-a", "room_id": "roomv2", "kind": "audio_devices_conflict", "request_id": null, "ts_ms": 1792490057488, "elapsed_ms": null, "error": "microphone:multiple_devices", "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112406, "robot_id": "annie-a", "room_id": "roomv2", "kind": "audio_devices_ok", "request_id": null, "ts_ms": 1792490060144, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}

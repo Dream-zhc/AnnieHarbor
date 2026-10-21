@@ -128,6 +128,7 @@ def build_display_message(kind, event, robot_id, room_id):
             "decision": "addressee", "item_id": event.get("item_id"),
             "result": event.get("verdict"), "choice": event.get("choice"),
             "confidence": event.get("confidence"), "judge": event.get("judge"),
+            "model": event.get("model"),
             "latency_ms": event.get("latency_ms"), "text": _clip(event.get("text"), 80),
             "summary": ("对机器人说，回复" if event.get("verdict") == "robot"
                         else "不是对机器人说的，不回复")}
@@ -137,7 +138,8 @@ def build_display_message(kind, event, robot_id, room_id):
             "decision": "expression", "turn_id": event.get("turn_id"),
             "result": event.get("script") if accepted else "none",
             "choice": event.get("choice"), "confidence": event.get("confidence"),
-            "judge": event.get("source"), "latency_ms": event.get("latency_ms"),
+            "judge": event.get("source"), "model": event.get("model"),
+            "latency_ms": event.get("latency_ms"),
             "summary": f"做表情 {event.get('choice')}" if accepted else "不做表情"}
     if extra is None:
         return None

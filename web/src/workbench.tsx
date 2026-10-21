@@ -140,40 +140,63 @@ function getTurnActions(
   return Array.from(map.values());
 }
 
-function DecisionItem({ entry, isExpanded }: { entry: DecisionEntry; isExpanded?: boolean }){
+function DecisionItem({ entry, isExpanded, seqLabel }: { entry: DecisionEntry; isExpanded?: boolean; seqLabel?: string }){
   const parsed = parseDecision(entry);
-  return (
-    <div className={`decision-item-container topic-${parsed.topicKind} outcome-${parsed.outcomeType} ${isExpanded ? 'is-expanded' : 'is-compact'}`}>
-      {isExpanded && (
-        <span className={`decision-pill topic-pill topic-${parsed.topicKind}`}>
+  if (!isExpanded) {
+    return (
+      <div className={`decision-item-container topic-${parsed.topicKind} outcome-${parsed.outcomeType} is-compact`}>
+        <span className={`decision-pill outcome-pill outcome-${parsed.outcomeType}`}>
           <span className="pill-emoji">{parsed.topicIcon}</span>
-          <span className="pill-text">{parsed.topicLabel}</span>
+          <span className="outcome-title">{parsed.outcomeText}</span>
         </span>
-      )}
 
-      <span className={`decision-pill outcome-pill outcome-${parsed.outcomeType}`}>
-        {!isExpanded && <span className="pill-emoji">{parsed.topicIcon}</span>}
-        <span className="outcome-title">{parsed.outcomeText}</span>
-        {parsed.outcomeSub && isExpanded && <span className="outcome-detail">· {parsed.outcomeSub}</span>}
-      </span>
+        {entry.text && (
+          <span className="decision-quote" title={`触发语音：“${entry.text}”`}>
+            <span className="quote-mark">“</span>
+            <span className="quote-body">{entry.text}</span>
+            <span className="quote-mark">”</span>
+          </span>
+        )}
 
-      {entry.text && (
-        <span className="decision-quote">
-          <span className="quote-mark">“</span>
-          <span className="quote-body">{entry.text}</span>
-          <span className="quote-mark">”</span>
-        </span>
-      )}
-
-      {parsed.metrics.length > 0 && (
-        <div className="decision-metrics-wrap">
-          {isExpanded ? (
-            parsed.metrics.map((m, i) => (
-              <span key={i} className="decision-metric-tag">{m}</span>
-            ))
-          ) : (
+        {parsed.metrics.length > 0 && (
+          <div className="decision-metrics-wrap">
             <span className="decision-metric-tag">{parsed.metrics[parsed.metrics.length - 1]}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`decision-item-container topic-${parsed.topicKind} outcome-${parsed.outcomeType} is-expanded`}>
+      <div className="decision-item-topline">
+        <div className="decision-item-badges">
+          {seqLabel && (
+            <span className="decision-seq-tag">
+              {seqLabel}
+            </span>
           )}
+          <span className={`decision-pill topic-pill topic-${parsed.topicKind}`}>
+            <span className="pill-emoji">{parsed.topicIcon}</span>
+            <span className="pill-text">{parsed.topicLabel}</span>
+          </span>
+          <span className={`decision-pill outcome-pill outcome-${parsed.outcomeType}`}>
+            <span className="outcome-title">{parsed.outcomeText}</span>
+            {parsed.outcomeSub && <span className="outcome-detail">· {parsed.outcomeSub}</span>}
+          </span>
+        </div>
+        {parsed.metrics.length > 0 && (
+          <div className="decision-metrics-wrap">
+            {parsed.metrics.map((m, i) => (
+              <span key={i} className="decision-metric-tag">{m}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {entry.text && (
+        <div className="decision-item-quote-line" title={`决策完整语音：${entry.text}`}>
+          <span className="quote-label">决策语</span>
+          <span className="quote-text">“{entry.text}”</span>
         </div>
       )}
     </div>
@@ -585,8 +608,18 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             if(item.kind==='transcript.done'){
               setPreviewTranscript('');setPendingAsr('');setAsrStage('idle');
               if(item.text&&item.turn_id){
-                setFinalTranscript({turnId:item.turn_id,text:item.text});
+                const fullText=item.text;
+                const turnId=item.turn_id;
+                setFinalTranscript({turnId,text:fullText});
                 if(session)void refreshRecent(robotId,session);
+                setDecisions(prev=>prev.map((d,idx)=>{
+                  const matchesTurn=(d.turn_id&&d.turn_id===turnId)||(d.item_id&&d.item_id===turnId);
+                  const isRecentFuzzy=idx===0&&(!d.text||fullText.includes(d.text));
+                  if((matchesTurn||isRecentFuzzy)&&d.text.length<fullText.length){
+                    return {...d,text:fullText};
+                  }
+                  return d;
+                }));
               }
             }
             if(item.kind==='text.delta'||item.kind==='text.done')setLiveText(item.text??'');
@@ -1027,10 +1060,11 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                         key={entry.seq ?? idx}
                         className={`decision-stream-row ${idx === 0 ? 'is-latest' : 'is-history'}`}
                       >
-                        <span className="decision-seq-tag">
-                          {idx === 0 ? '最新' : `#${decisions.length - idx}`}
-                        </span>
-                        <DecisionItem entry={entry} isExpanded={true} />
+                        <DecisionItem
+                          entry={entry}
+                          isExpanded={true}
+                          seqLabel={idx === 0 ? '最新' : `#${decisions.length - idx}`}
+                        />
                       </div>
                     ))}
                   </div>

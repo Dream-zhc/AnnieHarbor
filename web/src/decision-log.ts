@@ -2,7 +2,7 @@
 export type DecisionEvent={
   seq:number;kind:string;text?:string;verdict?:string;choice?:string|null;
   confidence?:number|null;latency_ms?:number|null;error?:string|null;source?:string;
-  script?:string|null;reason?:string;model?:string|null;
+  script?:string|null;reason?:string;turn_id?:string|null;item_id?:string|null;model?:string|null;
 };
 /** realtime.decision in the robot snapshot: which model answers right now. */
 export type DecisionStatus={
@@ -11,7 +11,10 @@ export type DecisionStatus={
   d3?:{model:string;status:'probing'|'ready'|'down';ready:boolean;error:string|null;
     checked_ms:number|null;failures:number}|null;
 };
-export type DecisionEntry={seq:number;topic:string;choice:string;outcome:string;detail:string;text:string};
+export type DecisionEntry={
+  seq:number;topic:string;choice:string;outcome:string;detail:string;text:string;
+  turn_id?:string;item_id?:string;
+};
 
 const ADDRESSEE:Record<string,string>={
   robot:'对机器人说',person:'对别人说',self_or_media:'自言自语/电视',unclear:'无法判断',
@@ -54,21 +57,25 @@ const metrics=(event:DecisionEvent)=>[
 /** One readable row per decision; other events return null. */
 export function decisionEntry(event:DecisionEvent):DecisionEntry|null{
   const text=(event.text??'').trim();
+  const turn_id=(event.turn_id??event.item_id)??undefined;
+  const item_id=event.item_id??undefined;
   if(event.kind==='addressee.decided'){
     const choice=event.error?'决策失败':ADDRESSEE[event.choice??'']??'无法判断';
     return {seq:event.seq,topic:'对谁说话',choice,text,
       outcome:event.verdict==='robot'?'回复':'不回复，继续听',
-      detail:event.error?'按对机器人说处理':metrics(event)};
+      detail:event.error?'按对机器人说处理':metrics(event),
+      turn_id,item_id};
   }
   if(event.kind==='action.auto_decided'){
     const choice=MOTION[event.choice??'']??event.choice??'—';
     return {seq:event.seq,topic:'表情动作',choice,text,
       outcome:event.script?'执行'+(MOTION[event.script]??event.script):'不做',
-      detail:event.source==='explicit'?'用户点名，未调用模型':metrics(event)};
+      detail:event.source==='explicit'?'用户点名，未调用模型':metrics(event),
+      turn_id,item_id};
   }
   if(event.kind==='turn.recovered'){
     return {seq:event.seq,topic:'判停补发',choice:'点名提问被判无效',text,
-      outcome:'已按识别终稿补发',detail:''};
+      outcome:'已按识别终稿补发',detail:'',turn_id,item_id};
   }
   return null;
 }

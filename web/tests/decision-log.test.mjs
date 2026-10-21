@@ -61,6 +61,15 @@ test('parseDecision formats active motion and declined side talk',()=>{
   assert.equal(parsedDeclined.outcomeType,'declined');
 });
 
+test('decisionEntry forwards turn_id and item_id for correlation',()=>{
+  const action=decisionEntry({seq:10,kind:'action.auto_decided',choice:'none',text:'好',turn_id:'turn-123'});
+  assert.equal(action?.turn_id,'turn-123');
+  const addressee=decisionEntry({seq:11,kind:'addressee.decided',verdict:'robot',text:'好',item_id:'item-456'});
+  assert.equal(addressee?.turn_id,'item-456');
+  assert.equal(addressee?.item_id,'item-456');
+});
+
+
 test('the decision card names the model in use: d3 while up, Aliyun as fallback',async()=>{
   const {decisionSource,modelName}=await import('../src/decision-log.ts');
   const base={addressee:true,auto_expression:true};

@@ -4,9 +4,8 @@ import asyncio
 import json
 import logging
 
-from websockets.asyncio.client import connect
-
 from annie_adapters import parse_room_welcome, parse_subscribe_ack
+from annie_adapters.net import room_connect
 
 logger = logging.getLogger(__name__)
 PLAYBACK_EVENTS = frozenset({
@@ -56,7 +55,7 @@ def playback_receipt(message):
 class RoomEventListener:
     """Subscribe to one existing Room channel; a disconnect is not a stop receipt."""
 
-    def __init__(self, config, room_id, channel, on_message, socket_factory=connect):
+    def __init__(self, config, room_id, channel, on_message, socket_factory=room_connect):
         self.config = config
         self.room_id = room_id
         self.channel = channel

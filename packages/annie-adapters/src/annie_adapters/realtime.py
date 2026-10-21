@@ -7,6 +7,8 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from websockets.asyncio.client import connect
 
+from annie_adapters.net import cloud_proxy
+
 MODEL = "qwen-audio-3.0-realtime-flash"
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
 # Same Qwen-Audio Realtime wire family (3.0 flash/plus, 3.1 plus); other model
@@ -464,9 +466,10 @@ class QwenRealtimeSocket:
     async def open(self):
         # The authorization header is private; it is never logged or sent to the browser.
         self.socket = await connect(
+            # Direct to Aliyun; see annie_adapters.net.
             self.url,
             additional_headers={"Authorization": f"Bearer {self.api_key}"},
-            open_timeout=8,
+            proxy=cloud_proxy(), open_timeout=8,
             close_timeout=2,
             max_size=2 * 1024 * 1024,
         )

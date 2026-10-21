@@ -2,7 +2,7 @@
   "log_offsets": {
     "logs/phase4-rework.log": 2910,
     "logs/phase4b-enabled.log": 168980,
-    "logs/viseme-annie-a.log": 7149359,
+    "logs/viseme-annie-a.log": 7592731,
     "logs/viseme-annie-b.log": 4681,
     "tmp/mat-debug-26984.log": 216,
     "tmp/mat-debug-32196.log": 143,
@@ -151,12 +151,15 @@
     "整理回滚/20261010-追问英文与表达控制/UI-RED-stage.log": 5047,
     "整理回滚/20261010-追问英文与表达控制/UI-RED.log": 8972,
     "整理回滚/20261010-追问英文与表达控制/同流风格头试验.log": 1913,
-    "整理回滚/20261010-追问英文与表达控制/音色对照.log": 1505
+    "整理回滚/20261010-追问英文与表达控制/音色对照.log": 1505,
+    "logs/runtime-20261020-181454.log": 645355,
+    "logs/runtime-20261020-185138.log": 318504,
+    "logs/runtime-20261020-190618.log": 15306323
   },
   "table_cursors": {
-    "conversation_turns": 467,
-    "runtime_events": 112406,
-    "action_requests": 1792488293074
+    "conversation_turns": 524,
+    "runtime_events": 112444,
+    "action_requests": 1792491610673
   },
-  "last_export": "2026-10-20T17:55:15"
+  "last_export": "2026-10-21T10:24:00"
 }

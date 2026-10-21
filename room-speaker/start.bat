@@ -6,7 +6,7 @@ set "PYTHONIOENCODING=utf-8"
 set "PYTHONUNBUFFERED=1"
 rem 独立扬声器（可选麦克风）。改下面三行即可换房间。A=roomv2，B=roomv3。
 rem 同时开麦克风：set ROOM_MIC=1 后运行，或 start.bat --mic；选设备 --mic-device 名称片段。
-rem 一个 Room 只留一个麦克风、一个扬声器：同时开网页麦克风或网页调试扬声器会在大屏提醒。
+rem 一个 Room 只留一个麦克风、一个扬声器。
 if not defined SPEAKER_HOST set "SPEAKER_HOST=192.168.1.47"
 if not defined SPEAKER_PORT set "SPEAKER_PORT=8090"
 if not defined SPEAKER_ROOM set "SPEAKER_ROOM=roomv2"

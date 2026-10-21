@@ -1,6 +1,7 @@
 """Two robot heads in one Room: the one started later takes over, the older one stops."""
 
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -58,25 +59,56 @@ def test_head_options_are_opt_in_and_validated(monkeypatch):
 
 
 def test_the_service_keeps_a_board_that_was_taken_over_stopped():
-    unit = (ROOT / "room-speaker" / "install-service.sh").read_text()
+    unit = (ROOT / "room-speaker" / "annie-audio.sh").read_text()  # install writes the unit
     assert re.search(r"^Restart=always$", unit, re.M)
     assert f"RestartPreventExitStatus={head_module.EXIT_TAKEN_OVER}" in unit
     assert f"SuccessExitStatus={head_module.EXIT_TAKEN_OVER}" in unit  # inactive, not failed
 
 
-def test_the_launcher_for_the_robot_main_project_drives_the_same_service():
-    """annie-audio.sh is what the embedded main project calls on the board."""
+def test_the_board_has_one_script_for_the_main_project_and_the_service():
+    """annie-audio.sh is what the embedded main project and systemd both call."""
     script = ROOT / "room-speaker" / "annie-audio.sh"
     text = script.read_text()
-    unit = (ROOT / "room-speaker" / "install-service.sh").read_text()
     assert 'UNIT="${ANNIE_AUDIO_UNIT:-annie-room-audio}"' in text
-    assert "/etc/systemd/system/annie-room-audio.service" in unit
+    assert 'cat > "/etc/systemd/system/$UNIT.service"' in text
+    assert "ExecStart=/bin/sh $SELF service" in text
     # The started program must not inherit the lock, or the next call waits forever.
     assert "exec flock -o " in text
     assert subprocess.run(["sh", "-n", str(script)]).returncode == 0
     wrong = subprocess.run(["sh", str(script), "bogus"], capture_output=True, text=True,
                            env={**os.environ, "ANNIE_AUDIO_LOCKED": "1"})
     assert wrong.returncode == 2 and "用法" in wrong.stderr
+    assert not (ROOT / "room-speaker" / "start.sh").exists()
+    assert not (ROOT / "room-speaker" / "install-service.sh").exists()
+
+
+def test_a_board_whose_card_delivers_nothing_never_claims_the_room():
+    """It restarts every few seconds; each start must not take the Room from a working board."""
+    class Voice:
+        ready = True
+        socket = object()
+
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(json.loads(payload))
+            return True
+
+    async def run():
+        voice, head, delivering = Voice(), head_module.Head("big_head", "大头机器人"), [False]
+        task = asyncio.create_task(head_module.report_head(voice, head, interval=0,
+                                                           ready=lambda: delivering[0]))
+        await asyncio.sleep(.3)
+        silent = len(voice.sent)
+        delivering[0] = True
+        await asyncio.sleep(.3)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return silent, voice.sent
+
+    silent, sent = asyncio.run(run())
+    assert silent == 0 and sent[0]["type"] == "robot.head.active"
 
 
 def head_message(kind, instance, name, address, **data):

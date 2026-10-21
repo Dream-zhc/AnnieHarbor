@@ -11,49 +11,41 @@
 
 ## Linux / 地瓜 / 机器人板
 
-需要 Python 3.10+ 和 PortAudio：
+板上只放运行需要的文件（不放本 README、开发记录或 Brain 相关资料，这些板子后续可能交给工厂外部人员）：
 
-```sh
-sudo apt-get install -y libportaudio2
-sh start.sh --list-devices          # 列出扬声器和麦克风
-ROOM_MIC=1 sh start.sh              # 扬声器 + 麦克风
-ROOM_MIC=1 MIC_DEVICE=USB sh start.sh
-ROOM_MIC=1 ROOM_SPEAKER=0 sh start.sh   # 只开麦克风
+```text
+annie-audio.sh   唯一的脚本：启动、停止、状态、日志、列声卡、安装开机自启
+speaker.py  microphone.py  head.py  requirements.txt
+room-audio.env   本机配置（新板从 room-audio.env.example 复制后修改）
 ```
 
-### 板上固定配置与开机自启
+运行时会自动生成 `.venv/`（Python 依赖）、`.speaker-volume`（远程调整后的音量）；没装开机自启时还有 `logs/`。
 
 ```sh
-cp room-audio.env.example room-audio.env   # 改房间、设备；名称有空格要加引号
-sh start.sh                                # 前台试跑，Ctrl+C 退出
-sudo sh install-service.sh                 # 安装 systemd 服务 annie-room-audio，开机自动运行
-systemctl status annie-room-audio          # 状态
-journalctl -u annie-room-audio -f          # 日志
-sudo systemctl restart annie-room-audio    # 改了 room-audio.env 后重启生效
-sudo systemctl disable --now annie-room-audio   # 停用自启
+sh annie-audio.sh devices          # 列出声卡，填进 room-audio.env
+sudo sh annie-audio.sh install     # 新板：装依赖（含 python3-venv、libportaudio2）和开机自启服务 annie-room-audio，并启动
+sh annie-audio.sh start            # 启动；已在运行就先停旧的再起，约 7 秒返回
+sh annie-audio.sh stop             # 停止（不改开机自启）
+sh annie-audio.sh status           # 退出码 0=运行中，3=没运行
+sh annie-audio.sh log 50           # 最近 50 行日志（服务模式即 journalctl -u annie-room-audio）
+sh annie-audio.sh run              # 前台试跑，Ctrl+C 退出
 ```
 
-服务以安装时的普通用户运行（加入 `audio` 组），读同目录的 `room-audio.env`，异常退出 5 秒后自动重启；开机时 USB 声卡还没就绪也会自动重试。建议直接用声卡硬件名（`--list-devices` 里带 `hw:` 的那几项），不经过 PulseAudio，扬声器回执才贴近声卡实际播放。
+- root 和普通用户调都行；普通用户控制服务需要免密 sudo（板子默认就是）。root 调用时程序仍以目录所有者（`sunrise`）运行。
+- 可以重复调、同时调，板上始终只有一份。只认工作目录是本目录的 `python speaker.py` 和 `sh annie-audio.sh run`，不会动主项目或其它进程。
+- 装了服务就交给 systemd（`ExecStart=… annie-audio.sh service`），异常退出 5 秒后重启；没装就后台运行并由脚本自己 5 秒后重启，日志在 `logs/room-audio.log`。
+- 服务以目录所有者运行（加入 `audio` 组）。建议直接用声卡硬件名（`devices` 里带 `hw:` 的那几项），不经过 PulseAudio，扬声器回执才贴近声卡实际播放。
+- 只想由主项目控制、不要开机自启：`sudo systemctl disable annie-room-audio`，脚本照样能 start/stop。
 
-### 给机器人主项目调用：annie-audio.sh
+### 声卡缺失与掉线
 
-两块板上都在 `/home/sunrise/annie-room-audio/annie-audio.sh`。机器人主项目启动时调一次 `start` 就把麦克风和扬声器拉起来：
+- **启动时声卡不在**（没插、名字匹配不到或被占用）：不退出，日志记一次“等待设备”和现有设备列表，之后每 5 秒重新扫描、每分钟提示一次，插好后自动开始。等待期间不连 Room、不报机器人头，所以不会把房间从另一块正常工作的板子上抢走；设备到齐才开始计“启动时间”。
+- **运行中掉线**（扬声器 5 秒没有回调、麦克风 5 秒没有数据）：先发停止回执（`reason=device_lost`），以退出码 75 退出，由 systemd 或脚本重新启动、重新枚举声卡。原来在进程内重开 USB 声卡时会在 PortAudio 里断言崩溃（188，2026-10-21），所以不再进程内重开。
+- 麦克风精确全零（USB 麦克风自带降噪/自动增益，安静时会这样）只在持续 60 秒时记一条日志，不算掉线。
 
-```sh
-sh /home/sunrise/annie-room-audio/annie-audio.sh start    # 默认命令。已在跑就先停旧的再起，约 7 秒返回
-sh /home/sunrise/annie-room-audio/annie-audio.sh stop     # 只停本程序
-sh /home/sunrise/annie-room-audio/annie-audio.sh status   # 退出码 0=运行中，3=没运行
-sh /home/sunrise/annie-room-audio/annie-audio.sh log 50   # 最近 50 行日志
-```
+### 给机器人主项目调用
 
-- root 和 `sunrise` 调都行（启停键服务 `anni-board-button` 是 root）。退出码 0 成功；1 失败，输出里带原因和最近日志（例如麦克风没插：`输入设备“USB Composite”匹配到 0 个`）。
-- 可以重复调、同时调，板上始终只有一份。只认工作目录是本目录的 `python speaker.py`（和启动阶段的 `sh start.sh`），不会动主项目或其它进程。
-- 装了 `annie-room-audio` 服务就交给 systemd：异常退出 5 秒后重启，日志看 `journalctl -u annie-room-audio`；没装就直接后台运行，日志在 `logs/room-audio.log`，不会自动重启。
-- 同一 Room 的两块板，**谁后 start 谁接管**，另一块自动停止。也就是哪台机器人的主项目启动，哪台就是当前机器人头。
-- 开机自启照旧保留。只想由主项目控制时执行 `sudo systemctl disable annie-room-audio`，脚本照样能 start/stop。
-- 主项目自己不要再打开同一块 USB 麦克风或扬声器：ALSA 硬件设备独占，后打开的那个会失败。
-
-主项目是 Python 时，在启动流程里加：
+两块板都在 `/home/sunrise/annie-room-audio/annie-audio.sh`，主项目启动时调一次 `start`：
 
 ```python
 import subprocess
@@ -63,7 +55,7 @@ result = subprocess.run(["/bin/sh", "/home/sunrise/annie-room-audio/annie-audio.
 log.info("Annie 麦克风扬声器 start 退出码=%s\n%s%s", result.returncode, result.stdout, result.stderr)
 ```
 
-不想等结果就用 `subprocess.Popen([...], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)`。
+不想等结果就用 `subprocess.Popen([...], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)`。主项目自己不要再打开同一块 USB 麦克风或扬声器：ALSA 硬件设备独占，后打开的那个会失败。
 
 ### 两个机器人头共用一个 Room
 
@@ -74,17 +66,13 @@ ROBOT_HEAD=big_head
 ROBOT_HEAD_NAME=大头机器人
 ```
 
-万一两块板都开了，**后启动的接管**：先启动的那块听到对方后停止播放和采集，发出 `robot.head.released`，然后以退出码 10 退出，systemd 把它记为正常停止、不会再拉起来（`SuccessExitStatus=10`、`RestartPreventExitStatus=10`）。要让它重新接管，在它上面执行 `sudo systemctl restart annie-room-audio`，或者给它断电重启。谁先谁后按各自进程的运行时长比较，与两块板的系统时间是否准确无关。
+万一两块板都开了，**后启动的接管**：先启动的那块听到对方后停止播放和采集，发出 `robot.head.released`，然后以退出码 10 退出，systemd 把它记为正常停止、不会再拉起来（`SuccessExitStatus=10`、`RestartPreventExitStatus=10`）。要让它重新接管，在它上面执行 `sh annie-audio.sh start`，或者给它断电重启。谁先谁后按各自进程的运行时长比较，与两块板的系统时间是否准确无关。
 
 两块板每 2 秒在 `reb_voice` 发一次 `robot.head.active`（头名、板子地址、麦克风和扬声器）。工作台会显示当前用的是哪个头，大屏顶部状态栏显示“当前：大头机器人（192.168.1.188）”；接管后 10 分钟内两处都会提示是谁接管了谁。其他监听 Room 的前端也可以直接订阅这条消息。没设置 `ROBOT_HEAD` 的程序（例如 Windows 上临时开的扬声器）不参与接管，多开时照旧显示红色冲突提醒。
 
 ### 用说话调音量
 
 对小安妮说“大声点 / 小声点 / 音量调到一半”，Brain 会发 `speaker.volume.set`，本程序按 0–100 调软件音量（100 = 声卡原来的响度，只能往小调或调回来），并保存在 `.speaker-volume`，重启后沿用。声卡本身的硬件音量不改；要整体更响，用 `alsamixer` 或 `amixer -c <声卡> sset PCM 100%` 调硬件音量。
-
-### 机器人上的 Jieli USB 麦克风
-
-这个 USB 麦克风自带降噪/自动增益（`amixer -c Device sget 'Auto Gain Control'`）。开着时房间一安静就输出精确的零，回执里没有峰值，日志在持续 60 秒时提示一次，属正常现象，不会重开设备；只有完全收不到声卡数据才会自动重新打开。是否关闭这个控件见开发记录。
 
 ## Windows
 
@@ -98,7 +86,7 @@ start.bat --mic --mic-device 麦克风名称中的一段
 
 ## 房间
 
-默认连接 `ws://192.168.1.47:8090/robot/roomv2`。A 用 `roomv2`，B 用 `roomv3`。改 `start.bat` / `start.sh` 里的这三项：
+默认连接 `ws://192.168.1.47:8090/robot/roomv2`。A 用 `roomv2`，B 用 `roomv3`。板上改 `room-audio.env`，Windows 改 `start.bat` 里的这三项：
 
 ```text
 SPEAKER_HOST=192.168.1.47

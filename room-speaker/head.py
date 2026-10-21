@@ -11,8 +11,7 @@ it stops playing and capturing, says robot.head.released and exits. Running
 times come from each board's own monotonic clock, so boards whose wall clocks
 disagree (no RTC before NTP) still agree on who started later.
 
-The same messages are in the Room for Brain, the workbench and the big screen
-to show which head is in use.
+Other Room clients can show which head is in use from the same messages.
 """
 
 from __future__ import annotations
@@ -113,8 +112,8 @@ class Head:
 class AnnouncedLink:
     """reb_voice for device reports, open only once this head was announced on it.
 
-    Brain then always learns a new head before its microphone and speaker, and
-    a handover is never mistaken for a second device in the Room.
+    Listeners then always learn a new head before its microphone and speaker,
+    so a handover never looks like a second device in the Room.
     """
 
     def __init__(self, voice, head):
@@ -129,11 +128,16 @@ class AnnouncedLink:
         return self.ready and await self.voice.send(payload)
 
 
-async def report_head(voice, head, *, interval=HEAD_INTERVAL):
-    """At once on every (re)connect, then every interval while connected."""
+async def report_head(voice, head, *, interval=HEAD_INTERVAL, ready=None):
+    """At once on every (re)connect, then every interval while connected.
+
+    ready() gates the first announcement: a board whose card is there but
+    delivers nothing restarts again and again, and must not take the Room
+    from a board that works each time it starts.
+    """
     last = 0.0
     while True:
-        if voice.ready:
+        if voice.ready and (ready is None or head.announced_on is not None or ready()):
             now = time.monotonic()
             socket = voice.socket
             if head.announced_on is not socket or now - last >= interval:

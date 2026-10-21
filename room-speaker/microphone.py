@@ -1,8 +1,7 @@
 """Room microphone: send the board microphone to reb_mic and report it on reb_voice.
 
-The frames are byte-for-byte what the web microphone sends: a Room BinaryFrame
-of type MIC_AUDIO carrying 20 ms of 16 kHz mono S16LE. Brain owns AEC, wake
-word and VAD; this side only captures, converts and reports what it did.
+Each frame is a Room BinaryFrame of type MIC_AUDIO carrying 20 ms of 16 kHz
+mono S16LE. This side only captures, converts and reports what it did.
 """
 
 from __future__ import annotations
@@ -23,9 +22,17 @@ MIC_RATE = 16000
 FRAME_SAMPLES = 320  # 20 ms
 FRAME_BYTES = FRAME_SAMPLES * 2
 FRAME_TYPE = b"MIC_AUDIO"
-QUEUE_FRAMES = 25  # 500 ms; Brain drops older audio anyway
+QUEUE_FRAMES = 25  # 500 ms; older audio is no use for live listening
 MAX_FRAME_AGE = 0.5
 logger = logging.getLogger("speaker.mic")
+
+
+class DeviceUnavailable(Exception):
+    """A configured sound card is missing, ambiguous or busy: wait for it."""
+
+
+class DeviceLost(Exception):
+    """A sound card stopped delivering callbacks: restart with a fresh device list."""
 
 
 def encode_frame(pcm: bytes) -> bytes:
@@ -98,7 +105,6 @@ class MicCapture:
         self.dropped_frames = 0
         self.overflows = 0
         self.faults = 0
-        self.reopens = 0
         self.peak = 0
 
     def feed(self, block, *, overflow=False):
@@ -153,7 +159,6 @@ class MicCapture:
                 "dropped_frames": self.dropped_frames,
                 "overflows": self.overflows,
                 "faults": self.faults,
-                "reopens": self.reopens,
                 "peak_dbfs": round(20 * math.log10(peak / 32768), 1) if peak else None,
             }
 
@@ -203,7 +208,7 @@ class MicLink:
 
 
 async def run_mic_channel(url, room, capture: MicCapture, link: MicLink, *, connect=None):
-    """Publish MIC_AUDIO; like the web microphone, never SUBSCRIBE to reb_mic."""
+    """Publish MIC_AUDIO only; never SUBSCRIBE to reb_mic."""
     if connect is None:
         from websockets.asyncio.client import connect
     delay = 1.0
@@ -247,17 +252,16 @@ async def _drain(ws):
             logger.debug("reb_mic PRESENCE %s", raw[:200])
 
 
-NO_DATA_REPORTS = 5  # seconds without any callback before reopening the device
+NO_DATA_REPORTS = 5  # seconds without any callback: the card is gone
 ZERO_NOTE_REPORTS = 60  # seconds of exact zero before a note in the log
 
 
 def silence_check(counters, state):
-    """"no_data" when the device delivers nothing: reopen it. Zeros are only noted.
+    """"no_data" when the device delivers nothing at all. Zeros are only noted.
 
-    The robot's Jieli USB microphone has an on-device AGC/noise gate (ALSA
-    'Auto Gain Control'): in a quiet room it outputs exact zero for seconds at
-    a time (measured 2026-10-16; with it off the same room read -58..-9 dBFS).
-    So zeros alone do not mean a stuck device and must not trigger a reopen.
+    USB microphones with an on-device AGC/noise gate (ALSA 'Auto Gain Control')
+    output exact zero for seconds at a time in a quiet room, so zeros alone do
+    not mean a broken device.
     """
     captured = counters["captured_sample_count"]
     if captured == state.get("captured"):
@@ -270,8 +274,8 @@ def silence_check(counters, state):
     state["count"] = state.get("count", 0) + 1 if kind and kind == state.get("kind") else (1 if kind else 0)
     state["kind"] = kind
     count = state["count"]
-    if kind == "no_data" and (count == NO_DATA_REPORTS or count % 60 == 0):
-        logger.warning("麦克风连续 %s 秒没有收到声卡数据，重新打开设备", count)
+    if kind == "no_data" and count == NO_DATA_REPORTS:
+        logger.warning("麦克风连续 %s 秒没有收到声卡数据", count)
         return kind
     if kind == "digital_silence" and (count == ZERO_NOTE_REPORTS or count % 600 == 0):
         logger.info("麦克风已连续 %s 秒全零。设备自带降噪/自动增益在安静时会这样；"
@@ -280,23 +284,20 @@ def silence_check(counters, state):
 
 
 async def report_mic(capture: MicCapture, link: MicLink, voice, identity, *, interval=1.0,
-                     recover=None):
+                     watch=False):
     """started once reb_voice is up, then progress every second.
 
-    recover() reopens the device after 5 s without any data, then at most once
-    a minute while that lasts.
+    With watch, 5 s without any data raises DeviceLost. Reopening a vanished
+    USB card in-process can abort inside PortAudio, so the program exits and
+    starts again with a fresh device list instead.
     """
     seq = 0
     started = False
     silence = {}
     while True:
         counters = capture.report()
-        if silence_check(counters, silence) and recover is not None:
-            try:
-                await asyncio.to_thread(recover)
-                logger.warning("已重新打开麦克风")
-            except Exception as exc:
-                logger.warning("重新打开麦克风失败：%s", exc)
+        if silence_check(counters, silence) and watch:
+            raise DeviceLost("麦克风没有数据，声卡可能已断开")
         if voice.ready:
             seq += 1
             kind = "progress" if started else "started"
@@ -337,7 +338,10 @@ def _open_stream(sd, device, rate, count, capture):
 
 def start_input_stream(capture_factory, device, sd):
     """Open the microphone at 16 kHz, else at its own rate with resampling."""
-    info = sd.query_devices(device, "input")
+    try:
+        info = sd.query_devices(device, "input")
+    except Exception as exc:
+        raise DeviceUnavailable(f"麦克风不可用：{exc}") from exc
     native = int(round(float(info["default_samplerate"])))
     channels = max(1, int(info["max_input_channels"]))
     errors = []
@@ -350,31 +354,15 @@ def start_input_stream(capture_factory, device, sd):
             return stream, capture, rate, count, str(info["name"])
         except Exception as exc:
             errors.append(f"{rate} Hz × {count}：{exc}")
-    raise SystemExit("无法打开麦克风\n" + "\n".join(errors))
+    raise DeviceUnavailable("无法打开麦克风：" + "；".join(errors))
 
 
 class MicInput:
-    """The PortAudio input; reopen() recovers a USB microphone stuck at zero.
-
-    Seen on the robot board: after a service restart the Jieli USB microphone
-    sometimes delivers exact zeros, while a fresh open of the same device
-    records normally. Same rate, channels and MicCapture, so nothing else moves.
-    """
+    """The PortAudio input stream with the rate and channels it was opened at."""
 
     def __init__(self, sd, device, capture_factory):
-        self.sd, self.device = sd, device
         self.stream, self.capture, self.rate, self.channels, self.name = start_input_stream(
             capture_factory, device, sd)
-
-    def reopen(self):
-        old, self.stream = self.stream, None
-        try:
-            old.stop()
-        finally:
-            old.close()
-        self.stream = _open_stream(self.sd, self.device, self.rate, self.channels, self.capture)
-        with self.capture.lock:
-            self.capture.reopens += 1
 
     def stop(self):
         if self.stream is not None:

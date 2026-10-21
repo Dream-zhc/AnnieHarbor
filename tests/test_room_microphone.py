@@ -3,6 +3,7 @@
 import asyncio
 import importlib.util
 import json
+import logging
 import math
 import sys
 from pathlib import Path
@@ -283,29 +284,98 @@ def test_zeros_from_the_quiet_room_gate_never_reopen_but_no_data_does():
     assert results[-1] == "no_data" and results[:-1] == [None] * 4
 
 
-def test_reopen_keeps_rate_channels_and_the_same_capture():
-    sd = FakeSounddevice()
-    mic_input = mic.MicInput(sd, 0, lambda rate: mic.MicCapture(rate, channel=2))
-    before = mic_input.capture.report()["captured_sample_count"]
-    mic_input.reopen()
-    assert sd.opened == [(48000, 4, 960), (48000, 4, 960)]  # no new 16 kHz/mono probing
-    report = mic_input.capture.report()
-    assert report["reopens"] == 1 and report["captured_sample_count"] == before + 640
-
-
-def test_a_stuck_microphone_is_reopened_automatically():
+def test_a_card_that_stops_delivering_ends_the_program_for_a_clean_restart():
+    """Reopening a vanished USB card in-process aborted inside PortAudio (188, 10-21)."""
     class Voice:
         ready = False
 
-    async def run():
-        calls = []
-        capture = mic.MicCapture(16000)  # no callbacks: "no_data"
+    async def watch(enabled):
+        capture = mic.MicCapture(16000)  # no callbacks at all
         task = asyncio.create_task(mic.report_mic(capture, mic.MicLink(), Voice(), {},
-                                                  interval=0, recover=lambda: calls.append(1)))
-        async with asyncio.timeout(2):
-            while not calls:
-                await asyncio.sleep(0)
+                                                  interval=0, watch=enabled))
+        try:
+            async with asyncio.timeout(.5):
+                await task
+        except TimeoutError:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            return "still running"
+
+    with pytest.raises(mic.DeviceLost):
+        asyncio.run(watch(True))
+    assert asyncio.run(watch(False)) == "still running"
+
+
+def test_the_speaker_watchdog_fires_only_when_callbacks_stop():
+    async def run(callbacks):
+        playback, now = speaker.Playback(48000), [100.0]
+        task = asyncio.create_task(speaker.watch_speaker(playback, stall=5, interval=0,
+                                                         clock=lambda: now[0]))
+        for _ in range(20):  # 20 s of callbacks, or of nothing
+            now[0] += 1
+            if callbacks:
+                playback.callback_at = now[0]
+            await asyncio.sleep(0)
+            if task.done():
+                return task.exception()
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-        return calls
-    assert asyncio.run(run()) == [1]
+        return None
+
+    assert asyncio.run(run(True)) is None
+    assert isinstance(asyncio.run(run(False)), mic.DeviceLost)
+
+
+def test_missing_cards_are_waited_for_instead_of_a_restart_loop(monkeypatch, caplog):
+    monkeypatch.setattr(speaker, "list_all_devices", lambda: "0\t48000 Hz\tDOV: USB Audio")
+    attempts, sleeps, refreshes = [], [], []
+
+    def open_all():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise mic.DeviceUnavailable("输入设备“USB Composite”匹配到 0 个")
+        return "opened"
+
+    with caplog.at_level(logging.WARNING, logger="speaker"):
+        assert speaker.open_when_ready(open_all, sleep=sleeps.append,
+                                       refresh=lambda: refreshes.append(1)) == "opened"
+    assert sleeps == [speaker.DEVICE_RETRY_SECONDS] * 2 and len(refreshes) == 2
+    warnings = [record.getMessage() for record in caplog.records]
+    assert len(warnings) == 1  # the device list once, not on every attempt
+    assert "USB Composite" in warnings[0] and "DOV" in warnings[0]
+
+
+def test_a_lost_microphone_says_goodbye_and_exits_for_a_restart(monkeypatch):
+    from websockets.asyncio.client import connect
+    from websockets.asyncio.server import serve
+
+    monkeypatch.setattr(mic, "NO_DATA_REPORTS", 2)
+
+    async def run():
+        room = FakeRoom()
+        server = await serve(room.handler, "127.0.0.1", 0)
+        root = f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}/robot"
+        heard = []
+        try:
+            async with connect(f"{root}/roomv2/reb_voice", proxy=None) as listener:
+                await listener.recv()  # WELCOME
+                await listener.send(json.dumps({"type": "SUBSCRIBE", "data": {"types": ["*"]}}))
+                await listener.recv()  # ACK
+                capture = mic.MicCapture(16000)  # the card delivers nothing
+                result = await asyncio.wait_for(speaker.serve(
+                    "", f"{root}/roomv2/reb_voice", "roomv2", None, None,
+                    mic=(f"{root}/roomv2/reb_mic", capture,
+                         mic.device_identity("microphone", "USB Composite")),
+                    watch_devices=True), 10)
+                async with asyncio.timeout(2):
+                    while not any(m["type"] == "mic.capture.stopped" for m in heard):
+                        heard.append(json.loads(await listener.recv()))
+        finally:
+            server.close()
+            await server.wait_closed()
+        return result, heard
+
+    result, heard = asyncio.run(run())
+    assert result == "device_lost"
+    stopped = next(m for m in heard if m["type"] == "mic.capture.stopped")
+    assert stopped["data"]["reason"] == "device_lost"

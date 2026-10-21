@@ -118,6 +118,8 @@ class ReferenceTimeline:
         self.frames: deque[bytes] = deque()
         self.first_frame = 0
         self.next_frame = 0
+        self.next_sample = 0  # 24 kHz samples received, including a partial 10ms frame
+        self.pending = b""
         self.resampler = RenderResampler()
         self.cursor = None
         self.report_time = None
@@ -129,11 +131,20 @@ class ReferenceTimeline:
     def reset(self):
         self.identity = None
         self.frames.clear()
-        self.first_frame = self.next_frame = 0
+        self.first_frame = self.next_frame = self.next_sample = 0
+        self.pending = b""
         self.resampler = RenderResampler()
         self.cursor = self.report_time = self.playback_id = self.read_head = None
         self.playing = False
         self.last_receipt_seq = 0
+
+    def _begin(self, identity, start):
+        self.reset()
+        self.identity = identity
+        self.first_frame = self.next_frame = start // (TTS_RATE // 100)
+        self.next_sample = start
+        # Frames stay on absolute 10ms boundaries, so the speaker cursor maps directly.
+        self.pending = bytes(2 * (start % (TTS_RATE // 100)))
 
     def render(self, packet):
         data = packet.get("data")
@@ -150,25 +161,26 @@ class ReferenceTimeline:
             # Only a *physical* speaker receipt decides when playback ends.
             return
         start = data.get("start_sample")
-        if type(start) is not int or start < 0 or start % (TTS_RATE // 100):
+        if type(start) is not int or start < 0:
             return
+        if len(pcm) % 2:
+            raise ValueError("odd TTS render PCM")
         if self.identity != identity:
-            self.reset()
-            self.identity = identity
-            self.first_frame = self.next_frame = start // (TTS_RATE // 100)
-        if len(pcm) % RENDER_CHUNK_BYTES:
-            raise ValueError("unaligned TTS render PCM")
-        start_frame = start // (TTS_RATE // 100)
-        if start_frame != self.next_frame:
+            self._begin(identity, start)
+        elif start != self.next_sample:
             # A gap, retry, or out-of-order packet invalidates the filter state.
             # Never quietly paste non-contiguous reference into its timeline.
-            if start_frame < self.next_frame:
+            if start < self.next_sample:
                 return  # duplicate output packet
-            self.reset()
-            self.identity = identity
-            self.first_frame = self.next_frame = start_frame
-        for i in range(0, len(pcm), RENDER_CHUNK_BYTES):
-            self.frames.append(self.resampler.process(pcm[i:i + RENDER_CHUNK_BYTES]))
+            self._begin(identity, start)
+        # 10/21 19:01: a TTS segment may end off a 10ms boundary; its tail and
+        # the next segment are one continuous stream, not a gap.
+        self.next_sample += len(pcm) // 2
+        buffered = self.pending + pcm
+        whole = len(buffered) - len(buffered) % RENDER_CHUNK_BYTES
+        self.pending = buffered[whole:]
+        for i in range(0, whole, RENDER_CHUNK_BYTES):
+            self.frames.append(self.resampler.process(buffered[i:i + RENDER_CHUNK_BYTES]))
             self.next_frame += 1
             if len(self.frames) > REFERENCE_MAX_FRAMES:
                 self.frames.popleft()
@@ -184,7 +196,7 @@ class ReferenceTimeline:
         cursor = data.get("played_sample_count")
         kind = message.get("type", "").removeprefix("tts.playback.")
         if (type(seq) is not int or seq <= self.last_receipt_seq or
-                type(cursor) is not int or cursor < 0 or cursor > self.next_frame * 240 or
+                type(cursor) is not int or cursor < 0 or cursor > self.next_sample or
                 kind not in {"started", "progress", "resumed", "held", "stopped", "drained"}):
             return False
         self.last_receipt_seq = seq

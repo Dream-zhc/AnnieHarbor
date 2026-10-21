@@ -76,6 +76,14 @@ ROBOT_HEAD_NAME=大头机器人
 
 注意硬件增益超过 0 dB 的声卡：大头板（192.168.1.188）的 DOV 声卡 `PCM` 范围是 0～+3.9 dB，100% 时会把接近满幅的语音放大 3.9 dB 而削顶，听起来是破音、杂音。这种声卡把软件音量设在 80（≈-3.9 dB，抵消后正好 0 dB）：对小安妮说“音量调到80”，或写 `.speaker-volume` 后重启。2026-10-21 已在 188 上设为 80。143 的 CD002 在 100% 时是 -0.94 dB，不受影响。
 
+大头板的 Jieli 麦克风（`USB Composite`，卡名 `Device`）离扬声器很近，要保持 `Auto Gain Control=on`、`Mic Capture Volume=140`。关掉 AGC 并把增益拉满后，机器人自己的声音会让麦克风削顶，云端回声消除就消不掉了，表现是她把自己的话当成用户的话接着答（2026-10-21）。改声卡设置用卡名，不要用编号（USB 重新插拔后编号会对调），改完执行 `sudo alsactl store`：
+
+```bash
+sudo amixer -c Device cset name='Auto Gain Control' on
+sudo amixer -c Device cset name='Mic Capture Volume' 140
+sudo alsactl store
+```
+
 ## Windows
 
 双击或在命令行运行 `start.bat`。脚本会自建 `.venv` 并安装依赖。

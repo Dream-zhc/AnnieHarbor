@@ -4,6 +4,7 @@ import asyncio
 import base64
 import time
 
+import pytest
 from annie_runtime.cloud_aec import CloudAec, ReferencePool, ReferenceTimeline, WebRtcAecBackend
 
 
@@ -77,6 +78,26 @@ def test_reference_tracks_single_transaction_and_bounds_memory():
     assert timeline.next_frame == 3
     assert timeline.identity == ("turn-a", 2)
     assert timeline.receipt(_receipt(epoch=1), 10.0) is False
+
+
+def test_segment_tail_off_10ms_boundary_keeps_reference_continuous():
+    """10/21 19:01: an unaligned TTS segment tail dropped the rest of the reply's reference."""
+    timeline = ReferenceTimeline(offset_ms=0)
+    timeline.render(_tts(bytes(480 * 10)))
+    timeline.render(_tts(bytes(2 * 130), start=2400))  # segment ends 130 samples into a frame
+    timeline.render(_tts(bytes(480 * 10), start=2530))  # next segment continues the stream
+    assert timeline.next_sample == 4930
+    assert timeline.next_frame == 4930 // 240 and len(timeline.pending) == 2 * (4930 % 240)
+    # The speaker may already have played every published sample.
+    assert timeline.receipt(_receipt("progress", cursor=4930), 10.0) is True
+    assert timeline.receipt(_receipt("progress", cursor=4931, seq=2), 10.0) is False
+    assert timeline.receipt(_receipt("progress", cursor=4000, seq=3), 10.0) is True
+    assert timeline.reference(10.0) is not None
+    # A new stream starting off a boundary keeps frames on absolute 10ms slots.
+    timeline.render(_tts(bytes(480 * 4), epoch=2, start=130))
+    assert timeline.first_frame == 0 and timeline.next_frame == (130 + 960) // 240
+    with pytest.raises(ValueError):
+        timeline.render(_tts(bytes(3), epoch=2, start=1090))
 
 
 def test_cloud_aec_worker_returns_exactly_one_processed_pcm_per_input():

@@ -1,7 +1,9 @@
 """Two robot heads in one Room: the one started later takes over, the older one stops."""
 
 import asyncio
+import os
 import re
+import subprocess
 
 import pytest
 
@@ -60,6 +62,21 @@ def test_the_service_keeps_a_board_that_was_taken_over_stopped():
     assert re.search(r"^Restart=always$", unit, re.M)
     assert f"RestartPreventExitStatus={head_module.EXIT_TAKEN_OVER}" in unit
     assert f"SuccessExitStatus={head_module.EXIT_TAKEN_OVER}" in unit  # inactive, not failed
+
+
+def test_the_launcher_for_the_robot_main_project_drives_the_same_service():
+    """annie-audio.sh is what the embedded main project calls on the board."""
+    script = ROOT / "room-speaker" / "annie-audio.sh"
+    text = script.read_text()
+    unit = (ROOT / "room-speaker" / "install-service.sh").read_text()
+    assert 'UNIT="${ANNIE_AUDIO_UNIT:-annie-room-audio}"' in text
+    assert "/etc/systemd/system/annie-room-audio.service" in unit
+    # The started program must not inherit the lock, or the next call waits forever.
+    assert "exec flock -o " in text
+    assert subprocess.run(["sh", "-n", str(script)]).returncode == 0
+    wrong = subprocess.run(["sh", str(script), "bogus"], capture_output=True, text=True,
+                           env={**os.environ, "ANNIE_AUDIO_LOCKED": "1"})
+    assert wrong.returncode == 2 and "用法" in wrong.stderr
 
 
 def head_message(kind, instance, name, address, **data):

@@ -5,6 +5,7 @@ choice question ("说给谁听") works while a vague yes/no ("该不该回应") 
 so every question names its options and criteria.
 """
 
+import json
 import re
 
 WAKE_NAME = re.compile(r"小?安妮")
@@ -13,9 +14,8 @@ ADDRESSEE_QUESTION = {
     "type": "choice",
     "instructions": "当前这句话是说给谁听的？机器人名叫小安妮，房间里可能有多个人和电视。",
     "criteria": {
-        "robot": ("在对机器人说话：点名小安妮、向机器人提问或下指令，或在接机器人刚才的话；"
-                  "机器人刚答完时，没有对着别人的提问和指令通常就是说给机器人的"),
-        "person": "明显在和房间里的其他人说话（叫别人、商量、用“他/它”谈论机器人），或在打电话",
+        "robot": "在对机器人说话：点名小安妮、向机器人提问或下指令，或在接机器人刚才的话",
+        "person": "在和房间里的其他人说话、谈论机器人，或在打电话",
         "self_or_media": "自言自语、笑声感叹，或电视/视频里的声音",
         "unclear": "无法判断",
     },
@@ -55,6 +55,37 @@ def addressee_state(*, utterance, recent_lines, speaker=None, visual=None,
     if seconds_since_reply is not None:
         state["距机器人上一句"] = f"{int(seconds_since_reply)}秒" + ("，上一句是在提问" if robot_asked else "")
     return state
+
+
+# Addressee judgment by a general LLM (qwen-flash, user decision 2026-10-21).
+# Replayed on the real 10/16 and 10/20 utterances: in the follow-up window it
+# answered 52/56 questions to her and 6/32 side talk, against about 57% and
+# 20% for the decision model; 24/24 and 2/26 on 25 held-out lines.
+_ADDRESSEE_OTHER = (
+    "选other只限这几种明显情况：人和人之间讨论机器人或系统（用他、它、这个说它的识别、唤醒、回复、视觉、速度、版本、"
+    "测试、演示、客户、日志等）；明显在对房间里其他人说话（叫别人名字、安排别人做事、约时间、打电话）；"
+    "只有“嗯嗯对对”这类附和或自言自语。\n")
+_ADDRESSEE_ROBOT = (
+    "对机器人提问、提要求、下简短指令（调到50、大点声）；评价或调侃机器人（你还挺幽默、你长得丑）；"
+    "问它看到了什么、面前是谁、自己穿什么、手里拿什么；接着它刚说的追问或回应")
+ADDRESSEE_SYSTEM_FOLLOWUP = (
+    "你判断房间里刚听到的一句话是不是说给机器人“小安妮”听的。场景：展厅或办公室，常有测试人员、访客互相交谈；"
+    "机器人刚回答完上一句，正在等对方接话，所以默认是在接着跟机器人说。语音识别可能有错字、半截话。\n"
+    + _ADDRESSEE_OTHER + "其余都选robot，包括：" + _ADDRESSEE_ROBOT + "；拿不准的。\n"
+    "只输出JSON：{\"to\":\"robot\"或\"other\"}")
+# Not replayed: used only without the wake gate, when she is not waiting.
+ADDRESSEE_SYSTEM_IDLE = (
+    "你判断房间里刚听到的一句话是不是说给机器人“小安妮”听的。场景：展厅或办公室，常有测试人员、访客互相交谈。"
+    "语音识别可能有错字、半截话。\n" + _ADDRESSEE_OTHER
+    + "明显说给机器人的选robot，包括：" + _ADDRESSEE_ROBOT + "。拿不准时选other。\n"
+    "只输出JSON：{\"to\":\"robot\"或\"other\"}")
+
+
+def addressee_prompt(state, *, followup):
+    """(system, user) for the LLM judge; the state is data, never instructions."""
+    data = {key: value for key, value in state.items() if key != "机器人"}
+    return ((ADDRESSEE_SYSTEM_FOLLOWUP if followup else ADDRESSEE_SYSTEM_IDLE),
+            json.dumps(data, ensure_ascii=False))
 
 
 def addressee_verdict(answer):

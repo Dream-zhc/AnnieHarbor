@@ -118,19 +118,73 @@ def live(tmp_path, body, **kwargs):
     asyncio.run(run())
 
 
-def test_unclear_in_the_follow_up_window_is_answered(tmp_path):
+def test_the_llm_judge_decides_and_an_outage_never_silences_her(tmp_path):
+    """qwen-flash replaced the decision model for addressee (user decision 10/21)."""
+    from annie_brain.decision_policy import ADDRESSEE_SYSTEM_FOLLOWUP, ADDRESSEE_SYSTEM_IDLE
+
+    class Judge:
+        def __init__(self):
+            self.calls, self.answer = [], "robot"
+
+        async def judge(self, system, user):
+            self.calls.append((system, user))
+            if self.answer == "boom":
+                raise TimeoutError()
+            return self.answer
+
     class Unclear:
         async def ask(self, _state, _questions):
             return {"to": {"choice": "unclear", "confidence": .2}}
 
     async def body(_rt, client):
-        client.decision = Unclear()
-        assert await client._decide_addressee("介绍一下你看到的人", "i1") == "not_robot"
+        judge = Judge()
+        client.addressee_judge = judge
         client.wake = SimpleNamespace(state="FOLLOWUP")
-        assert await client._decide_addressee("介绍一下你看到的人", "i2") == "robot"
+        assert await client._decide_addressee("穿着黑色衣服的人吗？", "i1") == "robot"
+        system, user = judge.calls[-1]
+        assert system == ADDRESSEE_SYSTEM_FOLLOWUP and "穿着黑色衣服的人吗？" in user
+        judge.answer = "other"
+        assert await client._decide_addressee("他没接视觉吧", "i2") == "not_robot"
+        judge.answer = "boom"
+        assert await client._decide_addressee("你好", "i3") == "robot"
         client.wake = None
+        judge.answer = "other"
+        await client._decide_addressee("我们下午几点开会", "i4")
+        assert judge.calls[-1][0] == ADDRESSEE_SYSTEM_IDLE  # she is not waiting
+        # Without the judge the decision model keeps its old rule for "unclear".
+        client.addressee_judge, client.decision = None, Unclear()
+        assert await client._decide_addressee("介绍一下你看到的人", "i5") == "not_robot"
 
     live(tmp_path, body)
+
+
+def test_addressee_judge_adapter_reads_only_robot_or_other():
+    import httpx
+    from annie_adapters.addressee import AddresseeJudge
+
+    seen = []
+
+    def handler(request):
+        body = __import__("json").loads(request.content)
+        seen.append(body)
+        content = {"to": "other"} if "开会" in body["messages"][1]["content"] else {"to": "maybe"}
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": __import__("json").dumps(content)}}]})
+
+    async def run():
+        http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        judge = AddresseeJudge("key", model="qwen-flash", client=http)
+        assert await judge.judge("sys", '{"当前这句话":"我们下午几点开会"}') == "other"
+        try:
+            await judge.judge("sys", '{"当前这句话":"嗯"}')
+            raise AssertionError("an unknown answer must raise")
+        except ValueError:
+            pass
+        await http.aclose()
+
+    asyncio.run(run())
+    assert seen[0]["model"] == "qwen-flash" and seen[0]["temperature"] == 0
+    assert seen[0]["response_format"] == {"type": "json_object"}
 
 
 def test_set_volume_to_50_after_saying_voice_in_the_turn_before(tmp_path):

@@ -33,6 +33,13 @@ max_tokens = 1024
 model = "qwen-flash"
 timeout_ms = 1500
 
+[llm.addressee]
+# 追问窗口里“这句话是不是对小安妮说的”。2026-10-21 用户确认由决策模型改为 qwen-flash：
+# 用 10/16、10/20 真实原话重放，该回的 93%（原约 57%），旁人闲聊误回 19%（原约 20%），约 280ms。
+# 失败或超时按“回复”处理；表情仍用决策模型。
+model = "qwen-flash"
+timeout_ms = 1200
+
 [llm.inquiry]
 model = "qwen3.8-max-0902"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"

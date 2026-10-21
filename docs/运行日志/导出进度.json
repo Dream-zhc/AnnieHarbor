@@ -2,7 +2,7 @@
   "log_offsets": {
     "logs/phase4-rework.log": 2910,
     "logs/phase4b-enabled.log": 168980,
-    "logs/viseme-annie-a.log": 7717033,
+    "logs/viseme-annie-a.log": 7747745,
     "logs/viseme-annie-b.log": 4681,
     "tmp/mat-debug-26984.log": 216,
     "tmp/mat-debug-32196.log": 143,
@@ -155,12 +155,17 @@
     "logs/runtime-20261020-181454.log": 645355,
     "logs/runtime-20261020-185138.log": 318504,
     "logs/runtime-20261020-190618.log": 15316011,
-    "logs/runtime-20261021-141744.log": 163003
+    "logs/runtime-20261021-141744.log": 163003,
+    "logs/runtime-20261021-172623.log": 46342,
+    "logs/runtime-20261021-172820.log": 26583,
+    "logs/runtime-20261021-173005.log": 15627,
+    "logs/runtime-20261021-173128.log": 65919,
+    "logs/runtime-20261021-174122.log": 146227
   },
   "table_cursors": {
-    "conversation_turns": 541,
-    "runtime_events": 112453,
+    "conversation_turns": 549,
+    "runtime_events": 112473,
     "action_requests": 1792563649972
   },
-  "last_export": "2026-10-21T16:52:41"
+  "last_export": "2026-10-21T18:07:19"
 }

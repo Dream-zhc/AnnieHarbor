@@ -3903,3 +3903,255 @@ sam_to_listener_p50=-
 [SYNC_FINAL] conv=19671351 audio_total_ms=4450.00 expected=19 emitted=19 seq_chars=行那我等着看你们的新栏目别让我等太久啊 duration_ms_sum=2640.0 internal_gap_ms=1120.0 coverage=0.702128 last_mouth_end_ms=4000.0 speech_end_ms=4020.0 duration_match=False dropped=0
 [MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
 [VISEME] stopping
+[VISEME] pypinyin warm 0ms[VISEME] loading Qwen3-ForcedAligner-0.6B...
+
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 2256.67it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=5941.7ms online_warm=-
+[VISEME] g2pW disabled; pypinyin handles real-time pronunciation
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=5941.7ms online_warm=79.4ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv2/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv2/reb_tts
+[VISEME] reb_sam connected + subscribed
+[VISEME] reb_tts connected + subscribed
+[VISEME] ready
+[ALIGN           ] conv=61c7bcba turn=61c7bcba samples=11520 start=0 active=480..6720 events=2 flush=False mode=qwen_forced_aligner_online align=339.798333006911ms window=0+11520 text_chars=3 idle_max=0.0ms compute=353.2ms
+[MOUTH] conv=61c7bcba seq=0 char=哟 pinyin=yo1 viseme=o script=2 start=1920 end=5760 duration_ms=160.0 start_ms=80.0 replace=False
+[MOUTH] conv=61c7bcba seq=1 char=来 pinyin=lai2 viseme=a script=1 start=5760 end=7680 duration_ms=80.0 start_ms=240.0 replace=False
+[ALIGN           ] conv=61c7bcba turn=61c7bcba samples=14400 start=0 active=480..6720 events=0 flush=False mode=qwen_forced_aligner_online align=40.30058300122619ms window=0+14400 text_chars=3 idle_max=0.0ms compute=40.7ms
+[ALIGN           ] conv=61c7bcba turn=61c7bcba samples=20160 start=0 active=480..20160 events=0 flush=False mode=qwen_forced_aligner_online align=38.077999954111874ms window=0+20160 text_chars=3 idle_max=400.0ms compute=38.4ms
+[ALIGN           ] conv=61c7bcba turn=61c7bcba samples=31680 start=0 active=480..28800 events=0 flush=False mode=qwen_forced_aligner_online align=50.37612502928823ms window=0+31680 text_chars=3 idle_max=400.0ms compute=51.4ms
+[ALIGN           ] conv=61c7bcba turn=61c7bcba samples=33840 start=0 active=480..28800 events=1 flush=True mode=qwen_forced_aligner_final align=47.731167054735124ms window=0+33840 text_chars=3 idle_max=400.0ms compute=48.8ms
+[MOUTH] conv=61c7bcba seq=2 char=啦 pinyin=la5 viseme=a script=1 start=21120 end=30720 duration_ms=400.0 start_ms=880.0 replace=False
+[VISEME_LATENCY]
+conv=61c7bcbaac3f4a66bab31d1d642ae32b
+llm_first_to_pcm_first=-
+pcm_first_to_script_first=565.0
+llm_first_to_script_first=-
+script_compute_p50=48.8
+script_compute_p95=353.2
+script_ws_send_p50=0.0
+sam_to_listener_p50=-
+[SYNC_FINAL] conv=61c7bcba audio_total_ms=1410.00 expected=3 emitted=3 seq_chars=哟来啦 duration_ms_sum=640.0 internal_gap_ms=560.0 coverage=0.533333 last_mouth_end_ms=1280.0 speech_end_ms=1200.0 duration_match=False dropped=0
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[SYNC_FINAL] conv=61c7bcba audio_total_ms=1410.00 expected=3 emitted=3 seq_chars=哟来啦 duration_ms_sum=640.0 internal_gap_ms=560.0 coverage=0.533333 last_mouth_end_ms=1280.0 speech_end_ms=1200.0 duration_match=False dropped=0
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[TTS_CTRL        ] type=tts.playback.hold stop=False conv=61c7bcba
+[TTS_CTRL        ] type=tts.playback.hold stop=False conv=61c7bcba
+[TTS_CTRL        ] type=tts stop=True conv=61c7bcba
+[TTS_RESET       ] reason=stop conv=61c7bcba count=1 reopen=False
+[TTS_CTRL        ] type=tts stop=True conv=06036da9
+[VISEME] stopping
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 4223.34it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=2606.9ms online_warm=-
+[VISEME] g2pW disabled; pypinyin handles real-time pronunciation
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=2606.9ms online_warm=32.2ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv2/reb_sam[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv2/reb_tts
+
+[VISEME] reb_sam connected + subscribed
+[VISEME] reb_tts connected + subscribed
+[VISEME] ready
+[TTS_CTRL        ] type=tts stop=True conv=6056e065
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=11520 start=0 active=6240..11520 events=1 flush=False mode=qwen_forced_aligner_online align=300.4501669202ms window=0+11520 text_chars=4 idle_max=0.0ms compute=310.6ms
+[MOUTH] conv=7b040358 seq=0 char=我 pinyin=wo3 viseme=o script=2 start=5760 end=7680 duration_ms=80.0 start_ms=240.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=14400 start=0 active=6240..14400 events=0 flush=False mode=qwen_forced_aligner_online align=36.55904205515981ms window=0+14400 text_chars=5 idle_max=0.0ms compute=36.9ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=20160 start=0 active=6240..20160 events=0 flush=False mode=qwen_forced_aligner_online align=32.08104206714779ms window=0+20160 text_chars=6 idle_max=0.0ms compute=32.4ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=31680 start=0 active=6240..31680 events=2 flush=False mode=qwen_forced_aligner_online align=52.587290992960334ms window=0+31680 text_chars=8 idle_max=0.0ms compute=53.6ms
+[MOUTH] conv=7b040358 seq=1 char=能 pinyin=neng2 viseme=e script=3 start=13440 end=19200 duration_ms=240.0 start_ms=560.0 replace=False
+[MOUTH] conv=7b040358 seq=2 char=干 pinyin=gan4 viseme=a script=1 start=19200 end=23040 duration_ms=160.0 start_ms=800.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=34560 start=0 active=6240..32160 events=1 flush=False mode=qwen_forced_aligner_online align=44.76249997969717ms window=13440+21120 text_chars=6 idle_max=0.0ms compute=45.9ms
+[MOUTH] conv=7b040358 seq=3 char=嘛 pinyin=ma5 viseme=a script=1 start=23040 end=32640 duration_ms=400.0 start_ms=960.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=37440 start=0 active=6240..32160 events=0 flush=False mode=qwen_forced_aligner_online align=40.907292044721544ms window=19200+18240 text_chars=5 idle_max=0.0ms compute=41.5ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=43200 start=0 active=6240..43200 events=0 flush=False mode=qwen_forced_aligner_online align=45.978583046235144ms window=19200+24000 text_chars=7 idle_max=0.0ms compute=47.0ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=54720 start=0 active=6240..54720 events=2 flush=False mode=qwen_forced_aligner_online align=52.71279194857925ms window=19200+35520 text_chars=9 idle_max=400.0ms compute=54.2ms
+[MOUTH] conv=7b040358 seq=4 char=当 pinyin=dang1 viseme=a script=1 start=42240 end=46080 duration_ms=160.0 start_ms=1760.0 replace=False
+[MOUTH] conv=7b040358 seq=5 char=然 pinyin=ran2 viseme=a script=1 start=46080 end=49920 duration_ms=160.0 start_ms=1920.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=57600 start=0 active=6240..56640 events=1 flush=False mode=qwen_forced_aligner_online align=39.92670797742903ms window=42240+15360 text_chars=5 idle_max=0.0ms compute=41.7ms
+[MOUTH] conv=7b040358 seq=6 char=是 pinyin=shi4 viseme=i script=4 start=49920 end=55680 duration_ms=240.0 start_ms=2080.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=60480 start=0 active=6240..60480 events=0 flush=False mode=qwen_forced_aligner_online align=39.384208037517965ms window=46080+14400 text_chars=5 idle_max=0.0ms compute=41.1ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=66240 start=0 active=6240..66240 events=1 flush=False mode=qwen_forced_aligner_online align=39.826583000831306ms window=46080+20160 text_chars=6 idle_max=0.0ms compute=41.4ms
+[MOUTH] conv=7b040358 seq=7 char=陪 pinyin=pei2 viseme=e script=3 start=57600 end=61440 duration_ms=160.0 start_ms=2400.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=69120 start=0 active=6240..69120 events=2 flush=False mode=qwen_forced_aligner_online align=42.11220797151327ms window=49920+19200 text_chars=6 idle_max=0.0ms compute=43.7ms
+[MOUTH] conv=7b040358 seq=8 char=你 pinyin=ni3 viseme=i script=4 start=61440 end=65280 duration_ms=160.0 start_ms=2560.0 replace=False
+[MOUTH] conv=7b040358 seq=9 char=聊 pinyin=liao2 viseme=a script=1 start=65280 end=67200 duration_ms=80.0 start_ms=2720.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=72000 start=0 active=6240..72000 events=0 flush=False mode=qwen_forced_aligner_online align=40.85562494583428ms window=61440+10560 text_chars=4 idle_max=0.0ms compute=42.3ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=77760 start=0 active=6240..77760 events=1 flush=False mode=qwen_forced_aligner_online align=40.82037496846169ms window=61440+16320 text_chars=5 idle_max=0.0ms compute=42.9ms
+[MOUTH] conv=7b040358 seq=10 char=天 pinyin=tian1 viseme=e script=3 start=69120 end=74880 duration_ms=240.0 start_ms=2880.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=80640 start=0 active=6240..79200 events=1 flush=False mode=qwen_forced_aligner_online align=39.68612500466406ms window=65280+15360 text_chars=5 idle_max=0.0ms compute=41.5ms
+[MOUTH] conv=7b040358 seq=11 char=帮 pinyin=bang1 viseme=a script=1 start=72960 end=78720 duration_ms=240.0 start_ms=3040.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=83520 start=0 active=6240..79200 events=1 flush=False mode=qwen_forced_aligner_online align=40.53637501783669ms window=69120+14400 text_chars=5 idle_max=0.0ms compute=42.2ms
+[MOUTH] conv=7b040358 seq=12 char=你 pinyin=ni3 viseme=i script=4 start=76800 end=78720 duration_ms=80.0 start_ms=3200.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=86400 start=0 active=6240..86400 events=0 flush=False mode=qwen_forced_aligner_online align=44.99458393547684ms window=72960+13440 text_chars=4 idle_max=0.0ms compute=46.9ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=92160 start=0 active=6240..92160 events=0 flush=False mode=qwen_forced_aligner_online align=40.988708031363785ms window=72960+19200 text_chars=6 idle_max=0.0ms compute=43.3ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=103680 start=0 active=6240..103200 events=4 flush=False mode=qwen_forced_aligner_online align=50.635416992008686ms window=72960+30720 text_chars=8 idle_max=0.0ms compute=53.2ms
+[MOUTH] conv=7b040358 seq=13 char=干 pinyin=gan4 viseme=a script=1 start=90240 end=94080 duration_ms=160.0 start_ms=3760.0 replace=False
+[MOUTH] conv=7b040358 seq=14 char=活 pinyin=huo2 viseme=o script=2 start=94080 end=95232 duration_ms=48.0 start_ms=3920.0 replace=False
+[MOUTH] conv=7b040358 seq=15 char=顺 pinyin=shun4 viseme=e script=3 start=96384 end=97536 duration_ms=48.0 start_ms=4016.0 replace=False
+[MOUTH] conv=7b040358 seq=16 char=便 pinyin=bian4 viseme=e script=3 start=98688 end=99840 duration_ms=48.0 start_ms=4112.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=106560 start=0 active=6240..103200 events=0 flush=False mode=qwen_forced_aligner_online align=46.33987497072667ms window=96384+10176 text_chars=4 idle_max=0.0ms compute=48.7ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=112320 start=0 active=6240..112320 events=0 flush=False mode=qwen_forced_aligner_online align=42.533958912827075ms window=96384+15936 text_chars=5 idle_max=400.0ms compute=44.7ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=123840 start=0 active=6240..123840 events=1 flush=False mode=qwen_forced_aligner_online align=47.690541949123144ms window=96384+27456 text_chars=6 idle_max=0.0ms compute=51.1ms
+[MOUTH] conv=7b040358 seq=17 char=怼 pinyin=dui4 viseme=e script=3 start=117504 end=121344 duration_ms=160.0 start_ms=4896.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=126720 start=0 active=6240..126720 events=1 flush=False mode=qwen_forced_aligner_online align=41.28079197835177ms window=98688+28032 text_chars=5 idle_max=0.0ms compute=44.4ms
+[MOUTH] conv=7b040358 seq=18 char=怼 pinyin=dui4 viseme=e script=3 start=121728 end=123648 duration_ms=80.0 start_ms=5072.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=129600 start=0 active=6240..129600 events=1 flush=False mode=qwen_forced_aligner_online align=41.79420799482614ms window=117504+12096 text_chars=4 idle_max=0.0ms compute=44.4ms
+[MOUTH] conv=7b040358 seq=19 char=你 pinyin=ni3 viseme=i script=4 start=125184 end=127104 duration_ms=80.0 start_ms=5216.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=132480 start=0 active=6240..132480 events=0 flush=False mode=qwen_forced_aligner_online align=38.91758306417614ms window=121728+10752 text_chars=3 idle_max=0.0ms compute=42.0ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=138240 start=0 active=6240..133440 events=1 flush=False mode=qwen_forced_aligner_online align=35.430582938715816ms window=121728+16512 text_chars=3 idle_max=0.0ms compute=37.3ms
+[MOUTH] conv=7b040358 seq=20 char=咯 pinyin=ge1 viseme=e script=3 start=127488 end=133248 duration_ms=240.0 start_ms=5312.0 replace=False
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=141120 start=0 active=133248..141120 events=0 flush=False mode=qwen_forced_aligner_idle align=Nonems window=0+0 text_chars=0 idle_max=0ms compute=0.0ms
+[ALIGN           ] conv=7b040358 turn=7b040358 samples=143280 start=0 active=133248..143280 events=0 flush=True mode=qwen_forced_aligner_idle align=Nonems window=0+0 text_chars=0 idle_max=0ms compute=0.0ms
+[VISEME_LATENCY]
+conv=7b040358f0c745d79c1b040382844560
+llm_first_to_pcm_first=-
+pcm_first_to_script_first=531.0
+llm_first_to_script_first=-
+script_compute_p50=44.4
+script_compute_p95=54.2
+script_ws_send_p50=0.0
+sam_to_listener_p50=-
+[SYNC_FINAL] conv=7b040358 audio_total_ms=5970.00 expected=21 emitted=21 seq_chars=我能干嘛当然是陪你聊天帮你干活顺便怼怼你咯 duration_ms_sum=3264.0 internal_gap_ms=2208.0 coverage=0.614458 last_mouth_end_ms=5552.0 speech_end_ms=5560.0 duration_match=False dropped=0
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[SYNC_FINAL] conv=7b040358 audio_total_ms=5970.00 expected=21 emitted=21 seq_chars=我能干嘛当然是陪你聊天帮你干活顺便怼怼你咯 duration_ms_sum=3264.0 internal_gap_ms=2208.0 coverage=0.614458 last_mouth_end_ms=5552.0 speech_end_ms=5560.0 duration_match=False dropped=0
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[TTS_CTRL        ] type=tts.playback.hold stop=False conv=7b040358
+[TTS_CTRL        ] type=tts.playback.resume stop=False conv=7b040358
+[VISEME] stopping
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 3566.96it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=2648.8ms online_warm=-
+[VISEME] g2pW disabled; pypinyin handles real-time pronunciation
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=2648.8ms online_warm=33.2ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv2/reb_sam[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv2/reb_tts
+
+[VISEME] reb_tts connected + subscribed
+[VISEME] reb_sam connected + subscribed
+[VISEME] ready
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=11520 start=0 active=5760..11520 events=1 flush=False mode=qwen_forced_aligner_online align=340.87366703897715ms window=0+11520 text_chars=4 idle_max=0.0ms compute=351.9ms
+[MOUTH] conv=031fcdef seq=0 char=又 pinyin=you4 viseme=o script=2 start=7680 end=9600 duration_ms=80.0 start_ms=320.0 replace=False
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=14400 start=0 active=5760..14400 events=0 flush=False mode=qwen_forced_aligner_online align=34.873749944381416ms window=0+14400 text_chars=5 idle_max=0.0ms compute=35.2ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=20160 start=0 active=5760..20160 events=1 flush=False mode=qwen_forced_aligner_online align=32.27700002025813ms window=0+20160 text_chars=6 idle_max=0.0ms compute=32.6ms
+[MOUTH] conv=031fcdef seq=1 char=打 pinyin=da3 viseme=a script=1 start=11520 end=15360 duration_ms=160.0 start_ms=480.0 replace=False
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=23040 start=0 active=5760..23040 events=0 flush=False mode=qwen_forced_aligner_online align=33.41004194226116ms window=0+23040 text_chars=6 idle_max=0.0ms compute=33.8ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=28800 start=0 active=5760..28800 events=1 flush=False mode=qwen_forced_aligner_online align=45.1254160143435ms window=0+28800 text_chars=8 idle_max=0.0ms compute=46.0ms
+[MOUTH] conv=031fcdef seq=2 char=招 pinyin=zhao1 viseme=a script=1 start=15360 end=23040 duration_ms=320.0 start_ms=640.0 replace=False
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=31680 start=0 active=5760..31680 events=1 flush=False mode=qwen_forced_aligner_online align=34.04687496367842ms window=11520+20160 text_chars=6 idle_max=0.0ms compute=35.1ms
+[MOUTH] conv=031fcdef seq=3 char=呼 pinyin=hu1 viseme=u script=5 start=23040 end=28800 duration_ms=240.0 start_ms=960.0 replace=False
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=34560 start=0 active=5760..32640 events=0 flush=False mode=qwen_forced_aligner_online align=35.704709007404745ms window=15360+19200 text_chars=6 idle_max=0.0ms compute=36.2ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=40320 start=0 active=5760..40320 events=0 flush=False mode=qwen_forced_aligner_online align=45.3792919870466ms window=15360+24960 text_chars=7 idle_max=400.0ms compute=46.1ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=51840 start=0 active=5760..51840 events=4 flush=False mode=qwen_forced_aligner_online align=53.845625021494925ms window=15360+36480 text_chars=9 idle_max=400.0ms compute=55.4ms
+[MOUTH] conv=031fcdef seq=4 char=这 pinyin=zhe4 viseme=e script=3 start=38400 end=40320 duration_ms=80.0 start_ms=1600.0 replace=False
+[MOUTH] conv=031fcdef seq=5 char=是 pinyin=shi4 viseme=i script=4 start=40320 end=44160 duration_ms=160.0 start_ms=1680.0 replace=False
+[MOUTH] conv=031fcdef seq=6 char=怕 pinyin=pa4 viseme=a script=1 start=44160 end=48000 duration_ms=160.0 start_ms=1840.0 replace=False
+[MOUTH] conv=031fcdef seq=7 char=我 pinyin=wo3 viseme=o script=2 start=48000 end=49920 duration_ms=80.0 start_ms=2000.0 replace=False
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=54720 start=0 active=5760..54720 events=0 flush=False mode=qwen_forced_aligner_online align=39.66462495736778ms window=44160+10560 text_chars=4 idle_max=0.0ms compute=41.2ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=60480 start=0 active=5760..60480 events=1 flush=False mode=qwen_forced_aligner_online align=39.38420792110264ms window=44160+16320 text_chars=5 idle_max=0.0ms compute=40.9ms
+[MOUTH] conv=031fcdef seq=8 char=听 pinyin=ting1 viseme=i script=4 start=49920 end=55680 duration_ms=240.0 start_ms=2080.0 replace=False
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=63360 start=0 active=5760..63360 events=0 flush=False mode=qwen_forced_aligner_online align=40.15320900361985ms window=48000+15360 text_chars=5 idle_max=0.0ms compute=41.7ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=69120 start=0 active=5760..69120 events=0 flush=False mode=qwen_forced_aligner_online align=40.37520906422287ms window=48000+21120 text_chars=6 idle_max=0.0ms compute=41.8ms
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=80640 start=0 active=5760..78720 events=0 flush=False mode=qwen_forced_aligner_online align=53.23620804119855ms window=48000+32640 text_chars=8 idle_max=0.0ms compute=55.1ms
+[ALIGN_ZERO      ] conv=031fcdef turn=031fcdef char=不 ordinal=9 sample=55680
+[ALIGN           ] conv=031fcdef turn=031fcdef samples=89520 start=0 active=5760..78720 events=6 flush=True mode=qwen_forced_aligner_final align=52.25804098881781ms window=48000+41520 text_chars=9 idle_max=0.0ms compute=54.7ms
+[MOUTH] conv=031fcdef seq=10 char=见 pinyin=jian4 viseme=e script=3 start=55680 end=61440 duration_ms=240.0 start_ms=2320.0 replace=False
+[MOUTH] conv=031fcdef seq=11 char=还 pinyin=hai2 viseme=a script=1 start=61440 end=63360 duration_ms=80.0 start_ms=2560.0 replace=False
+[MOUTH] conv=031fcdef seq=12 char=是 pinyin=shi4 viseme=i script=4 start=63360 end=67200 duration_ms=160.0 start_ms=2640.0 replace=False
+[MOUTH] conv=031fcdef seq=13 char=怎 pinyin=zen3 viseme=e script=3 start=67200 end=71040 duration_ms=160.0 start_ms=2800.0 replace=False
+[MOUTH] conv=031fcdef seq=14 char=么 pinyin=me5 viseme=e script=3 start=71040 end=72960 duration_ms=80.0 start_ms=2960.0 replace=False
+[MOUTH] conv=031fcdef seq=15 char=的 pinyin=de5 viseme=e script=3 start=72960 end=78720 duration_ms=240.0 start_ms=3040.0 replace=False
+[VISEME_LATENCY]
+conv=031fcdef03db48769421d7b929a5be9a
+llm_first_to_pcm_first=-
+pcm_first_to_script_first=563.0
+llm_first_to_script_first=-
+script_compute_p50=46.0
+script_compute_p95=351.9
+script_ws_send_p50=0.0
+sam_to_listener_p50=-
+[SYNC_FINAL] conv=031fcdef audio_total_ms=3730.00 expected=16 emitted=15 seq_chars=又打招呼这是怕我听见还是怎么的 duration_ms_sum=2480.0 internal_gap_ms=480.0 coverage=0.837838 last_mouth_end_ms=3280.0 speech_end_ms=3280.0 duration_match=False dropped=1
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[SYNC_FINAL] conv=031fcdef audio_total_ms=3730.00 expected=16 emitted=15 seq_chars=又打招呼这是怕我听见还是怎么的 duration_ms_sum=2480.0 internal_gap_ms=480.0 coverage=0.837838 last_mouth_end_ms=3280.0 speech_end_ms=3280.0 duration_match=False dropped=1
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[VISEME] stopping
+[VISEME] pypinyin warm 0ms
+[VISEME] loading Qwen3-ForcedAligner-0.6B...
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 3722.89it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=2676.6ms online_warm=-
+[VISEME] g2pW disabled; pypinyin handles real-time pronunciation
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=2676.6ms online_warm=34.4ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv2/reb_sam
+[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv2/reb_tts
+[VISEME] reb_sam connected + subscribed[VISEME] reb_tts connected + subscribed
+
+[VISEME] ready
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=11520 start=0 active=4800..11520 events=0 flush=False mode=qwen_forced_aligner_online align=307.20325000584126ms window=0+11520 text_chars=4 idle_max=0.0ms compute=320.8ms
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=17280 start=0 active=4800..16320 events=1 flush=False mode=qwen_forced_aligner_online align=38.103749975562096ms window=0+17280 text_chars=5 idle_max=0.0ms compute=38.5ms
+[MOUTH] conv=de401a57 seq=0 char=行 pinyin=xing2 viseme=i script=4 start=5760 end=15360 duration_ms=400.0 start_ms=240.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=20160 start=0 active=4800..16320 events=0 flush=False mode=qwen_forced_aligner_online align=40.3755831066519ms window=0+20160 text_chars=6 idle_max=0.0ms compute=40.7ms
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=25920 start=0 active=4800..25920 events=0 flush=False mode=qwen_forced_aligner_online align=47.729959012940526ms window=0+25920 text_chars=7 idle_max=480.0ms compute=48.5ms
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=37440 start=0 active=5280..37440 events=3 flush=False mode=qwen_forced_aligner_online align=56.83241703081876ms window=0+37440 text_chars=9 idle_max=240.0ms compute=57.8ms
+[MOUTH] conv=de401a57 seq=1 char=音 pinyin=yin1 viseme=i script=4 start=23040 end=26880 duration_ms=160.0 start_ms=960.0 replace=False
+[MOUTH] conv=de401a57 seq=2 char=量 pinyin=liang4 viseme=a script=1 start=26880 end=30720 duration_ms=160.0 start_ms=1120.0 replace=False
+[MOUTH] conv=de401a57 seq=3 char=调 pinyin=diao4 viseme=a script=1 start=30720 end=32640 duration_ms=80.0 start_ms=1280.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=40320 start=0 active=5280..40320 events=1 flush=False mode=qwen_forced_aligner_online align=45.698166941292584ms window=26880+13440 text_chars=4 idle_max=0.0ms compute=46.8ms
+[MOUTH] conv=de401a57 seq=4 char=到 pinyin=dao4 viseme=a script=1 start=32640 end=34560 duration_ms=80.0 start_ms=1360.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=43200 start=0 active=5280..43200 events=0 flush=False mode=qwen_forced_aligner_online align=38.64295803941786ms window=30720+12480 text_chars=4 idle_max=400.0ms compute=39.8ms
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=48960 start=0 active=5280..48480 events=0 flush=False mode=qwen_forced_aligner_online align=42.95912501402199ms window=30720+18240 text_chars=5 idle_max=320.0ms compute=44.2ms
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=60480 start=0 active=5280..60480 events=1 flush=False mode=qwen_forced_aligner_online align=50.55949999950826ms window=30720+29760 text_chars=8 idle_max=400.0ms compute=52.0ms
+[MOUTH] conv=de401a57 seq=5 char=了 pinyin=le5 viseme=e script=3 start=44160 end=48000 duration_ms=160.0 start_ms=1840.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=63360 start=0 active=5280..63360 events=1 flush=False mode=qwen_forced_aligner_online align=48.63216693047434ms window=32640+30720 text_chars=8 idle_max=400.0ms compute=49.9ms
+[MOUTH] conv=de401a57 seq=6 char=这 pinyin=zhe4 viseme=e script=3 start=57600 end=59520 duration_ms=80.0 start_ms=2400.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=66240 start=0 active=5280..66240 events=1 flush=False mode=qwen_forced_aligner_online align=42.51883295364678ms window=44160+22080 text_chars=6 idle_max=400.0ms compute=44.0ms
+[MOUTH] conv=de401a57 seq=7 char=下 pinyin=xia4 viseme=a script=1 start=59520 end=63360 duration_ms=160.0 start_ms=2480.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=69120 start=0 active=5280..69120 events=1 flush=False mode=qwen_forced_aligner_online align=39.542292011901736ms window=57600+11520 text_chars=4 idle_max=0.0ms compute=41.1ms
+[MOUTH] conv=de401a57 seq=8 char=够 pinyin=gou4 viseme=o script=2 start=63360 end=67200 duration_ms=160.0 start_ms=2640.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=72000 start=0 active=5280..72000 events=1 flush=False mode=qwen_forced_aligner_online align=42.544999974779785ms window=59520+12480 text_chars=4 idle_max=0.0ms compute=44.1ms
+[MOUTH] conv=de401a57 seq=9 char=安 pinyin=an1 viseme=a script=1 start=67200 end=69120 duration_ms=80.0 start_ms=2800.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=74880 start=0 active=5280..74880 events=1 flush=False mode=qwen_forced_aligner_online align=40.9642499871552ms window=63360+11520 text_chars=4 idle_max=0.0ms compute=43.0ms
+[MOUTH] conv=de401a57 seq=10 char=静 pinyin=jing4 viseme=i script=4 start=71040 end=72960 duration_ms=80.0 start_ms=2960.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=77760 start=0 active=5280..77760 events=1 flush=False mode=qwen_forced_aligner_online align=41.09625006094575ms window=67200+10560 text_chars=4 idle_max=0.0ms compute=43.3ms
+[MOUTH] conv=de401a57 seq=11 char=了 pinyin=le5 viseme=e script=3 start=72960 end=74880 duration_ms=80.0 start_ms=3040.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=80640 start=0 active=5280..80160 events=1 flush=False mode=qwen_forced_aligner_online align=40.82450002897531ms window=71040+9600 text_chars=3 idle_max=0.0ms compute=42.6ms
+[MOUTH] conv=de401a57 seq=12 char=吧 pinyin=ba5 viseme=a script=1 start=74880 end=78720 duration_ms=160.0 start_ms=3120.0 replace=False
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=83520 start=0 active=78720..83520 events=0 flush=False mode=qwen_forced_aligner_idle align=Nonems window=0+0 text_chars=0 idle_max=0ms compute=0.0ms
+[ALIGN           ] conv=de401a57 turn=de401a57 samples=87600 start=0 active=78720..87600 events=0 flush=True mode=qwen_forced_aligner_idle align=Nonems window=0+0 text_chars=0 idle_max=0ms compute=0.0ms
+[VISEME_LATENCY]
+conv=de401a5742a5441987db118c8e0c02d3
+llm_first_to_pcm_first=-
+pcm_first_to_script_first=575.0
+llm_first_to_script_first=-
+script_compute_p50=44.0
+script_compute_p95=57.8
+script_ws_send_p50=0.0
+sam_to_listener_p50=-
+[SYNC_FINAL] conv=de401a57 audio_total_ms=3650.00 expected=13 emitted=13 seq_chars=行音量调到了这下够安静了吧 duration_ms_sum=1840.0 internal_gap_ms=1200.0 coverage=0.605263 last_mouth_end_ms=3280.0 speech_end_ms=3340.0 duration_match=False dropped=0
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[SYNC_FINAL] conv=de401a57 audio_total_ms=3650.00 expected=13 emitted=13 seq_chars=行音量调到了这下够安静了吧 duration_ms_sum=1840.0 internal_gap_ms=1200.0 coverage=0.605263 last_mouth_end_ms=3280.0 speech_end_ms=3340.0 duration_match=False dropped=0
+[MOUTH_DROP      ] reject non-authoritative timing seq=None source=-
+[TTS_CTRL        ] type=tts.playback.hold stop=False conv=de401a57
+[TTS_CTRL        ] type=tts.playback.resume stop=False conv=de401a57
+[TTS_CTRL        ] type=tts stop=True conv=de401a57
+[TTS_RESET       ] reason=stop conv=de401a57 count=1 reopen=False
+[TTS_CTRL        ] type=tts stop=True conv=58fe824c
+[TTS_CTRL        ] type=tts stop=True conv=58fe824c
+[TTS_CTRL        ] type=tts stop=True conv=201d4c99
+[TTS_CTRL        ] type=tts stop=True conv=201d4c99
+[VISEME] stopping
+[VISEME] pypinyin warm 0ms[VISEME] loading Qwen3-ForcedAligner-0.6B...
+
+Fetching 8 files:   0%|          | 0/8 [00:00<?, ?it/s]Fetching 8 files: 100%|██████████| 8/8 [00:00<00:00, 1647.41it/s]
+[VISEME] forced aligner ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=3531.0ms online_warm=-
+[VISEME] g2pW disabled; pypinyin handles real-time pronunciation
+[VISEME] forced aligner online warm ready backend=mlx model=Qwen/Qwen3-ForcedAligner-0.6B warmup=3531.0ms online_warm=36.9ms
+[VISEME] starting listeners
+[VISEME] reb_sam connecting ws://192.168.1.47:8090/robot/roomv2/reb_sam[VISEME] reb_tts connecting ws://192.168.1.47:8090/robot/roomv2/reb_tts
+
+[VISEME] reb_tts connected + subscribed
+[VISEME] reb_sam connected + subscribed
+[VISEME] ready
+[VISEME] stopping

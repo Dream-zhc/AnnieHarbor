@@ -99,8 +99,7 @@ class EventService:
                 speech = client.speech
                 blocked = robot.coordinator.event_block_reason(
                     model_busy=bool(client.speech_active or client.turn_id or client.response_id),
-                    playback_active=bool(speech and (speech.turn_id or
-                        speech.worker and not speech.worker.done())),
+                    playback_active=bool(speech and speech.output_active()),
                 )
                 if (blocked is None and row.get("wait_for_quiet")
                         and time.monotonic() - client._last_conversation_activity_t

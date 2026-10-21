@@ -127,6 +127,8 @@ class WakeCompletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.client.socket.closed)
         self.assertEqual(self.client.wake.state, "SLEEP")
         self.assertEqual(self.forwarded(), [])
+        # 10/20 18:47: this used to stop the client for good (woke, heard nothing).
+        self.assertFalse(self.client._stopping)
 
     async def test_simultaneous_hit_and_next_pcm_forward_in_order_once(self):
         expected = [self.put(1), self.put(2)]

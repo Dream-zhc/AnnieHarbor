@@ -1298,6 +1298,11 @@ class HarborRuntime:
                             robot_id, message),
                     ))
                 self.playback_listeners[config.robot_id] = tuple(listeners)
+                client = self.realtime.get(config.robot_id)
+                if client is not None and any(item.channel == "visualllm" for item in listeners):
+                    # look_closely: only robots with a camera feed get the tool.
+                    client.visual_details = (
+                        lambda robot_id=config.robot_id: self._current_view_details(robot_id))
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):
@@ -1787,6 +1792,13 @@ class HarborRuntime:
         return self.room_monitors[robot_id].current_visual(
             connected=bool(visual and visual.connected),
         )
+
+    def _current_view_details(self, robot_id):
+        listeners = self.playback_listeners.get(robot_id, ())
+        visual = next((item for item in listeners if item.channel == "visualllm"), None)
+        if not (visual and visual.connected):
+            return None
+        return self.room_monitors[robot_id].view_details()
 
     def room_observations(self, robot_id):
         monitor = self.room_monitors[robot_id]

@@ -21,6 +21,7 @@ MAX_MIXED_SENTENCES = 16
 MAX_TTS_TEXT_CHARS = 8000  # matches bounded playback text fields
 PCM_LEAD_SECONDS = 0.24  # publish ahead of the sample clock to absorb network jitter
 FAILED_STOP_TIMEOUT_SECONDS = 1.0
+RECEIPT_STALE_SECONDS = 3.0  # a speaker reports progress every ~100 ms while playing
 FAILED_STOP_RETRY_SECONDS = .1
 # After the stop packet is published, worker and socket teardown must not hold
 # the Realtime receive loop. A mixed TaskGroup can ignore cancellation.
@@ -165,6 +166,7 @@ class SpeechOutput:
         self.last_stop_evidence = "unknown"
         self.synthesized_complete = False
         self.local_output_completed_at = None  # monotonic; NOT a speaker receipt
+        self._last_receipt_t = None  # monotonic, current turn only
         self.local_output_stopped_at = None  # successful STOP publication, NOT a receipt
         self.viseme_events = 0
         self.viseme_seen = set()
@@ -398,6 +400,7 @@ class SpeechOutput:
         self.synthesized_complete = False
         self.local_output_completed_at = None
         self.local_output_stopped_at = None
+        self._last_receipt_t = None
         self.viseme_state = "not_connected"
         self.viseme_seen.clear()
         self.alignment_points.clear()
@@ -559,6 +562,25 @@ class SpeechOutput:
             self._emit("tts.error", error=self.error)
         finally:
             self.flush_timer = None
+
+    def output_active(self):
+        """Still synthesizing or still audible. The last turn_id stays set after a
+        normal finish, so it alone must not count: events waiting for a quiet
+        robot (greetings, face results, sensors) were blocked until they expired.
+        """
+        if self.turn_id is None:
+            return False
+        if self.worker is not None and not self.worker.done():
+            return True
+        if self.playback_state in {"drained", "stopped"}:
+            return False
+        now = time.monotonic()
+        if self._last_receipt_t is not None:
+            # Playing per the speaker, unless it stopped reporting (unplugged).
+            return now - self._last_receipt_t < RECEIPT_STALE_SECONDS
+        done = self.local_output_completed_at
+        # No receipt at all: the audio lasts about as long as what was synthesized.
+        return done is not None and now - done < self.samples / 24000 + 1.0
 
     async def finish(self, turn_id):
         if turn_id != self.turn_id or self.finished:
@@ -1262,6 +1284,8 @@ class SpeechOutput:
         stopped = self.pending_stop is not None and (cid, epoch) == self.pending_stop[:2]
         if not active and not stopped:
             return False
+        if active:
+            self._last_receipt_t = time.monotonic()
         limit = max(self.samples, self.inflight_end) if active else self.pending_stop[2]
         if data["played_sample_count"] > limit:
             return False

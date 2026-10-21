@@ -20,7 +20,7 @@
 - 事件走Event Router + Speak Policy；需要发声才提交SpeakRequest，由TurnCoordinator协调，Realtime最终表达。LangGraph仅负责按需多步骤任务/状态/工具与结构化结果；Persona按Session/revision加载，不每轮重发。
 - 后续以总计划为准：已有React/Realtime/独立TTS与单头ForcedAligner、上下文/记忆/动作/事件及按需LangGraph、Phase 9分轮诊断；不改造双头嘴型。Phase 10及之后暂停，统一实测后按Bug处理；实时打断仍须同步外置TTS、已有嘴型与Realtime未播上下文。
 
-- 协同开发：运行日志、控制台日志与对话记录默认上传GitHub。每次提交推送前执行`uv run --locked python scripts/导出运行日志.py`，把增量导出到`docs/运行日志/<日期>/`并随提交推送；清理临时目录前先导出。细则见PROJECT_RULES第4条。
+- 协同开发：运行日志、控制台日志与对话记录默认上传GitHub。**仅当前分支为`main`时**，提交推送前执行`uv run --locked python scripts/导出运行日志.py`，把增量导出到`docs/运行日志/<日期>/`并随提交推送；开发分支提交无需导出。细则见PROJECT_RULES第4条。
 
 - 验证产物按PROJECT_RULES第8条收尾：长期回归保留在tests/与web/tests/，本期旧临时HTML、合成压力脚本和手工TTS探针已删除；未来Bug临时脚本用var/tmp/<任务唯一标识>/并在结束时清理。禁止删除整个tests/或扫空var/。
 

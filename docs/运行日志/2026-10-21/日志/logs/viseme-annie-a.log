@@ -3067,3 +3067,4 @@ sam_to_listener_p50=-
 [TTS_CTRL        ] type=tts.playback.hold stop=False conv=bf54dc97
 [TTS_CTRL        ] type=tts stop=True conv=bf54dc97
 [TTS_RESET       ] reason=stop conv=bf54dc97 count=1 reopen=False
+[VISEME] stopping

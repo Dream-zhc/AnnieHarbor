@@ -60,3 +60,22 @@ test('parseDecision formats active motion and declined side talk',()=>{
   assert.equal(parsedDeclined.outcomeSub,'判定：对别人说');
   assert.equal(parsedDeclined.outcomeType,'declined');
 });
+
+test('the decision card names the model in use: d3 while up, Aliyun as fallback',async()=>{
+  const {decisionSource,modelName}=await import('../src/decision-log.ts');
+  const base={addressee:true,auto_expression:true};
+  const up=decisionSource({...base,addressee_model:'d3-NVFP4',expression_model:'d3-NVFP4',
+    d3:{model:'d3-NVFP4',status:'ready',ready:true,error:null,checked_ms:1,failures:0}});
+  assert.equal(up?.label,'d3 在线');
+  assert.equal(up?.tone,'good');
+  const down=decisionSource({...base,addressee_model:'qwen-flash',expression_model:'decision-model-preview',
+    d3:{model:'d3-NVFP4',status:'down',ready:false,error:'ConnectError',checked_ms:1,failures:1}});
+  assert.equal(down?.label,'阿里保底 · d3 离线');
+  assert.match(down?.title??'',/ConnectError.*对话对象 阿里 qwen-flash，表情 阿里决策模型/);
+  assert.equal(decisionSource({...base,addressee_model:'qwen-flash',expression_model:'decision-model-preview',d3:null})?.label,'阿里');
+  assert.equal(decisionSource({addressee:false,auto_expression:false}),null);
+  assert.equal(modelName('d3-NVFP4'),'d3');
+  const decided=decisionEntry({seq:12,kind:'addressee.decided',verdict:'not_robot',choice:'person',
+    confidence:.6,latency_ms:160,model:'d3-NVFP4',text:'他没接视觉吧'});
+  assert.equal(decided?.detail,'d3 · 置信 0.60 · 160 ms');
+});

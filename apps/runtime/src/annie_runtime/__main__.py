@@ -147,6 +147,25 @@ def require_dashboard_build(root: Path) -> Path:
     return dashboard
 
 
+def d3_options(decision: dict, environ) -> dict:
+    """HarborRuntime d3 kwargs from providers.toml [decision] and .env.
+
+    prefer = "d3" uses d3 while it answers and DashScope otherwise; "dashscope"
+    never contacts d3. Without ANNIE_D3_URL nothing changes either way.
+    """
+    prefer = decision.get("prefer", "dashscope")
+    if prefer not in {"d3", "dashscope"}:
+        raise ValueError('[decision].prefer must be "d3" or "dashscope"')
+    d3 = decision.get("d3", {})
+    return {
+        "d3_url": (environ.get("ANNIE_D3_URL") or None) if prefer == "d3" else None,
+        "d3_key": environ.get("ANNIE_D3_TOKEN") or None,
+        "d3_model": d3.get("model", "d3-NVFP4"),
+        "d3_timeout_ms": int(d3.get("timeout_ms", 1500)),
+        "d3_expression_threshold": float(d3.get("expression_threshold", .7)),
+    }
+
+
 def main():
     root = Path(__file__).resolve().parents[4]
     parser = argparse.ArgumentParser(description="Annie Harbor — Phase 4 workbench and Runtime")
@@ -311,6 +330,7 @@ def main():
         addressee_base_url=provider_defaults["llm"]["base_url"],
         addressee_timeout_ms=int(provider_defaults["llm"].get("addressee", {}).get("timeout_ms", 1200)),
         decision_timeout_ms=int(provider_defaults.get("decision", {}).get("timeout_ms", 1500)),
+        **d3_options(provider_defaults.get("decision", {}), os.environ),
         addressee_enabled=os.environ.get("ANNIE_ADDRESSEE_ENABLED", "1") == "1",
         auto_expression_enabled=os.environ.get("ANNIE_AUTO_EXPRESSION_ENABLED", "1") == "1",
         expression_threshold=float(provider_defaults.get("decision", {}).get("expression_threshold", .55)),

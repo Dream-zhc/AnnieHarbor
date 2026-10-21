@@ -11,7 +11,7 @@ import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
 import {RoomObservationsBar} from './room-observations';
-import {decisionEntry,formatDecision,isProviderAmbient,parseDecision,type DecisionEntry} from './decision-log';
+import {decisionEntry,decisionSource,formatDecision,isProviderAmbient,parseDecision,type DecisionEntry} from './decision-log';
 import {audioDevices,conflictMessages,handoverEventMessage,handoverMessage,headLabel} from './audio-devices';
 import {faceNotice,volumeNotice} from './notices';
 import {ParticleCanvas, type ColorPalette} from './particle-canvas';
@@ -315,6 +315,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
   const route=routes.find(item=>item.robot_id===robotId);
   const realtime=selectedRobot?.realtime;
   const speech=realtime?.speech_output;
+  const decisionModel=decisionSource(realtime?.decision);
 
   const playbackEvent=[...realtimeEvents].reverse().find(item=>
     (item.kind==='playback.hold_requested'||item.kind==='playback.resume_requested')&&item.turn_id);
@@ -971,6 +972,12 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                   <span>对话决策</span>
                   {decisions.length > 0 && (
                     <span className="decision-count-badge">{decisions.length}</span>
+                  )}
+                  {decisionModel && (
+                    <span className={`decision-model-chip tone-${decisionModel.tone}`}
+                      title={decisionModel.title} aria-label={`决策模型：${decisionModel.title}`}>
+                      {decisionModel.label}
+                    </span>
                   )}
                 </div>
                 {decisions.length > 1 && (

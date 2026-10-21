@@ -914,6 +914,12 @@ class HarborRuntime:
         addressee_timeout_ms: int = 1200,
         decision_client=None,
         decision_timeout_ms: int = 1500,
+        d3_url: str | None = None,
+        d3_key: str | None = None,
+        d3_model: str = "d3-NVFP4",
+        d3_timeout_ms: int = 1500,
+        d3_expression_threshold: float = 0.7,
+        d3_route=None,
         addressee_enabled: bool = False,
         auto_expression_enabled: bool = False,
         expression_threshold: float = 0.55,
@@ -1067,6 +1073,21 @@ class HarborRuntime:
             self.decision = DecisionClient(decision_url, realtime_key,
                                            timeout=decision_timeout_ms / 1000)
             self._owns_decision = True
+        # Self-hosted d3 answers first while its probe says it is up; DashScope
+        # (qwen-flash for addressee, the decision model for faces) is the fallback.
+        self.d3 = d3_route
+        self._owns_d3 = False
+        if self.d3 is None and d3_url and self.realtime:
+            from annie_adapters.decision import DecisionClient
+
+            from annie_runtime.decision_route import D3Route
+            if not d3_key:
+                raise ValueError("ANNIE_D3_URL requires ANNIE_D3_TOKEN")
+            self.d3 = D3Route(
+                DecisionClient(d3_url, d3_key, model=d3_model, timeout=d3_timeout_ms / 1000,
+                               gateway=True),
+                model=d3_model, expression_threshold=d3_expression_threshold)
+            self._owns_d3 = True
         self.addressee_judge = None
         if addressee_enabled and addressee_model and realtime_key and self.realtime:
             from annie_adapters.addressee import AddresseeJudge
@@ -1078,10 +1099,12 @@ class HarborRuntime:
                 timeout_ms=addressee_timeout_ms)
         for client in self.realtime.values():
             client.decision = self.decision
+            client.d3 = self.d3
             client.addressee_judge = self.addressee_judge
-            client.addressee_enabled = bool(addressee_enabled
-                                            and (self.decision or self.addressee_judge))
-            client.auto_expression_enabled = bool(auto_expression_enabled and self.decision)
+            client.addressee_enabled = bool(addressee_enabled and (
+                self.decision or self.addressee_judge or self.d3))
+            client.auto_expression_enabled = bool(auto_expression_enabled
+                                                  and (self.decision or self.d3))
             client.expression_threshold = expression_threshold
         if ambient_enabled and self.realtime:
             from annie_adapters.acoustic import QwenASRSocket as AmbientSocket
@@ -1899,6 +1922,8 @@ class HarborRuntime:
             realtime.start()
         if self.decision is not None and self._owns_decision:
             self._decision_warm = asyncio.create_task(self._warm_decision())
+        if self.d3 is not None and self._owns_d3:
+            self.d3.start()
         for connection in self.room_connections.values():
             connection.start()
         for connections in self.playback_listeners.values():
@@ -1946,6 +1971,8 @@ class HarborRuntime:
                 await self.faces.close()
             if self.decision is not None and self._owns_decision:
                 await self.decision.close()
+            if self.d3 is not None and self._owns_d3:
+                await self.d3.close()
             if self.addressee_judge is not None:
                 await self.addressee_judge.close()
             if self.memory:

@@ -15,11 +15,24 @@ chat_completions_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/c
 model = "qwen-audio-3.1-realtime-plus"
 
 # 决策模型（TypeSafe System One）：判断“是不是对机器人说的”、自发表情。
-# 地址含业务空间，只放 .env 的 ANNIE_DECISION_URL；未配置时两项都不启用。
+# prefer = "d3"：自建 d3-NVFP4 能答就用它（对话对象 + 表情）；未配置、云机未开、预热中或出错时
+#   自动回退阿里：对话对象走 [llm.addressee] qwen-flash，表情走下面的 decision-model-preview。
+# prefer = "dashscope"：只用阿里，不连 d3。
+# 阿里地址含业务空间，只放 .env 的 ANNIE_DECISION_URL；d3 地址与 token 只放 .env 的
+# ANNIE_D3_URL / ANNIE_D3_TOKEN。两者都未配置时对话对象只走 qwen-flash，自发表情不启用。
 [decision]
+prefer = "d3"
 model = "decision-model-preview"
 timeout_ms = 1500
 expression_threshold = 0.55
+
+# 2026-10-21 用 10-20/10-21 演示原话重放：对话对象（追问版问题）可计分 39 句准确 87%，
+# 旁人对话误回 3/12（qwen-flash 7.5/12），模型耗时约 160ms；表情比旧模型选得多，
+# 阈值 0.55 时 76 轮选 19 次、0.7 时 12 次。证据见 docs/开发记录/2026-10-21/d3决策模型评测.md。
+[decision.d3]
+model = "d3-NVFP4"
+timeout_ms = 1500
+expression_threshold = 0.7
 
 [llm.main]
 model = "qwen3.8-flash"
@@ -36,7 +49,7 @@ timeout_ms = 1500
 [llm.addressee]
 # 追问窗口里“这句话是不是对小安妮说的”。2026-10-21 用户确认由决策模型改为 qwen-flash：
 # 用 10/16、10/20 真实原话重放，该回的 93%（原约 57%），旁人闲聊误回 19%（原约 20%），约 280ms。
-# 失败或超时按“回复”处理；表情仍用决策模型。
+# 失败或超时按“回复”处理。[decision] prefer = "d3" 且 d3 在线时由 d3 判断，本项是阿里保底。
 model = "qwen-flash"
 timeout_ms = 1200
 

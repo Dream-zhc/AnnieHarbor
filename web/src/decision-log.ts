@@ -2,7 +2,14 @@
 export type DecisionEvent={
   seq:number;kind:string;text?:string;verdict?:string;choice?:string|null;
   confidence?:number|null;latency_ms?:number|null;error?:string|null;source?:string;
-  script?:string|null;reason?:string;
+  script?:string|null;reason?:string;model?:string|null;
+};
+/** realtime.decision in the robot snapshot: which model answers right now. */
+export type DecisionStatus={
+  addressee:boolean;addressee_judge?:string|null;addressee_model?:string|null;
+  auto_expression:boolean;expression_model?:string|null;
+  d3?:{model:string;status:'probing'|'ready'|'down';ready:boolean;error:string|null;
+    checked_ms:number|null;failures:number}|null;
 };
 export type DecisionEntry={seq:number;topic:string;choice:string;outcome:string;detail:string;text:string};
 
@@ -15,7 +22,31 @@ const MOTION:Record<string,string>={
   look_up:'看上面',fast_double_blink:'眨眼',
 };
 
+const MODEL_NAME:Record<string,string>={
+  'd3-NVFP4':'d3','qwen-flash':'阿里 qwen-flash',
+  'decision-model-preview':'阿里决策模型',decision:'阿里决策模型',
+};
+export const modelName=(model?:string|null)=>model?MODEL_NAME[model]??model:'';
+
+/** The model in use for the decision card: d3 while it answers, Aliyun otherwise. */
+export function decisionSource(status?:DecisionStatus|null)
+  :{label:string;title:string;tone:'good'|'warn'|'off'}|null{
+  if(!status||!(status.addressee||status.auto_expression))return null;
+  const d3=status.d3;
+  if(d3?.ready)return {label:'d3 在线',tone:'good',
+    title:`自建 ${d3.model}：对话对象和表情都由它判断，出错自动回退阿里`};
+  const using=[
+    status.addressee&&status.addressee_model?'对话对象 '+modelName(status.addressee_model):'',
+    status.auto_expression&&status.expression_model?'表情 '+modelName(status.expression_model):'',
+  ].filter(Boolean).join('，');
+  if(!d3)return {label:'阿里',tone:'off',title:`未配置 d3；${using||'阿里'}`};
+  const why=d3.status==='probing'?'d3 探测中':'d3 不可用'+(d3.error?`（${d3.error}）`:'');
+  return {label:d3.status==='probing'?'阿里 · d3 探测中':'阿里保底 · d3 离线',tone:'warn',
+    title:`${why}，正用阿里保底：${using||'阿里'}`};
+}
+
 const metrics=(event:DecisionEvent)=>[
+  modelName(event.model),
   typeof event.confidence==='number'?'置信 '+event.confidence.toFixed(2):'',
   typeof event.latency_ms==='number'?Math.round(event.latency_ms)+' ms':'',
 ].filter(Boolean).join(' · ');

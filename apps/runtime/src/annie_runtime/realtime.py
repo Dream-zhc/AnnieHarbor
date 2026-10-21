@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from uuid import NAMESPACE_OID, uuid4, uuid5
 
+from annie_adapters.decision import error_kind
 from annie_adapters.realtime import MODEL, QwenRealtimeSocket, audio_append, session_update
 from annie_brain.context import (
     INTERRUPTED_USER_SOURCES,
@@ -20,6 +21,7 @@ from annie_brain.context import (
     select_restorable_context,
 )
 from annie_brain.decision_policy import (
+    ADDRESSEE_FOLLOWUP_QUESTION,
     ADDRESSEE_QUESTION,
     EXPRESSION_SCRIPTS,
     GENERIC_MOTION,
@@ -283,7 +285,8 @@ class RealtimeRobot:
         self._memory_bootstrap = ""
         self._persona_offer = None  # styles the robot just asked the user to pick from
         # Decision model: addressee gate and automatic expressions (optional).
-        self.decision = None
+        self.decision = None  # DashScope decision model: the fallback when d3 is down
+        self.d3 = None  # D3Route: self-hosted d3 answers first while it is up
         self.addressee_judge = None  # LLM judge for "is this for her?"; decision model if None
         self.addressee_enabled = False
         self.auto_expression_enabled = False
@@ -648,8 +651,12 @@ class RealtimeRobot:
         return event
 
     def _prewarm_decision(self):
-        """Keep the decision connection hot while the user is still speaking."""
+        """Keep the decision connection hot while the user is still speaking.
+
+        A ready d3 is kept warm by its own probe.
+        """
         if (self.decision is None or not (self.addressee_enabled or self.auto_expression_enabled)
+                or (self.d3 is not None and self.d3.ready)
                 or time.monotonic() - self._decision_warm_t < 60):
             return
         self._decision_warm_t = time.monotonic()
@@ -730,8 +737,13 @@ class RealtimeRobot:
             "model": self.model,
             "endpoint_host": urlparse(self.url).netloc,
             "decision": {"addressee": self.addressee_enabled,
-                         "addressee_judge": "llm" if self.addressee_judge is not None else "decision",
-                         "auto_expression": self.decision is not None and self.auto_expression_enabled,
+                         "addressee_judge": self._addressee_judge()[0],
+                         "addressee_model": (self._addressee_judge()[1]
+                                             if self.addressee_enabled else None),
+                         "auto_expression": self._has_decision() and self.auto_expression_enabled,
+                         "expression_model": (self._decision_model()[2]
+                                              if self.auto_expression_enabled else None),
+                         "d3": self.d3.snapshot() if self.d3 is not None else None,
                          **self.decision_stats},
             "ambient": (self.ambient.snapshot() if self.ambient is not None
                         else {"listening": False, "enabled": False}),
@@ -1126,7 +1138,7 @@ class RealtimeRobot:
         reaches the LLM only when someone asks about it and the instructions
         do not change with every overheard line.
         """
-        return self.ambient is not None or bool(self.addressee_enabled and self.decision)
+        return self.ambient is not None or bool(self.addressee_enabled and self._has_decision())
 
     def _remember_overheard(self, text, *, source="asleep"):
         """Side talk kept for recall_overheard; source asleep = heard while she slept."""
@@ -1239,6 +1251,25 @@ class RealtimeRobot:
                 self._tool_worker = None
 
     # ---- Decision model: is this utterance for the robot? -------------------------
+    def _has_decision(self):
+        """A decision model is configured (d3 or DashScope), up or not."""
+        return self.decision is not None or self.d3 is not None
+
+    def _decision_model(self):
+        """(kind, client, model name) answering decision questions now: d3 while it is up."""
+        if self.d3 is not None and self.d3.ready:
+            return "d3", self.d3.client, self.d3.model
+        if self.decision is None:
+            return None, None, None
+        return "decision", self.decision, getattr(self.decision, "model", "decision")
+
+    def _addressee_judge(self):
+        """(judge, model name) for "is this for her?": d3, else qwen-flash, else DashScope."""
+        kind, _client, model = self._decision_model()
+        if kind != "d3" and self.addressee_judge is not None:
+            return "llm", getattr(self.addressee_judge, "model", "llm")
+        return kind, model
+
     def _addressee_hold_active(self):
         return (self.addressee_enabled and not self.wake
                 and self.pending_audio_item_id is not None and not self.turn_id)
@@ -1304,11 +1335,12 @@ class RealtimeRobot:
         answer, error = None, None
         self.decision_stats["addressee_checks"] += 1
         state = self._addressee_state_for(text)
-        if self.addressee_judge is not None:
-            # She just answered and waits (the wake gate checks only then).
-            waiting = (self.wake is not None and self.wake.state == "FOLLOWUP") or (
-                self.wake is None and self._last_reply_t is not None
-                and time.monotonic() - self._last_reply_t <= RECENT_REPLY_SECONDS)
+        # She just answered and waits (the wake gate checks only then).
+        waiting = (self.wake is not None and self.wake.state == "FOLLOWUP") or (
+            self.wake is None and self._last_reply_t is not None
+            and time.monotonic() - self._last_reply_t <= RECENT_REPLY_SECONDS)
+        judge, model = self._addressee_judge()
+        if judge == "llm":
             try:
                 to, confidence = await self.addressee_judge.judge(
                     *addressee_prompt(state, followup=waiting))
@@ -1322,15 +1354,23 @@ class RealtimeRobot:
                 verdict = "robot"
             final = verdict
         else:
+            client = self.d3.client if judge == "d3" else self.decision
+            # d3 got the follow-up question it was replayed with (10-21).
+            question = (ADDRESSEE_FOLLOWUP_QUESTION if judge == "d3" and waiting
+                        else ADDRESSEE_QUESTION)
             try:
-                answers = await self.decision.ask(state, {"to": ADDRESSEE_QUESTION})
+                if client is None:  # only d3 is configured and it is down
+                    raise ConnectionError("no decision model is up")
+                answers = await client.ask(state, {"to": question})
                 answer = answers["to"]
                 verdict = addressee_verdict(answer)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                error = type(exc).__name__
+                error = error_kind(exc)
                 self.decision_stats["failures"] += 1
+                if judge == "d3":
+                    self.d3.failed(error)  # the next utterance goes to DashScope
                 verdict = "robot"  # an outage must not silence the robot
             # Unclear counts as an answer only right after the robot asked something.
             answering = (self._last_reply_t is not None
@@ -1339,16 +1379,15 @@ class RealtimeRobot:
             final = verdict if verdict != "unclear" else ("robot" if answering else "not_robot")
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         self.decision_stats["last_ms"] = latency_ms
-        judge = "llm" if self.addressee_judge is not None else "decision"
         self.publish("addressee.decided", item_id=item_id, verdict=final, raw=verdict,
                      choice=(answer or {}).get("choice"),
                      confidence=(answer or {}).get("confidence"),
-                     latency_ms=latency_ms, error=error, text=text[:80], judge=judge)
+                     latency_ms=latency_ms, error=error, text=text[:80], judge=judge, model=model)
         # The utterance head is logged so silent turns can be reviewed from the
         # uploaded console log (PROJECT_RULES 4: dialogue in logs is accepted).
-        logger.info("addressee_decision robot=%s judge=%s verdict=%s raw=%s choice=%s "
+        logger.info("addressee_decision robot=%s judge=%s model=%s verdict=%s raw=%s choice=%s "
                     "confidence=%s latency_ms=%s error=%s chars=%d text=%r",
-                    self.robot.config.robot_id, judge, final, verdict,
+                    self.robot.config.robot_id, judge, model, final, verdict,
                     (answer or {}).get("choice"), (answer or {}).get("confidence"),
                     latency_ms, error, len(text), text[:30])
         return final
@@ -1425,7 +1464,7 @@ class RealtimeRobot:
 
     # ---- Decision model: spontaneous facial expressions ---------------------------
     def _maybe_auto_expression(self, *, final=False):
-        if (not self.auto_expression_enabled or self.decision is None or self.actions is None
+        if (not self.auto_expression_enabled or not self._has_decision() or self.actions is None
                 or not self.actions.enabled or self.speech is None or not self.turn_id
                 or self._auto_expression_turn == self.turn_id
                 or self.turn_id == self.external_turn_id):
@@ -1467,34 +1506,44 @@ class RealtimeRobot:
     async def _auto_expression(self, turn_id, identity, generation, user_text, first, allowed,
                                asked=None, *, generic=False):
         started = time.perf_counter()
+        model = None
         if asked is not None:
             answer, script = {"choice": asked, "confidence": None, "source": "explicit"}, asked
         else:
+            kind, client, model = self._decision_model()
+            if client is None:  # only d3 is configured and it is down
+                self.publish("action.auto_failed", turn_id=turn_id, error="unavailable")
+                return
+            # d3 picks a face far more often: 19 of 76 replayed replies at 0.55, 12 at 0.7.
+            threshold = self.d3.expression_threshold if kind == "d3" else self.expression_threshold
             self.decision_stats["expression_checks"] += 1
             try:
                 question = (motion_question({script: self.actions.catalog[script]["description"]
                                              for script in allowed})
                             if generic else expression_question(allowed))
-                answers = await self.decision.ask(
+                answers = await client.ask(
                     {"用户": user_text[:300], "机器人回复开头": first[:120]}, {"face": question})
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self.decision_stats["failures"] += 1
-                self.publish("action.auto_failed", turn_id=turn_id, error=type(exc).__name__)
+                if kind == "d3":
+                    self.d3.failed(error_kind(exc))
+                self.publish("action.auto_failed", turn_id=turn_id, error=error_kind(exc),
+                             model=model)
                 return
             answer = answers["face"]
             script = (answer.get("choice") if generic and answer.get("choice") in allowed
-                      else expression_choice(answer, threshold=self.expression_threshold))
+                      else expression_choice(answer, threshold=threshold))
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         source = answer.get("source", "decision_model")
         self.publish("action.auto_decided", turn_id=turn_id, choice=answer.get("choice"),
                      confidence=answer.get("confidence"), script=script, latency_ms=latency_ms,
-                     source=source, text=str(user_text or "")[:80])
+                     source=source, model=model, text=str(user_text or "")[:80])
         logger.info("auto_expression robot=%s turn=%s choice=%s confidence=%s accepted=%s "
-                    "source=%s latency_ms=%s", self.robot.config.robot_id, turn_id,
+                    "source=%s model=%s latency_ms=%s", self.robot.config.robot_id, turn_id,
                     answer.get("choice"), answer.get("confidence"), script is not None,
-                    source, latency_ms)
+                    source, model, latency_ms)
         robot_id = self.robot.config.robot_id
         # The reply keeps speaking after its text is done: follow the TTS turn.
         if (script is None or getattr(self.speech, "turn_id", None) != turn_id
@@ -2170,7 +2219,7 @@ class RealtimeRobot:
                         "不猜ID、不删除原始对话，也不自行替用户清理未明确要求的事实。"
                     )
                 physical = bool(self.actions and self.actions.enabled and self.speech)
-                if physical and self.auto_expression_enabled and self.decision is not None:
+                if physical and self.auto_expression_enabled and self._has_decision():
                     tail += (
                         "\n【实体动作】点头、摇头、看左右、眨眼和惊讶、坏笑、得意、怀疑、害羞等"
                         "动作与表情由系统根据对话自动执行。用户要你做动作时，动作已经在做了，"
@@ -2237,7 +2286,7 @@ class RealtimeRobot:
                 self.history_turns_confirmed = None
                 # With the decision model on, the runtime performs every action and
                 # face itself: no tool-first round trip delays the spoken reply.
-                auto_motion = self.auto_expression_enabled and self.decision is not None
+                auto_motion = self.auto_expression_enabled and self._has_decision()
                 llm_actions = self.actions.allowlist if physical and not auto_motion else ()
                 update = session_update(
                     configured_instructions,
@@ -2256,7 +2305,7 @@ class RealtimeRobot:
                     voice_selection=bool(self.voices),
                     preferences=True,
                     spontaneous_expressions=not (self.auto_expression_enabled
-                                                 and self.decision is not None),
+                                                 and self._has_decision()),
                     sleep=self.wake is not None,
                     overheard=self._overhearing(),
                     faces=self._faces_available(),

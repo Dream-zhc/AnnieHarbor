@@ -21,6 +21,23 @@ ADDRESSEE_QUESTION = {
     },
 }
 
+# The same judgment while she waits for an answer, for d3-NVFP4: the options
+# restate the qwen-flash prompt below. Replayed on 39 scored lines of the
+# 10-20/10-21 demos: 24/24 said to her answered, 3/12 side talk answered
+# (qwen-flash 7.5/12, ADDRESSEE_QUESTION on d3 8/12), docs/开发记录/2026-10-21/.
+ADDRESSEE_FOLLOWUP_QUESTION = {
+    "type": "choice",
+    "instructions": ("机器人小安妮刚回答完上一句，正在等对方接话。当前这句话是接着说给小安妮听的吗？"
+                     "房间里常有测试人员和访客互相交谈，语音识别可能有错字、半截话。"),
+    "criteria": {
+        "robot": ("说给小安妮：向她提问、提要求或简短指令（调到50、大点声），评价或调侃她（你还挺幽默、你长得丑），"
+                  "问她看到了什么、面前是谁，或接着她刚说的话追问、回应；拿不准的也算"),
+        "person": ("人和人之间说话：用他、它谈论机器人或系统（识别、唤醒、回复、视觉、速度、版本、测试、演示、客户），"
+                   "叫别人名字、安排别人做事、约时间、打电话"),
+        "self_or_media": "只有“嗯嗯、对对、好嘞”这类附和或自言自语，或者是小安妮自己刚说的话被重复了一遍（回声）",
+    },
+}
+
 # The five face scripts the robot may choose by itself. Everything else stays an
 # explicit user request handled by Function Calling.
 EXPRESSION_SCRIPTS = ("surprise", "smirk", "proud", "skeptical", "shy")

@@ -249,6 +249,7 @@ class RealtimeRobot:
         self.invalid_turns = 0
         self.invalid_recovered = 0
         self.echo_dropped = 0  # her own voice heard back and ignored
+        self._pending_deletes = {}  # item_id -> monotonic, deletions we asked for
         self.wake_calls_normalized = 0
         self._invalid_recovery = None
         # Qwen keeps no item for turn_invalid audio; deleting one returns an
@@ -2853,6 +2854,15 @@ class RealtimeRobot:
         self.publish("response.cancel_requested", response_id=active)
         return True
 
+    def _expected_delete_miss(self, event):
+        """The provider no longer has an item we just asked it to delete: already gone."""
+        error = event.get("error") or {}
+        found = re.search(r"Cannot find item with id: (\S+)", str(error.get("message", "")))
+        if error.get("code") != "invalid_value" or found is None:
+            return False
+        stamp = self._pending_deletes.pop(found.group(1).rstrip(".,"), None)
+        return stamp is not None and time.monotonic() - stamp < 30
+
     def _expected_cancel_race(self, event):
         error = event.get("error") or {}
         if (error.get("code") != "invalid_value" or
@@ -3002,8 +3012,12 @@ class RealtimeRobot:
         item_ids = {item for item in item_ids if item not in self._dropped_audio_items}
         if not item_ids:
             return
+        now = time.monotonic()
         for item_id in sorted(item_ids):
+            self._pending_deletes[item_id] = now
             await self.socket.send({"type": "conversation.item.delete", "item_id": item_id})
+        while len(self._pending_deletes) > 64:
+            self._pending_deletes.pop(next(iter(self._pending_deletes)))
         self.publish("context.unheard_delete_requested", count=len(item_ids),
                      provider_confirmed=False)
 
@@ -3165,6 +3179,11 @@ class RealtimeRobot:
         if kind == "error":
             if self._expected_cancel_race(event):
                 self.publish("response.cancel_race_ignored", reason="already_finished")
+                return
+            if self._expected_delete_miss(event):
+                # 10/21 17:26: deleting an item the provider had already
+                # dropped reset the whole session and its context.
+                self.publish("context.delete_missing_ignored")
                 return
             raise RuntimeError(self._provider_error(event))
         if kind == "response.created":

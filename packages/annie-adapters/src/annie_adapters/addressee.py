@@ -10,6 +10,8 @@ import math
 
 import httpx
 
+from annie_adapters.net import cloud_proxy
+
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
@@ -18,8 +20,10 @@ class AddresseeJudge:
                  timeout_ms=1200, client=None):
         self.key, self.model = key, model
         self.url = base_url.rstrip("/") + "/chat/completions"
+        # Direct like every Aliyun call (annie_adapters.net): a desktop proxy
+        # only adds latency to a check that sits in front of her reply.
         self.client = client or httpx.AsyncClient(
-            timeout=timeout_ms / 1000,
+            timeout=timeout_ms / 1000, trust_env=False, proxy=cloud_proxy(),
             limits=httpx.Limits(max_connections=2, max_keepalive_connections=2))
         self.owns_client = client is None
 

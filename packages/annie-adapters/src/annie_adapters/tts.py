@@ -8,6 +8,8 @@ from uuid import uuid4
 from annie_core.speech_style import SpeechStyle, validate_instruction, validate_tts_number
 from websockets.asyncio.client import connect
 
+from annie_adapters.net import cloud_proxy, room_connect
+
 MODEL = "qwen-audio-3.0-tts-flash"
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
 # Exact raw WS enum, distinct from the broader ASR/reply-language state.
@@ -90,9 +92,10 @@ class QwenTtsSocket:
 
     async def open(self):
         self.socket = await connect(
+            # Direct to Aliyun; see annie_adapters.net.
             self.url,
             additional_headers={"Authorization": f"Bearer {self.key}"},
-            open_timeout=8, close_timeout=2, max_size=2 * 1024 * 1024,
+            proxy=cloud_proxy(), open_timeout=8, close_timeout=2, max_size=2 * 1024 * 1024,
         )
         return self
 
@@ -121,7 +124,7 @@ def task_id() -> str:
 class RoomTtsPublisher:
     """One verified Room channel per connection; no cross-robot routing."""
 
-    def __init__(self, room_config, room_id: str, socket_factory=connect, *, channel="tts"):
+    def __init__(self, room_config, room_id: str, socket_factory=room_connect, *, channel="tts"):
         if channel not in {"tts", "main", "voice", "display"}:
             raise ValueError("only configured tts/main/voice/display outgoing channels are allowed")
         self.url = room_config.url_for(room_id, channel)

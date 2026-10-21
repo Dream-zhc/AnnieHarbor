@@ -109,12 +109,15 @@ def test_the_big_screen_gets_playback_ignored_speech_and_decisions():
     assert show("ambient.heard", text="x", source="not_addressed") is None  # sent once above
     assert show("transcript.dropped", text="嗯那个", reason="turn_invalid")["event"] == "speech.ignored"
     decided = show("addressee.decided", item_id="i2", verdict="not_robot", choice="other",
-                   confidence=.85, judge="llm", latency_ms=290, text="这个速度变快了")
+                   confidence=.85, judge="llm", model="qwen-flash", latency_ms=290,
+                   text="这个速度变快了")
     assert decided["decision"] == "addressee" and decided["confidence"] == .85
+    assert decided["model"] == "qwen-flash"
     assert decided["summary"] == "不是对机器人说的，不回复"
     face = show("action.auto_decided", turn_id="t1", choice="smirk", confidence=.48,
-                script=None, source="decision_model", latency_ms=686)
+                script=None, source="decision_model", model="d3-NVFP4", latency_ms=686)
     assert face["decision"] == "expression" and face["summary"] == "不做表情"
+    assert face["model"] == "d3-NVFP4"
     assert show("tts.playback.progress", turn_id="t1") is None  # no progress spam
 
 

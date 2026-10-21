@@ -219,7 +219,7 @@ class RoomPcmConnection:
             try:
                 self._state = "connecting"
                 async with connect(
-                    self.url,
+                    self.url, proxy=None,  # the Room is on the LAN
                     open_timeout=self.config.connect_timeout_sec,
                     close_timeout=self.config.connect_timeout_sec,
                 ) as ws:

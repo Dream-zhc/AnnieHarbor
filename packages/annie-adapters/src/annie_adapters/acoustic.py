@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from websockets.asyncio.client import connect
 
+from annie_adapters.net import cloud_proxy
 from annie_adapters.realtime import realtime_url
 
 MODEL = "qwen3-asr-flash-realtime"
@@ -73,8 +74,9 @@ class QwenASRSocket:
 
     async def open(self):
         self.socket = await connect(
+            # Direct to Aliyun; see annie_adapters.net.
             self.url, additional_headers={"Authorization": f"Bearer {self.api_key}"},
-            open_timeout=8, close_timeout=1, max_size=2 * 1024 * 1024,
+            proxy=cloud_proxy(), open_timeout=8, close_timeout=1, max_size=2 * 1024 * 1024,
         )
         return self
 

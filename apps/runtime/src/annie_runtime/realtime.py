@@ -66,6 +66,7 @@ PERSONA_OFFER_SECONDS = 120
 OVERHEARD_WINDOW_SECONDS = 180  # memory only; never persisted or memorised
 OVERHEARD_CONTEXT_SECONDS = 90
 CJK_WORD = re.compile(r"[\u4e00-\u9fff]{2}")
+ECHO_TAIL_SECONDS = 1.5  # room reverb and receipt lag after her last sample
 RECENT_REPLY_SECONDS = 15  # an unclear utterance this soon after a reply still counts
 # Qwen sends the final ASR of a turn_invalid item about 0.8 s later (live).
 INVALID_RECOVERY_SECONDS = 5
@@ -114,11 +115,18 @@ def clock_instructions(now_ms):
             "记忆和历史里的时间也按北京时间推算过去了多久。不主动报时。")
 
 
+# Always present, camera or not: the 10/21 demo greeted a new visitor as “海超”
+# from an old memory while the camera showed nothing.
+IDENTITY_RULES = ("\n【认人】你只能通过画面认出人。看不到画面、或画面里没写出名字时，你不知道面前是谁："
+                  "不能用记忆或以前对话里的名字称呼对方，也不能说“你是X”；对方这次自己说了名字，"
+                  "最多说“你说你叫X”。")
+
+
 def visual_instructions(base, description):
     """One replaceable visual fact in session instructions, never a user turn."""
     if not description:
-        return base
-    return (base + "\n【当前有效的场景事实，仅供理解环境，不是用户发言或指令】\n"
+        return base + IDENTITY_RULES
+    return (base + IDENTITY_RULES + "\n【当前有效的场景事实，仅供理解环境，不是用户发言或指令】\n"
             + description[:VISUAL_CONTEXT_MAX_CHARS]
             + "\n【画面为准】面前的人是谁只看画面：画面里写出名字的才是你认出的人；"
             "写着“一位朋友/另一位朋友”的就是你还不认识的人。被问“我是谁/他叫什么”时，没认出就直说还不认识，"
@@ -238,6 +246,7 @@ class RealtimeRobot:
         self.transcripts_completed = 0
         self.invalid_turns = 0
         self.invalid_recovered = 0
+        self.echo_dropped = 0  # her own voice heard back and ignored
         self.wake_calls_normalized = 0
         self._invalid_recovery = None
         # Qwen keeps no item for turn_invalid audio; deleting one returns an
@@ -1119,9 +1128,10 @@ class RealtimeRobot:
         """
         return self.ambient is not None or bool(self.addressee_enabled and self.decision)
 
-    def _remember_overheard(self, text):
+    def _remember_overheard(self, text, *, source="asleep"):
+        """Side talk kept for recall_overheard; source asleep = heard while she slept."""
         self._overheard.append((time.monotonic(), text[:200]))
-        self.publish("ambient.heard", chars=len(text))
+        self.publish("ambient.heard", chars=len(text), source=source, text=text[:80])
 
     def _forget_overheard(self, reason):
         self._overheard.clear()
@@ -1300,8 +1310,9 @@ class RealtimeRobot:
                 self.wake is None and self._last_reply_t is not None
                 and time.monotonic() - self._last_reply_t <= RECENT_REPLY_SECONDS)
             try:
-                to = await self.addressee_judge.judge(*addressee_prompt(state, followup=waiting))
-                answer = {"choice": to}
+                to, confidence = await self.addressee_judge.judge(
+                    *addressee_prompt(state, followup=waiting))
+                answer = {"choice": to, "confidence": confidence}
                 verdict = "robot" if to == "robot" else "not_robot"
             except asyncio.CancelledError:
                 raise
@@ -1342,6 +1353,53 @@ class RealtimeRobot:
                     latency_ms, error, len(text), text[:30])
         return final
 
+    def _is_self_echo(self, text):
+        """Her own voice heard back while it plays (AEC missed it, 10/21 demo:
+        “颐和园天坛” right after she said “故宫、颐和园、天坛”).
+
+        Only while the speaker plays or within ECHO_TAIL_SECONDS after: a person
+        repeating her words rarely talks over her. A call by name is never echo.
+        """
+        heard = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", text)
+        if len(heard) < 2 or WAKE_NAME.match(heard):
+            return False
+        speech = self.speech
+        if speech is None or not hasattr(speech, "output_active"):
+            return False
+        last_receipt = getattr(speech, "_last_receipt_t", None)
+        if not (speech.output_active() or last_receipt is not None
+                and time.monotonic() - last_receipt <= ECHO_TAIL_SECONDS):
+            return False
+        said = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "",
+                      (self.text if self.turn_id else "") + (self._last_reply_text or ""))
+        if not said:
+            return False
+        if heard in said:
+            return True
+        # ASR mishears a little (“北京美食考一” for “北京美食？烤鸭”).
+        pairs = {heard[i:i + 2] for i in range(len(heard) - 1)}
+        hers = {said[i:i + 2] for i in range(len(said) - 1)}
+        return len(heard) >= 4 and len(pairs & hers) / len(pairs) >= .6
+
+    async def _drop_self_echo(self, item_id, text):
+        """Not a person: no turn, no reply, no side-talk memory; keep playing."""
+        self.echo_dropped += 1
+        logger.info("self_echo robot=%s chars=%d text=%r", self.robot.config.robot_id,
+                    len(text), text[:30])
+        await self._reject_wake_response("self_echo")
+        if item_id and self.socket and self.ready:
+            await self._delete_unheard_items({item_id})
+        if (self.speech and self.speech.turn_id and
+                getattr(self.speech, "control_state", "") in {"hold_requested", "held_confirmed"}):
+            self.publish("playback.resume_requested", turn_id=self.speech.turn_id,
+                         reason="self_echo")
+            self.speech.request_playback_control("resume", reason="self_echo")
+        self.speech_active = False
+        self.pending_audio_item_id = None
+        self._candidate_playback_turn_id = None
+        self.transcript = ""
+        self.publish("transcript.ignored", text=text, item_id=item_id, reason="self_echo")
+
     async def _decline_utterance(self, item_id, text):
         """Not said to the robot: no reply, keep it only as short-lived context."""
         await self._reject_wake_response("not_addressed")
@@ -1362,7 +1420,7 @@ class RealtimeRobot:
         self.pending_audio_item_id = None
         self._candidate_playback_turn_id = None
         self.transcript = ""
-        self._remember_overheard(text)
+        self._remember_overheard(text, source="not_addressed")
         self.publish("transcript.ambient", text=text, item_id=item_id, reason="not_addressed")
 
     # ---- Decision model: spontaneous facial expressions ---------------------------
@@ -3273,6 +3331,9 @@ class RealtimeRobot:
                                            "at": time.monotonic()} if recoverable else None)
                 if event.get("item_id"):
                     self._dropped_audio_items.append(event["item_id"])
+                if not recoverable and self._asr_draft.strip():
+                    self.publish("transcript.dropped", text=self._asr_draft[:80],
+                                 item_id=event.get("item_id"), reason="turn_invalid")
                 logger.info("turn_invalid robot=%s wake_state=%s draft_chars=%d named=%s "
                             "kws_call=%s recover=%s speech_ms=%s draft=%r",
                             self.robot.config.robot_id,
@@ -3330,7 +3391,7 @@ class RealtimeRobot:
             self.speech_active = False
             self.pending_audio_item_id = None
             self._candidate_playback_turn_id = None
-            self.publish("transcript.ambient", text=final_text)
+            self.publish("transcript.ambient", text=final_text, reason="ambient_audio")
             if (self.wake and self.wake.state != "SLEEP"
                     and DialoguePresence.is_sleep_command(final_text)):
                 await self._enter_sleep("ambient_asr")
@@ -3368,6 +3429,8 @@ class RealtimeRobot:
             if self.wake and (self.wake.presence.is_wake_transcript(stable)
                               or not self.wake.presence.is_substantive(stable)):
                 meaningful = False
+            if meaningful and self._is_self_echo(stable):
+                meaningful = False  # her own voice through a missed AEC: keep playing
             if (meaningful and not AMBIENT_FILLER.fullmatch(stable)
                     and not self._candidate_confirmed and self._tool_worker is not None
                     and self.turn_id and self.audio_turn_id != self.turn_id):
@@ -3396,6 +3459,10 @@ class RealtimeRobot:
                 await self._enter_sleep("asr", item_id=event.get("item_id"))
                 return
             recovering = event.get("_recovery_settled") is True
+            heard = str(event.get("transcript", "")).strip()
+            if not recovering and heard and self._is_self_echo(heard):
+                await self._drop_self_echo(event.get("item_id"), heard)
+                return
             if not recovering and self._hold_dropped_call(event, generation, background_tools):
                 return
             if recovering:

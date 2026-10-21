@@ -130,7 +130,7 @@ def test_the_llm_judge_decides_and_an_outage_never_silences_her(tmp_path):
             self.calls.append((system, user))
             if self.answer == "boom":
                 raise TimeoutError()
-            return self.answer
+            return self.answer, .8
 
     class Unclear:
         async def ask(self, _state, _questions):
@@ -168,13 +168,15 @@ def test_addressee_judge_adapter_reads_only_robot_or_other():
         body = __import__("json").loads(request.content)
         seen.append(body)
         content = {"to": "other"} if "开会" in body["messages"][1]["content"] else {"to": "maybe"}
+        logprobs = {"content": [{"token": "other", "logprob": -0.16, "top_logprobs": [
+            {"token": "other", "logprob": -0.16}, {"token": "robot", "logprob": -1.91}]}]}
         return httpx.Response(200, json={"choices": [{"message": {
-            "content": __import__("json").dumps(content)}}]})
+            "content": __import__("json").dumps(content)}, "logprobs": logprobs}]})
 
     async def run():
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         judge = AddresseeJudge("key", model="qwen-flash", client=http)
-        assert await judge.judge("sys", '{"当前这句话":"我们下午几点开会"}') == "other"
+        assert await judge.judge("sys", '{"当前这句话":"我们下午几点开会"}') == ("other", .85)
         try:
             await judge.judge("sys", '{"当前这句话":"嗯"}')
             raise AssertionError("an unknown answer must raise")
@@ -184,7 +186,7 @@ def test_addressee_judge_adapter_reads_only_robot_or_other():
 
     asyncio.run(run())
     assert seen[0]["model"] == "qwen-flash" and seen[0]["temperature"] == 0
-    assert seen[0]["response_format"] == {"type": "json_object"}
+    assert seen[0]["response_format"] == {"type": "json_object"} and seen[0]["logprobs"] is True
 
 
 def test_set_volume_to_50_after_saying_voice_in_the_turn_before(tmp_path):

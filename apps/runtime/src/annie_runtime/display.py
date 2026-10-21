@@ -15,7 +15,19 @@ DISPLAY_KINDS = frozenset({
     "text.delta", "text.done",
     "turn.started", "turn.done",
     "action.state", "session.ready", "session.error",
+    # 2026-10-21: playback, ignored speech and decisions for the big screen.
+    "tts.playback.started", "tts.playback.resumed", "tts.playback.held",
+    "tts.playback.stopped", "tts.playback.drained",
+    "transcript.ambient", "transcript.ignored", "transcript.dropped", "ambient.heard",
+    "addressee.decided", "action.auto_decided",
 })
+PLAYBACK_STATES = {"tts.playback.started": "playing", "tts.playback.resumed": "playing",
+                   "tts.playback.held": "held", "tts.playback.stopped": "stopped",
+                   "tts.playback.drained": "drained"}
+# Why a heard sentence got no reply.
+IGNORED_REASONS = {"not_addressed": "不是对机器人说的", "ambient_audio": "实时模型判为环境音",
+                   "self_echo": "机器人自己的回声", "turn_invalid": "实时模型判为不完整",
+                   "asleep": "休眠时听到"}
 WAKE_TOUCH_KINDS = frozenset({
     "speech.started", "speech.stopped", "transcript.done",
     "tts.playback.drained", "wakeword.detected", "wakeword.sleep_command",
@@ -34,6 +46,9 @@ _LABELS = {
     "action.state": "动作或表情指令状态",
     "session.ready": "实时模型已连接",
     "session.error": "实时模型异常",
+    "playback.state": "扬声器播放状态",
+    "speech.ignored": "听到但没有回复",
+    "decision": "决策",
 }
 
 
@@ -94,6 +109,36 @@ def build_display_message(kind, event, robot_id, room_id):
         extra = {}
     elif kind == "session.error":
         extra = {"error": _clip(event.get("error"), 200)}
+    elif kind in PLAYBACK_STATES:
+        kind, extra = "playback.state", {
+            "turn_id": event.get("turn_id") or event.get("conversation_id"),
+            "state": PLAYBACK_STATES[kind], "source": event.get("source")}
+    elif kind in {"transcript.ambient", "transcript.ignored", "transcript.dropped",
+                  "ambient.heard"}:
+        reason = event.get("reason") or event.get("source") or "ambient_audio"
+        if kind == "ambient.heard" and reason != "asleep":
+            return None  # a declined sentence is already sent as transcript.ambient
+        if not event.get("text"):
+            return None
+        kind, extra = "speech.ignored", {
+            "item_id": event.get("item_id"), "text": _clip(event.get("text"), 80),
+            "reason": reason, "reason_label": IGNORED_REASONS.get(reason, reason)}
+    elif kind == "addressee.decided":
+        kind, extra = "decision", {
+            "decision": "addressee", "item_id": event.get("item_id"),
+            "result": event.get("verdict"), "choice": event.get("choice"),
+            "confidence": event.get("confidence"), "judge": event.get("judge"),
+            "latency_ms": event.get("latency_ms"), "text": _clip(event.get("text"), 80),
+            "summary": ("对机器人说，回复" if event.get("verdict") == "robot"
+                        else "不是对机器人说的，不回复")}
+    elif kind == "action.auto_decided":
+        accepted = event.get("script") is not None
+        kind, extra = "decision", {
+            "decision": "expression", "turn_id": event.get("turn_id"),
+            "result": event.get("script") if accepted else "none",
+            "choice": event.get("choice"), "confidence": event.get("confidence"),
+            "judge": event.get("source"), "latency_ms": event.get("latency_ms"),
+            "summary": f"做表情 {event.get('choice')}" if accepted else "不做表情"}
     if extra is None:
         return None
     return {
@@ -126,6 +171,8 @@ class DisplayOutbox:
             if kind in {"transcript.delta", "text.delta"}:
                 item = event.get("item_id") or event.get("turn_id") or ""
                 self._offer_partial(f"{kind}:{item}", message)
+            elif kind in PLAYBACK_STATES:
+                self._offer_partial("playback.state", message)  # only the newest state
             else:
                 self._offer_once(message)
         if kind in WAKE_TOUCH_KINDS or kind in {"turn.started", "transcript.delta"}:

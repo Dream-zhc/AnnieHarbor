@@ -72,13 +72,13 @@ ADDRESSEE_SYSTEM_FOLLOWUP = (
     "你判断房间里刚听到的一句话是不是说给机器人“小安妮”听的。场景：展厅或办公室，常有测试人员、访客互相交谈；"
     "机器人刚回答完上一句，正在等对方接话，所以默认是在接着跟机器人说。语音识别可能有错字、半截话。\n"
     + _ADDRESSEE_OTHER + "其余都选robot，包括：" + _ADDRESSEE_ROBOT + "；拿不准的。\n"
-    "只输出JSON：{\"to\":\"robot\"或\"other\"}")
+    + "只输出JSON：{\"to\":\"robot\"或\"other\"}")
 # Not replayed: used only without the wake gate, when she is not waiting.
 ADDRESSEE_SYSTEM_IDLE = (
     "你判断房间里刚听到的一句话是不是说给机器人“小安妮”听的。场景：展厅或办公室，常有测试人员、访客互相交谈。"
     "语音识别可能有错字、半截话。\n" + _ADDRESSEE_OTHER
     + "明显说给机器人的选robot，包括：" + _ADDRESSEE_ROBOT + "。拿不准时选other。\n"
-    "只输出JSON：{\"to\":\"robot\"或\"other\"}")
+    + "只输出JSON：{\"to\":\"robot\"或\"other\"}")
 
 
 def addressee_prompt(state, *, followup):

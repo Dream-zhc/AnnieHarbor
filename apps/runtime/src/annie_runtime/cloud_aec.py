@@ -9,6 +9,7 @@ The native 10 ms DSP and resampling never run on the asyncio event loop.
 from __future__ import annotations
 
 import base64
+import logging
 import queue
 import threading
 import time
@@ -24,6 +25,8 @@ MIC_FRAME_BYTES = 640  # 20 ms s16le
 RENDER_CHUNK_BYTES = 480  # 10 ms s16le at 24 kHz
 CAPTURE_CHUNK_BYTES = 320
 REFERENCE_MAX_FRAMES = 1500  # 15 seconds of bounded reference history
+STATUS_LOG_SECONDS = 2.0  # one console line per status change, at most this often
+logger = logging.getLogger(__name__)
 
 
 class WebRtcAecBackend:
@@ -307,6 +310,7 @@ class CloudAec:
                       "drops": 0, "errors": 0, "receipts": 0, "missing_reference": 0}
         self.process_times = deque(maxlen=128)
         self.last_status = "waiting_for_speaker"
+        self._logged_status = (None, 0.0)
 
     def start(self):
         if self.running:
@@ -412,6 +416,22 @@ class CloudAec:
             finally:
                 if began is not None:
                     self.process_times.append((time.perf_counter() - began) * 1000)
+                    self._note_status()
+
+    def _note_status(self):
+        """10/21 demo: echo got through and the log had no AEC line at all."""
+        status, (logged, at) = self.last_status, self._logged_status
+        now = time.monotonic()
+        if status == logged or now - at < STATUS_LOG_SECONDS:
+            return
+        self._logged_status = (status, now)
+        reported = self.timeline.report_time
+        logger.info("cloud_aec status=%s processed=%d bypassed=%d missing_reference=%d "
+                    "receipts=%d drops=%d errors=%d receipt_age_ms=%s", status,
+                    self.stats["processed"], self.stats["bypassed"],
+                    self.stats["missing_reference"], self.stats["receipts"],
+                    self.stats["drops"], self.stats["errors"],
+                    int((now - reported) * 1000) if reported is not None else None)
 
     def _deliver(self, generation, pcm, at):
         if self.running and generation == self.generation:

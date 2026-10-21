@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from annie_brain.dialogue import DialogueState
-from annie_runtime.realtime import RealtimeRobot
+from annie_runtime.realtime import IDENTITY_RULES, RealtimeRobot
 
 
 class DialogueStateTests(unittest.TestCase):
@@ -109,8 +109,9 @@ class DialogueSessionTests(unittest.IsolatedAsyncioTestCase):
             if client.socket.sent:
                 break
             await asyncio.sleep(.005)
+        # The identity rule is always present, camera or not (10/21 demo).
         self.assertEqual(client.socket.sent[-1]["session"]["instructions"],
-                         "BASE" + client.language.instruction_hint())
+                         "BASE" + client.language.instruction_hint() + IDENTITY_RULES)
         self.assertNotIn(old_hint, client.socket.sent[-1]["session"]["instructions"])
         await client._stop_visual_task()
 

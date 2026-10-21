@@ -25,6 +25,7 @@ WARMUP_MESSAGES = 3  # who is already there at start is not an arrival
 GREET_WINDOW_MESSAGES = 10
 _UNKNOWN_LABELS = ("一位朋友", "另一位朋友", "又一位朋友")
 PEOPLE_VIEW_SECONDS = 5.0  # observations come every second
+VIEW_DESCRIPTION_LIMIT = 400
 # Only clear, positive expressions reach the model. Measured 2026-10-16: a
 # person simply working at a computer was read as 厌恶 for 7 s, then 愤怒 for
 # 3 s. Neutral says nothing; a wrong negative invites "你怎么一脸嫌弃".
@@ -64,6 +65,9 @@ def observation_people(observations):
             "gaze": item.get("is_gaze_target") is True,
             "position": _phrase(position.get("text")) if isinstance(position, dict) else None,
             "action": _phrase(item.get("action")),
+            # The vision model's own words: richer, but reworded every frame,
+            # so only look_closely shows it, never the session instructions.
+            "action_detail": _phrase(item.get("action_detail"), 60),
             "holding": _phrase(item.get("holding")),
             "expression": _phrase(item.get("expression"), 16),
         })
@@ -256,6 +260,29 @@ class RoomMonitor:
         self.observation_updates = 0
         self.people_in_view = []  # smoothed rows, for face tools
         self.people_at = None
+        self._details = {"people": [], "description": "", "objects": []}
+
+    def view_details(self, *, max_age=PEOPLE_VIEW_SECONDS):
+        """What look_closely shows: smoothed people with every detail, the raw
+        description and objects. Names only from face recognition (smoothed)."""
+        if self.people_at is None or self.clock() - self.people_at > max_age:
+            return None
+        details = self._details
+        people = []
+        for row in sorted(details["people"], key=lambda row: not row["gaze"]):
+            known = row["label"] not in _UNKNOWN_LABELS
+            person = {"who": row["label"], "recognized": known,
+                      "looking_at_you": bool(row["gaze"])}
+            for key, field in (("where", "position"), ("doing", "action"),
+                               ("detail", "action_detail"), ("holding", "holding")):
+                if row.get(field):
+                    person[key] = row[field]
+            if row.get("expression") in _SHOWN_EXPRESSIONS:
+                person["expression"] = row["expression"]
+            people.append(person)
+        return {"seconds_ago": round(self.clock() - self.people_at, 1), "people": people,
+                "scene": details["description"], "around": self._environment,
+                "objects": details["objects"]}
 
     def people_view(self, *, max_age=PEOPLE_VIEW_SECONDS):
         """Who is in view now (smoothed); None without fresh observations v1."""
@@ -295,6 +322,14 @@ class RoomMonitor:
         self.people_in_view = [{"label": row["label"], "known": row["label"] not in _UNKNOWN_LABELS,
                                 "gaze": bool(row["gaze"])} for row in people]
         self.people_at = now
+        labels = {row["subject_id"]: row["label"] for row in people if row["subject_id"]}
+        objects = []
+        for item in (observations.get("objects") or [])[:6]:
+            if isinstance(item, dict) and _phrase(item.get("name"), 24):
+                near = labels.get(item.get("near_subject_id"))
+                objects.append(_phrase(item.get("name"), 24) + (f"（{near}身边）" if near else ""))
+        self._details = {"people": people, "description": description[:VIEW_DESCRIPTION_LIMIT],
+                         "objects": objects}
         self._environments.append(_phrase(observations.get("environment"), 40))
         if len(self._environments) == 2 and self._environments[0] == self._environments[1]:
             self._environment = self._environments[0]  # wording changes every frame

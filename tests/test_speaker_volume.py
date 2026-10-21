@@ -186,7 +186,9 @@ def test_what_the_user_calls_annie_is_not_remembered_as_their_name():
         assert is_meta_memory("user_call_ai_xiaobug", text), text
         assert prepare_extracted_fact({"kind": "persona", "key": "user_call_ai",
                                        "text": text}, "那行，小bug，我改一改") is None
-    assert not is_meta_memory("user_name", "用户叫张三。")
+    # 10/21: a visitor's name is not a robot-wide fact either (the camera names people).
+    assert is_meta_memory("user_name", "用户叫张三。")
+    assert not is_meta_memory("user_drink", "用户喜欢喝咖啡。")
 
 
 def test_change_your_personality_is_an_explicit_request():

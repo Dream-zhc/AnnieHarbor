@@ -59,6 +59,11 @@ _PLAN_KEY = "ongoing_plan_car_viewing"
 # "用户称呼当前AI角色为“小bug”" as the user's own name and greeted them with it.
 _ASSISTANT_NICKNAME = re.compile(
     r"用户(?:称呼|叫|管)(?:当前|这个)?(?:的)?(?:AI|ai|助手|机器人|角色|小安妮|你)")
+# Many visitors talk to one robot: "the user's name" is not a fact about whoever
+# speaks next (10/21 demo: every visitor was greeted as “海超”). Names come from
+# the camera's face library only.
+_USER_NAME = re.compile(r"用户(?:的)?(?:名字|姓名|名)(?:是|叫|为)|用户(?:自称|名叫|叫做)")
+_USER_NAME_KEY = re.compile(r"^(?:user_)?(?:real_)?(?:name|nickname|called)(?:_|$)", re.I)
 _PLAN_LIFETIME_MS = 30 * 86_400_000
 
 
@@ -88,10 +93,11 @@ def _grounded_extraction(row):
 def is_meta_memory(key, value):
     """Historical empty-result prose is not conversation evidence."""
     return bool(_EMPTY_FACT_KEY.fullmatch(key) or _EMPTY_FACT_TEXT.search(value)
+                or _USER_NAME_KEY.search(key)
                 or value.startswith(("placeholder", "用户询问", "用户曾询问",
                                      "用户问过", "用户只是询问", "用户提及地点为",
                                      "用户称呼助手", "本轮没有", "本轮未"))
-                or _ASSISTANT_NICKNAME.search(value)
+                or _ASSISTANT_NICKNAME.search(value) or _USER_NAME.search(value)
                 or (_REMINDER_REQUEST.search(value) and "用户要求" in value)
                 or value in {"用户不喜欢带。", "用户不喜欢吃。", "用户不喜欢穿。"}
                 or (key.startswith("chat_") and "用户最近准备去看车" in value)
@@ -118,7 +124,8 @@ def prepare_extracted_fact(fact, user_text):
             _SINGLE_LOCATION.fullmatch(original) or
             _INCOMPLETE_PREFERENCE.fullmatch(original) or
             "用户提及地点" in value or "用户称呼助手" in value or
-            _ASSISTANT_NICKNAME.search(value) or
+            _ASSISTANT_NICKNAME.search(value) or _USER_NAME.search(value) or
+            _USER_NAME_KEY.search(key) or
             "用户要求" in value and _REMINDER_REQUEST.search(value)):
         return None
     if _PLAN_CAR_CANCEL.search(original):

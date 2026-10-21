@@ -909,6 +909,9 @@ class HarborRuntime:
         speaker_threshold: float = 0.5,
         speaker_margin: float = 0.08,
         decision_url: str | None = None,
+        addressee_model: str | None = None,
+        addressee_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        addressee_timeout_ms: int = 1200,
         decision_client=None,
         decision_timeout_ms: int = 1500,
         addressee_enabled: bool = False,
@@ -1064,9 +1067,20 @@ class HarborRuntime:
             self.decision = DecisionClient(decision_url, realtime_key,
                                            timeout=decision_timeout_ms / 1000)
             self._owns_decision = True
+        self.addressee_judge = None
+        if addressee_enabled and addressee_model and realtime_key and self.realtime:
+            from annie_adapters.addressee import AddresseeJudge
+
+            # qwen-flash decides "is this for her?" (user decision 2026-10-21);
+            # the decision model keeps facial expressions.
+            self.addressee_judge = AddresseeJudge(
+                realtime_key, model=addressee_model, base_url=addressee_base_url,
+                timeout_ms=addressee_timeout_ms)
         for client in self.realtime.values():
             client.decision = self.decision
-            client.addressee_enabled = bool(addressee_enabled and self.decision)
+            client.addressee_judge = self.addressee_judge
+            client.addressee_enabled = bool(addressee_enabled
+                                            and (self.decision or self.addressee_judge))
             client.auto_expression_enabled = bool(auto_expression_enabled and self.decision)
             client.expression_threshold = expression_threshold
         if ambient_enabled and self.realtime:
@@ -1298,6 +1312,11 @@ class HarborRuntime:
                             robot_id, message),
                     ))
                 self.playback_listeners[config.robot_id] = tuple(listeners)
+                client = self.realtime.get(config.robot_id)
+                if client is not None and any(item.channel == "visualllm" for item in listeners):
+                    # look_closely: only robots with a camera feed get the tool.
+                    client.visual_details = (
+                        lambda robot_id=config.robot_id: self._current_view_details(robot_id))
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):
@@ -1788,6 +1807,13 @@ class HarborRuntime:
             connected=bool(visual and visual.connected),
         )
 
+    def _current_view_details(self, robot_id):
+        listeners = self.playback_listeners.get(robot_id, ())
+        visual = next((item for item in listeners if item.channel == "visualllm"), None)
+        if not (visual and visual.connected):
+            return None
+        return self.room_monitors[robot_id].view_details()
+
     def room_observations(self, robot_id):
         monitor = self.room_monitors[robot_id]
         listeners = self.playback_listeners.get(robot_id, ())
@@ -1920,6 +1946,8 @@ class HarborRuntime:
                 await self.faces.close()
             if self.decision is not None and self._owns_decision:
                 await self.decision.close()
+            if self.addressee_judge is not None:
+                await self.addressee_judge.close()
             if self.memory:
                 await self.memory.close()
             for connections in self.playback_listeners.values():

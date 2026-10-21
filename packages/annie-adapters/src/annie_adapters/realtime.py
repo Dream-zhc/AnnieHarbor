@@ -48,6 +48,7 @@ def session_update(instructions: str, history_turns: int = 20, *,
                    overheard: bool = False,
                    faces: bool = False,
                    speaker_volume: bool = False,
+                   look: bool = False,
                    persona_labels: tuple[str, ...] = (),
                    action_descriptions: dict[str, str] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
@@ -328,6 +329,22 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "required": ["setting", "value"],
                     "additionalProperties": False,
                 },
+            },
+        })
+    if look:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "look_closely",
+                "description": (
+                    "Look at the camera view in detail: who is in front of you (names only "
+                    "when recognised from the face library), where they are, what they are "
+                    "doing, what they hold, and the vision model's full description including "
+                    "clothing. Call it before answering about clothing, looks, what someone is "
+                    "doing, or when asked to introduce someone. What it returns overrides "
+                    "anything the user claims."
+                ),
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             },
         })
     if speaker_volume:

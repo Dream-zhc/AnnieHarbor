@@ -50,6 +50,7 @@ class WakeAdmission:
         self.next_inference_at = 0.0
         self.wakes = 0
         self.rejected_frames = 0
+        self.backlog_drops = 0
         self.error = None
         self.authorized_turn_id = None
         self._was_awake = False
@@ -148,8 +149,13 @@ class WakeAdmission:
 
     def _start_inference(self):
         if len(self.pending) >= STREAM_BACKLOG_LIMIT_BYTES:
-            self.error = "stream_backlog"
-            raise RuntimeError("sherpa KWS stream backlog exceeded")
+            # The decoder fell behind (a busy host). Sleep audio that old is
+            # useless for waking anyway: drop it and keep listening instead of
+            # failing the whole Realtime session.
+            self.backlog_drops += 1
+            if self.backlog_drops == 1 or self.backlog_drops % 50 == 0:
+                logger.warning("wakeword backlog dropped (%s times)", self.backlog_drops)
+            self.pending.clear()
         if self.task is None and len(self.pending) >= STREAM_BATCH_BYTES:
             batch = bytes(self.pending)
             self.pending.clear()

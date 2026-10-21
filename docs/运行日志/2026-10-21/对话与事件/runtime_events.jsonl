@@ -36,3 +36,12 @@
 {"id": 112442, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792548675264, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
 {"id": 112443, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792549178400, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
 {"id": 112444, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_handover", "request_id": null, "ts_ms": 1792549178411, "elapsed_ms": null, "error": "大头机器人接管，obj 娃娃小机器人已停止", "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112445, "robot_id": "annie-a", "room_id": "roomv2", "kind": "started", "request_id": null, "ts_ms": 1792563466341, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112446, "robot_id": "annie-b", "room_id": "roomv3", "kind": "started", "request_id": null, "ts_ms": 1792563466343, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112447, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792563466779, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112448, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_offline", "request_id": null, "ts_ms": 1792563520314, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112449, "robot_id": "annie-a", "room_id": "roomv2", "kind": "session_switched", "request_id": null, "ts_ms": 1792563538362, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112450, "robot_id": "annie-a", "room_id": "roomv2", "kind": "pcm_stream_started", "request_id": null, "ts_ms": 1792563577245, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room:roomv2:reb_mic"}
+{"id": 112451, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792563577257, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112452, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_offline", "request_id": null, "ts_ms": 1792563739938, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112453, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792563824267, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}

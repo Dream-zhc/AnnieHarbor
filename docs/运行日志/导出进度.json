@@ -2,7 +2,7 @@
   "log_offsets": {
     "logs/phase4-rework.log": 2910,
     "logs/phase4b-enabled.log": 168980,
-    "logs/viseme-annie-a.log": 7592749,
+    "logs/viseme-annie-a.log": 7717033,
     "logs/viseme-annie-b.log": 4681,
     "tmp/mat-debug-26984.log": 216,
     "tmp/mat-debug-32196.log": 143,
@@ -154,12 +154,13 @@
     "整理回滚/20261010-追问英文与表达控制/音色对照.log": 1505,
     "logs/runtime-20261020-181454.log": 645355,
     "logs/runtime-20261020-185138.log": 318504,
-    "logs/runtime-20261020-190618.log": 15316011
+    "logs/runtime-20261020-190618.log": 15316011,
+    "logs/runtime-20261021-141744.log": 163003
   },
   "table_cursors": {
-    "conversation_turns": 524,
-    "runtime_events": 112444,
-    "action_requests": 1792491610673
+    "conversation_turns": 541,
+    "runtime_events": 112453,
+    "action_requests": 1792563649972
   },
-  "last_export": "2026-10-21T10:27:35"
+  "last_export": "2026-10-21T14:25:01"
 }

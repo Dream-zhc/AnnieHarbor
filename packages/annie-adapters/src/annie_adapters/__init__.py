@@ -433,17 +433,17 @@ def normalize_room_event(message: dict) -> NormalizedEvent | None:
         )
 
     if message_type in {"pressure", "touch", "gas"}:
+        # The board's own `ts` is not clock-synced (samples a month behind were
+        # sent), so freshness is judged on arrival: ts_ms stays unset.
         data = message.get("data") if isinstance(message.get("data"), dict) else {}
         if message_type == "pressure":
             radar = _radar_too_close(message, data)
             if radar is not None:
                 source = data.get("source", message.get("from", message.get("source")))
-                ts_ms = data.get("ts", message.get("ts"))
                 return NormalizedEvent(
                     kind="sensor.radar",
                     payload=radar,
                     source=source if isinstance(source, str) else None,
-                    ts_ms=ts_ms if type(ts_ms) is int else None,
                 )
         level = data.get("level", message.get("level"))
         if type(level) is not int:
@@ -453,17 +453,15 @@ def normalize_room_event(message: dict) -> NormalizedEvent | None:
         if message_type in {"touch", "gas"}:
             level = int(level > 0)
         payload = {"level": level}
-        for key in ("id", "sensor_type", "text"):
+        for key in ("id", "name", "sensor_type", "text"):
             value = data.get(key, message.get(key))
             if value is not None:
                 payload[key] = value
         source = data.get("source", message.get("from", message.get("source")))
-        ts_ms = data.get("ts", message.get("ts"))
         return NormalizedEvent(
             kind=f"sensor.{message_type}",
             payload=payload,
             source=source if isinstance(source, str) else None,
-            ts_ms=ts_ms if type(ts_ms) is int else None,
         )
 
     if message_type == "vision.perception":

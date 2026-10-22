@@ -23,11 +23,11 @@ def test_policy_context_dedupe_and_expiry():
     policy = EventPolicy()
     identity = {"chat_id": "x", "generation": 1}
     now = 1_000_000
-    pressure = NormalizedEvent("sensor.pressure", {"level": 4}, ttl_ms=500)
-    first = policy.route(pressure, robot_id="a", transport="verified:a",
+    released = NormalizedEvent("sensor.pressure", {"level": 0}, ttl_ms=500)
+    first = policy.route(released, robot_id="a", transport="verified:a",
                          identity=identity, now_ms=now)
     assert first["decision"] == "context_only"
-    assert policy.snapshot(now)["facts"][0]["summary"]["level"] == 4
+    assert policy.snapshot(now)["facts"][0]["summary"]["level"] == 0
     assert not policy.snapshot(now + 501)["facts"]
     head = NormalizedEvent("sensor.touch", {"id": "head", "level": 1},
                            event_id="same", ttl_ms=1000)
@@ -38,10 +38,10 @@ def test_policy_context_dedupe_and_expiry():
     assert repeat["reason"] == "duplicate_event_id"
     assert policy.route(NormalizedEvent("sensor.touch", {"id": "head", "level": 1},
                                         event_id="other"), robot_id="a", transport="verified:a",
-                        identity=identity, now_ms=now)["reason"] == "cooldown"
+                        identity=identity, now_ms=now)["reason"] == "sensor_held"
     assert policy.route(NormalizedEvent("sensor.touch", {"id": "arm", "level": 1}),
                         robot_id="a", transport="verified:a", identity=identity,
-                        now_ms=now)["decision"] == "context_only"
+                        now_ms=now)["decision"] == "need_response"
     assert policy.route(NormalizedEvent("sensor.touch", {"id": "head", "level": 1},
                                         ts_ms=now-100, ttl_ms=50),
                         robot_id="a", transport="verified:a", identity=identity,
@@ -172,6 +172,92 @@ def test_radar_too_close_replies_once_then_cools_down(tmp_path):
             await asyncio.sleep(.02)
             assert rt.external_events("a")["events"][-1]["reason"] == "cooldown"
             assert sum(item["type"] == "response.create" for item in client.socket.outbound) == 1
+        finally:
+            await rt.close()
+
+    asyncio.run(exercise())
+
+
+def test_body_and_gas_sensors_reply_once_per_stimulus():
+    policy = EventPolicy()
+    now = 1_000_000
+
+    def route(kind, payload, at):
+        return policy.route(NormalizedEvent(kind, payload), robot_id="a",
+                            transport="verified:a", identity={}, now_ms=at)
+
+    press = route("sensor.pressure", {"id": 1, "name": "额头", "level": 1}, now)
+    assert press["decision"] == "need_response"
+    assert "轻轻碰了你的额头" in press["prompt"]
+    assert "传感器" in press["prompt"] and "不要执行物理动作" in press["prompt"]
+    # Persona carries the reply; the prompt gives no reaction menu to copy.
+    assert "当前性格" in press["prompt"] and "说给碰你的人" in press["prompt"]
+    assert "好奇" not in press["prompt"] and "喊轻点" not in press["prompt"]
+    # Held at 1 Hz: one reply only, until release or a 3 s quiet gap.
+    assert route("sensor.pressure", {"id": 1, "level": 3}, now + 1000)["reason"] == "sensor_held"
+    assert route("sensor.pressure", {"id": 1, "level": 3}, now + 2000)["reason"] == "sensor_held"
+    assert route("sensor.pressure", {"id": 2, "level": 2}, now + 2000)["decision"] == "need_response"
+    assert route("sensor.pressure", {"id": 1, "level": 0}, now + 2500)["decision"] == "context_only"
+    again = route("sensor.pressure", {"id": 1, "level": 5}, now + 2600)
+    assert again["decision"] == "need_response" and "很用力按了你的额头" in again["prompt"]
+    assert route("sensor.pressure", {"id": 1, "level": 5}, now + 5600)["decision"] == "need_response"
+    shoulder = route("sensor.pressure", {"id": 4, "name": "肩膀拍打", "level": 1}, now)
+    assert "轻轻拍了你的肩膀" in shoulder["prompt"]
+
+    gas = route("sensor.gas", {"level": 1}, now)
+    assert gas["decision"] == "need_response"
+    assert "一股气味" in gas["prompt"] and "不要编造" in gas["prompt"]
+    assert "当前性格" in gas["prompt"] and "不要再说一遍" in gas["prompt"]
+    # A lingering smell is re-reported every 1-5 s: one reply until 10 s quiet.
+    for at in (2000, 6000, 10_500, 15_000):
+        assert route("sensor.gas", {"level": 1}, now + at)["reason"] == "sensor_held"
+    assert route("sensor.gas", {"level": 1}, now + 25_000)["decision"] == "need_response"
+    assert route("sensor.gas", {"level": 0}, now + 25_500)["decision"] == "context_only"
+    assert route("sensor.gas", {"level": 1}, now + 25_600)["decision"] == "need_response"
+
+
+def test_embedded_pressure_with_unsynced_clock_reaches_realtime(tmp_path):
+    # Exact packet the embedded board sent: its ts is a month behind.
+    packet = {
+        "type": "pressure", "sensor_type": "pressure", "id": 1, "name": "额头",
+        "adc": 751, "pressure": 39.9, "level": 1,
+        "from": "anonymous-50c1a7b0", "ts": 1789623183684, "room": "main",
+    }
+
+    async def exercise():
+        FakeSocket.instances.clear()
+        rt = HarborRuntime(
+            [RobotConfig("a", room_id="roomv2")],
+            tmp_path / "pressure.db", realtime_key="fake",
+            realtime_socket_factory=FakeSocket,
+        )
+        rt.bind_input_source("room:roomv2:main-event", ["a"])
+        await rt.start()
+        try:
+            for _ in range(100):
+                if rt.realtime["a"].ready:
+                    break
+                await asyncio.sleep(.01)
+            assert rt.realtime["a"].ready
+            rt.dispatch_room_event("room:roomv2:main-event", packet)
+            rows = rt.external_events("a")["events"]
+            for _ in range(100):
+                if rows[-1]["status"] == "submitted_unknown":
+                    break
+                await asyncio.sleep(.01)
+            assert rows[-1]["kind"] == "sensor.pressure"
+            assert rows[-1]["decision"] == "need_response"
+            assert rows[-1]["status"] == "submitted_unknown"
+            client = rt.realtime["a"]
+            prompt = client.robot.cached_turn(client.turn_id)["external_prompt"]
+            assert "额头" in prompt and "非用户发言" in prompt
+            rt.dispatch_room_event("room:roomv2:main-event", packet)
+            await asyncio.sleep(.02)
+            assert rt.external_events("a")["events"][-1]["reason"] == "sensor_held"
+            assert sum(item["type"] == "response.create" for item in client.socket.outbound) == 1
+            rt.dispatch_room_event("room:roomv2:main-event", {"type": "gas", "level": 1,
+                                                              "ts": 1789623183684})
+            assert rt.external_events("a")["events"][-1]["decision"] == "need_response"
         finally:
             await rt.close()
 

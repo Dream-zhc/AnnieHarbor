@@ -148,7 +148,8 @@ class ProtocolAdapterTests(unittest.TestCase):
         self.assertEqual(radar.kind, "sensor.radar")
         self.assertIsNone(radar.target_robot_id)
         self.assertEqual(radar.source, "anonymous-04ad4b04")
-        self.assertEqual(radar.ts_ms, 1791791143116)
+        # Board clocks are not synced: freshness is judged on arrival.
+        self.assertIsNone(radar.ts_ms)
         self.assertEqual(radar.payload, {
             "id": 5, "name": "距离过近", "distance": 148.0, "sensor_type": "radar",
         })

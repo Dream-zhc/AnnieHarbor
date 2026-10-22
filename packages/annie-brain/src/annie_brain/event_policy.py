@@ -8,12 +8,60 @@ from dataclasses import dataclass, field
 
 from annie_core import NormalizedEvent
 
+# Embedded repeats a held press about once a second. Same rule as V1: reply
+# to the first report, again only after level 0 or a quiet gap. A lingering
+# smell is re-reported every 1-5 s (10-22 board log), so gas waits longer.
+SENSOR_REARM_GAP_MS = 3_000
+GAS_REARM_GAP_MS = 10_000
+# Embedded body parts (V1 protocol): 1额头/2鼻子/3脸颊/4肩膀拍打.
+BODY_PARTS = {1: "额头", 2: "鼻子", 3: "脸颊", 4: "肩膀"}
+HEAD_IDS = {"head", "head_touch", "head-top", "top_head", "头顶", "摸头"}
+PRESS_WORDS = {1: "轻轻碰了", 2: "轻轻按了", 3: "按了", 4: "重重按了", 5: "很用力按了"}
+PAT_WORDS = {1: "轻轻拍了", 2: "拍了", 3: "拍了", 4: "重重拍了", 5: "很用力拍了"}
+# Persona first: the 10-22 replies were a bare interjection plus a restatement
+# of the stimulus, identical across personas. No example lines here: the model
+# copies them verbatim (see config/personas.toml).
+_IN_CHARACTER = (
+    "这不是用户说的话，也不是要你照念的台词；这一轮没有人开口，没有原话可接。"
+    "用你当前性格平时说话的招牌手法、口味和立场来接，可以顺着正在进行的话题，"
+    "要让人一听就知道是你，而不是谁都会说的通用反应。"
+    "说给面前的人听，一两句口语，说完就收；只说出口的话，不写自己的动作、神态或心理过程。"
+    "如果刚才已经对同一件事反应过，这次换个角度，不要再说一遍“又……了”。"
+    "不要用单独的语气词开头（哎哟、嗯、咦、啧之类），不要用“某处被碰了”这类被动句复述发生的事，"
+    "不要复述这段说明，不要提及传感器或数字，不要执行物理动作。"
+)
+
+
+def _body_prompt(payload: dict) -> str:
+    sensor_id, name = payload.get("id"), payload.get("name")
+    part = BODY_PARTS.get(sensor_id) if type(sensor_id) is int else None
+    if part is None and str(sensor_id or "").lower() in HEAD_IDS:
+        part = "头顶"
+    if part is None and isinstance(name, str):
+        part = next((item for item in (*BODY_PARTS.values(), "头顶") if item in name), None)
+    words = PAT_WORDS if part == "肩膀" else PRESS_WORDS
+    action = words.get(payload.get("level"), "碰了")
+    touched = f"{action}你的{part}" if part else f"{action}你一下"
+    return (
+        f"现场情况：有人{touched}。"
+        "被碰的是你本人：把话说给碰你的人，回应TA这一下，而不是描述你被碰的感受。"
+        + _IN_CHARACTER
+    )
+
+
+GAS_PROMPT = (
+    "现场情况：你这里飘来一股气味，只知道有气味，不知道是什么、从哪来。"
+    "说说你对这股气味的态度或反应；不要编造它具体是什么味道、来源或是否危险，"
+    "也不要用“像是/可能是/让我想起”绕着猜。" + _IN_CHARACTER
+)
+
 
 @dataclass
 class EventPolicy:
     facts: OrderedDict = field(default_factory=OrderedDict)
     seen: OrderedDict = field(default_factory=OrderedDict)
     cooldown: dict = field(default_factory=dict)
+    held: dict = field(default_factory=dict)
     history: deque = field(default_factory=lambda: deque(maxlen=80))
     # One greeting per recognised person in this window (user decision 2026-10-16).
     greet_cooldown_ms: int = 30 * 60_000
@@ -30,6 +78,8 @@ class EventPolicy:
             self.seen.pop(key, None)
         for key in [key for key, expires in self.cooldown.items() if expires <= now_ms]:
             self.cooldown.pop(key, None)
+        for key in [key for key, expires in self.held.items() if expires <= now_ms]:
+            self.held.pop(key, None)
 
     def route(self, event: NormalizedEvent, *, robot_id: str, transport: str,
               identity: dict, now_ms: int) -> dict:
@@ -54,17 +104,24 @@ class EventPolicy:
 
         decision = "dropped" if reason else "context_only"
         prompt = None
-        # A head-touch must identify a *head* sensor. Bare touch/pressure or
-        # smile cannot be interpreted as a request to speak.
-        head = str(event.payload.get("id") or event.payload.get("sensor_type") or "").lower()
-        is_head = head in {"head", "head_touch", "head-top", "top_head", "头顶", "摸头"}
-        if not reason and event.kind == "sensor.touch" and event.payload.get("level") == 1 and is_head:
-            if key in self.cooldown:
-                decision, reason = "dropped", "cooldown"
+        if not reason and event.kind in {"sensor.touch", "sensor.pressure", "sensor.gas"}:
+            # Touch/pressure 1-5 and gas 1 always get a reply (V1 behavior);
+            # level 0 is a release that only updates context and re-arms.
+            level = event.payload.get("level")
+            level = level if type(level) is int and level > 0 else 0
+            fresh = key not in self.held
+            if level:
+                self.held[key] = now_ms + (GAS_REARM_GAP_MS if event.kind == "sensor.gas"
+                                           else SENSOR_REARM_GAP_MS)
+            else:
+                self.held.pop(key, None)
+            if not level:
+                reason = "context_only"
+            elif not fresh:
+                reason = "sensor_held"
             else:
                 decision = "need_response"
-                prompt = "有人触摸了你的头顶。这是外部传感器事件，不是用户说的话。简短自然回应，不要执行物理动作。"
-                self.cooldown[key] = now_ms + 15_000
+                prompt = GAS_PROMPT if event.kind == "sensor.gas" else _body_prompt(event.payload)
         elif not reason and event.kind == "sensor.radar":
             # Embedded already decided the person is too close. Reply once,
             # then ignore repeats until the cooldown so a held trigger cannot spam.

@@ -829,6 +829,16 @@ class RuntimeStore:
             ).fetchone()
             return dict(row) if row else None
 
+    def find_action(self, robot_id, turn_id, kind, value):
+        """The UNIQUE(robot_id,turn_id,kind,value) row a device receipt refers to."""
+        with self.connect() as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute(
+                "SELECT * FROM action_requests WHERE robot_id=? AND turn_id=? AND kind=? AND value=?",
+                (robot_id, turn_id, kind, value),
+            ).fetchone()
+            return dict(row) if row else None
+
     def reserve_action(self, robot_id, call_id, turn_id, generation, room_id,
                        kind, value, cooldown_ms, *, word_aligned=False):
         now = time.time_ns() // 1_000_000

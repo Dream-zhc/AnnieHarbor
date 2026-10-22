@@ -16,7 +16,8 @@ type Props = {
 };
 
 const isPlayable = (preview: ActionPreview | null) =>
-  Boolean(preview && preview.call_id && preview.status === 'published_unknown');
+  Boolean(preview && preview.call_id && ['published_unknown', 'device_started', 'device_finished']
+    .includes(preview.status));
 
 function RobotTwinImpl({
   preview,

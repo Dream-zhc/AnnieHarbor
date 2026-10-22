@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -229,9 +230,21 @@ class AudioInputGate:
         self.accepted = 0
         self.dropped = 0
         self.rejected = 0
+        # (monotonic, frames) of PCM that never reached the provider, so a turn
+        # with missing words shows whether audio was lost around it (10-22).
+        self.losses = deque(maxlen=256)
 
-    def _reject(self, reason: str):
+    def note_lost(self, frames: int):
+        if frames > 0:
+            self.losses.append((time.monotonic(), frames))
+
+    def lost_since(self, since: float) -> int:
+        return sum(frames for at, frames in self.losses if at >= since)
+
+    def _reject(self, reason: str, *, frame=False):
         self.rejected += 1
+        if frame:
+            self.note_lost(1)
         raise InputRejectedError(reason)
 
     def _clear(self):
@@ -241,6 +254,7 @@ class AudioInputGate:
             self.queue.task_done()
             cleared += 1
         self.dropped += cleared
+        self.note_lost(cleared)
         return cleared
 
     def start_stream(self, source_id: str, audio_format: AudioFormat):
@@ -264,26 +278,27 @@ class AudioInputGate:
 
     def put(self, source_id: str, payload: bytes, *, sequence: int | None, received_at: float):
         if not self.config.listen_enabled:
-            self._reject("listen_disabled")
+            self._reject("listen_disabled", frame=True)
         if self.source_id is None or self.audio_format is None:
-            self._reject("stream_not_started")
+            self._reject("stream_not_started", frame=True)
         if source_id != self.source_id:
-            self._reject("source_mismatch")
+            self._reject("source_mismatch", frame=True)
         if len(payload) != self.audio_format.bytes_per_frame:
-            self._reject("invalid_frame_size")
+            self._reject("invalid_frame_size", frame=True)
         if (time.monotonic() - received_at) * 1000 > self.config.audio_max_age_ms:
-            self._reject("stale_audio")
+            self._reject("stale_audio", frame=True)
         if sequence is None:
             sequence = 1 if self.last_sequence is None else self.last_sequence + 1
         if type(sequence) is not int or sequence < 0:
-            self._reject("invalid_sequence")
+            self._reject("invalid_sequence", frame=True)
         if self.last_sequence is not None and sequence <= self.last_sequence:
-            self._reject("out_of_order")
+            self._reject("out_of_order", frame=True)
 
         if self.queue.full():
             self.queue.get_nowait()
             self.queue.task_done()
             self.dropped += 1
+            self.note_lost(1)
         enqueued_at = time.monotonic()
         self.queue.put_nowait(
             PcmFrame(self.config.robot_id, source_id, payload, sequence, received_at, enqueued_at)
@@ -1583,6 +1598,9 @@ class HarborRuntime:
 
     def _room_playback_receipt(self, robot_id, message):
         self._room_external_event(robot_id, "main", message)
+        if str(message.get("type", "")).startswith("action.") and self.actions is not None:
+            self.actions.on_receipt(robot_id, message)
+            return
         client = self.realtime.get(robot_id)
         if client is None:
             return
@@ -1789,11 +1807,13 @@ class HarborRuntime:
         return False
 
     def _room_sam_event(self, robot_id, message):
-        self.room_monitors[robot_id].on_sam(message)
         client = self.realtime.get(robot_id)
-        if (message.get("type") == "mouth_script" and client is not None
-                and client.speech is not None):
-            client.speech.on_mouth_script(message)
+        speech = client.speech if client is not None else None
+        mouth = message.get("type") == "mouth_script" and speech is not None
+        timing = speech.mouth_timing(message, time.monotonic()) if mouth else None
+        self.room_monitors[robot_id].on_sam(message, timing=timing)
+        if mouth:
+            speech.on_mouth_script(message)
 
     def _room_visual_event(self, robot_id, message):
         monitor = self.room_monitors[robot_id]
@@ -2648,7 +2668,8 @@ class HarborRuntime:
                 "configured": self.actions is not None,
                 "enabled": bool(self.actions and self.actions.enabled),
                 "allowlist": list(self.actions.allowlist) if self.actions else [],
-                "device_completion": "unknown_no_verified_action_receipt",
+                "device_completion": "embedded_receipts_v1",
+                "receipts": dict(self.actions.receipts) if self.actions else {},
                 "transport_errors": dict(self.actions.connection_errors) if self.actions else {},
             },
             "weather": {"configured": self.weather is not None, "source": "amap"},

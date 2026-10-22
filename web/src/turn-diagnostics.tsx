@@ -17,7 +17,10 @@ const since=(times:TurnTimeline['times']|undefined,from:string,to:string)=>{
 };
 const endState=(status?:string)=>{
   if(!status)return '未记录';
-  if(status==='published_unknown')return '云端下发完成（设备执行未核验）';
+  if(status==='published_unknown')return '云端下发完成（等待设备回执）';
+  if(status==='device_started')return '设备已开始执行';
+  if(status==='device_finished')return '设备执行完成';
+  if(status==='device_dropped')return '设备未执行（已丢弃）';
   if(status==='awaiting_audio_anchor')return '等待首帧音频';
   if(status==='awaiting_text_anchor')return '等待回复包含目标词';
   if(status==='awaiting_word_alignment')return '旧协议：等待声学对齐';

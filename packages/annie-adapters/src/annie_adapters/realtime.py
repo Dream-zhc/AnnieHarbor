@@ -395,12 +395,14 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "remember_face",
                 "description": (
-                    "When the CURRENT user explicitly asks you to remember them / their face / "
-                    "get to know them (记住我、认识一下我、记住我的脸) and has told you their name "
-                    "(this turn or the one before). Records the face you are looking at. If "
-                    "they did not say a name, ask for it first; never invent or guess one, and "
-                    "never call it for someone who is not asking. Only status=started means it "
-                    "began; you will be told when it is done, so do not say you remember yet."
+                    "When the CURRENT user introduces themselves or asks you to remember / get "
+                    "to know them, in any wording: 我叫小明、我是小明、叫我小明、记住我我叫小明、"
+                    "认识一下我是小明, or a name answering your 你叫什么 (this turn or the one "
+                    "before). Call it right away with their own name. Records the face you are "
+                    "looking at. If they gave no name, ask for it first; never invent or guess "
+                    "one, and never call it when they introduce someone else. Only "
+                    "status=started means it began; you will be told when it is done, so do not "
+                    "say you remember yet."
                 ),
                 "parameters": {
                     "type": "object",

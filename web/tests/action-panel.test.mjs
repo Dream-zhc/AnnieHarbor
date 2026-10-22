@@ -14,7 +14,10 @@ test('Phase 7 action view loads only the selected robot and never directly sends
 });
 
 test('Room publication is distinct from physical execution and queued or uncertain send',()=>{
-  assert.match(panel,/云端下发完成 · 设备执行未核验/);
+  assert.match(panel,/云端下发完成 · 等待设备回执/);
+  assert.match(panel,/device_finished:'设备执行完成'/);
+  assert.match(panel,/device_dropped:'设备未执行（已丢弃）'/);
+  assert.match(panel,/设备丢弃原因：/);
   assert.match(panel,/Room 发布/);
   assert.match(panel,/等待回复包含目标词/);
   assert.match(panel,/已错过触发点，动作未发布/);
@@ -28,7 +31,8 @@ test('UI does not infer Room publication from a tool call alone',()=>{
   assert.doesNotMatch(workbench,/status:'published_unknown'/);
   const diagnostics=readFileSync(new URL('../src/turn-diagnostics.tsx',import.meta.url),'utf8');
   assert.match(diagnostics,/等待回复包含目标词/);
-  assert.match(diagnostics,/云端下发完成（设备执行未核验）/);
+  assert.match(diagnostics,/云端下发完成（等待设备回执）/);
+  assert.match(diagnostics,/device_finished'\)return '设备执行完成'/);
 });
 
 test('cloud-triggered actions display an action icon and badge next to 小安妮',()=>{

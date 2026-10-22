@@ -53,6 +53,14 @@ class DisplayMessageTests(unittest.TestCase):
         )
         self.assertFalse(message["data"]["real_device_executed"])
         self.assertEqual(message["data"]["action_value"], "listen_tilt")
+        finished = build_display_message(
+            "action.state",
+            {"ts_ms": 3, "call_id": "c", "turn_id": "t", "action_kind": "action",
+             "action_value": "listen_tilt", "status": "device_finished", "generation": 3,
+             "real_device_executed": True},
+            "annie-a", "roomv2",
+        )
+        self.assertTrue(finished["data"]["real_device_executed"])
 
 
 class DisplayRelayTests(unittest.IsolatedAsyncioTestCase):

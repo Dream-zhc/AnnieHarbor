@@ -3,8 +3,9 @@
 Legacy actions use the first published PCM; word actions publish an indexed
 intent as soon as the real reply contains the requested word. The embedded
 speaker resolves the sample from reb_sam and its own playback cursor.
-The historical wire has no action completion receipt; published is UNKNOWN,
-never a claim that the embedded motor finished.
+Published is UNKNOWN, never a claim that the embedded motor finished; only the
+device's reb_main action.started / action.finished / action.dropped receipts
+(matched by conversation_id + script_id) move an action past that.
 """
 
 import asyncio
@@ -16,6 +17,18 @@ from annie_brain.action_catalog import resolve_action
 EXPRESSIONS = frozenset({"喜", "怒", "哀", "乐", "中"})
 WORD_REQUIRED_SCRIPTS = frozenset({"surprise", "smirk", "proud", "skeptical", "shy"})
 ANCHOR_TIMEOUT = 15
+# Embedded receipt -> durable status. finished is what the brain trusts as done;
+# dropped carries the device's reason (unknown script, expired, cooldown, ...).
+RECEIPT_STATUS = {"action.started": "device_started", "action.finished": "device_finished",
+                  "action.dropped": "device_dropped"}
+# Only an action we actually sent can advance; finished/dropped are final.
+RECEIPT_FROM = {
+    "device_started": frozenset({"send_unknown", "published_unknown"}),
+    "device_finished": frozenset({"send_unknown", "published_unknown", "device_started"}),
+    "device_dropped": frozenset({"send_unknown", "published_unknown", "device_started"}),
+}
+DEVICE_COMPLETION = {"device_started": "started", "device_finished": "finished",
+                     "device_dropped": "dropped"}
 
 
 def current_action_not_vetoed(text):
@@ -52,6 +65,7 @@ class ActionCoordinator:
         self.pending_expressions = {}  # (robot_id,call_id) -> turn_id
         self.tasks = set()
         self.connection_errors = {}
+        self.receipts = {"applied": 0, "ignored": 0, "unmatched": 0, "invalid": 0}
         self.locks = {robot_id: asyncio.Lock() for robot_id in robots}
 
     async def start(self):
@@ -75,15 +89,61 @@ class ActionCoordinator:
             raise ValueError("invalid action history limit")
         return await asyncio.to_thread(self.store.list_actions, robot_id, limit)
 
-    def _event(self, row, *, status=None, error=None):
+    def _event(self, row, *, status=None, error=None, executed=False, **receipt):
+        status = status or row["status"]
         self.emit(
             row["robot_id"], "action.state", turn_id=row["turn_id"],
             call_id=row["call_id"], action_kind=row["kind"], action_value=row["value"],
             room_id=row["room_id"], generation=row["generation"],
-            status=status or row["status"], error=error,
-            real_device_executed=False,
-            device_completion="unknown",
+            status=status, error=error,
+            real_device_executed=executed,
+            device_completion=DEVICE_COMPLETION.get(status, "unknown"), **receipt,
         )
+
+    def on_receipt(self, robot_id, message):
+        """reb_main action.started/finished/dropped from the embedded player."""
+        after = RECEIPT_STATUS.get(message.get("type"))
+        data = message.get("data")
+        if after is None:
+            return False
+        script = data.get("script_id") if isinstance(data, dict) else None
+        cid = data.get("conversation_id") if isinstance(data, dict) else None
+        if (robot_id not in self.robots or not isinstance(script, str)
+                or not 1 <= len(script) <= 64 or not isinstance(cid, str)
+                or not 1 <= len(cid) <= 128):
+            self.receipts["invalid"] += 1
+            return False
+        reason = data.get("reason")
+        detail = {"device_" + key: data[key] for key in ("offset_ms", "duration_ms")
+                  if type(data.get(key)) in (int, float)}
+        if type(message.get("ts")) is int:
+            detail["device_ts_ms"] = message["ts"]
+        self._schedule(self._apply_receipt(
+            robot_id, cid, script, after,
+            reason[:64] if isinstance(reason, str) and reason else None, detail,
+        ))
+        return True
+
+    async def _apply_receipt(self, robot_id, cid, script, after, reason, detail):
+        async with self.locks[robot_id]:
+            row = await asyncio.to_thread(self.store.find_action, robot_id, cid, "action", script)
+            if row is None:
+                self.receipts["unmatched"] += 1
+                self.emit(robot_id, "action.receipt_unmatched", turn_id=cid,
+                          action_value=script, receipt_status=after, reason=reason)
+                return
+            before = row["status"]
+            changed = before in RECEIPT_FROM[after] and await asyncio.to_thread(
+                self.store.set_action_status, robot_id, row["call_id"], before, after, reason)
+            if not changed:
+                # e.g. a started arriving after finished: never move backwards.
+                self.receipts["ignored"] += 1
+                return
+            self.receipts["applied"] += 1
+            # A drop after started still moved the motor part of the way.
+            self._event(row, status=after, error=reason,
+                        executed=after != "device_dropped" or before == "device_started",
+                        **detail)
 
     async def request(self, robot_id, call_id, turn_id, generation, kind, value, *,
                       speech, user_text, anchor_text=None, anchor_occurrence=1):

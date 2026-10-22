@@ -372,6 +372,26 @@ class RealtimeContextTests(unittest.IsolatedAsyncioTestCase):
         finally:
             a.speech = None
 
+    async def test_restore_drops_stale_identity_exchanges_but_keeps_recent_ones(self):
+        a = self.runtime.realtime["annie-a"]
+        now = time.time_ns() // 1_000_000
+        old = now - 43 * 3_600_000
+        a.robot.context_cache = [
+            row("1", "你面前的这个人叫什么名字", "康兴。", created_ms=old),
+            row("2", "请记住我叫康兴", "康兴，我正在记你的脸。", created_ms=old + 1),
+            row("3", "调到50。", "好的。", created_ms=old + 2),
+            row("4", "你好", "你好，康兴。", created_ms=now - IDLE_SESSION_GAP_SECONDS * 1000 - 1),
+            row("5", "记住我叫海超", "记住了，海超。", created_ms=now - 60_000),
+        ]
+        before = len(a.socket.outbound)
+        await a._restore_context()
+        self.assertEqual([turn["turn_id"] for turn in a.restored_context["turns"]], ["3", "5"])
+        self.assertEqual(a.restored_context["omitted_stale_identity_turns"], 3)
+        sent = "".join(event["item"]["content"][0]["text"] for event in a.socket.outbound[before:]
+                       if event["type"] == "conversation.item.create")
+        self.assertNotIn("康兴", sent)
+        self.assertIn("海超", sent)  # within the gap: the live conversation continues
+
     async def test_realtime_cloud_window_is_separate_from_saved_twenty_turns(self):
         a = self.runtime.realtime["annie-a"]
         self.assertEqual(a.history_turns, 8)

@@ -25,6 +25,7 @@ from annie_brain.decision_policy import (
     ADDRESSEE_QUESTION,
     EXPRESSION_SCRIPTS,
     GENERIC_MOTION,
+    LANGUAGE_REQUEST_SCOPES,
     WAKE_NAME,
     addressee_prompt,
     addressee_state,
@@ -32,6 +33,9 @@ from annie_brain.decision_policy import (
     explicit_motion,
     expression_choice,
     expression_question,
+    face_request_question,
+    instruction_state,
+    language_request_question,
     motion_question,
     pick_anchor,
 )
@@ -50,9 +54,15 @@ from annie_core import RobotUnavailableError
 from annie_runtime.display import DISPLAY_NOTIFY_KINDS
 from annie_runtime.faces import face_name
 from annie_runtime.language import (
+    ROBOT_SCOPE,
+    SPOKEN_NAMES,
     ReplyLanguageState,
     explicit_language_clear,
     explicit_language_request,
+    explicit_language_stop,
+    named_languages,
+    stop_covers,
+    unplaced_language_mention,
 )
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
@@ -63,6 +73,11 @@ logger = logging.getLogger(__name__)
 AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
 IDLE_SESSION_GAP_SECONDS = 15 * 60
 IDLE_RECV_CHECK_SECONDS = 30
+# Qwen closes a session after 180 s without a reply or input (every 3 min on
+# 10-22). That is routine: reconnect at once instead of after the 1 s backoff,
+# which with the handshake left the microphone deaf for about 1.3 s each time.
+PROVIDER_IDLE_CLOSE = ("response_idle_timeout", "user_idle_timeout")
+INPUT_LOSS_LOOKBACK_SECONDS = 2.0
 AUDIO_SEND_DEADLINE_SECONDS = 1.0
 VISUAL_CONTEXT_MIN_INTERVAL_SECONDS = 1.0
 VISUAL_CONTEXT_POLL_SECONDS = 0.5
@@ -98,6 +113,14 @@ LOOK_RULES = ("以这份结果为准：who 是 recognized=true 时才是名字�
               "不能用对话里的名字称呼；穿着长相只按 scene 写到的说，没写就说看不清；"
               "用户说的和这里不一致时，礼貌说出你看到的，不附和。")
 REMEMBER_FACE = re.compile(r"记住|记下|记一下|认识一下|认识我|认一下|认得我|记得我")
+# “我叫小明”“我是小明”alone also ask her to remember (user decision 10-22).
+# The name must end there: “我是张三的朋友” is not 张三 introducing himself.
+SELF_INTRO = r"(?:我叫做?|我是|叫我|我的名字(?:是|叫)?|我名字(?:是|叫)|名字叫|本人(?:叫|是)?)"
+SELF_INTRO_END = r"(?:$|[^一-鿿]|[呀啊哦哈啦嘛呢哟喔噢])"
+
+
+def self_introduced(text, name):
+    return bool(re.search(SELF_INTRO + re.escape(name) + SELF_INTRO_END, text))
 VOLUME_REQUEST = re.compile(
     r"大声|小声|大点声|小点声|响一?点|轻一?点|音量|声音.{0,6}(?:大|小|高|低|轻|响|调)|"
     r"太吵|吵死|听不(?:清|见|到)")
@@ -311,7 +334,10 @@ class RealtimeRobot:
         self._last_reply_t = None
         self._last_reply_text = ""
         self.decision_stats = {"addressee_checks": 0, "declined": 0, "expression_checks": 0,
-                               "auto_actions": 0, "failures": 0, "last_ms": None}
+                               "instruction_checks": 0, "auto_actions": 0, "failures": 0,
+                               "last_ms": None}
+        self._language_decision = None  # (turn_id, pair, task) for one named language
+        self._utterance_started_t = None
         self._clock_text = ""
         self._memory_expires_at_ms = None
         self._memory_task = None
@@ -897,29 +923,84 @@ class RealtimeRobot:
             return
         request = explicit_language_request(text)
         scope = explicit_language_clear(text) if not request else None
+        saved = self.language.preferences
         if scope == 'any':  # “恢复默认语言”: whichever setting is in force
-            saved = self.language.preferences
             scope = 'chat' if saved.get('chat') else 'robot' if saved.get('robot') else None
+        stop = explicit_language_stop(text) if not request and not scope else None
         if request and request['scope'] != 'turn':
-            change = dict(clear=False, scope=request['scope'], language=request['language'],
-                          dialect=request['dialect'])
+            changes = [dict(clear=False, scope=request['scope'], language=request['language'],
+                            dialect=request['dialect'])]
         elif scope:
-            change = dict(clear=True, scope=scope)
+            changes = [dict(clear=True, scope=scope)]
+        elif stop:
+            changes = self._language_stop_changes(stop, text)
         else:
+            named = None if request else unplaced_language_mention(text)
+            if named and self._has_decision():
+                self._language_decision_task(text, turn_id, named)
             return
-        identity = dict(self.robot.session_state())
+        if changes:
+            task = asyncio.create_task(
+                self._apply_language_changes(changes, turn_id, dict(self.robot.session_state())),
+                name=f"language-save:{self.robot.config.robot_id}")
+            self._decision_tasks.add(task)
+            task.add_done_callback(self._decision_tasks.discard)
 
-        async def save():
+    def _language_stop_changes(self, stop, text):
+        """“别说河南话了”: drop the setting that holds it. A robot-wide one stays for
+        other chats unless the user says 以后/一直; this chat goes back to Mandarin."""
+        def holds(row):
+            return bool(row) and stop_covers(stop, row['language'], row['dialect'])
+        chat, robot = self.language.preferences.get('chat'), self.language.preferences.get('robot')
+        changes = []
+        if holds(robot) and ROBOT_SCOPE.search(text):
+            changes.append(dict(clear=True, scope='robot'))
+            robot = None
+        if holds(robot):
+            changes.append(dict(clear=False, scope='chat', language='zh', dialect='mandarin'))
+        elif holds(chat):
+            changes.append(dict(clear=True, scope='chat'))
+        return changes
+
+    async def _apply_language_changes(self, changes, turn_id, identity):
+        for change in changes:
             try:
                 await self.language_preference_writer(
-                    **change, request_id=f"spoken-{turn_id or uuid4().hex}",
+                    **change, request_id=f"spoken-{change['scope']}-{turn_id or uuid4().hex}",
                     source_turn_id=turn_id, expected_identity=identity)
             except Exception as exc:
                 self.publish('language.preference.failed', scope=change['scope'],
                              error=type(exc).__name__)
-        task = asyncio.create_task(save(), name=f"language-save:{self.robot.config.robot_id}")
+                return
+
+    def _language_decision_task(self, text, turn_id, pair):
+        """Ask the decision model whether the user wants this language now or from now
+        on. Asked once per turn and language; the language tools await the same answer."""
+        current = self._language_decision
+        if current is not None and current[:2] == (turn_id, pair):
+            return current[2]
+        identity = dict(self.robot.session_state())
+
+        async def decide():
+            choice = await self._decide_instruction(
+                "language", language_request_question(SPOKEN_NAMES[pair]),
+                instruction_state(text, robot_last=self._last_reply_text))
+            scope = LANGUAGE_REQUEST_SCOPES.get(choice)
+            if scope is None or self.robot.session_state() != identity:
+                return choice
+            if self.turn_id == turn_id and self.language.explicit is None:
+                self.language.adopt_request(*pair, scope)
+                self.visual_changed()
+            if scope == 'chat' and self.language_preference_writer is not None:
+                await self._apply_language_changes(
+                    [dict(clear=False, scope='chat', language=pair[0], dialect=pair[1])],
+                    turn_id, identity)
+            return choice
+        task = asyncio.create_task(decide(), name=f"language-decision:{self.robot.config.robot_id}")
+        self._language_decision = (turn_id, pair, task)
         self._decision_tasks.add(task)
         task.add_done_callback(self._decision_tasks.discard)
+        return task
 
     async def _language_tool(self, name, args, call_id):
         cached = self.robot.turn_cache.get(self.turn_id) or {}
@@ -932,14 +1013,20 @@ class RealtimeRobot:
                 raise ValueError('invalid reply style arguments')
             evidence = args.get('evidence', '')
             requested = explicit_language_request(text)
-            if requested and (requested['language'], requested['dialect']) == (
-                    args.get('language'), args.get('dialect')):
+            pair = (args.get('language'), args.get('dialect'))
+            confirmed = bool(requested) and (requested['language'], requested['dialect']) == pair
+            if not confirmed and pair in named_languages(text) and not explicit_language_stop(text):
+                # The user named it in a way the phrase rules cannot place. Without
+                # any decision model up, the call itself is trusted for this reply.
+                choice = await self._language_decision_task(text, self.turn_id, pair)
+                confirmed = choice is None or choice in LANGUAGE_REQUEST_SCOPES
+            if confirmed:
                 # The user asked for it by name; no inference evidence to check.
                 args = {**args, 'evidence': ''}
             elif evidence and (not isinstance(evidence, str) or evidence not in text
                                or re.search(r'旅游|地名|翻译|引用|[“”‘’]', text)):
                 raise ValueError('inference requires unquoted current lexical evidence')
-            self.language.reply_intent(**args, transcript=text)
+            self.language.reply_intent(**args, transcript=text, confirmed=confirmed)
             self.visual_changed()
             return {'status': 'selected', 'application': self.language.application,
                     'persistent': False}
@@ -955,7 +1042,12 @@ class RealtimeRobot:
         else:
             requested = explicit_language_request(text)
             if not requested or any(requested.get(k) != args[k] for k in ('scope','language','dialect')):
-                raise ValueError('preference requires matching explicit current user request')
+                pair = (args['language'], args['dialect'])
+                if (pair not in named_languages(text)
+                        or await self._language_decision_task(text, self.turn_id, pair) != 'from_now'):
+                    raise ValueError('preference requires matching explicit current user request')
+                if args['scope'] == 'robot' and not ROBOT_SCOPE.search(text):
+                    args = {**args, 'scope': 'chat'}  # all chats only when the user says so
         if self.language_preference_writer is None:
             raise ValueError('preference writer not connected')
         owned_socket, owned_epoch, owned_turn = self.socket, self._tool_epoch, self.turn_id
@@ -1167,6 +1259,14 @@ class RealtimeRobot:
     def _faces_available(self):
         return self.faces is not None and self.faces.available(self.robot.config.robot_id)
 
+    def _input_lost(self):
+        """PCM frames that never reached Qwen from shortly before this utterance
+        began (its speech_started lags the first word) until now; None if unknown."""
+        lost_since = getattr(getattr(self.robot, "audio", None), "lost_since", None)
+        if lost_since is None or self._utterance_started_t is None:
+            return None
+        return lost_since(self._utterance_started_t - INPUT_LOSS_LOOKBACK_SECONDS)
+
     def _recent_user_texts(self):
         """This turn's words and the user turn before: a name often comes one turn later."""
         current = self.robot.turn_cache.get(self.turn_id) or {}
@@ -1315,6 +1415,35 @@ class RealtimeRobot:
         if kind != "d3" and self.addressee_judge is not None:
             return "llm", getattr(self.addressee_judge, "model", "llm")
         return kind, model
+
+    async def _decide_instruction(self, kind, question, state):
+        """The decision model's choice for an instruction the phrase rules could not
+        place (user decision 10-22). None when no model answered: the caller decides."""
+        started = time.perf_counter()
+        judge, client, model = self._decision_model()
+        choice = confidence = error = None
+        self.decision_stats["instruction_checks"] += 1
+        if client is None:
+            error = "unavailable"
+        else:
+            try:
+                answer = (await client.ask(state, {"intent": question}))["intent"]
+                if isinstance(answer, dict) and answer.get("choice") in question["criteria"]:
+                    choice, confidence = answer["choice"], answer.get("confidence")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                error = error_kind(exc)
+                self.decision_stats["failures"] += 1
+                if judge == "d3":
+                    self.d3.failed(error)
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        self.publish("instruction.decided", about=kind, choice=choice, confidence=confidence,
+                     latency_ms=latency_ms, error=error, model=model)
+        logger.info("instruction_decision robot=%s kind=%s model=%s choice=%s confidence=%s "
+                    "latency_ms=%s error=%s text=%r", self.robot.config.robot_id, kind, model,
+                    choice, confidence, latency_ms, error, state.get("当前这句话", "")[:30])
+        return choice
 
     def _addressee_hold_active(self):
         return (self.addressee_enabled and not self.wake
@@ -2189,7 +2318,7 @@ class RealtimeRobot:
         retry = 1
         while not self._stopping:
             generation = self.robot.generation
-            idle_recycle = False
+            idle_recycle = provider_idle = False
             self.prompt_snapshot = None
             self._visual_base_instructions = None
             self._visual_sent_text = self._visual_confirmed_text = None
@@ -2243,6 +2372,8 @@ class RealtimeRobot:
                     self.robot.recent_context(), speech_enabled=self.speech is not None,
                     max_turns=min(self.history_turns, self.robot.context_limit),
                     char_budget=self.restore_char_budget,
+                    now_ms=time.time_ns() // 1_000_000,
+                    stale_after_ms=IDLE_SESSION_GAP_SECONDS * 1000,
                 )
                 # Unheard user turns belong to *past evidence*, not the
                 # provider's unanswered user-message queue. Include the
@@ -2289,8 +2420,9 @@ class RealtimeRobot:
                     )
                 if self._faces_available():
                     tail += (
-                        "\n有人明确要你记住TA（记住我、我叫…你记住）时，先确认知道TA的名字，不知道就先问，"
-                        "再调用remember_face；没有调用并得到started之前，绝不说“记住了”。"
+                        "\n有人向你自我介绍或要你记住TA（我叫…、我是…、叫我…、记住我、认识一下），"
+                        "就用TA说的名字直接调用remember_face，不用再确认；只说记住我没说名字就先问名字。"
+                        "介绍别人时不调用。没有调用并得到started之前，绝不说“记住了”。"
                         "开始后请TA正对着你，记好或没记住时会有现场情况告诉你，那时再告诉TA。"
                         "对话里有人自称叫什么，不等于你认得面前的人：认人只看画面。"
                         "有人要你忘掉TA的脸时，先确认一次再调用forget_face。"
@@ -2432,6 +2564,10 @@ class RealtimeRobot:
                     self.restored_context["omitted_older_turns"]
                     if self.restored_context else 0
                 )
+                self.prompt_snapshot["restored_stale_identity_omitted"] = (
+                    self.restored_context.get("omitted_stale_identity_turns", 0)
+                    if self.restored_context else 0
+                )
                 # A mutation during the initial Provider handshake cannot
                 # promote its earlier bootstrap into a ready live Session.
                 while self.memory is not None and memory_revision != self._memory_revision:
@@ -2527,6 +2663,7 @@ class RealtimeRobot:
             except Exception as exc:
                 # Do not log URL, API key, raw PCM, or user dialogue.
                 self.error = type(exc).__name__ + ": " + str(exc)[:200]
+                provider_idle = isinstance(exc, RuntimeError) and str(exc).startswith(PROVIDER_IDLE_CLOSE)
                 logger.warning("Realtime robot=%s disconnected: %s", self.robot.config.robot_id, self.error)
                 self.publish("session.error", error=self.error)
             finally:
@@ -2555,7 +2692,10 @@ class RealtimeRobot:
                         else "provider_disconnected",
                     )
                 self._reset_turn()
-                self.robot.audio._clear()
+                if not provider_idle:
+                    # After a routine idle close the queued PCM (≤ audio_max_age_ms) goes
+                    # to the next session, so words said during the reconnect survive.
+                    self.robot.audio._clear()
                 if self.socket is not None:
                     logger.info("realtime_cleanup robot=%s socket_close_begin", self.robot.config.robot_id)
                     await self.socket.close()
@@ -2564,7 +2704,7 @@ class RealtimeRobot:
                 self.session = None
             if self._stopping:
                 return
-            if idle_recycle:
+            if idle_recycle or provider_idle:
                 retry = 1
                 continue
             await asyncio.sleep(retry)
@@ -2585,13 +2725,14 @@ class RealtimeRobot:
         # This is the history injected into THIS socket, not its subsequent
         # live dialogue (which the provider does not expose through this API).
         self.restored_context = None
+        now_ms = time.time_ns() // 1_000_000
         if packet is None:
             packet = select_restorable_context(
                 self.robot.recent_context(), speech_enabled=self.speech is not None,
                 max_turns=min(self.history_turns, self.robot.context_limit),
                 char_budget=self.restore_char_budget,
+                now_ms=now_ms, stale_after_ms=IDLE_SESSION_GAP_SECONDS * 1000,
             )
-        now_ms = time.time_ns() // 1_000_000
         # The provider does not receive SQLite timestamps. Mark aged turns
         # explicitly while leaving their persisted text untouched. Allocate
         # labels newest-first so the most recent stale command is annotated.
@@ -2729,6 +2870,7 @@ class RealtimeRobot:
                             or (time.monotonic() - frame.received_at) * 1000
                             > self.robot.config.audio_max_age_ms):
                         self.frames_dropped += 1
+                        audio.note_lost(1)
                         continue
                     identity = (stream_epoch, frame.source_id)
                     if wake_input is not None and wake_input != identity:
@@ -2811,10 +2953,11 @@ class RealtimeRobot:
             if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                 self._dialogue_changed()
         self.began = time.perf_counter()
-        logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d",
+        logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d "
+                    "input_lost_frames=%s",
                     self.robot.config.robot_id, turn_id, fields["input_mode"], source,
                     cause or ("asr_final" if audio else "submit"), self.pending_audio_item_id,
-                    len(visible_text))
+                    len(visible_text), self._input_lost() if audio else None)
         self.publish("turn.started", turn_id=turn_id, user_text=visible_text,
                      turn_source=source,
                      speech_started_ms=(
@@ -3402,6 +3545,7 @@ class RealtimeRobot:
             self._last_provider_stopped_t = None
             self._asr_draft = ""
             self.speech_started_count += 1
+            self._utterance_started_t = time.monotonic()
             self._last_conversation_activity_t = time.monotonic()
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
@@ -3450,12 +3594,13 @@ class RealtimeRobot:
                     self.publish("transcript.dropped", text=self._asr_draft[:80],
                                  item_id=event.get("item_id"), reason="turn_invalid")
                 logger.info("turn_invalid robot=%s wake_state=%s draft_chars=%d named=%s "
-                            "kws_call=%s recover=%s speech_ms=%s draft=%r",
+                            "kws_call=%s recover=%s speech_ms=%s input_lost_frames=%s draft=%r",
                             self.robot.config.robot_id,
                             self.wake.state if self.wake else None, len(self._asr_draft),
                             named, kws_call, recoverable,
                             (time.time_ns() // 1_000_000 - self.last_provider_speech_ms)
-                            if self.last_provider_speech_ms else None, self._asr_draft[:30])
+                            if self.last_provider_speech_ms else None, self._input_lost(),
+                            self._asr_draft[:30])
             if self.wake:
                 # A recoverable call keeps its candidate and the ASR grace
                 # window, otherwise the gate expires before the final arrives.
@@ -4012,15 +4157,26 @@ class RealtimeRobot:
                 if face is None:
                     raise ValueError("invalid face name")
                 texts = [re.sub(r"\s+", "", text) for text in self._recent_user_texts()]
-                intent = REMEMBER_FACE if name == "remember_face" else FORGET_FACE
-                if not any(intent.search(text) for text in texts):
-                    raise ValueError("face request requires the user's explicit request")
                 robot_id = self.robot.config.robot_id
                 if name == "remember_face":
                     if not any(face in text for text in texts):
                         raise ValueError("face name must be the one the user said")
+                    if not any(REMEMBER_FACE.search(text) or self_introduced(text, face)
+                               for text in texts):
+                        # Other wordings (“这是我，张三”, a bare name answering her
+                        # “你叫什么”) go to the decision model.
+                        choice = await self._decide_instruction(
+                            "face", face_request_question(face), instruction_state(
+                                texts[0], previous_user=texts[1] if len(texts) > 1 else None,
+                                robot_last=self._last_reply_text))
+                        if choice != "yes":
+                            raise ValueError("face request requires the user's explicit request")
+                        if self.turn_identity != self.robot.session_state():
+                            raise ValueError("stale face request")
                     result = await self.faces.remember(robot_id, face)
                 else:
+                    if not any(FORGET_FACE.search(text) for text in texts):
+                        raise ValueError("face request requires the user's explicit request")
                     result = await self.faces.forget(robot_id, face)
             elif name == "recall_overheard" and self._overhearing():
                 if args:

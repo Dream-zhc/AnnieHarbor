@@ -8,7 +8,7 @@ export type ActionPreview = {
   kind: string | null;
   value: string | null;
   status: string;
-  real_device_executed: false;
+  real_device_executed: boolean;
   animation_kind: "command_preview";
 };
 
@@ -82,6 +82,7 @@ export function latestPreview(actions: ActionPreview[], generation: number): Act
   return [...actions].reverse().find(a =>
     a.generation === generation && (
       a.status === "published_unknown" || a.status === "send_unknown" ||
+      a.status === "device_started" || a.status === "device_finished" ||
       a.status === "queued" || a.status === "awaiting_audio_anchor" ||
       a.status === "awaiting_text_anchor")) ?? null;
 }

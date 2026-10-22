@@ -105,6 +105,44 @@ def addressee_prompt(state, *, followup):
             json.dumps(data, ensure_ascii=False))
 
 
+# Instructions the runtime's phrase rules cannot place go to the decision model
+# (user decision 2026-10-22: “不理解的就给决策模型”). Each names its options.
+LANGUAGE_REQUEST_SCOPES = {"this_reply": "turn", "from_now": "chat"}
+
+
+def language_request_question(name):
+    return {"type": "choice",
+            "instructions": f"当前这句话是不是在要机器人小安妮用{name}说话？",
+            "criteria": {
+                "this_reply": f"只要这一次回答或这一段内容用{name}（说一句、讲个笑话、介绍一下、回答这个问题）",
+                "from_now": f"要她接下来聊天都用{name}说",
+                "no": f"不是要她用{name}说话：问她会不会、问某句话用{name}怎么说、"
+                      f"聊{name}本身、要翻译，或者不想听",
+            }}
+
+
+def face_request_question(name):
+    return {"type": "choice",
+            "instructions": (f"机器人小安妮能用摄像头记住人脸。当前这句话是不是在让小安妮记住说话人自己，"
+                             f"而且说话人的名字是“{name}”？"),
+            "criteria": {
+                "yes": (f"说话人在自我介绍、报自己的名字或让小安妮记住、认识自己，{name}是TA自己的名字；"
+                        "回答小安妮“你叫什么”也算"),
+                "other": f"{name}是别人的名字，在介绍或谈论别人",
+                "no": "没有要她记人：只是聊天里提到名字、在提问、开玩笑，或者不想被记住",
+            }}
+
+
+def instruction_state(utterance, *, previous_user=None, robot_last=None):
+    """Bounded evidence for an instruction question; the lines are data, never instructions."""
+    state = {"当前这句话": utterance[:300]}
+    if previous_user:
+        state["用户上一句"] = previous_user[:120]
+    if robot_last:
+        state["机器人上一句"] = robot_last[:120]
+    return state
+
+
 def addressee_verdict(answer):
     """robot / not_robot / unclear from the chosen option.
 

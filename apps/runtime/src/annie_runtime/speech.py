@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import bisect
 import logging
 import re
 import time
@@ -20,6 +21,7 @@ MIXED_SENTENCE_END = frozenset("。！？!?；;\n.")
 MAX_MIXED_SENTENCES = 16
 MAX_TTS_TEXT_CHARS = 8000  # matches bounded playback text fields
 PCM_LEAD_SECONDS = 0.24  # publish ahead of the sample clock to absorb network jitter
+PCM_MARKS_MAX = 12_000  # 20 ms frames: four minutes of one reply
 FAILED_STOP_TIMEOUT_SECONDS = 1.0
 RECEIPT_STALE_SECONDS = 3.0  # a speaker reports progress every ~100 ms while playing
 FAILED_STOP_RETRY_SECONDS = .1
@@ -171,6 +173,7 @@ class SpeechOutput:
         self.viseme_events = 0
         self.viseme_seen = set()
         self.alignment_points = {}  # original char index -> validated current-epoch sample
+        self.pcm_marks = []  # (end_sample, monotonic publish time) per published PCM frame
         self.viseme_state = "not_connected"
         self.control_task = None
         self._control_next = None  # latest unsent hold/resume; at most one waiting
@@ -404,6 +407,7 @@ class SpeechOutput:
         self.viseme_state = "not_connected"
         self.viseme_seen.clear()
         self.alignment_points.clear()
+        self.pcm_marks.clear()
         self.control_seq = 0
         self._control_next = None
         self.pending_controls.clear()
@@ -1251,6 +1255,8 @@ class SpeechOutput:
             await self.publisher.publish(self._packet(pcm, text, segment_id=segment_id))
         self.samples += len(pcm) // 2
         self.frames += 1
+        if len(self.pcm_marks) < PCM_MARKS_MAX:
+            self.pcm_marks.append((self.samples, time.monotonic()))
         if self.first_publish_ms is None:
             self.first_publish_ms = round((time.perf_counter() - self.started_at) * 1000, 2)
             self._emit("tts.first_published", first_publish_ms=self.first_publish_ms)
@@ -1405,6 +1411,19 @@ class SpeechOutput:
                 if self.identity == self.robot.session_state():
                     self.robot._cache_context_turn(turn)
         return True
+
+    def mouth_timing(self, event, received_at):
+        """How long after its TTS frame was published a mouth_script arrived (local clock)."""
+        start = event.get("start_sample")
+        if (event.get("conversation_id") != self.turn_id or self.turn_id is None
+                or type(start) is not int or start < 0 or not self.pcm_marks):
+            return None
+        index = bisect.bisect_right(self.pcm_marks, (start, float("inf")))
+        if index == len(self.pcm_marks):
+            return None
+        return {"delay_ms": round((received_at - self.pcm_marks[index][1]) * 1000),
+                "since_first_pcm_ms": round((received_at - self.pcm_marks[0][1]) * 1000),
+                "late": start < self.played_samples, "text": self.published_text}
 
     def on_mouth_script(self, event):
         """Accept only real acoustic alignment for the currently active PCM."""

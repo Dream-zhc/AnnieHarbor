@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {Bot} from 'lucide-react';
 import {DeveloperDrawer,State} from './developer-drawer';
 import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
@@ -78,6 +79,7 @@ const actionStatusLabel:Record<string,string>={
   awaiting_audio_anchor:'等待音频',awaiting_text_anchor:'等待目标词',
   call_observed:'工具调用待确认',reserved:'已预约',queued:'已排队',
   published_unknown:'云端已下发',send_unknown:'发送未确认',cancelled_before_send:'已取消',
+  device_started:'设备执行中',device_finished:'设备已完成',device_dropped:'设备已丢弃',
   expired_no_pcm:'等待音频超时',expired_no_text_anchor:'目标词超时',
   rejected_late:'迟到丢弃',
 };
@@ -275,6 +277,8 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
   const [decisions,setDecisions]=useState<DecisionEntry[]>([]);
   const [decisionPopoverOpen,setDecisionPopoverOpen]=useState(false);
   const decisionCardRef=useRef<HTMLDivElement>(null);
+  const [headPopoverOpen,setHeadPopoverOpen]=useState(false);
+  const headPopoverRef=useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
     if(!decisionPopoverOpen)return;
@@ -286,6 +290,24 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
     window.addEventListener('mousedown',handleOutsideClick);
     return ()=>window.removeEventListener('mousedown',handleOutsideClick);
   },[decisionPopoverOpen]);
+
+  useEffect(()=>{
+    if(!headPopoverOpen)return;
+    const handleOutsideClick=(e:MouseEvent)=>{
+      if(headPopoverRef.current&&!headPopoverRef.current.contains(e.target as Node)){
+        setHeadPopoverOpen(false);
+      }
+    };
+    const handleKey=(e:KeyboardEvent)=>{
+      if(e.key==='Escape')setHeadPopoverOpen(false);
+    };
+    window.addEventListener('mousedown',handleOutsideClick);
+    window.addEventListener('keydown',handleKey);
+    return ()=>{
+      window.removeEventListener('mousedown',handleOutsideClick);
+      window.removeEventListener('keydown',handleKey);
+    };
+  },[headPopoverOpen]);
   const [lastFirstText,setLastFirstText]=useState<number|null>(null);
   const [systemError,setSystemError]=useState<string|null>(null);
   const [toast,setToast]=useState<{message:string;type:'error'|'info'}|null>(null);
@@ -946,6 +968,57 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
               <h1>{session?.chat_id??'实时对话'}</h1>
               {session&&<span className="room-tag" title="当前机器人唯一的实时会话">已激活 · {instances.find(role=>role.persona_id===session.persona_id)?.display_name??session.persona_id}</span>}
               <span className="room-tag" title="绑定的声学房间通道">{selectedRobot?.room_id??route?.room_id??session?.room_id??'—'}</span>
+              {currentHead&&(
+                <div className="head-pill-wrap" ref={headPopoverRef} role="status">
+                  <button
+                    type="button"
+                    className={`head-pill-btn ${headPopoverOpen?'is-open':''} ${handoverNotice?'has-notice':''}`}
+                    onClick={()=>setHeadPopoverOpen(v=>!v)}
+                    title={`机器人头设备详情（悬浮或点击）：${headLabel(currentHead)}`}
+                    aria-label={`机器人头：${headLabel(currentHead)}`}
+                    aria-expanded={headPopoverOpen}
+                  >
+                    <Bot size={11} className="head-pill-icon"/>
+                    <span className="head-pill-label">机器人头 · {currentHead.head_name||currentHead.host||currentHead.address||'已连接'}</span>
+                    {handoverNotice&&<span className="head-notice-dot" title="有最近接管提示"/>}
+                  </button>
+                  <div className="head-popover" role="tooltip">
+                    <div className="head-popover-header">
+                      <div className="head-popover-title-row">
+                        <Bot size={13} className="head-popover-icon"/>
+                        <strong>机器人头</strong>
+                        <span className="head-popover-name">{currentHead.head_name||'未命名'}</span>
+                      </div>
+                      {currentHead.address&&<span className="head-popover-address">{currentHead.address}</span>}
+                    </div>
+                    <div className="head-popover-body">
+                      <div className="head-popover-row">
+                        <span className="head-popover-label">麦克风</span>
+                        <span className="head-popover-val">{currentHead.microphone||'未连接'}</span>
+                      </div>
+                      <div className="head-popover-row">
+                        <span className="head-popover-label">扬声器</span>
+                        <span className="head-popover-val">
+                          {currentHead.speaker||'未连接'}
+                          {headVolume!=null&&<span className="head-popover-volume">音量 {headVolume}</span>}
+                        </span>
+                      </div>
+                      {currentHead.host&&currentHead.host!==currentHead.head_name&&currentHead.host!==currentHead.address&&(
+                        <div className="head-popover-row">
+                          <span className="head-popover-label">主机</span>
+                          <span className="head-popover-val">{currentHead.host}</span>
+                        </div>
+                      )}
+                      {handoverNotice&&(
+                        <div className="head-popover-handover" role="note">
+                          <span className="head-popover-handover-icon">⚡</span>
+                          <span>{handoverNotice}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="stage-status-cluster" title="实时连接状态">
                 <State value={realtime?.state} good={realtime?.ready}/>
                 <span className="voice-mode" role="status">{voiceMode}</span>
@@ -972,13 +1045,6 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             </div>
           </div>
 
-          {currentHead&&<div className="head-strip" role="status">
-            <strong>机器人头</strong>
-            <span>{headLabel(currentHead)}</span>
-            {currentHead.microphone&&<span>麦克风 {currentHead.microphone}</span>}
-            {currentHead.speaker&&<span>扬声器 {currentHead.speaker}{headVolume!=null&&` · 音量 ${headVolume}`}</span>}
-            {handoverNotice&&<em>{handoverNotice}</em>}
-          </div>}
           {deviceWarnings.length>0&&<div className="device-conflict" role="alert">
             <strong>⚠ 音频设备冲突</strong>
             {deviceWarnings.map(text=><span key={text}>{text}</span>)}

@@ -19,6 +19,7 @@ POLL_SECONDS = 1.0
 DEADLINE_SECONDS = 135.0  # the vision side gives up after 120 s
 DELETE_CHECK_SECONDS = 10.0
 RESULT_TTL_MS = 30_000  # Annie may still be talking when it finishes
+RENAME_CONFIRM_SECONDS = 60.0
 logger = logging.getLogger(__name__)
 
 _REASONS = {
@@ -48,6 +49,7 @@ class FaceService:
         self.deadline_seconds = deadline_seconds
         self.active = {}  # robot_id -> registration in progress
         self.last = {}  # robot_id -> the latest finished one
+        self.renames = {}  # robot_id -> (known name, new name, monotonic) asked once
         self.tasks = set()
 
     def available(self, robot_id):
@@ -83,6 +85,18 @@ class FaceService:
         if view is not None and view["count"] == 0:
             return {"status": "no_person",
                     "instruction": "你现在看不到人。请对方站到你面前、正对着你，再说一次。"}
+        # “我是X” alone now starts a registration (10-22), so a face she already
+        # knows by another name is asked about once instead of being filed twice.
+        known_as = view.get("gaze_name") if view is not None else None
+        if known_as and known_as != name:
+            asked = self.renames.pop(robot_id, None)
+            if not (asked and asked[:2] == (known_as, name)
+                    and time.monotonic() - asked[2] <= RENAME_CONFIRM_SECONDS):
+                self.renames[robot_id] = (known_as, name, time.monotonic())
+                return {"status": "known_as_other", "name": name, "known_as": known_as,
+                        "instruction": (f"你看着的这个人你认得是{known_as}。还没有记，也不要叫TA{name}；"
+                                        f"用一句话问TA是不是你认错了。TA坚持自己叫{name}、要你记，"
+                                        "再调用一次就会重新记。")}
         known = await registry.people()
         if not known["ok"]:
             return {"status": "unavailable", "reason": known["error"],

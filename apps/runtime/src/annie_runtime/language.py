@@ -121,15 +121,73 @@ def validate_language(language, dialect):
         raise ValueError('language and dialect mismatch')
 
 
+CHAT_SCOPE = re.compile(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)')
+ROBOT_SCOPE = re.compile(r'以后|今后|往后|一直|永远|所有会话|全局|这台机器人')
+# What may surround a request that only says how to talk (“小安妮，用河南话跟我说话吧”).
+# Anything left over is content for this one reply: “用陕西话说一句话”.
+_MANNER_WORDS = re.compile(
+    r'(?:小?安妮|好不好|行不行|可以吗|好吗|行吗|能不能|可不可以|要不要|可以|能|请|麻烦'
+    r'|你|您|咱们?|我们|都|就|还是|再|先|给我|跟我|和我|对我|同我|陪我|一起'
+    r'|说话|讲话|聊天|聊聊|聊|交流|对话|沟通|说|讲'
+    r'|吧|呗|啊|呀|嘛|了|哈|哦|喔|[\s，,。.!！?？~～、])+')
+
+
+# Negations, ability questions, translation/quoting. 能不能/要不要/可不可以
+# are requests, not negations: “能不能用粤语说”.
+_NOT_A_REQUEST = re.compile(
+    r'(?<!要)不要|别(?:用|说|讲)|不用|(?<!能)不能|不想|会说.*[吗么?？]|翻译|引用'
+    r'|怎么(?:说|讲|念|读|写)|咋(?:说|讲|念)|什么意思|啥意思|叫什么|叫啥|[“”‘’「」"\']')
+
+
+def _manner_only(text, match):
+    return not _MANNER_WORDS.sub('', text[:match.start()] + text[match.end():])
+
+
+def named_languages(text):
+    """Every (language, dialect) the text names, whatever it says about it."""
+    if not isinstance(text, str):
+        return set()
+    return {NAMES[name] for name in re.findall(_NAME_PATTERN, text)}
+
+
+def unplaced_language_mention(text):
+    """A named language the phrase rules can neither place nor rule out:
+    “粤语聊天”“整点河南话”. The decision model judges it."""
+    if (not isinstance(text, str) or _NOT_A_REQUEST.search(text)
+            or explicit_language_request(text) or explicit_language_stop(text)
+            or explicit_language_clear(text)):
+        return None
+    match = re.search(_NAME_PATTERN, text)
+    return NAMES[match[0]] if match else None
+
+
+def stop_covers(stop, language, dialect):
+    """Whether a “别说X了” (stop pair, ('zh', '*') for any dialect) covers this language."""
+    return ((language, dialect) == stop
+            or stop == ('zh', '*') and dialect in {'sichuan', 'henan', 'shaanxi', 'cantonese'})
+
+
+def explicit_language_stop(text):
+    """“别说河南话了”“不要用粤语了”: (language, dialect) the user wants dropped."""
+    if not isinstance(text, str) or re.search(r'引用|翻译|[“”‘’「」"\']', text):
+        return None
+    match = re.search(r'(?:别|不要|不用|甭|不想听)(?:再)?(?:用|说|讲)?\s*(方言|'
+                      + _NAME_PATTERN + ')', text)
+    if not match:
+        return None
+    pair = ('zh', '*') if match[1] == '方言' else NAMES[match[1]]
+    # “你不用说普通话” drops nothing: Chinese is what she falls back to.
+    return None if pair in {('zh', 'mandarin'), ('zh', 'unknown')} else pair
+
+
 def explicit_language_request(text):
-    """Conservative current-user command matcher, not a location/dialect classifier."""
-    # Negations, ability questions, translation/quoting. 能不能/要不要/可不可以
-    # are requests, not negations: “能不能用粤语说”.
-    if not isinstance(text, str) or re.search(
-        r'(?<!要)不要|别(?:用|说|讲)|不用|(?<!能)不能|不想|会说.*[吗么?？]|翻译|引用'
-        r'|怎么(?:说|讲|念|读|写)|咋(?:说|讲|念)|什么意思|啥意思|叫什么|叫啥|[“”‘’「」"\']',
-        text,
-    ):
+    """Conservative current-user command matcher, not a location/dialect classifier.
+
+    scope: chat/robot when named; a request that only says how to talk
+    (“用河南话说话”“说粤语吧”) holds for this chat (user decision 10-22);
+    one with content (“用陕西话说一句话”“陕西话介绍一下自己”) is this turn only.
+    """
+    if not isinstance(text, str) or _NOT_A_REQUEST.search(text):
         return None
     lang = '|'.join(_ENGLISH_NAMES)
     english = re.search(
@@ -150,21 +208,26 @@ def explicit_language_request(text):
     # 来 needs a measure word: “原来英语这么难” is no request.
     modifier = r'(?:(?:正宗|地道|自然|标准|纯正)的)?\s*'
     measure = r'(?:个|一个|段|一段|句|一句|两句|几句|首|一首|点|一点|些)'
-    match = re.search(r'(?:(?:用|说|讲|唱|改成|改用|改回|换成|换到|换回|切换到|切换成|切到|切成|切回)\s*'
-                      + modifier + measure + r'?|来\s*' + measure + r'\s*' + modifier + r')\s*('
+    match = re.search(r'(?:(说回|讲回|用|说|讲|唱|改成|改用|改回|换成|换到|换回|切换到|切换成|切到|切成|切回)\s*'
+                      + modifier + '(' + measure + r')?|(来)\s*' + measure + r'\s*' + modifier + r')\s*('
                       + _NAME_PATTERN + ')', text)
-    if not match:
+    if match:
+        verb, counted, came, name = match.groups()
+        one_off = bool(counted or came or verb == '唱')
+    else:
         # Spoken order without 用: “陕西话介绍一下自己”“俄语来一段”. The verb must
         # read as an order, so “你英语说得真好”“中文讲究…” stay ordinary talk.
         match = re.search('(' + _NAME_PATTERN + r')\s*(?:来|给我|跟我|和我|帮我|对我|再)?\s*'
                           r'(?:介绍|回答|回复|打招呼|问候|夸|评价|描述|解释|讲讲|说说|聊聊|唱唱'
                           r'|(?:讲|说|聊|唱|来|念|读)(?:个|一|段|首|句|两|几|点|下|给|吧|呗))',
                           text)
-    if not match:
-        return None
-    language, dialect = NAMES[match[1]]
-    scope = ('chat' if re.search(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)', text)
-             else 'robot' if re.search(r'以后|今后|一直|所有会话|全局|这台机器人', text)
+        if not match:
+            return None
+        name, one_off = match[1], True
+    language, dialect = NAMES[name]
+    scope = ('chat' if CHAT_SCOPE.search(text)
+             else 'robot' if ROBOT_SCOPE.search(text)
+             else 'chat' if not one_off and _manner_only(text, match)
              else 'turn')
     return dict(language=language, dialect=dialect, scope=scope)
 
@@ -323,9 +386,19 @@ class ReplyLanguageState:
         return True
 
     def user_request(self, text, *, input_source='asr_transcript'):
-        request = explicit_language_request(text)
-        style = explicit_style_request(text)
         previous_hint = self.instruction_hint()
+        request = explicit_language_request(text)
+        stop = explicit_language_stop(text) if request is None else None
+        if stop:
+            # A stable prefix of this same utterance (“这句用河南话，不，别…”) is not in force.
+            self.explicit = None
+            current = self.selection()
+            if stop_covers(stop, current['language'], current['dialect']):
+                # “别说河南话了”: Mandarin from this reply on; the runtime clears the setting.
+                request = dict(language='zh', dialect='mandarin', scope='turn')
+                self.intent = self.candidate = self.last_candidate = None
+                self.first_pending = False
+        style = explicit_style_request(text)
         language = typed_text_language(text) if input_source == 'typed' else None
         self.typed_observation = ({'language': language, 'dialect': 'unknown',
                                    'source': 'typed_text', 'evidence_level': 'typed_text_heuristic'}
@@ -375,11 +448,22 @@ class ReplyLanguageState:
         heard = self.asr_dialect
         return bool(heard and time.monotonic() - heard['at'] <= DIALECT_FOLLOW_SECONDS)
 
+    def adopt_request(self, language, dialect, scope):
+        """A request the decision model recognised after the phrase rules missed it."""
+        validate_language(language, dialect)
+        self.explicit = dict(language=language, dialect=dialect, scope=scope)
+        self.asr_dialect = None
+        if self.response is not None and not self.response['text_started']:
+            # The reply has begun but no text yet: its voice can still follow.
+            self.response.update(language=language, dialect=dialect, source='explicit_user')
+        self._refresh_revision()
+
     def reply_intent(self, *, language, dialect='unknown', evidence='', emotion='neutral', reason='',
-                     transcript=''):
+                     transcript='', confirmed=False):
+        """confirmed: the decision model judged the current utterance a request for it."""
         validate_language(language, dialect)
         requested = explicit_language_request(transcript)
-        if (dialect not in {'unknown', 'mandarin', 'cantonese'}
+        if (dialect not in {'unknown', 'mandarin', 'cantonese'} and not confirmed
                 and (not requested or (requested['language'], requested['dialect'])
                      != (language, dialect))):
             # Evidence is a phrase the user really said: the sidecar's stable
@@ -437,7 +521,8 @@ class ReplyLanguageState:
                 + (f'；这是用户保存的{saved}语言设置：全程用{name}回答，用户这一轮说中文或别的语言'
                    f'也用{name}回答，不要跟着用户切换，历史里别的语言不算；'
                    '只有用户这一轮明确要求换语言才换' if saved else '')
-                + (f'；用户这一轮要求以后一直用{name}，已替你保存，之后用户说别的语言也继续用{name}'
+                + (f'；用户这一轮要求{"以后" if self.explicit["scope"] == "robot" else "这次聊天"}'
+                   f'一直用{name}，已替你保存，简短答应就行，之后用户说别的语言也继续用{name}'
                    if lasting else '')
                 + ('；当前用户用此语种交流，优先用对应语种自然回答；不因历史中文回复改回中文'
                    if selected['source'] in {'typed_text', 'asr_text_heuristic'} else '')

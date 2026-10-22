@@ -39,6 +39,10 @@ def _phrase(value, limit=30):
     return value.strip()[:limit] if isinstance(value, str) and value.strip() else None
 
 
+def _number(value):
+    return type(value) in (int, float)
+
+
 def observation_people(observations):
     """People rows from observations v1, or None when absent or incompatible.
 
@@ -244,6 +248,7 @@ class RoomMonitor:
         self.mouth_at = None
         self.mouth = None
         self.mouth_count = 0
+        self.mouth_round = None  # latest conversation's mouth statistics
         self.visual_at = None
         self.visual = None
         self.visual_context = None
@@ -294,7 +299,17 @@ class RoomMonitor:
                 "gaze_name": next((row["label"] for row in rows
                                    if row["gaze"] and row["known"]), None)}
 
-    def on_sam(self, message):
+    def _round(self, conversation_id, now):
+        if self.mouth_round is None or self.mouth_round["conversation_id"] != conversation_id:
+            self.mouth_round = {"conversation_id": conversation_id, "received": 0,
+                                "delay_count": 0, "delay_sum": 0, "delay_max": None,
+                                "first_delay_ms": None, "late": 0, "text": None,
+                                "summary": None}
+        self.mouth_round["updated_at"] = now
+        return self.mouth_round
+
+    def on_sam(self, message, *, timing=None):
+        """timing: this robot's own TTS clock for a mouth_script (speech.mouth_timing)."""
         kind = message.get("type")
         now = self.clock()
         if kind == "viseme_health" and isinstance(message.get("status"), str):
@@ -313,6 +328,24 @@ class RoomMonitor:
                 "seq": message["seq"],
                 "conversation_id": str(message.get("conversation_id", ""))[:128],
             }
+            stats = self._round(self.mouth["conversation_id"], now)
+            stats["received"] += 1
+            if timing is not None:
+                delay = timing["delay_ms"]
+                stats["delay_count"] += 1
+                stats["delay_sum"] += delay
+                stats["delay_max"] = delay if stats["delay_max"] is None else max(
+                    stats["delay_max"], delay)
+                if stats["first_delay_ms"] is None:
+                    stats["first_delay_ms"] = timing["since_first_pcm_ms"]
+                stats["late"] += bool(timing["late"])
+                stats["text"] = timing["text"]
+        elif kind == "mouth_sync_summary" and isinstance(message.get("conversation_id"), str):
+            self._round(message["conversation_id"][:128], now)["summary"] = {
+                name: message.get(name) if _number(message.get(name)) else None for name in (
+                    "expected_syllable_count", "mouth_event_count", "dropped_count",
+                    "audio_total_ms", "coverage_ratio",
+                )}
 
     def _on_observations(self, message, people, description):
         observations = message["observations"]
@@ -411,6 +444,29 @@ class RoomMonitor:
             return self.visual_context
         return None
 
+    def _round_view(self, now):
+        stats = self.mouth_round
+        if stats is None:
+            return None
+        summary = stats["summary"] or {}
+        timed = stats["delay_count"]
+        return {
+            "conversation_id": stats["conversation_id"],
+            "age_ms": round((now - stats["updated_at"]) * 1000),
+            "text_chars": None if stats["text"] is None else len("".join(stats["text"].split())),
+            "expected_chars": summary.get("expected_syllable_count"),
+            "mouth_received": stats["received"],
+            "mouth_reported": summary.get("mouth_event_count"),
+            "dropped_count": summary.get("dropped_count"),
+            "audio_total_ms": summary.get("audio_total_ms"),
+            "coverage_ratio": summary.get("coverage_ratio"),
+            "first_delay_ms": stats["first_delay_ms"],
+            "avg_delay_ms": round(stats["delay_sum"] / timed) if timed else None,
+            "max_delay_ms": stats["delay_max"],
+            "late_count": stats["late"] if timed else None,
+            "summary_received": stats["summary"] is not None,
+        }
+
     def snapshot(self, *, sam_connected, visual_connected, visual_configured):
         now = self.clock()
         age = None if self.health_at is None else now - self.health_at
@@ -438,6 +494,7 @@ class RoomMonitor:
                 "latest_mouth": self.mouth,
                 "last_mouth_age_ms": None if self.mouth_at is None
                 else round((now - self.mouth_at) * 1000),
+                "last_round": self._round_view(now),
             },
             "visual": {
                 "state": ("not_configured" if not visual_configured else

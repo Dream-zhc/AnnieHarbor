@@ -279,3 +279,15 @@ test('real conversation has an explicitly authorized browser microphone and no t
   assert.match(mic,/此 Room 没有另一个麦克风/);
   assert.doesNotMatch(mic,/测试 PCM|sendFrame|new Uint8Array\(640\)\)\)/);
 });
+
+test('robot head renders as compact pill button with hover details popover rather than full banner',async()=>{
+  const workbench=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  assert.match(workbench,/className="head-pill-wrap"/);
+  assert.match(workbench,/className=\{`head-pill-btn/);
+  assert.match(workbench,/机器人头 · \{currentHead\.head_name/);
+  assert.match(workbench,/className="head-popover"/);
+  assert.match(workbench,/currentHead\.microphone/);
+  assert.match(workbench,/currentHead\.speaker/);
+  assert.match(workbench,/handoverNotice/);
+  assert.doesNotMatch(workbench,/className="head-strip"/);
+});

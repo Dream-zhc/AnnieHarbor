@@ -104,7 +104,9 @@ def build_display_message(kind, event, robot_id, room_id):
         extra = {"call_id": event.get("call_id"), "turn_id": event.get("turn_id"),
                  "action_kind": event.get("action_kind"), "action_value": event.get("action_value"),
                  "status": event.get("status"), "generation": event.get("generation"),
-                 "real_device_executed": False}
+                 # Only a device receipt status may claim motion, never a bare flag.
+                 "real_device_executed": event.get("real_device_executed") is True
+                 and str(event.get("status", "")).startswith("device_")}
     elif kind == "session.ready":
         extra = {}
     elif kind == "session.error":

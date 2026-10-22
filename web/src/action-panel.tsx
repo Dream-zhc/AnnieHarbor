@@ -18,7 +18,9 @@ const status:Record<string,string>={
   awaiting_text_anchor:'等待回复包含目标词',reserved:'已预约',
   awaiting_word_alignment:'旧协议：等待声学对齐',
   queued:'表情已排队',
-  published_unknown:'云端下发完成 · 设备执行未核验',
+  published_unknown:'云端下发完成 · 等待设备回执',
+  device_started:'设备已开始执行',device_finished:'设备执行完成',
+  device_dropped:'设备未执行（已丢弃）',
   send_unknown:'发送结果不确定，禁止盲重试',
   cancelled_before_send:'取消（未发布）',
   expired_no_pcm:'未见首帧音频，已过期',
@@ -69,7 +71,7 @@ export function ActionPanel({robotId,onClose,onFillText}:{robotId:string;onClose
       <div className="action-body">
         {error&&<p role="alert" className="danger-text">{error}</p>}
         <div className="action-status-card">
-          <div>动作发送：<strong>{data?.enabled?'已启用':data?'未启用':'读取中'}</strong> · 完成口径：<strong>Room 发布</strong> · 真机：<strong>待核验</strong></div>
+          <div>动作发送：<strong>{data?.enabled?'已启用':data?'未启用':'读取中'}</strong> · 完成口径：<strong>Room 发布</strong> → <strong>设备回执</strong></div>
           {!data?.enabled&&<small style={{color:'#94a3b8',lineHeight:1.4}}>启用：ANNIE_ACTIONS_ENABLED=1 · 重启 Runtime</small>}
         </div>
 
@@ -93,7 +95,7 @@ export function ActionPanel({robotId,onClose,onFillText}:{robotId:string;onClose
                 {' · '}<span style={{color:'#60a5fa'}}>{status[item.status]??item.status}</span></p>
               <small>Room：{item.room_id} · Turn：{item.turn_id} · Call：{item.call_id}</small>
               <small>时间：{new Date(item.updated_ms).toLocaleString()}</small>
-              {item.error&&<p role="alert" className="danger-text" style={{margin:'4px 0 0'}}>发送故障：{item.error}</p>}
+              {item.error&&<p role="alert" className="danger-text" style={{margin:'4px 0 0'}}>{item.status==='device_dropped'?'设备丢弃原因：':'发送故障：'}{item.error}</p>}
             </article>)}
           </div>
         </div>

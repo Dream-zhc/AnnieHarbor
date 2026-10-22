@@ -195,3 +195,36 @@ def test_external_viseme_service_is_probed_at_startup_and_reported(tmp_path, cap
         asyncio.run(runtime._probe_viseme(timeout=0.05, interval=0.01))
     assert "嘴型服务在线 robot=a room=roomv2" in caplog.text
     assert "嘴型服务未在线 robot=b room=roomv3 state=waiting" in caplog.text
+
+
+def test_last_mouth_round_reports_counts_tts_delay_and_summary():
+    with patch("annie_runtime.room_monitor.time.monotonic", return_value=50):
+        state = RoomMonitor("roomv2")
+        assert state.snapshot(sam_connected=True, visual_connected=False,
+                              visual_configured=False)["viseme"]["last_round"] is None
+        for seq, (delay, late) in enumerate(((120, False), (80, False), (300, True))):
+            state.on_sam({"type": "mouth_script", "seq": seq, "char": "你", "viseme": "i",
+                          "conversation_id": "turn-1"},
+                         timing={"delay_ms": delay, "since_first_pcm_ms": 400 + seq,
+                                 "late": late, "text": "你好 呀。"})
+        state.on_sam({"type": "mouth_script", "seq": 9, "viseme": "a",
+                      "conversation_id": "turn-1"})  # e.g. a robot without own TTS
+        state.on_sam({"type": "mouth_sync_summary", "conversation_id": "turn-1",
+                      "expected_syllable_count": 3, "mouth_event_count": 4,
+                      "dropped_count": 0, "audio_total_ms": 1820.4,
+                      "coverage_ratio": "bad"})
+    with patch("annie_runtime.room_monitor.time.monotonic", return_value=52):
+        round_ = state.snapshot(sam_connected=True, visual_connected=False,
+                                visual_configured=False)["viseme"]["last_round"]
+    assert round_ == {
+        "conversation_id": "turn-1", "age_ms": 2000, "text_chars": 4,
+        "expected_chars": 3, "mouth_received": 4, "mouth_reported": 4,
+        "dropped_count": 0, "audio_total_ms": 1820.4, "coverage_ratio": None,
+        "first_delay_ms": 400, "avg_delay_ms": 167, "max_delay_ms": 300,
+        "late_count": 1, "summary_received": True,
+    }
+    state.on_sam({"type": "mouth_script", "seq": 0, "viseme": "o", "conversation_id": "turn-2"})
+    round_ = state.snapshot(sam_connected=True, visual_connected=False,
+                            visual_configured=False)["viseme"]["last_round"]
+    assert (round_["conversation_id"], round_["mouth_received"], round_["avg_delay_ms"],
+            round_["late_count"], round_["summary_received"]) == ("turn-2", 1, None, None, False)

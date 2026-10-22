@@ -631,6 +631,20 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.speech.on_mouth_script(good))
         self.assertEqual(self.speech.viseme_state,"aligner_reporting")
 
+    async def test_mouth_timing_is_measured_against_its_own_tts_frame(self):
+        cid="mouth-timing"
+        await self.speech.feed(cid,self.robot.session_state(),"你好。")
+        await self.speech.finish(cid)
+        await asyncio.wait_for(self.speech.worker,2)
+        self.speech.pcm_marks[:]=[(480,10.0),(960,10.02),(1440,10.04)]
+        self.speech.played_samples=800  # device already played past this syllable
+        event={"type":"mouth_script","conversation_id":cid,"start_sample":700}
+        self.assertEqual(self.speech.mouth_timing(event,10.25),{
+            "delay_ms":230,"since_first_pcm_ms":250,"late":True,"text":"你好。"})
+        self.assertFalse(self.speech.mouth_timing({**event,"start_sample":900},10.1)["late"])
+        self.assertIsNone(self.speech.mouth_timing({**event,"start_sample":1440},10.1))
+        self.assertIsNone(self.speech.mouth_timing({**event,"conversation_id":"other"},10.1))
+
     async def test_cancel_prevents_old_generation_and_marks_stop_unknown(self):
         identity = self.robot.session_state()
         await self.speech.feed("turn1", identity, "你好")

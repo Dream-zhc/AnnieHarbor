@@ -15,7 +15,8 @@ def _recent_actions(payload):
     requests = _mapping(payload).get("requests")
     if not isinstance(requests, list):
         return []
-    # The stored action request is evidence of an instruction, NOT device motion.
+    # A stored request is an instruction; only the device's own receipt
+    # (device_started/device_finished) is evidence that the motor moved.
     return [
         {
             "call_id": row.get("call_id"),
@@ -24,7 +25,7 @@ def _recent_actions(payload):
             "kind": row.get("kind"),
             "value": row.get("value"),
             "status": row.get("status", "unknown"),
-            "real_device_executed": False,
+            "real_device_executed": row.get("status") in ("device_started", "device_finished"),
             "animation_kind": "command_preview",
         }
         # RuntimeStore lists newest first. Select the most recent requests,

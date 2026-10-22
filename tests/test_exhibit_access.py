@@ -94,6 +94,10 @@ def test_recent_actions_are_chronological_and_generation_scoped():
     assert [item["generation"] for item in visible] == list(range(8, 16))
     assert visible[-1]["call_id"] == "call-15"
     assert all(item["real_device_executed"] is False for item in visible)
+    receipted = _recent_actions({"requests": [
+        {**newest_first[0], "status": status} for status in (
+            "device_finished", "device_started", "device_dropped")]})
+    assert [item["real_device_executed"] for item in receipted] == [False, True, True]
 
 
 @pytest.mark.parametrize("configured", [False, True])

@@ -13,10 +13,10 @@ INFO:     192.168.1.47:61511 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 2026-10-21 17:31:30,588 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
 2026-10-21 17:31:30,682 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
 2026-10-21 17:31:30,683 INFO annie_runtime.decision_route d3_decision status=down model=d3-NVFP4 error=HTTP 404
-2026-10-21 17:31:30,728 INFO httpx HTTP Request: POST https://llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
-2026-10-21 17:31:30,825 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com handshake_ms=357 history_turns=8 instructions_chars=3645 tools=17 tool_schema_chars=10286 restored_turns=8 memory_bootstrap_chars=123
+2026-10-21 17:31:30,728 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-21 17:31:30,825 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=357 history_turns=8 instructions_chars=3645 tools=17 tool_schema_chars=10286 restored_turns=8 memory_bootstrap_chars=123
 INFO:     192.168.1.47:62631 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
-2026-10-21 17:31:30,996 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com handshake_ms=528 history_turns=8 instructions_chars=3280 tools=15 tool_schema_chars=9144 restored_turns=3 memory_bootstrap_chars=0
+2026-10-21 17:31:30,996 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=528 history_turns=8 instructions_chars=3280 tools=15 tool_schema_chars=9144 restored_turns=3 memory_bootstrap_chars=0
 INFO:     192.168.1.47:62631 - "GET /health HTTP/1.1" 200 OK
 INFO:     192.168.1.47:62631 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:61511 - "GET /api/robots/annie-a/realtime/stream?after=68 HTTP/1.1" 200 OK
@@ -326,7 +326,7 @@ INFO:     192.168.1.47:61552 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 O
 INFO:     192.168.1.47:61552 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:65271 - "GET /api/robots/annie-a/conversations/%E5%AE%A2%E6%88%B7?persona_id=annie&limit=80 HTTP/1.1" 200 OK
 INFO:     192.168.1.47:61552 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
-2026-10-21 17:32:56,192 INFO httpx HTTP Request: POST https://llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-21 17:32:56,192 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
 2026-10-21 17:32:56,192 INFO annie_runtime.realtime auto_expression robot=annie-a turn=de401a5742a5441987db118c8e0c02d3 choice=none confidence=0.83 accepted=False source=decision_model model=decision-model-preview latency_ms=83.4
 INFO:     192.168.1.47:61552 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:61552 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
@@ -560,7 +560,7 @@ INFO:     192.168.1.47:55813 - "GET /api/robots/annie-a/room-observations HTTP/1
 2026-10-21 17:34:02,890 INFO annie_runtime.realtime turn_invalid robot=annie-a wake_state=WAKE_WAIT draft_chars=5 named=True kws_call=True recover=True speech_ms=167 draft='小安妮你好'
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-21 17:34:02,931 INFO httpx HTTP Request: POST https://llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-21 17:34:02,931 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
 2026-10-21 17:34:02,969 INFO annie_runtime.speech tts_prewarm robot=annie-a connect_ms=241.3
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 2026-10-21 17:34:03,714 INFO annie_runtime.realtime turn_started robot=annie-a turn=58fe824c7d304ee0982c6b7b7c5c9c92 input=audio source=user cause=asr_final item=None chars=7
@@ -575,7 +575,7 @@ INFO:     192.168.1.47:55813 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 INFO:     192.168.1.47:55813 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:55813 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 2026-10-21 17:34:04,170 INFO annie_runtime.realtime turn_latency robot=annie-a model=qwen-audio-3.1-realtime-plus turn=58fe824c7d304ee0982c6b7b7c5c9c92 input=audio status=completed endpoint_to_asr_final_ms=None endpoint_to_first_text_ms=None asr_final_to_first_text_ms=248.37 llm_request_to_first_text_ms=None tool_calls=0 reply_chars=17
-2026-10-21 17:34:04,196 INFO httpx HTTP Request: POST https://llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-21 17:34:04,196 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
 2026-10-21 17:34:04,197 INFO annie_runtime.realtime auto_expression robot=annie-a turn=58fe824c7d304ee0982c6b7b7c5c9c92 choice=smirk confidence=0.32 accepted=False source=decision_model model=decision-model-preview latency_ms=80.9
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:55813 - "GET /api/robots/annie-a/conversations/%E5%AE%A2%E6%88%B7?persona_id=annie&limit=80 HTTP/1.1" 200 OK
@@ -632,7 +632,7 @@ INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:54012 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-21 17:34:16,330 INFO httpx HTTP Request: POST https://llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-21 17:34:16,330 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
 2026-10-21 17:34:16,331 INFO annie_runtime.realtime auto_expression robot=annie-a turn=201d4c99e1374c2cae9799cd5809e22c choice=none confidence=0.78 accepted=False source=decision_model model=decision-model-preview latency_ms=118.4
 2026-10-21 17:34:16,334 INFO annie_runtime.realtime turn_latency robot=annie-a model=qwen-audio-3.1-realtime-plus turn=201d4c99e1374c2cae9799cd5809e22c input=audio status=completed endpoint_to_asr_final_ms=133.75 endpoint_to_first_text_ms=134.0 asr_final_to_first_text_ms=0.25 llm_request_to_first_text_ms=None tool_calls=0 reply_chars=38
 INFO:     192.168.1.47:54798 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK

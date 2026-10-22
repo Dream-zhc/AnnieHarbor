@@ -21,7 +21,7 @@ INFO:     192.168.1.47:50098 - "GET /api/robots/annie-a/speech-expression HTTP/1
 INFO:     192.168.1.47:50098 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:63529 - "GET /api/robots/annie-a/realtime/stream?after=184 HTTP/1.1" 200 OK
 INFO:     192.168.1.47:56177 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-21 17:41:24,488 INFO httpx HTTP Request: POST https://llm-ff6080lcykjv9i1k.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-21 17:41:24,488 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
 INFO:     192.168.1.47:56177 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
 INFO:     192.168.1.47:56177 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:56177 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK

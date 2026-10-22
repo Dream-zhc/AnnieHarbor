@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__main__.py", line 397, in <module>
+    main()
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__main__.py", line 254, in main
+    runtime = HarborRuntime(
+              ^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__init__.py", line 1228, in __init__
+    raise ValueError("real action delivery requires Realtime, Room and TTS anchor")
+ValueError: real action delivery requires Realtime, Room and TTS anchor

@@ -1,0 +1,22 @@
+INFO:     Started server process [29797]
+INFO:     Waiting for application startup.
+2026-10-22 14:56:06,858 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-22 14:56:06,860 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18790 (Press CTRL+C to quit)
+2026-10-22 14:56:06,869 INFO annie_adapters room_pcm connected room=roomv3 url=ws://192.168.1.47:8090/robot/roomv3/reb_mic
+2026-10-22 14:56:06,869 INFO annie_adapters room_pcm connected room=roomv2 url=ws://192.168.1.47:8090/robot/roomv2/reb_mic
+2026-10-22 14:56:06,878 INFO annie_runtime runtime_event robot=annie-a kind=pcm_stream_started request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=None
+INFO:     127.0.0.1:54572 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-10-22 14:56:08,362 INFO annie_runtime 嘴型服务在线 robot=annie-a room=roomv2 heartbeat_age_ms=435
+2026-10-22 14:56:08,362 INFO annie_runtime 嘴型服务在线 robot=annie-b room=roomv3 heartbeat_age_ms=435
+INFO:     127.0.0.1:54575 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54576 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54577 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54627 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-22 14:56:16,733 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-22 14:56:16,733 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29797]

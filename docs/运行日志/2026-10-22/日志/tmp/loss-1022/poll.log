@@ -1,0 +1,16 @@
+14:38:35 accepted=59133 dropped=243 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive
+14:40:46 accepted=65666 dropped=244 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:40:46 accepted=65691 dropped=269 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:40:47 accepted=65717 dropped=289 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive
+14:43:47 accepted=74761 dropped=308 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:43:48 accepted=74787 dropped=330 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive
+14:46:49 accepted=83832 dropped=346 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:46:49 accepted=83857 dropped=371 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:46:50 accepted=83884 dropped=392 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive
+14:49:51 accepted=92919 dropped=403 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:49:51 accepted=92944 dropped=428 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:49:52 accepted=92970 dropped=434 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive
+14:52:42 accepted=101510 dropped=443 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:52:43 accepted=101541 dropped=448 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive
+14:52:52 accepted=101997 dropped=464 rejected=0 qdepth=25 mic_dropped=12 aec=speaker_inactive
+14:52:53 accepted=102023 dropped=482 rejected=0 qdepth=0 mic_dropped=12 aec=speaker_inactive

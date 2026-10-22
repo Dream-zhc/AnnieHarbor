@@ -75,7 +75,7 @@ export function RoomObservationsBar({robotId}:{robotId:string}){
               <dt>{row.label}</dt><dd className={row.warn?'is-warn':undefined}>{row.value}</dd>
             </Fragment>)}
           </dl>
-          {round.first_delay_ms!==null&&<div className="mouth-popover-note">延迟 = 收到嘴型 − 发出对应 TTS 帧（本机时钟）；TTS 会提前约 240 ms 发出</div>}
+          {round.first_delay_ms!==null&&<div className="mouth-popover-note">延迟 = 收到嘴型 − 发出对应 TTS 包（本机时钟）；TTS 最多提前 3 秒发出，嘴型是否赶上声音看“来晚”条数</div>}
         </>:<div className="mouth-popover-empty">还没有收到嘴型</div>}
         {mouth&&<div className="mouth-popover-foot">最新口型：{mouth.char} / {mouth.viseme} · #{mouth.seq}</div>}
       </div>

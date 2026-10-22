@@ -28,6 +28,13 @@ MAX_TTS_TEXT_CHARS = 8000  # matches bounded playback text fields
 # (10-22: first mouth 290-945 ms after the first PCM). Bounded well under the
 # cloud AEC's 15 s of reference past the newest PCM and the speaker's 30 s.
 PCM_LEAD_SECONDS = 3.0
+# tts_viseme runs one ForcedAligner pass (~150-380 ms on the Windows box) per
+# reb_tts message carrying >=120 ms of new audio, in its receive thread. 20 ms
+# packets made it align every 120 ms of speech and fall seconds behind (10-22:
+# mouths 7.7 s late on average). Frames already queued go out as one packet,
+# up to the old brain's largest chunk; the first frame never waits for more.
+ROOM_PCM_MAX_BYTES = 38400  # 800 ms
+_NOTHING = object()
 PCM_MARKS_MAX = 12_000  # 20 ms frames: four minutes of one reply
 FAILED_STOP_TIMEOUT_SECONDS = 1.0
 RECEIPT_STALE_SECONDS = 3.0  # a speaker reports progress every ~100 ms while playing
@@ -41,6 +48,19 @@ CANCEL_CLEANUP_SECONDS = 1.0
 # and must prove itself (task-started) before any text depends on it.
 WARM_SOCKET_MAX_IDLE_SECONDS = 25.0
 WARM_CONFIRM_SECONDS = 1.5
+
+
+def _coalesce(queue, pcm):
+    """pcm plus the PCM frames already queued behind it, as one Room packet.
+
+    Returns the packet and the non-PCM item (end marker or error) taken after
+    it, or _NOTHING."""
+    while len(pcm) < ROOM_PCM_MAX_BYTES and not queue.empty():
+        item = queue.get_nowait()
+        if not isinstance(item, bytes):
+            return pcm, item
+        pcm += item
+    return pcm, _NOTHING
 
 
 def _tts_failure(exc):
@@ -959,9 +979,14 @@ class SpeechOutput:
                             break
                         if isinstance(item, Exception):
                             raise item
+                        item, after = _coalesce(frames, item)
                         await self._publish_pcm(item, prefix, segment_id, turn_id,
                                                 identity, started)
                         published += 1
+                        if after is None:
+                            break
+                        if isinstance(after, Exception):
+                            raise after
                     await producer
                     if not self._current(turn_id, identity):
                         return
@@ -1218,9 +1243,12 @@ class SpeechOutput:
                     pcm = await audio.get()
                     if pcm is None:
                         return
+                    pcm, after = _coalesce(audio, pcm)
                     await self._publish_pcm(pcm, self.submitted_text[:len(self._mixed_first_text)] if first_only
                                             else self.submitted_text, segment_id,
                                             turn_id, identity, started)
+                    if after is None:
+                        return
 
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(_tts_stage("text_submit", submit()))

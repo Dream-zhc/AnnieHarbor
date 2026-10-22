@@ -206,6 +206,47 @@ def test_after_her_reply_she_keeps_listening_for_30_seconds_without_her_name():
     assert not presence.permits_pcm()  # then she needs her name again
 
 
+def test_room_gets_her_voice_in_provider_sized_packets_not_20ms_frames():
+    """tts_viseme runs one ForcedAligner pass (~150-380 ms on Windows) per reb_tts
+    message with >=120 ms of new audio. 20 ms packets meant ~66 passes for 8.4 s
+    of speech and mouths 7.7 s late (10-22); the old brain's 50-800 ms chunks
+    needed 6 passes for 3.3 s and kept up."""
+    from annie_runtime.speech import ROOM_PCM_MAX_BYTES, SpeechOutput
+
+    from tests.test_phase4b import FakePublisher, FakeRobot, FakeTts
+
+    class ChunkyTts(FakeTts):
+        async def send(self, message):
+            self.sent.append(message)
+            task = message["header"]["task_id"]
+            if message["header"]["action"] == "run-task":
+                await self.received.put({"header": {"event": "task-started", "task_id": task}})
+            elif message["header"]["action"] == "finish-task":
+                for _ in range(3):  # the provider's own 800 ms chunks
+                    await self.received.put(bytes(38400))
+                await self.received.put({"header": {"event": "task-finished", "task_id": task}})
+
+    async def run():
+        robot, publisher = FakeRobot(), FakePublisher()
+        speech = SpeechOutput(robot, publisher, key="fake", voice="test-voice",
+                              url="wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+                              socket_factory=ChunkyTts, event=lambda *_a, **_k: None,
+                              first_wait_ms=5)
+        try:
+            await speech.feed("chunky", robot.session_state(), "你好呀，今天过得怎么样？")
+            await speech.finish("chunky")
+            await asyncio.wait_for(speech.worker, 2)
+            audio = [m["data"] for m in publisher.messages if m["data"]["audio"]]
+            sizes = [d["end_sample"] - d["start_sample"] for d in audio]
+            assert sum(sizes) == 3 * 19200
+            assert [d["start_sample"] for d in audio] == [sum(sizes[:i]) for i in range(len(sizes))]
+            assert len(audio) <= 6  # 120 packets of 20 ms before
+            assert max(sizes) <= ROOM_PCM_MAX_BYTES // 2 + 480
+        finally:
+            await speech.close()
+    asyncio.run(run())
+
+
 def test_the_mouth_service_gets_her_voice_well_ahead_of_the_speaker():
     """The same tts_viseme keeps mouths ~220 ms ahead for the old brain, which
     pushes PCM seconds ahead; 240 ms here left every mouth behind its sound.

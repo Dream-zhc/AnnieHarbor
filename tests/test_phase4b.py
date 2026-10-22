@@ -367,10 +367,11 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         actions = [item["header"]["action"] for item in FakeTts.instances[0].sent]
         self.assertEqual(actions, ["run-task", "continue-task", "finish-task"])
         frames = [m for m in self.publisher.messages if m["data"]["audio"]]
-        self.assertEqual([len(base64.b64decode(m["data"]["audio"])) for m in frames], [960, 960, 80])
+        # Frames queued together go out as one Room packet (tts_viseme aligns per message).
+        self.assertEqual([len(base64.b64decode(m["data"]["audio"])) for m in frames], [1920, 80])
         self.assertTrue(all(m["data"]["sample_rate"] == 24000 for m in frames))
         self.assertTrue(all(m["data"]["text"] == "你好。" for m in frames))
-        self.assertEqual(self.speech.frames, 3)
+        self.assertEqual(self.speech.frames, 2)
         self.assertEqual(self.speech.samples, 1000)
         self.assertEqual(self.publisher.messages[-1]["data"]["final"], True)
         self.assertIsNotNone(self.speech.first_audio_ms)
@@ -529,14 +530,14 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         await self.speech.finish("inflight")
         await asyncio.wait_for(entered.wait(), 1)
         self.assertEqual(self.speech.samples, 0)
-        self.assertEqual(self.speech.inflight_end, 480)
+        self.assertEqual(self.speech.inflight_end, 960)  # both queued frames, one packet
         await asyncio.wait_for(self.speech.cancel("interrupt"), 1)
         stop = self.publisher.messages[-1]["data"]
         self.assertTrue(stop["stop"])
-        self.assertEqual(stop["start_sample"], 480)
-        self.assertEqual(stop["end_sample"], 480)
+        self.assertEqual(stop["start_sample"], 960)
+        self.assertEqual(stop["end_sample"], 960)
         self.assertTrue(self.speech.on_playback_receipt(receipt(
-            "stopped", "inflight", stop["stream_epoch"], 480,
+            "stopped", "inflight", stop["stream_epoch"], 960,
         )))
         self.assertEqual(self.speech.stopped_conversation_id, "inflight")
 

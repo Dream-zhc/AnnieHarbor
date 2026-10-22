@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from annie_core.speech_style import SpeechStyle, validate_instruction, validate_tts_number
 from websockets.asyncio.client import connect
+from websockets.protocol import State
 
 from annie_adapters.net import cloud_proxy, room_connect
 
@@ -136,6 +137,10 @@ class RoomTtsPublisher:
         self.lock = asyncio.Lock()
 
     async def _ensure_connected(self):
+        if self.socket is not None and getattr(self.socket, "state", State.OPEN) is not State.OPEN:
+            # The Room closed an idle channel (10-22: an action lost to
+            # ConnectionClosedError). Nothing was sent on it: reconnect.
+            await self.close()
         if self.socket is None:
             from annie_adapters import parse_room_welcome
 

@@ -1,8 +1,8 @@
 """Phase 7: one-robot, one-Room action dispatch with durable idempotency.
 
-Legacy actions use the first published PCM; word actions publish an indexed
-intent as soon as the real reply contains the requested word. The embedded
-speaker resolves the sample from reb_sam and its own playback cursor.
+Every action goes out as action_trigger, the only motion message the embedded
+player runs. Legacy actions use the first published PCM; word actions wait
+until the real reply contains the requested word and its first PCM is out.
 Published is UNKNOWN, never a claim that the embedded motor finished; only the
 device's reb_main action.started / action.finished / action.dropped receipts
 (matched by conversation_id + script_id) move an action past that.
@@ -245,11 +245,11 @@ class ActionCoordinator:
                         "epoch": speech.stream_epoch + (speech.turn_id != turn_id),
                         "text": anchor_text, "occurrence": anchor_occurrence, "cancelled": False,
                     }
-                    # Realtime may have delivered the text before the tool
-                    # call. Dispatch immediately when the exact word exists.
+                    # Realtime may have delivered the text and PCM before the
+                    # tool call. Dispatch immediately when the exact word exists.
                     if (self._word_active(robot_id, turn_id, generation,
                                           self.word_anchors[key]) and
-                            self._anchor_position(self.word_anchors[key]) is not None):
+                            self._word_ready(self.word_anchors[key])):
                         self._schedule(self._dispatch_text(robot_id, turn_id, call_id,
                                                            generation, self.word_anchors[key]))
                 self._schedule(self._expire(robot_id, turn_id, call_id, generation))
@@ -364,8 +364,17 @@ class ActionCoordinator:
     def on_first_pcm(self, event):
         key = event["robot_id"], event.get("turn_id")
         pending = self.pending.get(key)
-        if pending and key not in self.word_anchors and pending[1] == event.get("generation"):
+        if not pending or pending[1] != event.get("generation"):
+            return
+        if key in self.word_anchors:
+            self.on_text_ready(event)  # its word may already be in the reply
+        else:
             self._schedule(self._dispatch(*key, *pending))
+
+    def _word_ready(self, anchor):
+        # The device only runs action_trigger on arrival (2026-10-22): a word
+        # action waits for its word and for the reply's first published PCM.
+        return bool(anchor["speech"].frames) and self._anchor_position(anchor) is not None
 
     @staticmethod
     def _anchor_position(anchor):
@@ -415,8 +424,7 @@ class ActionCoordinator:
         key = event.get("robot_id"), event.get("turn_id")
         pending, anchor = self.pending.get(key), self.word_anchors.get(key)
         if (pending and anchor is not None and
-                self._word_active(*key, pending[1], anchor) and
-                self._anchor_position(anchor) is not None):
+                self._word_active(*key, pending[1], anchor) and self._word_ready(anchor)):
             self._schedule(self._dispatch_text(*key, *pending, anchor))
 
     async def _dispatch_text(self, robot_id, turn_id, call_id, generation, anchor):
@@ -428,6 +436,8 @@ class ActionCoordinator:
                 if self.pending.get(key) != (call_id, generation) or self.word_anchors.get(key) is not anchor:
                     return
                 valid = self._word_active(robot_id, turn_id, generation, anchor)
+                if valid and not anchor["speech"].frames:
+                    return  # stays pending: the first PCM retries
                 position = self._anchor_position(anchor) if valid else None
                 after = "send_unknown" if position is not None else "cancelled_before_send"
                 # Move the token atomically before the first durable-state await.
@@ -447,19 +457,12 @@ class ActionCoordinator:
                 self._event(row, status=after)
                 if after != "send_unknown":
                     return
-                text = anchor["speech"].generated_text
-                before = text[max(0, position - 6):position]
-                after_text = text[position + len(anchor["text"]):
-                                  position + len(anchor["text"]) + 6]
+                # The embedded player ignores action_prepare (phoneme_anchor_v1);
+                # it runs the same action_trigger as every other script.
                 packet = {
-                    "type": "action_prepare", "ts": time.time_ns() // 1_000_000,
-                    "data": {"script_id": row["value"],
-                             "conversation_id": turn_id, "anchor_source": "robot_main_brain",
-                             "timing_mode": "phoneme_anchor_v1", "stream_epoch": anchor["epoch"],
-                             "anchor_text": anchor["text"], "anchor_char_index": position,
-                             "anchor_occurrence": anchor["occurrence"],
-                             "context_before": before, "context_after": after_text,
-                             "action_id": call_id, "late_policy": "drop"},
+                    "type": "action_trigger", "ts": time.time_ns() // 1_000_000,
+                    "data": {"script_id": row["value"], "offset_ms": 0,
+                             "conversation_id": turn_id, "anchor_source": "robot_main_brain"},
                 }
 
             def current_and_valid():

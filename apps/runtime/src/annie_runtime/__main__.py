@@ -23,6 +23,13 @@ from annie_web import create_app
 
 from annie_runtime import HarborRuntime
 
+# Physical scripts runnable without .env. Every motion users can name in
+# dialogue (decision_policy._MOTION_NAMES) is here: 摇头/往上看 were missing.
+DEFAULT_ACTION_ALLOWLIST = (
+    "agree_micro_nod", "shake_head", "look_left", "look_right", "look_up",
+    "fast_double_blink", "surprise", "smirk", "proud", "skeptical", "shy",
+)
+
 
 def load_local_env(path: Path) -> None:
     """Load a tiny .env subset without adding a dependency.
@@ -311,9 +318,7 @@ def main():
         actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
         action_allowlist=tuple(
             item.strip() for item in os.environ.get(
-                "ANNIE_ACTION_ALLOWLIST",
-                "agree_micro_nod,look_left,look_right,fast_double_blink,"
-                "surprise,smirk,proud,skeptical,shy",
+                "ANNIE_ACTION_ALLOWLIST", ",".join(DEFAULT_ACTION_ALLOWLIST),
             ).split(",") if item.strip()
         ),
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,

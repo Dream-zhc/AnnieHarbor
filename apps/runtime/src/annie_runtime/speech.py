@@ -20,7 +20,14 @@ CLAUSE_END = frozenset("，,、")
 MIXED_SENTENCE_END = frozenset("。！？!?；;\n.")
 MAX_MIXED_SENTENCES = 16
 MAX_TTS_TEXT_CHARS = 8000  # matches bounded playback text fields
-PCM_LEAD_SECONDS = 0.24  # publish ahead of the sample clock to absorb network jitter
+# Publish ahead of the sample clock. The speaker queues PCM and plays it on its
+# own clock; the tts_viseme ForcedAligner on the same reb_tts only closes a
+# syllable ~0.3-0.5 s of PCM after it starts, and its pacer keeps the first
+# mouth's lead (or lateness) for the whole reply. The old brain pushes PCM
+# seconds ahead and gets mouths ~220 ms early; 0.24 s here left them late
+# (10-22: first mouth 290-945 ms after the first PCM). Bounded well under the
+# cloud AEC's 15 s of reference past the newest PCM and the speaker's 30 s.
+PCM_LEAD_SECONDS = 3.0
 PCM_MARKS_MAX = 12_000  # 20 ms frames: four minutes of one reply
 FAILED_STOP_TIMEOUT_SECONDS = 1.0
 RECEIPT_STALE_SECONDS = 3.0  # a speaker reports progress every ~100 ms while playing
@@ -1239,8 +1246,8 @@ class SpeechOutput:
     async def _publish_pcm(self, pcm, text, segment_id, turn_id, identity, started):
         if not self._current(turn_id, identity):
             return
-        # Keep up to 240 ms ahead of the PCM sample clock. Strict 1x publication
-        # leaves no reserve for WebSocket and browser scheduling jitter.
+        # Keep up to PCM_LEAD_SECONDS ahead of the PCM sample clock: jitter
+        # reserve for the speaker, look-ahead for the mouth aligner.
         now = time.monotonic()
         if self.next_pcm_at is not None and self.next_pcm_at > now:
             await asyncio.sleep(self.next_pcm_at - now)

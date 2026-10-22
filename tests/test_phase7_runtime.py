@@ -172,7 +172,7 @@ def test_realtime_tool_action_and_expression_only_a_changes(tmp_path):
     ("surprise", 1600), ("smirk", 1500), ("proud", 1950),
     ("skeptical", 1600), ("shy", 2000),
 ])
-def test_expressive_script_sends_indexed_intent_before_alignment(tmp_path, script_id, duration_ms):
+def test_expressive_script_triggers_once_its_word_and_voice_are_out(tmp_path, script_id, duration_ms):
     async def exercise():
         rt = runtime(tmp_path)
         await ready(rt)
@@ -207,16 +207,20 @@ def test_expressive_script_sends_indexed_intent_before_alignment(tmp_path, scrip
             a.publish("tts.first_published", turn_id=turn_id,
                       robot_id="a", generation=a.robot.generation)
             await asyncio.sleep(.02)
-            # Legacy first PCM is never sufficient for expressive scripts.
+            # First PCM alone is not enough: the word must be in the reply.
             assert Publisher.instances["roomv2", "main"].messages == []
             assert Publisher.instances["roomv3", "main"].messages == []
-            # The generated text, not the ForcedAligner event, releases the
-            # single Room reservation. No PCM/sample estimate is supplied.
             speech = a.speech
             speech.turn_id = turn_id
             speech.identity = dict(a.turn_identity)
             speech.stream_epoch += 1
             speech.generated_text = "哇，意想不到！"
+            a.actions.on_text_ready({"robot_id": "a", "turn_id": turn_id})
+            await asyncio.sleep(.02)
+            assert Publisher.instances["roomv2", "main"].messages == []  # no voice yet
+            # The embedded player runs only action_trigger (10-22): it goes out
+            # once the word is in the reply and her voice has started.
+            speech.frames = 1
             a.actions.on_text_ready({"robot_id": "a", "turn_id": turn_id})
             for _ in range(70):
                 if Publisher.instances["roomv2", "main"].messages:
@@ -224,11 +228,10 @@ def test_expressive_script_sends_indexed_intent_before_alignment(tmp_path, scrip
                 await asyncio.sleep(.01)
             messages = Publisher.instances["roomv2", "main"].messages
             assert len(messages) == 1
-            assert messages[0]["type"] == "action_prepare"
-            assert messages[0]["data"]["script_id"] == script_id
-            assert messages[0]["data"]["anchor_char_index"] == 2
-            assert messages[0]["data"]["timing_mode"] == "phoneme_anchor_v1"
-            assert "at_sample" not in messages[0]["data"]
+            assert messages[0]["type"] == "action_trigger"
+            assert messages[0]["data"] == {"script_id": script_id, "offset_ms": 0,
+                                           "conversation_id": turn_id,
+                                           "anchor_source": "robot_main_brain"}
             assert Publisher.instances["roomv3", "main"].messages == []
             assert (await rt.action_list("a"))["requests"][0]["duration_ms"] == duration_ms
         finally:
@@ -237,7 +240,7 @@ def test_expressive_script_sends_indexed_intent_before_alignment(tmp_path, scrip
     asyncio.run(exercise())
 
 
-def test_actual_realtime_delta_releases_one_intent_without_waiting_for_pcm(tmp_path):
+def test_actual_realtime_delta_with_the_word_waits_for_her_first_pcm(tmp_path):
     async def exercise():
         rt = runtime(tmp_path)
         await ready(rt)
@@ -258,16 +261,19 @@ def test_actual_realtime_delta_releases_one_intent_without_waiting_for_pcm(tmp_p
             assert Publisher.instances["roomv2", "main"].messages == []
             await client.handle({"type": "response.text.delta", "delta": "不到！"},
                                 client.robot.generation)
+            await asyncio.sleep(.05)
+            assert Publisher.instances["roomv2", "main"].messages == []  # no voice yet
+            client.speech.frames = 1
+            client.publish("tts.first_published", turn_id=client.turn_id, robot_id="a",
+                           generation=client.robot.generation)
             for _ in range(70):
                 if Publisher.instances["roomv2", "main"].messages:
                     break
                 await asyncio.sleep(.01)
             events = Publisher.instances["roomv2", "main"].messages
             assert len(events) == 1
-            assert events[0]["type"] == "action_prepare"
-            assert events[0]["data"]["anchor_char_index"] == 2
-            assert "at_sample" not in events[0]["data"]
-            assert client.speech.frames == 0
+            assert events[0]["type"] == "action_trigger"
+            assert events[0]["data"]["script_id"] == "surprise"
             assert Publisher.instances["roomv3", "main"].messages == []
         finally:
             await rt.close()

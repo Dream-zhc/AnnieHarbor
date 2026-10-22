@@ -1192,8 +1192,8 @@ class RealtimeRobot:
                 or not DialoguePresence.is_substantive(text)
                 or DialoguePresence.is_sleep_command(transcript)):
             return False
-        if recovery["kws"] or WAKE_NAME.search(text):
-            recovery["check"] = False  # a call by name needs no second opinion
+        if recovery["kws"] or WAKE_NAME.search(text) or self._motion_command(text):
+            recovery["check"] = False  # a call by name or a motion needs no second opinion
         recovery["pending"] = {**event, "transcript": text, "_recovery_settled": True}
         self._invalid_recovery = recovery
         task = asyncio.create_task(self._settle_dropped_call(recovery, generation,
@@ -1460,11 +1460,20 @@ class RealtimeRobot:
             return False  # calling her by name is the fast path
         if DialoguePresence.is_sleep_request(text):
             return False  # "你先歇会儿吧" is for her; enter_sleep decides
+        if self._motion_command(text):
+            return False  # "向左看" runs her embedded script: it is said to her
         if self.wake:
             # Just woken (WAKE_WAIT) is addressed; ACTIVE keeps barge-in rules.
             return (self.wake.state == "FOLLOWUP"
                     and self.wake.presence.is_substantive(text))
         return not self.turn_id
+
+    def _motion_command(self, text):
+        """An enabled motion she was asked for by name (10-22: qwen-flash took
+        “摇摇头。” for side talk with confidence 1.0)."""
+        actions = self.actions
+        return bool(actions is not None and actions.enabled
+                    and explicit_motion(text, actions.allowlist))
 
     def _begin_addressee_check(self, event, generation, background_tools):
         task = asyncio.create_task(
@@ -2397,11 +2406,17 @@ class RealtimeRobot:
                     )
                 physical = bool(self.actions and self.actions.enabled and self.speech)
                 if physical and self.auto_expression_enabled and self._has_decision():
+                    # Only enabled scripts: 10-22 she said “这就给你摇一个” with
+                    # shake_head off the allowlist, and nothing moved.
+                    names = "、".join(dict.fromkeys(
+                        re.sub(r"（.*?）", "", self.actions.catalog[script]["name"])
+                        for script in self.actions.allowlist if script in self.actions.catalog))
                     tail += (
-                        "\n【实体动作】点头、摇头、看左右、眨眼和惊讶、坏笑、得意、怀疑、害羞等"
-                        "动作与表情由系统根据对话自动执行。用户要你做动作时，动作已经在做了，"
+                        f"\n【实体动作】你能做的动作和表情只有：{names}。"
+                        "动作与表情由系统根据对话自动执行。用户要你做其中一个时，动作已经在做了，"
                         "你只用一句很短、符合当前性格的口头话自然接一下（例如“好嘞，看我的～”），"
                         "如果提到动作，必须是用户要的那个，不要改成别的动作；"
+                        "用户要的不在上面（比如悲伤、跳舞），就直说这个做不了，不要假装在做；"
                         "不要只回一个动作名，不要用【】、括号或星号写动作或表情，不要描述动作过程，"
                         "也不要把‘动作已发出/已执行’当作回复。"
                     )

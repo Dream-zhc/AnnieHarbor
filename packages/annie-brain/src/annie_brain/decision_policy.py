@@ -169,9 +169,10 @@ def expression_choice(answer, *, threshold=0.55):
 
 
 # A user who names the face wants it now: no model call and no cooldown.
-_EXPRESSION_NAMES = (("surprise", r"惊讶|吃惊|震惊"), ("smirk", r"坏笑|奸笑|邪笑"),
-                     ("proud", r"得意|嘚瑟|骄傲"), ("skeptical", r"怀疑|狐疑|半信半疑"),
-                     ("shy", r"害羞|脸红"))
+# A lone 惊 at the end is ASR cutting 惊讶 short (10-22 “小安妮做一个惊。”).
+_EXPRESSION_NAMES = (("surprise", r"惊讶|吃惊|震惊|惊(?=[。！？!?，,…]|$)"),
+                     ("smirk", r"坏笑|奸笑|邪笑"), ("proud", r"得意|嘚瑟|骄傲"),
+                     ("skeptical", r"怀疑|狐疑|半信半疑|疑惑|困惑"), ("shy", r"害羞|脸红"))
 _EXPRESSION_REQUEST = re.compile(r"表情|做个|做一个|来个|来一个|演一下|装一下|给我看")
 
 
@@ -181,7 +182,7 @@ _MOTION_NAMES = (
     ("look_left", r"(?:往|向|朝)左(?:边)?看|看(?:看)?左边"),
     ("look_right", r"(?:往|向|朝)右(?:边)?看|看(?:看)?右边"),
     ("look_up", r"(?:往|向|朝)上看|抬头看|看(?:看)?上面"),
-    ("fast_double_blink", r"眨(?:眨|两下|一下|个)?眼|眨两下"),
+    ("fast_double_blink", r"眨(?:眨|两下|一下|个)?双?眼|眨两下"),
 )
 GENERIC_MOTION = re.compile(r"做个动作|做一个动作|来个动作|动一下|动一动|表演一下")
 _NEGATED = re.compile(r"别|不要|不用|不许|停")

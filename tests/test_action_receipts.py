@@ -87,8 +87,9 @@ def test_receipts_match_only_this_robot_turn_and_script(tmp_path):
         actions.on_receipt("A", receipt("action.finished", script="look_left"))
         await wait_for(lambda: actions.receipts["unmatched"] == 3)
         assert (await actions.list("A"))[0]["status"] == "published_unknown"
-        assert [data["action_value"] for _r, kind, data in events
-                if kind == "action.receipt_unmatched"] == [
+        # A and B receipts take separate locks: their order is not defined.
+        assert sorted(data["action_value"] for _r, kind, data in events
+                      if kind == "action.receipt_unmatched") == [
             "agree_micro_nod", "agree_micro_nod", "look_left"]
         for bad in ({"type": "action.finished"},
                     {"type": "action.finished", "data": {"script_id": "x" * 65,

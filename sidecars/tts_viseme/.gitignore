@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+.venv*/
+venv*/
+
+# Environment secrets
+.env
+
+# OS
+.DS_Store
+
+# Model weights (large binary, download via script)
+G2PWModel/*.onnx
+
+# Audio output / debug artifacts
+output/
+output_*/
+debug_audio/
+*.wav

@@ -1,0 +1,7 @@
+# macOS POC - use Python 3.11 in an isolated venv.
+dashscope>=1.26.4
+python-dotenv>=1.0
+websocket-client>=1.8
+pypinyin>=0.55
+allosaurus==1.0.2
+numpy==1.26.4

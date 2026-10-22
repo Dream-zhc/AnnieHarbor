@@ -1,0 +1,2 @@
+# Optional. Install only after the base POC works.
+g2pw==0.1.1

@@ -95,7 +95,31 @@ test('explicit selection writes only chosen scope and active identity; clear doe
   assert.equal(preferenceResultMessage('robot',false),'已保存机器人级语言偏好。');
 });
 
-test('compact read-only workbench panel and role preference are identity scoped',async()=>{
+test('reply language choices cover auto follow and every TTS language',async()=>{
+  const {REPLY_LANGUAGE_CHOICES,replyLanguageValue,replyLanguageSelection,replyLanguageLabel}=
+    await import('../src/speech-expression-state.ts');
+  assert.deepEqual(REPLY_LANGUAGE_CHOICES[0],{value:'auto',label:'自动跟随'});
+  for(const label of ['普通话','四川话','河南话','陕西话','粤语','英语','俄语','马来语','菲律宾语'])
+    assert.ok(REPLY_LANGUAGE_CHOICES.some(item=>item.label===label),label);
+  assert.equal(replyLanguageValue(null),'auto');
+  assert.equal(replyLanguageValue({language:'ru',dialect:'unknown'}),'ru:unknown');
+  assert.equal(replyLanguageSelection('auto'),null);
+  assert.deepEqual(replyLanguageSelection('zh:shaanxi'),{language:'zh',dialect:'shaanxi'});
+  assert.equal(replyLanguageLabel({language:'yue',dialect:'cantonese'}),'粤语');
+  assert.equal(replyLanguageLabel({language:'zh',dialect:'unknown'}),'中文');
+  assert.equal(replyLanguageLabel(null),'自动跟随');
+});
+
+test('reply language control writes the chosen scope; auto clears it',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const panel=readFileSync(new URL('../src/speech-expression.tsx',import.meta.url),'utf8');
+  assert.match(panel,/'\/language-preference',choice\?'PUT':'DELETE'/);
+  assert.match(panel,/languagePreferenceBody\(session,active,choice,requestId\(\)\)/);
+  assert.match(panel,/getRandomValues/);  // LAN HTTP has no crypto.randomUUID
+  assert.match(panel,/aria-label="回复语言"/);
+});
+
+test('compact workbench panel and role preference are identity scoped',async()=>{
   const {readFileSync}=await import('node:fs');
   const panel=readFileSync(new URL('../src/speech-expression.tsx',import.meta.url),'utf8');
   assert.match(panel,/<details/);

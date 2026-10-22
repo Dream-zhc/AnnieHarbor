@@ -18,7 +18,7 @@ try{
   page.on('pageerror',error=>errors.push(String(error)));
   await page.goto(new URL('?view=workbench',base).href,{waitUntil:'domcontentloaded'});
   const panel=()=>page.locator('details.speech-expression-panel');
-  const preference=()=>page.locator('.stage-header-tools .room-tag').filter({hasText:'语言偏好'});
+  const preference=()=>page.locator('.stage-header-tools [role="group"][aria-label="回复语言"]');
   await preference().waitFor();
   assert.equal(await panel().getAttribute('open'),null);
   await panel().locator('summary').click();
@@ -42,7 +42,7 @@ try{
   assert.match(await panel().innerText(),/英语.*键盘文本推断/);
   assert.match(await panel().innerText(),/整轮情绪.*好奇/);
   assert.doesNotMatch(await panel().innerText(),/INTENT MUST NOT DISPLAY|保存所选范围|启用声学旁路/);
-  await page.getByText(/语言偏好：会话：英语/).waitFor({timeout:13000});
+  await preference().locator('.custom-select-label',{hasText:'英语'}).waitFor({timeout:13000});
   await page.screenshot({path:resolve(output,'精简语音状态.png'),fullPage:true});
   injected={...injected,speech:{state:'active',turn_id:'new-turn',speech_style:null}};
   await panel().getByText('当前任务 · 待实发证据',{exact:true}).waitFor({timeout:10000});

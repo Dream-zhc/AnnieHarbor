@@ -2598,8 +2598,11 @@ details summary::-webkit-details-marker {
 .stage-header-tools {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 6px;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .persona-live-switch {
   display: inline-flex;
@@ -2607,6 +2610,7 @@ details summary::-webkit-details-marker {
   gap: 6px;
   font-size: 11px;
   color: var(--text-sub);
+  white-space: nowrap;
 }
 .persona-live-switch select {
   max-width: 112px;

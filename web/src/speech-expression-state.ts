@@ -8,7 +8,7 @@ export function speechResponseIsCurrent(response:Identity,current:Identity|null,
   return !!current&&request===latest&&identityFields.every(key=>response[key]===current[key]);
 }
 
-const languages:Record<string,string>={zh:'中文',yue:'粤语',en:'英语',ja:'日语',de:'德语',ko:'韩语',ru:'俄语',fr:'法语',pt:'葡萄牙语',ar:'阿拉伯语',it:'意大利语',es:'西班牙语',hi:'印地语',id:'印尼语',th:'泰语',tr:'土耳其语',uk:'乌克兰语',vi:'越南语'};
+const languages:Record<string,string>={zh:'中文',yue:'粤语',en:'英语',ja:'日语',de:'德语',ko:'韩语',ru:'俄语',fr:'法语',pt:'葡萄牙语',ar:'阿拉伯语',it:'意大利语',es:'西班牙语',hi:'印地语',id:'印尼语',th:'泰语',tr:'土耳其语',uk:'乌克兰语',vi:'越南语',ms:'马来语',fil:'菲律宾语'};
 const dialects:Record<string,string>={mandarin:'普通话',sichuan:'四川话',henan:'河南话',shaanxi:'陕西话',cantonese:'粤语'};
 const emotions:Record<string,string>={neutral:'中性',warm:'温柔关切',playful:'轻松俏皮',sarcastic:'轻微打趣',curious:'好奇',serious:'认真稳重',sad:'低落',excited:'适度兴奋',calm:'平稳安抚',angry:'愤怒',fearful:'害怕',happy:'开心'};
 const sources:Record<string,string>={typed_text:'键盘文本语种（启发式）',runtime_context:'语境默认表达',asr_language:'ASR 语种观察',lexical_inference:'词汇推断（非声学确认）',llm_inferred:'LLM 推断',llm_early:'LLM 早期选择',explicit_user:'用户明确要求',chat_preference:'Chat 显式偏好',robot_preference:'机器人显式偏好',runtime_default:'运行默认'};
@@ -82,6 +82,33 @@ export function speechExpressionView(data:SpeechExpression){
     speakerEvidence:evidence==='speaker_reported_started'?'设备自报起播（非声学测量）':
       evidence==='speaker_reported_drained'?'设备自报播完（非声学测量）':'待设备回执 / 未核验',
   };
+}
+
+/** Reply language choices: every language/dialect the TTS speaks. auto = no saved preference. */
+export const REPLY_LANGUAGE_CHOICES=[
+  {value:'auto',label:'自动跟随'},
+  ...[['zh:mandarin','普通话'],['zh:sichuan','四川话'],['zh:henan','河南话'],['zh:shaanxi','陕西话'],
+    ['yue:cantonese','粤语'],['en:unknown','英语'],['ja:unknown','日语'],['ko:unknown','韩语'],
+    ['ru:unknown','俄语'],['fr:unknown','法语'],['de:unknown','德语'],['es:unknown','西班牙语'],
+    ['pt:unknown','葡萄牙语'],['it:unknown','意大利语'],['ar:unknown','阿拉伯语'],['th:unknown','泰语'],
+    ['vi:unknown','越南语'],['id:unknown','印尼语'],['ms:unknown','马来语'],['fil:unknown','菲律宾语'],
+    ['hi:unknown','印地语'],['tr:unknown','土耳其语'],['uk:unknown','乌克兰语']]
+    .map(([value,label])=>({value,label})),
+];
+
+export const replyLanguageValue=(value?:LanguageSelection|null)=>
+  value?`${value.language}:${value.dialect}`:'auto';
+
+export function replyLanguageSelection(value:string):LanguageSelection|null{
+  if(value==='auto')return null;
+  const [language,dialect]=value.split(':');
+  return {language,dialect};
+}
+
+export function replyLanguageLabel(value?:LanguageSelection|null){
+  const key=replyLanguageValue(value);
+  return REPLY_LANGUAGE_CHOICES.find(item=>item.value===key)?.label??
+    (value?(value.dialect==='unknown'?language(value.language):dialect(value.dialect)):'自动跟随');
 }
 
 export function languagePreferenceBody(identity:Identity,scope:PreferenceScope,value:LanguageSelection|null,requestId:string){

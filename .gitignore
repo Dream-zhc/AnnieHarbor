@@ -16,7 +16,6 @@ migration-test-*/
 var/*
 web/var/
 !var/.gitkeep
-sidecars/**/G2PWModel/
 sidecars/**/output*/
 
 # room-speaker 板端本地配置（房间/设备），只在板子上

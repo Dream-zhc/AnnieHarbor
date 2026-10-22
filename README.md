@@ -29,7 +29,6 @@ Windows 使用 `start.bat`。默认端口 `8780`：
 | `web/` | 唯一 React + TypeScript 前端，工作台与大屏共享构建 |
 | `config/` | 可提交的配置资产，不存真实密钥 |
 | `scripts/` | 中文唤醒模型下载、展厅访问初始化等运维工具 |
-| `sidecars/tts_viseme/` | 独立 ForcedAligner/嘴型服务，当前保留单头方案 |
 | `tests/`、`web/tests/` | 长期回归测试，不是临时探针 |
 | `docs/` | 当前边界、规范、协议及实际验收证据 |
 | `var/` | 本机数据库、日志、缓存和模型，不参与源码发布 |

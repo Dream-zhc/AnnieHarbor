@@ -1,6 +1,7 @@
 """Room service heartbeat and external camera descriptions are scoped observations."""
 
 import asyncio
+import logging
 from unittest.mock import patch
 
 import httpx
@@ -159,3 +160,38 @@ def test_independent_viseme_status_does_not_require_tts_or_realtime(tmp_path):
                                   "sam_connected": True, "tts_connected": True,
                                   "sam_subscribed": True, "tts_subscribed": True})
     assert runtime.room_observations("a")["viseme"]["state"] == "online"
+
+
+def test_external_viseme_service_is_probed_at_startup_and_reported(tmp_path, caplog):
+    root = "ws://localhost:1/robot"
+    channels = {name: "reb_" + name for name in (
+        "main", "tts", "mic", "visualdata", "vision", "sam", "visualllm"
+    )}
+    room = RoomServerConfig(
+        base_url=root + "/roomv2", room_root=root, channels=channels,
+        default_urls={name: root + "/roomv2/" + channel
+                      for name, channel in channels.items()},
+    )
+    runtime = HarborRuntime(
+        [RobotConfig("a", room_id="roomv2"), RobotConfig("b", room_id="roomv3")],
+        tmp_path / "local.db", room,
+    )
+    for listeners in runtime.playback_listeners.values():
+        next(item for item in listeners if item.channel == "sam").connected = True
+    health = runtime.health()
+    assert "viseme_sidecars" not in health
+    assert {robot: item["state"] for robot, item in health["viseme"].items()} == {
+        "a": "waiting", "b": "waiting"}
+    assert health["capabilities"]["viseme"] == "external_offline"
+    runtime._room_sam_event("a", {"type": "viseme_health", "status": "ready",
+                                  "sam_connected": True, "tts_connected": True,
+                                  "sam_subscribed": True, "tts_subscribed": True})
+    health = runtime.health()
+    assert health["viseme"]["a"]["room_id"] == "roomv2"
+    assert health["viseme"]["a"]["state"] == "online"
+    assert health["capabilities"]["viseme"] == "external_online"
+
+    with caplog.at_level(logging.INFO, logger="annie_runtime"):
+        asyncio.run(runtime._probe_viseme(timeout=0.05, interval=0.01))
+    assert "嘴型服务在线 robot=a room=roomv2" in caplog.text
+    assert "嘴型服务未在线 robot=b room=roomv3 state=waiting" in caplog.text

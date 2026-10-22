@@ -43,7 +43,6 @@ from annie_runtime.reminders import ReminderService
 from annie_runtime.room_monitor import RoomMonitor
 from annie_runtime.speaker_volume import SpeakerVolume
 from annie_runtime.speech import SpeechOutput
-from annie_runtime.viseme import VisemeSidecars
 
 logger = logging.getLogger(__name__)
 PERCEPTION_REPEAT_SECONDS = 5.0
@@ -883,8 +882,6 @@ class HarborRuntime:
         tts_first_chars: int = 10,
         tts_min_chars: int | None = None,
         tts_max_chars: int = 48,
-        viseme_root: Path | None = None,
-        viseme_python: str | None = None,
         memory_key: str | None = None,
         memory_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
         memory_extract_model: str = "qwen3.8-flash",
@@ -1020,7 +1017,7 @@ class HarborRuntime:
         }
         self.smallbrain_links = {}
         self.smallbrain_tasks = set()
-        self.viseme_sidecars = None
+        self._viseme_probe = None
         self.realtime = {}
         if realtime_key:
             from annie_adapters.realtime import DEFAULT_URL, MODEL, QwenRealtimeSocket, validate_model
@@ -1206,13 +1203,6 @@ class HarborRuntime:
                         lambda message, robot_id=robot_id: self._room_playback_receipt(robot_id, message),
                     ),
                 )
-        if viseme_root is not None:
-            if not tts_voice or room_server is None:
-                raise ValueError("ForcedAligner requires enabled TTS and a Room server")
-            self.viseme_sidecars = VisemeSidecars(
-                viseme_root, room_server, [client.robot for client in self.realtime.values()],
-                python=viseme_python,
-            )
         self.actions = None
         if action_catalog is not None:
             from annie_brain.action_catalog import load_action_catalog, resolve_action
@@ -1879,8 +1869,6 @@ class HarborRuntime:
 
     def preflight(self):
         self.store.preflight()
-        if self.viseme_sidecars is not None:
-            self.viseme_sidecars.preflight()
 
     def _memory_changed(self, robot_id):
         client = self.realtime.get(robot_id)
@@ -1916,8 +1904,6 @@ class HarborRuntime:
             await robot.start()
         await self.reminders.start()
         await self.idle.start()
-        if self.viseme_sidecars is not None:
-            await self.viseme_sidecars.start()
         for realtime in self.realtime.values():
             realtime.start()
         if self.decision is not None and self._owns_decision:
@@ -1929,6 +1915,45 @@ class HarborRuntime:
         for connections in self.playback_listeners.values():
             for connection in connections:
                 connection.start()
+        self._viseme_probe = asyncio.create_task(self._probe_viseme())
+
+    def viseme_status(self):
+        """External Windows tts_viseme liveness per Room, from its reb_sam viseme_health."""
+        status = {}
+        for robot_id, monitor in self.room_monitors.items():
+            sam = next((item for item in self.playback_listeners.get(robot_id, ())
+                        if item.channel == "sam"), None)
+            viseme = monitor.snapshot(
+                sam_connected=sam.connected if sam else None,
+                visual_connected=False, visual_configured=False,
+            )["viseme"]
+            status[robot_id] = {"room_id": monitor.room_id, "state": viseme["state"],
+                                "heartbeat_age_ms": viseme["heartbeat_age_ms"],
+                                "reason": viseme["reason"]}
+        return status
+
+    async def _probe_viseme(self, timeout=10.0, interval=0.5):
+        """Startup check: the mouth service is external, so report whether it heartbeats."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            status = self.viseme_status()
+            if (loop.time() >= deadline or not any(
+                    item["state"] in ("waiting", "disconnected") for item in status.values())):
+                break
+            await asyncio.sleep(interval)
+        for robot_id, item in status.items():
+            if item["state"] == "not_configured":
+                continue
+            if item["state"] == "online":
+                logger.info("嘴型服务在线 robot=%s room=%s heartbeat_age_ms=%s",
+                            robot_id, item["room_id"], item["heartbeat_age_ms"])
+            else:
+                logger.warning(
+                    "嘴型服务未在线 robot=%s room=%s state=%s reason=%s：%.0f 秒内未收到可用 "
+                    "viseme_health，请确认 Windows tts_viseme 已启动并监听该房间",
+                    robot_id, item["room_id"], item["state"], item["reason"], timeout,
+                )
 
     async def wait_room_gateway(self, timeout: float) -> bool:
         if not self.room_connections:
@@ -1944,6 +1969,9 @@ class HarborRuntime:
         await self.process_probe.close()
         for aec in self.cloud_aec.values():
             aec.close()
+        if self._viseme_probe is not None:
+            self._viseme_probe.cancel()
+            self._viseme_probe = None
         if self.started:
             self.started = False
             for task in tuple(self.smallbrain_tasks):
@@ -1979,8 +2007,6 @@ class HarborRuntime:
                 await self.memory.close()
             for connections in self.playback_listeners.values():
                 await asyncio.gather(*(connection.close() for connection in connections))
-            if self.viseme_sidecars is not None:
-                await self.viseme_sidecars.close()
             if self.room_connections:
                 await asyncio.gather(*(connection.stop() for connection in self.room_connections.values()))
             for robot in self.robots.values():
@@ -2573,6 +2599,7 @@ class HarborRuntime:
             room_capability = "partial"
         else:
             room_capability = "connecting"
+        visemes = self.viseme_status()
         return {
             "project": "Annie Harbor",
             "phase": 4 if self.realtime else 3,
@@ -2631,7 +2658,8 @@ class HarborRuntime:
                 "ready": room_ready,
                 "connections": room_status,
             },
-            "viseme_sidecars": self.viseme_sidecars.snapshot() if self.viseme_sidecars else {},
+            # Mouth alignment runs as the standalone Windows tts_viseme service.
+            "viseme": visemes,
             "capabilities": {
                 "brain": "fake",
                 "room": room_capability,
@@ -2648,11 +2676,11 @@ class HarborRuntime:
                     "aligner_reporting" if any(
                         client.speech and client.speech.viseme_events
                         for client in self.realtime.values()
-                    ) else "sidecar_exited" if self.viseme_sidecars is not None and any(
-                        proc.poll() is not None
-                        for proc in self.viseme_sidecars.processes.values()
-                    ) else "sidecar_started_unverified" if self.viseme_sidecars is not None
-                    else "not_connected"
+                    ) else "external_online" if any(
+                        item["state"] == "online" for item in visemes.values()
+                    ) else "external_offline" if any(
+                        item["state"] != "not_configured" for item in visemes.values()
+                    ) else "not_connected"
                 ),
                 "llm": (
                     "connected" if self.realtime and all(client.ready for client in self.realtime.values())

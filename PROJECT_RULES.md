@@ -9,7 +9,7 @@
 
 - **实时陪伴优先：首响快、接住情绪、上下文连贯、有价值的记忆、人格稳定、知道何时少说。** 轻量SocialState整理情绪/关系/回复策略，不靠堆Prompt或额外情绪模型实现。
 - 普通聊天走`Room PCM → Audio Input Gate → Qwen-Audio 3.0 Realtime Flash → 文本`，由Realtime负责ASR、smart_turn、对话、Persona和Function Calling；**正常聊天禁止经过LangGraph**，不再串联另一套ASR→LLM或意图/情绪/规划模型。
-- 独立`Qwen-Audio-3.0-TTS-Flash`生成PCM；同一PCM发回Room，并与对应文本送ForcedAligner映射viseme。禁用Realtime内置语音双播；动作/表情/简单工具经Function Calling提出、本地校验、去重和所属设备路由执行。
+- 独立`Qwen-Audio-3.0-TTS-Flash`生成PCM；同一PCM发回Room，由外部独立Windows tts_viseme服务（ForcedAligner）映射viseme，本项目只探测其心跳并消费嘴型回执。禁用Realtime内置语音双播；动作/表情/简单工具经Function Calling提出、本地校验、去重和所属设备路由执行。
 - LangGraph只按需处理多步骤、多Tool、Memory组合、暂停/恢复、复杂事件及经Runtime准入的空闲主动交谈规划；独立Qwen可异步提供结构化决策，不替代实时主脑。Runtime掌管空闲/现场/冷却/最终发声许可；Realtime仍负责普通聊天与最终表达；复杂任务或主动规划不得拖慢普通聊天。
 - 事件先经Event Router与Speak Policy判断是否值得说，TurnCoordinator协调何时说；仅更新上下文不触发回复。Persona在Session建立时加载，切换/revision/核心规则变化才更新，不每轮重发完整Persona、Memory或Graph State。
 - 打断必须同步取消外置TTS、嘴型并修正Realtime未播上下文，不能只修本地Ledger。体验验收看PCM/语义轮次、首文本、首可播段、TTS首音频、设备起停播、嘴型同步和对话质量，不看模块/Graph节点数。

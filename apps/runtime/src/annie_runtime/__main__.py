@@ -294,8 +294,6 @@ def main():
         tts_first_chars=provider_defaults["tts"]["first_min_chars"],
         tts_min_chars=provider_defaults["tts"]["sentence_min_chars"],
         tts_max_chars=provider_defaults["tts"]["sentence_max_chars"],
-        viseme_root=root if os.environ.get("ANNIE_VISEME_ENABLED") == "1" else None,
-        viseme_python=os.environ.get("ANNIE_VISEME_PYTHON") or None,
         memory_key=(
             os.environ.get("DASHSCOPE_API_KEY") or None
             if os.environ.get("ANNIE_MEMORY_ENABLED", "1") != "0" else None

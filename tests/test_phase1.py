@@ -421,7 +421,6 @@ class StorageConfigTests(unittest.TestCase):
         for path in (
             ROOT / "config/action_scripts.json",
             ROOT / "config/attention_scoring.json",
-            ROOT / "sidecars/tts_viseme/viseme_config.json",
         ):
             self.assertIsInstance(json.loads(path.read_text()), dict, str(path))
         self.assertFalse((ROOT / "config/skills.json").exists())

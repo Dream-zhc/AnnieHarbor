@@ -3,18 +3,12 @@
 import asyncio
 import base64
 import json
-import os
-import sys
-import tempfile
 import time
 import unittest
-from pathlib import Path
-from unittest.mock import patch
 
 from annie_adapters.playback import RoomEventListener, playback_receipt
 from annie_adapters.tts import MODEL, RoomTtsPublisher, command, validate_url
 from annie_runtime.speech import SpeechOutput
-from annie_runtime.viseme import VisemeSidecars
 
 
 class FakeRobot:
@@ -89,39 +83,6 @@ class FakeTts:
 
 
 class TtsContractTests(unittest.TestCase):
-    def test_limited_viseme_robots_keep_other_robot_realtime_unaffected(self):
-        root = Path(__file__).resolve().parents[1]
-        robots = [FakeRobot("annie-a", "roomv2"), FakeRobot("annie-b", "roomv3")]
-        with patch.dict(os.environ, {"ANNIE_VISEME_ROBOTS": ""}):
-            default = VisemeSidecars(root, room_config=None, robots=robots)
-        self.assertEqual([robot.config.robot_id for robot in default.robots], ["annie-a"])
-        with patch.dict(os.environ, {"ANNIE_VISEME_ROBOTS": "annie-a"}):
-            launcher = VisemeSidecars(root, room_config=None, robots=robots)
-        self.assertEqual([robot.config.robot_id for robot in launcher.robots], ["annie-a"])
-        with patch.dict(os.environ, {"ANNIE_VISEME_ROBOTS": "unknown"}):
-            with self.assertRaisesRegex(ValueError, "unknown robot"):
-                VisemeSidecars(root, room_config=None, robots=robots)
-        with patch.dict(os.environ, {"ANNIE_VISEME_ROBOTS": "annie-a,annie-a"}):
-            with self.assertRaisesRegex(ValueError, "unique robot"):
-                VisemeSidecars(root, room_config=None, robots=robots)
-
-    def test_viseme_virtualenv_python_symlink_not_resolved_to_system(self):
-        root = Path(__file__).resolve().parents[1]
-        with tempfile.TemporaryDirectory(dir=root / "var") as temp:
-            venv_bin = Path(temp) / "sidecars" / "tts_viseme" / ".venv311" / "bin"
-            venv_bin.mkdir(parents=True)
-            (venv_bin / "python").symlink_to(sys.executable)
-            launcher = VisemeSidecars(Path(temp), room_config=None, robots=())
-            self.assertEqual(launcher.python, venv_bin / "python")
-            self.assertNotEqual(launcher.python, (venv_bin / "python").resolve())
-
-    def test_opt_in_aligner_missing_environment_fails_preflight(self):
-        root=Path(__file__).resolve().parents[1]
-        with tempfile.TemporaryDirectory(dir=root / "var") as temp:
-            launcher=VisemeSidecars(Path(temp),room_config=None,robots=())
-            with self.assertRaisesRegex(ValueError,"ANNIE_VISEME_ENABLED=1"):
-                launcher.preflight()
-
     def test_receipts_require_strict_sample_cursor_and_identity(self):
         playback_receipt(receipt("started", "cid", 1, 0))
         for invalid in (

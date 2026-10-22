@@ -314,7 +314,7 @@ INFO:     192.168.1.47:57527 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 2026-10-21 19:00:30,604 INFO annie_runtime.realtime wake_response_released robot=annie-a events=10 responses=['resp_WL5qMzajnuUsCdFKsftk4'] turn=510daafd39314a088f1407f4438a5dea
 INFO:     192.168.1.47:57527 - "GET /api/robots/annie-a/conversations/%E5%AE%A2%E6%88%B7?persona_id=annie&limit=80 HTTP/1.1" 200 OK
 INFO:     192.168.1.47:51511 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
-2026-10-21 19:00:30,828 INFO httpx HTTP Request: GET https://restapi.amap.com/v3/weather/weatherInfo?key=c06c4aa5f09d7f882dd69a45ec0b3849&city=%E5%8C%97%E4%BA%AC%E5%B8%82&extensions=base "HTTP/1.1 200 OK"
+2026-10-21 19:00:30,828 INFO httpx HTTP Request: GET https://restapi.amap.com/v3/weather/weatherInfo?key=<AMAP_WEATHER_API_KEY已脱敏>&city=%E5%8C%97%E4%BA%AC%E5%B8%82&extensions=base "HTTP/1.1 200 OK"
 2026-10-21 19:00:30,828 INFO annie_runtime.realtime tool_call robot=annie-a turn=510daafd39314a088f1407f4438a5dea name=get_weather valid=True duration_ms=223.73
 2026-10-21 19:00:30,829 INFO annie_runtime.realtime tool_followup robot=annie-a turn=510daafd39314a088f1407f4438a5dea response_create=1
 INFO:     192.168.1.47:51511 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK

@@ -343,8 +343,10 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "when recognised from the face library), where they are, what they are "
                     "doing, what they hold, and the vision model's full description including "
                     "clothing. Call it before answering about clothing, looks, what someone is "
-                    "doing, or when asked to introduce someone. What it returns overrides "
-                    "anything the user claims."
+                    "doing, or when asked to introduce someone in front of you. What it returns "
+                    "overrides anything the user claims. A question about a named person "
+                    "(介绍一下X) is about that person, not the camera: answer from memory or "
+                    "general knowledge."
                 ),
                 "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             },

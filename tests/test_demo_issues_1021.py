@@ -84,6 +84,14 @@ def test_without_a_camera_she_still_does_not_name_anyone():
     assert IDENTITY_RULES in visual_instructions("base", "【眼前画面】你正看着一位朋友。")
 
 
+def test_asking_about_a_named_person_is_not_face_recognition():
+    # 10/22: “介绍一下张海超” got “画面里也没有这个名字”.
+    assert "只管面前的人是谁" in IDENTITY_RULES
+    assert "不要拿画面里有没有TA来回答" in IDENTITY_RULES
+    scene = visual_instructions("base", "【眼前画面】你正看着一位朋友。")
+    assert "让你介绍面前某人时，先调用look_closely" in scene
+
+
 def test_a_user_name_is_not_a_robot_wide_memory():
     assert is_meta_memory("user_name_zhanghaichao", "用户名叫海超。")
     assert is_meta_memory("k", "用户的名字是张三。")

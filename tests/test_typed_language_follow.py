@@ -143,10 +143,99 @@ def test_actual_assistant_text_is_heuristic_and_never_claims_audio_evidence():
     ('不要用陕西方言说话', None),
     ('你知道陕西方言吗？', None),
     ('我去陕西旅游过', None),
+    # Spoken order without 用 (10-22 live test).
+    ('陕西话介绍一下张海超。', ('zh', 'shaanxi', 'turn')),
+    ('陕西话介绍一下自己', ('zh', 'shaanxi', 'turn')),
+    ('四川话给我讲个笑话', ('zh', 'sichuan', 'turn')),
+    ('陕西话怎么说吃饭', None),
+    ('陕西话里吃饭叫什么', None),
 ])
 def test_explicit_dialect_requests_accept_natural_modifiers_without_location_guess(text, expected):
     parsed = explicit_language_request(text)
     assert ((parsed['language'], parsed['dialect'], parsed['scope']) if parsed else None) == expected
+
+
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('我想听你用俄语讲个故事', ('ru', 'unknown')),
+    ('来段粤语', ('yue', 'cantonese')),
+    ('唱首粤语歌给我听', ('yue', 'cantonese')),
+    ('说两句日语', ('ja', 'unknown')),
+    ('切成英文', ('en', 'unknown')),
+    ('能不能用粤语说', ('yue', 'cantonese')),
+    ('要不要用英语聊聊', ('en', 'unknown')),
+    ('俄语来一段', ('ru', 'unknown')),
+    ('四川话给我讲讲', ('zh', 'sichuan')),
+    ('用意大利语打个招呼', ('it', 'unknown')),
+    ('讲个西班牙语笑话', ('es', 'unknown')),
+    ('用纯正的西安话说说', ('zh', 'shaanxi')),
+    ('香港话来一句', ('yue', 'cantonese')),
+    ('用越南语介绍一下你自己', ('vi', 'unknown')),
+    ('Tell me a story in Russian', ('ru', 'unknown')),
+    ('原来英语这么难', None),
+    ('你英语说得真好', None),
+    ('聊聊英语学习', None),
+    ('中文讲究对仗', None),
+    ('别说俄语了', None),
+    ('你会说俄语吗', None),
+    ('俄语怎么说你好', None),
+    ('用俄语怎么说谢谢', None),
+    ('我在读英语专业', None),
+    ('英语来自拉丁语吗', None),
+    ('说白话一点', None),
+    ('西语和葡语很像', None),
+])
+def test_loose_language_requests_without_ordinary_talk(text, expected):
+    # User decision 10-22: any natural way of asking for a language counts.
+    parsed = explicit_language_request(text)
+    assert ((parsed['language'], parsed['dialect']) if parsed else None) == expected
+
+
+def test_saved_language_outranks_chinese_input_and_model_guess():
+    s = state()
+    s.load_preferences({'chat': {'language': 'ru', 'dialect': 'unknown'}, 'robot': None})
+    s.user_request('北京天气怎么样')  # Chinese ASR final
+    s.reply_intent(language='zh', dialect='unknown', emotion='warm', transcript='北京天气怎么样')
+    assert (s.selection()['language'], s.selection()['source']) == ('ru', 'chat_preference')
+    assert s.selection()['emotion'] == 'warm'
+    assert '本会话语言设置' in s.instruction_hint()
+    assert '全程用俄语回答' in s.instruction_hint()  # a name, not just “ru”
+    assert '整句是外语时仍用该语言回答' not in s.instruction_hint()
+    s.first_text('t')
+    assert s.style_for('t').language == 'ru'
+    s.user_request('这句换成普通话')  # this turn's explicit order still wins
+    assert s.selection()['dialect'] == 'mandarin'
+
+
+@pytest.mark.parametrize(('text', 'expected'), [
+    ('取消这个会话的俄语设置', 'chat'), ('恢复默认语言', 'any'),
+    ('清除机器人的语言设置', 'robot'), ('取消提醒', None), ('不要清除语言设置', None),
+])
+def test_spoken_language_clear(text, expected):
+    from annie_runtime.language import explicit_language_clear
+    assert explicit_language_clear(text) == expected
+
+
+def test_every_named_language_is_speakable():
+    from annie_core.speech_style import LANGUAGES as SPEAKABLE
+    from annie_runtime.language import NAMES, validate_language
+    for language, dialect in NAMES.values():
+        assert language in SPEAKABLE
+        validate_language(language, dialect)
+
+
+def test_explicit_dialect_request_needs_no_inference_evidence():
+    language_state = state()
+    language_state.reply_intent(language='zh', dialect='shaanxi', emotion='playful',
+                                transcript='陕西话介绍一下自己。')
+    assert language_state.intent['dialect'] == 'shaanxi'
+    with pytest.raises(ValueError):
+        language_state.reply_intent(language='zh', dialect='henan', emotion='neutral',
+                                    transcript='陕西话介绍一下自己。')
+    spoken = state()
+    spoken.user_request('陕西话介绍一下张海超。')  # ASR final, not typed
+    spoken.first_text('turn')
+    assert spoken.style_for('turn').dialect == 'shaanxi'
+    assert '陕西话' in spoken.style_for('turn').instruction
 
 
 def test_dialect_request_reaches_tts_style_before_first_text():

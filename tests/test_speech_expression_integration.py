@@ -85,6 +85,44 @@ def test_tool_requires_matching_explicit_user_scope(tmp_path):
     asyncio.run(run())
 
 
+def test_lasting_language_request_saves_itself_and_outlasts_chinese_input(tmp_path):
+    # 10/22: “希望这个会话一直用俄语…” got “好” but no tool call, so nothing was kept.
+    async def run():
+        runtime = HarborRuntime([RobotConfig('a', 'r')], tmp_path/'runtime.db',
+                                realtime_key='fixture', realtime_socket_factory=FakeSocket)
+        await runtime.start()
+        try:
+            await ready(runtime)
+            c = runtime.realtime['a']
+            await c.submit_text('希望这个会话一直用俄语的语言一直交互')
+            for _ in range(200):
+                if c.language.preferences['chat']:
+                    break
+                await asyncio.sleep(.005)
+            saved = runtime.store.load_language_preferences('a', c.robot.chat_id)
+            assert (saved['chat']['language'], saved['robot']) == ('ru', None)
+            await c.cancel()
+            await c.submit_text('北京天气怎么样')
+            assert c.language.selection()['language'] == 'ru'
+            assert '全程用俄语回答' in c.language.instruction_hint()
+            await c.cancel()
+            await c.submit_text('这句换成普通话')  # one turn only, nothing saved
+            await asyncio.sleep(.02)
+            assert runtime.store.load_language_preferences(
+                'a', c.robot.chat_id)['chat']['language'] == 'ru'
+            await c.cancel()
+            await c.submit_text('取消这个会话的俄语设置')
+            for _ in range(200):
+                if not c.language.preferences['chat']:
+                    break
+                await asyncio.sleep(.005)
+            assert runtime.store.load_language_preferences('a', c.robot.chat_id)['chat'] is None
+            assert c.language.selection()['source'] == 'runtime_default'
+        finally:
+            await runtime.close()
+    asyncio.run(run())
+
+
 def test_main_sidecar_association_uses_sample_window_not_text_or_item(tmp_path):
     async def run():
         runtime = HarborRuntime([RobotConfig('a','r')],tmp_path/'runtime.db',
@@ -128,6 +166,8 @@ def test_cancelled_queued_language_tool_cannot_commit_after_epoch_retires(tmp_pa
         try:
             await ready(runtime)
             c = runtime.realtime['a']
+            # Only the queued tool is under test; the spoken save has its own test.
+            c._save_lasting_language = lambda text, turn_id: None
             await c.submit_text('以后你都用英语')
             c._queue_tool_call({'call_id': 'queued', 'name': 'set_language_preference',
                                'arguments': json.dumps(dict(scope='robot',language='en',dialect='unknown'))})

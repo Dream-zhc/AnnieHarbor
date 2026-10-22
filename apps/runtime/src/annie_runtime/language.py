@@ -4,17 +4,51 @@ import re
 import time
 from collections import OrderedDict
 
-LANGUAGES = frozenset('zh yue en ja de ko ru fr pt ar it es hi id th tr uk vi'.split())
+LANGUAGES = frozenset('zh yue en ja de ko ru fr pt ar it es hi id th tr uk vi ms fil'.split())
 DIALECTS = frozenset('unknown mandarin sichuan henan shaanxi cantonese'.split())
-NAMES = {'普通话': ('zh', 'mandarin'), '中文': ('zh', 'unknown'),
-         '四川话': ('zh', 'sichuan'), '河南话': ('zh', 'henan'),
-         '陕西话': ('zh', 'shaanxi'), '四川方言': ('zh', 'sichuan'),
-         '河南方言': ('zh', 'henan'), '陕西方言': ('zh', 'shaanxi'),
-         '粤语': ('yue', 'cantonese'),
-         '广东话': ('yue', 'cantonese'), '英语': ('en', 'unknown'),
-         '英文': ('en', 'unknown'), '日语': ('ja', 'unknown'),
-         '韩语': ('ko', 'unknown'), '法语': ('fr', 'unknown'),
-         '德语': ('de', 'unknown'), '西班牙语': ('es', 'unknown')}
+# Every language/dialect the TTS can speak (annie_core.speech_style), by the
+# names people actually say. 白话 is left out: “说白话” means “speak plainly”.
+_NAME_GROUPS = {
+    ('zh', 'mandarin'): '普通话 国语',
+    ('zh', 'unknown'): '中文 汉语 华语',
+    ('zh', 'sichuan'): '四川话 四川方言 川话 成都话 重庆话',
+    ('zh', 'henan'): '河南话 河南方言 郑州话',
+    ('zh', 'shaanxi'): '陕西话 陕西方言 西安话 关中话',
+    ('yue', 'cantonese'): '粤语 广东话 广州话 香港话',
+    ('en', 'unknown'): '英语 英文',
+    ('ja', 'unknown'): '日语 日文 日本话',
+    ('ko', 'unknown'): '韩语 韩文 韩国话 朝鲜语',
+    ('ru', 'unknown'): '俄语 俄文 俄罗斯语 俄罗斯话',
+    ('fr', 'unknown'): '法语 法文',
+    ('de', 'unknown'): '德语 德文',
+    ('es', 'unknown'): '西班牙语 西班牙文 西语',
+    ('pt', 'unknown'): '葡萄牙语 葡萄牙文 葡语',
+    ('it', 'unknown'): '意大利语 意大利文 意语',
+    ('ar', 'unknown'): '阿拉伯语 阿拉伯文 阿语',
+    ('hi', 'unknown'): '印地语',
+    ('id', 'unknown'): '印尼语 印度尼西亚语',
+    ('th', 'unknown'): '泰语 泰文 泰国话',
+    ('tr', 'unknown'): '土耳其语',
+    ('uk', 'unknown'): '乌克兰语',
+    ('vi', 'unknown'): '越南语 越南话',
+    ('ms', 'unknown'): '马来语',
+    ('fil', 'unknown'): '菲律宾语 他加禄语',
+}
+NAMES = {name: pair for pair, names in _NAME_GROUPS.items() for name in names.split()}
+SPOKEN_NAMES = {pair: names.split()[0] for pair, names in _NAME_GROUPS.items()}
+_NAME_PATTERN = '|'.join(sorted(NAMES, key=len, reverse=True))  # 西班牙语 before 西语
+_ENGLISH_NAMES = {
+    'english': ('en', 'unknown'), 'chinese': ('zh', 'unknown'), 'mandarin': ('zh', 'mandarin'),
+    'cantonese': ('yue', 'cantonese'), 'japanese': ('ja', 'unknown'),
+    'korean': ('ko', 'unknown'), 'russian': ('ru', 'unknown'), 'french': ('fr', 'unknown'),
+    'german': ('de', 'unknown'), 'spanish': ('es', 'unknown'),
+    'portuguese': ('pt', 'unknown'), 'italian': ('it', 'unknown'),
+    'arabic': ('ar', 'unknown'), 'hindi': ('hi', 'unknown'),
+    'indonesian': ('id', 'unknown'), 'thai': ('th', 'unknown'),
+    'turkish': ('tr', 'unknown'), 'ukrainian': ('uk', 'unknown'),
+    'vietnamese': ('vi', 'unknown'), 'malay': ('ms', 'unknown'),
+    'filipino': ('fil', 'unknown'),
+}
 IDENTITY_KEYS = ('robot_id', 'room_id', 'chat_id', 'persona_id', 'generation', 'session_epoch')
 
 
@@ -89,36 +123,60 @@ def validate_language(language, dialect):
 
 def explicit_language_request(text):
     """Conservative current-user command matcher, not a location/dialect classifier."""
+    # Negations, ability questions, translation/quoting. 能不能/要不要/可不可以
+    # are requests, not negations: “能不能用粤语说”.
     if not isinstance(text, str) or re.search(
-        r'不要|别用|不用|不能|不想|会说.*[吗么?？]|翻译|引用|[“”‘’「」"\']', text,
+        r'(?<!要)不要|别(?:用|说|讲)|不用|(?<!能)不能|不想|会说.*[吗么?？]|翻译|引用'
+        r'|怎么(?:说|讲|念|读|写)|咋(?:说|讲|念)|什么意思|啥意思|叫什么|叫啥|[“”‘’「」"\']',
+        text,
     ):
         return None
+    lang = '|'.join(_ENGLISH_NAMES)
     english = re.search(
         r'\b(?:please\s+)?(?:speak|talk|reply|respond|answer|switch\s+to|use)'
-        r'\s+(?:to\s+me\s+)?(?:in\s+)?(english|chinese|mandarin|cantonese|japanese)\b',
-        text, re.IGNORECASE,
+        rf'\s+(?:to\s+me\s+)?(?:in\s+)?({lang})\b', text, re.IGNORECASE,
+    ) or re.search(
+        r'\b(?:tell|say|sing|read|explain|describe|introduce|speak|talk|reply|respond|answer)'
+        rf'\b.{{0,40}}?\bin\s+({lang})\b', text, re.IGNORECASE,
     )
     if english and not re.search(r'\b(?:don.t|do\s+not|never|stop|translate|quote|what|how|can\s+you|could\s+you)\b',
                                  text, re.IGNORECASE):
-        names = {'english': ('en', 'unknown'), 'chinese': ('zh', 'unknown'),
-                 'mandarin': ('zh', 'mandarin'), 'cantonese': ('yue', 'cantonese'),
-                 'japanese': ('ja', 'unknown')}
-        language, dialect = names[english[1].lower()]
+        language, dialect = _ENGLISH_NAMES[english[1].lower()]
         scope = ('chat' if re.search(r'\b(?:this|current)\s+(?:chat|conversation)\b', text, re.IGNORECASE)
                  else 'robot' if re.search(r'\b(?:from\s+now\s+on|always|in\s+the\s+future)\b', text, re.IGNORECASE)
                  else 'turn')
         return dict(language=language, dialect=dialect, scope=scope)
-    match = re.search(r'(?:用|说|讲|改成|换成|切换到)\s*'
-                      r'(?:(?:正宗|地道|自然|标准)的)?\s*'
-                      r'(?:个|一个|一段|两句)?\s*('
-                      + '|'.join(NAMES) + ')', text)
+    # “我想听你用俄语讲个故事”“来段粤语”“唱首粤语歌”“说两句日语”“切成英文”.
+    # 来 needs a measure word: “原来英语这么难” is no request.
+    modifier = r'(?:(?:正宗|地道|自然|标准|纯正)的)?\s*'
+    measure = r'(?:个|一个|段|一段|句|一句|两句|几句|首|一首|点|一点|些)'
+    match = re.search(r'(?:(?:用|说|讲|唱|改成|改用|改回|换成|换到|换回|切换到|切换成|切到|切成|切回)\s*'
+                      + modifier + measure + r'?|来\s*' + measure + r'\s*' + modifier + r')\s*('
+                      + _NAME_PATTERN + ')', text)
+    if not match:
+        # Spoken order without 用: “陕西话介绍一下自己”“俄语来一段”. The verb must
+        # read as an order, so “你英语说得真好”“中文讲究…” stay ordinary talk.
+        match = re.search('(' + _NAME_PATTERN + r')\s*(?:来|给我|跟我|和我|帮我|对我|再)?\s*'
+                          r'(?:介绍|回答|回复|打招呼|问候|夸|评价|描述|解释|讲讲|说说|聊聊|唱唱'
+                          r'|(?:讲|说|聊|唱|来|念|读)(?:个|一|段|首|句|两|几|点|下|给|吧|呗))',
+                          text)
     if not match:
         return None
     language, dialect = NAMES[match[1]]
-    scope = ('chat' if re.search(r'(?i)chat|本会话|这个会话|当前会话', text)
+    scope = ('chat' if re.search(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)', text)
              else 'robot' if re.search(r'以后|今后|一直|所有会话|全局|这台机器人', text)
              else 'turn')
     return dict(language=language, dialect=dialect, scope=scope)
+
+
+def explicit_language_clear(text):
+    """“取消这个会话的俄语设置”“恢复默认语言”: chat, robot, any or None."""
+    if (not isinstance(text, str) or not re.search(r'清除|清空|删除|取消|恢复默认', text)
+            or not re.search(r'语言|语种|方言|' + _NAME_PATTERN, text)
+            or re.search(r'不要|别|不清|引用|翻译|[“”‘’「」"\']', text)):
+        return None
+    return ('chat' if re.search(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)', text)
+            else 'robot' if re.search(r'机器人|全局|所有会话', text) else 'any')
 
 
 def explicit_style_request(text):
@@ -216,6 +274,11 @@ class ReplyLanguageState:
         if self.candidate and self.first_pending:
             return dict(self.candidate)
         if self.intent:
+            saved = self.default_selection()
+            if (any(self.preferences.values()) and (self.intent['language'], self.intent['dialect'])
+                    != (saved['language'], saved['dialect'])):
+                # “这个会话一直用俄语” outranks the model's own guess from Chinese input.
+                return {**saved, 'emotion': self.intent.get('emotion', 'neutral')}
             return dict(self.intent)
         if self._dialect_followed() and not any(self.preferences.values()):
             # Saved preferences keep their one-reply first follow only.
@@ -315,9 +378,13 @@ class ReplyLanguageState:
     def reply_intent(self, *, language, dialect='unknown', evidence='', emotion='neutral', reason='',
                      transcript=''):
         validate_language(language, dialect)
-        if dialect not in {'unknown', 'mandarin', 'cantonese'}:
+        requested = explicit_language_request(transcript)
+        if (dialect not in {'unknown', 'mandarin', 'cantonese'}
+                and (not requested or (requested['language'], requested['dialect'])
+                     != (language, dialect))):
             # Evidence is a phrase the user really said: the sidecar's stable
             # text, or the main ASR final when the sidecar is off (default).
+            # An explicit "用陕西话…" request needs none.
             stable = (self.observation or {}).get('text', '')
             if not evidence.strip() or (evidence not in stable and evidence not in transcript):
                 raise ValueError('dialect inference requires a phrase from the current utterance')
@@ -360,7 +427,18 @@ class ReplyLanguageState:
                     '根据语境与人格安排重音与标点节奏，'
                     '不写情绪标签/JSON/旁白；明确情绪要求优先。'
                     'select_reply_style可选提前提出具体语气，不必每轮调用，不等待工具再开口。')
+        saved = {'chat_preference': '本会话', 'robot_preference': '这台机器人'}.get(selected['source'])
+        lasting = self.explicit and self.explicit.get('scope') in {'chat', 'robot'}
+        # The model follows a name, not a code: 10/22 “ru” alone kept Chinese replies.
+        name = SPOKEN_NAMES.get((selected['language'], selected['dialect']),
+                                SPOKEN_NAMES.get((selected['language'], 'unknown'), ''))
         return ('\n【语音表达】目标语种=' + selected['language'] + '；方言=' + selected['dialect']
+                + (f'（{name}）' if name else '')
+                + (f'；这是用户保存的{saved}语言设置：全程用{name}回答，用户这一轮说中文或别的语言'
+                   f'也用{name}回答，不要跟着用户切换，历史里别的语言不算；'
+                   '只有用户这一轮明确要求换语言才换' if saved else '')
+                + (f'；用户这一轮要求以后一直用{name}，已替你保存，之后用户说别的语言也继续用{name}'
+                   if lasting else '')
                 + ('；当前用户用此语种交流，优先用对应语种自然回答；不因历史中文回复改回中文'
                    if selected['source'] in {'typed_text', 'asr_text_heuristic'} else '')
                 + ('；用户正用这种方言说话（说了“' + self.asr_dialect['evidence']
@@ -371,7 +449,8 @@ class ReplyLanguageState:
                    + '，非首次可按语境继续或恢复保存默认，不强制每轮跟随' if self.candidate else '')
                 + ('；本轮用户表达要求=' + str(self.style_request) if self.style_request else '')
                 + '；自然使用对应口语词汇和标点，只输出可朗读文本，不写情绪标签/JSON/旁白。'
-                + '引用、翻译、句中夹杂外语词时不机械跟随；这一轮整句是外语时仍用该语言回答。'
+                + '引用、翻译、句中夹杂外语词时不机械跟随'
+                + ('。' if saved or lasting else '；这一轮整句是外语时仍用该语言回答。')
                 + '输入情绪只供温和回应参考。'
                 + '仅当前用户明确要求保存/清除Chat或机器人语言偏好时调用对应工具，成功才说已保存。'
                 + '可选select_reply_style供有证据的方言推断/语境选择，不必每轮调用，不等待工具再开口。')

@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 SUPPORTED_LANGUAGES = frozenset({
     "zh", "yue", "en", "ja", "de", "ko", "ru", "fr", "pt", "ar", "it", "es",
-    "hi", "id", "th", "tr", "uk", "vi",
+    "hi", "id", "th", "tr", "uk", "vi", "ms", "fil",
 })
 DIALECTS_BY_LANGUAGE = {
     "zh": frozenset({"unknown", "mandarin", "sichuan", "henan", "shaanxi"}),

@@ -49,7 +49,11 @@ from annie_core import RobotUnavailableError
 
 from annie_runtime.display import DISPLAY_NOTIFY_KINDS
 from annie_runtime.faces import face_name
-from annie_runtime.language import ReplyLanguageState, explicit_language_request
+from annie_runtime.language import (
+    ReplyLanguageState,
+    explicit_language_clear,
+    explicit_language_request,
+)
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
 from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
@@ -119,9 +123,14 @@ def clock_instructions(now_ms):
 
 # Always present, camera or not: the 10/21 demo greeted a new visitor as “海超”
 # from an old memory while the camera showed nothing.
+# Scoped to "who is in front of me": on 10/22 “介绍一下张海超” was refused with
+# “画面里也没有这个名字” although memory knew the user 海超.
 IDENTITY_RULES = ("\n【认人】你只能通过画面认出人。看不到画面、或画面里没写出名字时，你不知道面前是谁："
                   "不能用记忆或以前对话里的名字称呼对方，也不能说“你是X”；对方这次自己说了名字，"
-                  "最多说“你说你叫X”。")
+                  "最多说“你说你叫X”。这条只管面前的人是谁、怎么称呼。"
+                  "被问到某个名字的人（介绍一下X、X是谁）是在问这个人本身，不是让你认面前的人："
+                  "按记忆或常识里知道的介绍，不说TA就在你面前；对这个名字一无所知就直说不知道是谁，"
+                  "可以问一句是谁，不要拿画面里有没有TA来回答。")
 
 
 def visual_instructions(base, description):
@@ -135,7 +144,7 @@ def visual_instructions(base, description):
             "可以问要不要记住TA。用户自称或别人说的名字不算认出：不能用它称呼对方，不能说“你是X”或“你好，X”，"
             "最多说“你说你叫X，可我还没认出你”；不能用对话里有人自称或别人说的名字叫TA。"
             "穿着、动作、拿着什么也一样：用户说的和画面不一致时，礼貌说出你看到的，不附和、不改口；"
-            "画面没写到的就说看不清，不猜。问到穿着、长相、在做什么或让你介绍某人时，先调用look_closely看细节再答。"
+            "画面没写到的就说看不清，不猜。问到穿着、长相、在做什么或让你介绍面前某人时，先调用look_closely看细节再答。"
             + "\n【视觉交谈】问看到了什么就直接答主体、动作或位置；问具体物品就只答该物品。"
             "结合本轮问题和已有话题自然接话，轻松时可按当前人格适度调侃场景，但不强行玩梗或追问；"
             "无关时不提视觉，不复述整份描述，不自发播报。"
@@ -881,6 +890,37 @@ class RealtimeRobot:
         for observation in pending:
             self.accept_acoustic_observation(observation, pending=False)
 
+    def _save_lasting_language(self, text, turn_id):
+        """“这个会话一直用俄语” saves itself. On 10/22 the model only answered
+        “好” and never called set_language_preference, so nothing was kept."""
+        if self.language_preference_writer is None:
+            return
+        request = explicit_language_request(text)
+        scope = explicit_language_clear(text) if not request else None
+        if scope == 'any':  # “恢复默认语言”: whichever setting is in force
+            saved = self.language.preferences
+            scope = 'chat' if saved.get('chat') else 'robot' if saved.get('robot') else None
+        if request and request['scope'] != 'turn':
+            change = dict(clear=False, scope=request['scope'], language=request['language'],
+                          dialect=request['dialect'])
+        elif scope:
+            change = dict(clear=True, scope=scope)
+        else:
+            return
+        identity = dict(self.robot.session_state())
+
+        async def save():
+            try:
+                await self.language_preference_writer(
+                    **change, request_id=f"spoken-{turn_id or uuid4().hex}",
+                    source_turn_id=turn_id, expected_identity=identity)
+            except Exception as exc:
+                self.publish('language.preference.failed', scope=change['scope'],
+                             error=type(exc).__name__)
+        task = asyncio.create_task(save(), name=f"language-save:{self.robot.config.robot_id}")
+        self._decision_tasks.add(task)
+        task.add_done_callback(self._decision_tasks.discard)
+
     async def _language_tool(self, name, args, call_id):
         cached = self.robot.turn_cache.get(self.turn_id) or {}
         text = str(cached.get('user_text') or self.transcript or '')
@@ -891,8 +931,13 @@ class RealtimeRobot:
                     'language', 'dialect', 'emotion', 'evidence', 'reason'}:
                 raise ValueError('invalid reply style arguments')
             evidence = args.get('evidence', '')
-            if evidence and (not isinstance(evidence, str) or evidence not in text
-                             or re.search(r'旅游|地名|翻译|引用|[“”‘’]', text)):
+            requested = explicit_language_request(text)
+            if requested and (requested['language'], requested['dialect']) == (
+                    args.get('language'), args.get('dialect')):
+                # The user asked for it by name; no inference evidence to check.
+                args = {**args, 'evidence': ''}
+            elif evidence and (not isinstance(evidence, str) or evidence not in text
+                               or re.search(r'旅游|地名|翻译|引用|[“”‘’]', text)):
                 raise ValueError('inference requires unquoted current lexical evidence')
             self.language.reply_intent(**args, transcript=text)
             self.visual_changed()
@@ -902,7 +947,7 @@ class RealtimeRobot:
         if set(args) != ({'scope'} if clear else {'scope', 'language', 'dialect'}):
             raise ValueError('invalid preference arguments')
         if clear:
-            scope = ('chat' if re.search(r'(?i)chat|本会话|这个会话|当前会话', text)
+            scope = ('chat' if re.search(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)', text)
                      else 'robot' if re.search(r'机器人|全局|所有会话', text) else None)
             if (not re.search(r'清除|清空|删除|取消|恢复默认', text)
                     or re.search(r'不要|别|不清|引用|翻译|[“”‘’\"\']', text) or scope != args['scope']):
@@ -2918,6 +2963,8 @@ class RealtimeRobot:
             self._prewarm_tts()
         self._create_turn(text, source=source)
         owned_turn = self.turn_id
+        if source == "user":
+            self._save_lasting_language(text, owned_turn)
         if listen_after and self.wake is not None and source == "external" and not text_only:
             # A greeting: whoever was greeted can answer without saying 小安妮.
             if self.wake.presence.robot_spoke_first():
@@ -3605,6 +3652,8 @@ class RealtimeRobot:
                     )
             if self.language.user_request(self.transcript):
                 self.visual_changed()
+            if target:
+                self._save_lasting_language(self.transcript, target)
             self.publish("transcript.done", text=self.transcript, turn_id=target)
             if target:
                 changed = self.dialogue.observe_user(target, self.transcript)

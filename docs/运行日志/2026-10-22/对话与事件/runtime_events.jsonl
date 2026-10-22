@@ -205,3 +205,12 @@
 {"id": 112701, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792652978047, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
 {"id": 112702, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_offline", "request_id": null, "ts_ms": 1792653326237, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
 {"id": 112703, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792653326242, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112704, "robot_id": "annie-a", "room_id": "roomv2", "kind": "started", "request_id": null, "ts_ms": 1792654453416, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112705, "robot_id": "annie-b", "room_id": "roomv3", "kind": "started", "request_id": null, "ts_ms": 1792654453420, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112706, "robot_id": "annie-a", "room_id": "roomv2", "kind": "pcm_stream_started", "request_id": null, "ts_ms": 1792654453472, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room:roomv2:reb_mic"}
+{"id": 112707, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1792654454424, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112708, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_offline", "request_id": null, "ts_ms": 1792655314846, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112709, "robot_id": "annie-a", "room_id": "roomv2", "kind": "started", "request_id": null, "ts_ms": 1792664655527, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112710, "robot_id": "annie-b", "room_id": "roomv3", "kind": "started", "request_id": null, "ts_ms": 1792664655529, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112711, "robot_id": "annie-a", "room_id": "roomv2", "kind": "started", "request_id": null, "ts_ms": 1792666250388, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}
+{"id": 112712, "robot_id": "annie-b", "room_id": "roomv3", "kind": "started", "request_id": null, "ts_ms": 1792666250390, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": null}

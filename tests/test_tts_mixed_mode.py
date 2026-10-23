@@ -79,7 +79,7 @@ def test_mixed_single_room_monotonic_samples_and_real_run_task_style(size):
                             for p in sock.sent if p['header']['action']=='continue-task']
             assert later_inputs == ['[mischievously]别小瞧我！', '[serious]不过安全第一。']
             audio = [m['data'] for m in publisher.messages if m['type']=='tts' and m['data']['audio']]
-            assert audio and len(audio) == 9
+            assert audio and len(audio) == 6  # queued frames go out as one packet per sentence
             assert audio[0]['start_sample'] == 0
             assert all(b['start_sample'] == a['end_sample'] for a, b in zip(audio, audio[1:]))
             assert audio[-1]['end_sample'] == 3000

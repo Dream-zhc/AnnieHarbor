@@ -30,14 +30,15 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
   const [bufferMs,setBufferMs]=useState(0);
   const [underruns,setUnderruns]=useState(0);
 
-  function report(s:Speaker,type:string,playedMs:number,commandSeq?:number|null){
+  function report(s:Speaker,type:string,playedMs:number,commandSeq?:number|null,playedSamples?:number){
     if(!s.voiceReady||s.voiceWs?.readyState!==WebSocket.OPEN||!s.stream)return;
     const [conversationId,epoch]=s.stream.split('\u0000');
+    const samples=playedSamples!=null?playedSamples:Math.round(playedMs*24);
     const data:Record<string,unknown>={
       protocol_version:1,conversation_id:conversationId,stream_epoch:Number(epoch),
       playback_id:s.playbackId,source:'browser_test',sender:'browser_test',
       sample_rate:24000,seq:++s.reportSeq,
-      played_sample_count:Math.min(s.endSample,Math.max(0,Math.round(playedMs*24))),
+      played_sample_count:Math.min(s.endSample,Math.max(0,samples)),
     };
     if(commandSeq!=null)data.command_seq=commandSeq;
     const descriptions:Record<string,string>={
@@ -107,7 +108,7 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
       return;
     }
     if(packet.kind==='end'){
-      if(s.stream===key){s.final=true;s.node?.port.postMessage({type:'end',stream:key});}
+      if(s.stream===key){s.final=true;setFrames(s.frames);s.node?.port.postMessage({type:'end',stream:key});}
       return;
     }
     if(s.stopped===key)return;
@@ -128,7 +129,7 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
     s.node?.port.postMessage({type:'push',stream:key,buffer:packet.samples.buffer},
       [packet.samples.buffer]);
     s.frames++;
-    if(s.frames===1||s.frames%25===0){
+    if(s.frames===1||s.frames%25===0||packet.samples.length>480){
       setFrames(s.frames);if(!s.held)setStatus('正在试听 '+roomId+' / reb_tts');
     }
   }
@@ -165,7 +166,7 @@ export function RoomDebugSpeaker({url,voiceUrl,roomId,available,command,onBuffer
           if(Number.isInteger(message.command_seq))
             report(current,message.type,message.playedMs,message.command_seq);
         }else if(message.type==='ended'){
-          if(current.final)report(current,'drained',message.playedMs);
+          if(current.final)report(current,'drained',message.playedMs,null,message.playedSamples);
           setBufferMs(0);onBuffer?.(0);setStatus('本轮网页试听结束（非真机播放回执）');
         }else if(message.type==='cleared'){
           report(current,'stopped',message.playedMs);

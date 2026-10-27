@@ -4,6 +4,10 @@ export type RoomTtsPacket={
   startSample:number;endSample:number;samples:Float32Array;
 };
 
+const SAMPLE_RATE=24000;
+const MAX_TTS_PCM_BYTES=SAMPLE_RATE*2; // 1s (48000B), matching room-speaker; Brain coalesces up to 800ms
+const MAX_TTS_AUDIO_BASE64=65536;
+
 export function decodeRoomTts(message:unknown):RoomTtsPacket|null{
   if(!message||typeof message!=='object'||(message as {type?:unknown}).type!=='tts')return null;
   const data=(message as {data?:unknown}).data;
@@ -22,13 +26,13 @@ export function decodeRoomTts(message:unknown):RoomTtsPacket|null{
   if(d.stop===true)return {...base,kind:'stop',samples:empty};
   if(d.stream_final===true)return {...base,kind:'end',samples:empty};
   if(typeof d.audio!=='string'||!d.audio)return null; // segment-final has no PCM
-  if(d.format!=='pcm_s16le'||d.sample_rate!==24000||d.channels!==1){
+  if(d.format!=='pcm_s16le'||d.sample_rate!==SAMPLE_RATE||d.channels!==1){
     throw Error('TTS PCM 格式不是 24kHz/mono/S16LE');
   }
-  if(d.audio.length>2048)throw Error('TTS 帧超出 20ms 上限');
+  if(d.audio.length>MAX_TTS_AUDIO_BASE64)throw Error('TTS 包超出 1s 上限');
   let bytes:string;
   try{bytes=atob(d.audio);}catch{throw Error('TTS PCM Base64 无效');}
-  if(!bytes.length||bytes.length%2||bytes.length>960||
+  if(!bytes.length||bytes.length%2||bytes.length>MAX_TTS_PCM_BYTES||
     bytes.length/2!==base.endSample-base.startSample){
     throw Error('TTS PCM 长度与 sample cursor 不符');
   }

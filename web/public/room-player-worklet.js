@@ -85,7 +85,7 @@ class RoomPlayerProcessor extends AudioWorkletProcessor {
     if(!this.held&&this.state==='playing'){
       for(let i=0;i<out.length;i++){
         if(!this.queue.length){
-          if(this.finished){this.state='ended';this.port.postMessage({type:'ended',stream:this.stream,playedMs:this.played/sampleRate*1000});}
+          if(this.finished){this.state='ended';this.port.postMessage({type:'ended',stream:this.stream,playedMs:this.played/sampleRate*1000,playedSamples:this.sourceCount});}
           else {this.state='rebuffering';this.underruns++;
             this.port.postMessage({type:'underflow',stream:this.stream,count:this.underruns});}
           break;
@@ -103,7 +103,7 @@ class RoomPlayerProcessor extends AudioWorkletProcessor {
       }
     }
     if(this.finished&&!this.held&&this.queued===0&&this.state!=='ended'){
-      this.state='ended';this.port.postMessage({type:'ended',stream:this.stream,playedMs:this.played/sampleRate*1000});
+      this.state='ended';this.port.postMessage({type:'ended',stream:this.stream,playedMs:this.played/sampleRate*1000,playedSamples:this.sourceCount});
     }
     if(++this.report%20===0)this.port.postMessage({type:'buffer',stream:this.stream,
       bufferMs:this.queued/sampleRate*1000,playedMs:this.played/sampleRate*1000,

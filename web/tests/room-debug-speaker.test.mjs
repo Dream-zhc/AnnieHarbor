@@ -25,6 +25,23 @@ test('Room stop and stream-final are distinct and never synthesize silence',()=>
   assert.equal(stop.samples.length,0);assert.equal(end.samples.length,0);
 });
 
+test('Room PCM decoder accepts coalesced 800ms and 1s packets matching Brain and speaker',()=>{
+  const pcm800=Buffer.alloc(38400);
+  pcm800.writeInt16LE(-16384,0);
+  pcm800.writeInt16LE(16384,38398);
+  const coalesced=decodeRoomTts({...base,data:{...base.data,
+    start_sample:480,end_sample:480+19200,audio:pcm800.toString('base64')}});
+  assert.equal(coalesced.kind,'audio');
+  assert.equal(coalesced.samples.length,19200);
+  assert.equal(coalesced.samples[0],-0.5);
+  assert.equal(coalesced.samples[19199],0.5);
+
+  const pcm1s=Buffer.alloc(48000);
+  const maxPacket=decodeRoomTts({...base,data:{...base.data,
+    start_sample:0,end_sample:24000,audio:pcm1s.toString('base64')}});
+  assert.equal(maxPacket.samples.length,24000);
+});
+
 test('reject invalid PCM without inserting an invented second playback track',()=>{
   for(const data of [
     {...base.data,sample_rate:16000},
@@ -33,5 +50,7 @@ test('reject invalid PCM without inserting an invented second playback track',()
     {...base.data,stream_epoch:0},
     {...base.data,audio:'!'},
     {...base.data,audio:Buffer.from([0]).toString('base64')},
+    {...base.data,start_sample:0,end_sample:24001,audio:Buffer.alloc(48002).toString('base64')},
+    {...base.data,start_sample:0,end_sample:25000,audio:'A'.repeat(65540)},
   ])assert.throws(()=>decodeRoomTts({...base,data}));
 });

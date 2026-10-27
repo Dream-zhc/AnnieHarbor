@@ -1,0 +1,367 @@
+2026-10-23 16:11:35,198 INFO langchain_openai.chat_models._client_utils langchain-openai detected system proxy configuration and no explicit `http_socket_options` / `http_client` / `http_async_client` / `openai_proxy`; skipping the custom `httpx` transport so httpx's env-proxy auto-detection applies. Pass `http_socket_options=[...]` to opt back into kernel-level TCP keepalive tuning on top of the env proxy.
+INFO:     Started server process [13705]
+INFO:     Waiting for application startup.
+2026-10-23 16:11:35,442 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-23 16:11:35,449 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8780 (Press CTRL+C to quit)
+2026-10-23 16:11:35,477 INFO annie_adapters room_pcm connected room=roomv2 url=ws://192.168.1.47:8090/robot/roomv2/reb_mic
+2026-10-23 16:11:35,494 INFO annie_adapters room_pcm connected room=roomv3 url=ws://192.168.1.47:8090/robot/roomv3/reb_mic
+2026-10-23 16:11:35,494 INFO annie_runtime.cloud_aec cloud_aec status=idle_no_tts processed=0 bypassed=1 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+2026-10-23 16:11:35,494 INFO annie_runtime runtime_event robot=annie-a kind=pcm_stream_started request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=None
+2026-10-23 16:11:35,618 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-23 16:11:35,710 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-23 16:11:35,710 INFO annie_runtime.decision_route d3_decision status=down model=d3-NVFP4 error=HTTP 404
+2026-10-23 16:11:35,764 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=299 history_turns=8 instructions_chars=3741 tools=17 tool_schema_chars=10488 restored_turns=8 memory_bootstrap_chars=214
+2026-10-23 16:11:35,843 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=378 history_turns=8 instructions_chars=3639 tools=15 tool_schema_chars=9279 restored_turns=3 memory_bootstrap_chars=0
+INFO:     192.168.1.47:63097 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-23 16:11:36,968 INFO annie_runtime decision_warm_failed error=ReadTimeout
+2026-10-23 16:11:37,053 INFO annie_runtime runtime_event robot=annie-a kind=robot_head_online request_id=None source=room_audio elapsed_ms=None queue_wait_ms=None error=None
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-10-23 16:11:37,468 INFO annie_runtime 嘴型服务在线 robot=annie-a room=roomv2 heartbeat_age_ms=909
+2026-10-23 16:11:37,468 INFO annie_runtime 嘴型服务在线 robot=annie-b room=roomv3 heartbeat_age_ms=131
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63097 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51775 - "GET /api/robots/annie-a/realtime/stream?after=1661 HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:65435 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63301 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /assets/index-_SG_WCDr.js HTTP/1.1" 200 OK
+INFO:     192.168.1.47:59481 - "GET /assets/index-DRpHMhwd.css HTTP/1.1" 304 Not Modified
+INFO:     192.168.1.47:59481 - "GET /assets/audio-devices-HIMM4KkR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /assets/workbench-BPA_i2JT.js HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60515 - "GET /assets/workbench-cLQipCby.css HTTP/1.1" 304 Not Modified
+INFO:     192.168.1.47:54960 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 304 Not Modified
+INFO:     192.168.1.47:56082 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54960 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54960 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60515 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:59481 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54960 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56288 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     192.168.1.47:59481 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60515 - "GET /api/robots/annie-a/conversations/%E6%B5%8B%E8%AF%95?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60515 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60515 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56082 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61884 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53892 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53597 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53580 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-10-23 16:12:05,803 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-23 16:12:05,898 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50936 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:64609 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:64590 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60759 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56977 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-10-23 16:12:22,608 INFO annie_runtime.realtime turn_started robot=annie-a turn=ded35901e2cb47cab996155db72c7df0 input=text source=user cause=submit item=None chars=3 input_lost_frames=None
+INFO:     192.168.1.47:50819 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-23 16:12:22,684 INFO annie_runtime.speech tts_prewarm robot=annie-a connect_ms=73.6
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-10-23 16:12:23,506 INFO annie_runtime.realtime turn_latency robot=annie-a model=qwen-audio-3.1-realtime-plus turn=ded35901e2cb47cab996155db72c7df0 input=text status=completed endpoint_to_asr_final_ms=None endpoint_to_first_text_ms=None asr_final_to_first_text_ms=None llm_request_to_first_text_ms=558.52 tool_calls=0 reply_chars=21
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/conversations/%E6%B5%8B%E8%AF%95?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+2026-10-23 16:12:23,542 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-10-23 16:12:23,543 INFO annie_runtime.realtime auto_expression robot=annie-a turn=ded35901e2cb47cab996155db72c7df0 choice=smirk confidence=0.64 accepted=True source=decision_model model=decision-model-preview latency_ms=202.3
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-23 16:12:23,971 INFO annie_runtime.realtime tts_latency robot=annie-a turn=ded35901e2cb47cab996155db72c7df0 connection=prewarmed connect_ms=0.0 tts_submit_to_pcm_ms=615.71 run_to_first_pcm_ms=786.4 first_text_to_room_ms=802.24 endpoint_to_room_ms=None
+2026-10-23 16:12:23,973 INFO annie_runtime.cloud_aec cloud_aec status=speaker_inactive processed=0 bypassed=2425 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-23 16:12:24,025 INFO annie_runtime.realtime speaker_latency robot=annie-a turn=ded35901e2cb47cab996155db72c7df0 endpoint_to_speaker_start_ms=None room_to_speaker_start_ms=54.22
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-10-23 16:12:25,493 INFO httpx2 HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-10-23 16:12:25,987 INFO annie_runtime.cloud_aec cloud_aec status=reference_aligned processed=97 bypassed=2429 missing_reference=2 receipts=20 drops=0 errors=0 receipt_age_ms=98
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60130 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-10-23 16:12:28,918 INFO annie_runtime.cloud_aec cloud_aec status=speaker_inactive processed=243 bypassed=2430 missing_reference=2 receipts=51 drops=0 errors=0 receipt_age_ms=None
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55664 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50819 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-23 16:12:35,977 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-23 16:12:36,073 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:52008 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53095 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61722 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:52586 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:56622 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:64935 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61906 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53619 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51380 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:60875 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:57140 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:64990 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-10-23 16:13:06,161 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-23 16:13:06,254 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50844 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK

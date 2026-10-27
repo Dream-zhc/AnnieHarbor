@@ -9,10 +9,10 @@ INFO:     Uvicorn running on http://0.0.0.0:8780 (Press CTRL+C to quit)
 2026-10-22 10:47:36,552 INFO annie_adapters room_pcm connected room=roomv2 url=ws://192.168.1.47:8090/robot/roomv2/reb_mic
 2026-10-22 10:47:36,552 INFO annie_runtime runtime_event robot=annie-a kind=pcm_stream_started request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=None
 2026-10-22 10:47:36,552 INFO annie_runtime.cloud_aec cloud_aec status=idle_no_tts processed=0 bypassed=1 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
-2026-10-22 10:47:36,649 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:47:36,649 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
 2026-10-22 10:47:36,680 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=152 history_turns=8 instructions_chars=3280 tools=15 tool_schema_chars=9144 restored_turns=3 memory_bootstrap_chars=0
 2026-10-22 10:47:36,720 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
-2026-10-22 10:47:36,738 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:47:36,738 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 2026-10-22 10:47:36,738 INFO annie_runtime.decision_route d3_decision status=down model=d3-NVFP4 error=HTTP 404
 INFO:     192.168.1.47:58659 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:58659 - "GET /health HTTP/1.1" 200 OK
@@ -120,11 +120,11 @@ INFO:     192.168.1.47:63004 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 INFO:     192.168.1.47:63004 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:63004 - "GET /health HTTP/1.1" 200 OK
 INFO:     192.168.1.47:63004 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
-2026-10-22 10:48:06,840 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:48:06,840 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:49927 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:49927 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
 INFO:     192.168.1.47:55313 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
-2026-10-22 10:48:06,930 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:48:06,930 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:49927 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
 INFO:     192.168.1.47:49927 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:49927 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
@@ -296,8 +296,8 @@ INFO:     192.168.1.47:61126 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 2026-10-22 10:48:36,572 INFO annie_runtime.cloud_aec cloud_aec status=unverified_or_stale_reference processed=121 bypassed=1791 missing_reference=1 receipts=26 drops=0 errors=0 receipt_age_ms=22
 INFO:     192.168.1.47:61126 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:61126 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-22 10:48:37,014 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
-2026-10-22 10:48:37,228 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:48:37,014 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:48:37,228 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:61126 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
 INFO:     192.168.1.47:61126 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 2026-10-22 10:48:37,551 INFO httpx2 HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
@@ -427,9 +427,9 @@ INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-22 10:49:07,320 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:49:07,320 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
-2026-10-22 10:49:07,415 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:49:07,415 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
@@ -567,8 +567,8 @@ INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 O
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
-2026-10-22 10:49:37,505 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
-2026-10-22 10:49:37,601 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:49:37,505 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:49:37,601 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50359 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
@@ -676,9 +676,9 @@ INFO:     192.168.1.47:53336 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 O
 INFO:     192.168.1.47:53336 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:53336 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
 INFO:     192.168.1.47:51378 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-22 10:50:07,686 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:50:07,686 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:51378 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
-2026-10-22 10:50:07,771 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:50:07,771 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:51378 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:51378 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:51378 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
@@ -790,10 +790,10 @@ INFO:     192.168.1.47:60776 - "GET /api/robots/annie-a/room-observations HTTP/1
 2026-10-22 10:50:37,663 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
 2026-10-22 10:50:37,717 INFO annie_runtime.realtime turn_invalid robot=annie-a wake_state=WAKE_WAIT draft_chars=9 named=True kws_call=True recover=True speech_ms=264 draft='小安妮介绍一下张海'
 INFO:     192.168.1.47:60776 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
-2026-10-22 10:50:37,863 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:50:37,863 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
 2026-10-22 10:50:37,893 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=217 history_turns=8 instructions_chars=3280 tools=15 tool_schema_chars=9144 restored_turns=3 memory_bootstrap_chars=0
 INFO:     192.168.1.47:60776 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-22 10:50:37,960 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:50:37,960 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:60776 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 2026-10-22 10:50:38,519 INFO annie_runtime.realtime turn_started robot=annie-a turn=f9f4a28d2b1d4bcb912861702f683a4c input=audio source=user cause=asr_final item=None chars=12
 2026-10-22 10:50:38,520 INFO annie_runtime.realtime turn_recovered robot=annie-a turn=f9f4a28d2b1d4bcb912861702f683a4c chars=12
@@ -951,8 +951,8 @@ INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 O
 INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
 INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-22 10:51:08,037 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
-2026-10-22 10:51:08,120 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:51:08,037 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:51:08,120 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:60512 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
@@ -1139,8 +1139,8 @@ INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/room-observations HTTP/1
 INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
 INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
-2026-10-22 10:51:38,210 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
-2026-10-22 10:51:38,307 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:51:38,210 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:51:38,307 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:52475 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
@@ -1302,8 +1302,8 @@ INFO:     192.168.1.47:50076 - "GET /api/robots/annie-a/room-observations HTTP/1
 INFO:     192.168.1.47:56311 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50076 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50076 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
-2026-10-22 10:52:08,388 INFO httpx HTTP Request: GET https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/health "HTTP/1.1 404 Not Found"
-2026-10-22 10:52:08,502 INFO httpx HTTP Request: POST https://8000-cpod-1wqk76npnche-s1.pod.compshare.cn/v1/systemone "HTTP/1.1 404 Not Found"
+2026-10-22 10:52:08,388 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-10-22 10:52:08,502 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
 INFO:     192.168.1.47:50076 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50076 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
 INFO:     192.168.1.47:50076 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK

@@ -1,0 +1,49 @@
+2026-10-26 14:52:15,023 WARNING annie.speakers 声纹模型未找到，注册与识别暂不可用: /Users/dream/Documents/zhc/python/brainv2/var/tmp/inner-life-20261026/root/var/models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+INFO:     Started server process [85059]
+INFO:     Waiting for application startup.
+2026-10-26 14:52:15,141 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-26 14:52:15,143 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+2026-10-26 14:52:15,146 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-10-26 14:52:15,146 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-10-26 14:52:15,146 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:15,147 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:15,147 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     Uvicorn running on http://127.0.0.1:18781 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58382 - "GET /api/robots HTTP/1.1" 200 OK
+2026-10-26 14:52:16,149 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-10-26 14:52:16,149 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-10-26 14:52:16,149 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:16,149 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:16,149 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:18,151 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-10-26 14:52:18,151 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-10-26 14:52:18,151 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:18,151 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:18,151 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     127.0.0.1:58395 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:58396 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:58397 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58398 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58399 - "GET /api/robots/nope/inner-life HTTP/1.1" 404 Not Found
+2026-10-26 14:52:22,153 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-10-26 14:52:22,153 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-10-26 14:52:22,153 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:22,153 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:22,153 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     127.0.0.1:58407 - "GET /health HTTP/1.1" 503 Service Unavailable
+2026-10-26 14:52:25,162 WARNING annie_runtime 嘴型服务未在线 robot=annie-a room=roomv2 state=disconnected reason=None：10 秒内未收到可用 viseme_health，请确认 Windows tts_viseme 已启动并监听该房间
+2026-10-26 14:52:25,162 WARNING annie_runtime 嘴型服务未在线 robot=annie-b room=roomv3 state=disconnected reason=None：10 秒内未收到可用 viseme_health，请确认 Windows tts_viseme 已启动并监听该房间
+2026-10-26 14:52:30,155 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-26 14:52:30,155 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-26 14:52:30,155 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:30,155 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:30,155 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     127.0.0.1:58424 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:58425 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-26 14:52:31,086 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-26 14:52:31,087 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [85059]

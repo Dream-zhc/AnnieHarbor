@@ -1,0 +1,21 @@
+2026-10-26 14:52:30,942 WARNING annie.speakers 声纹模型未找到，注册与识别暂不可用: /Users/dream/Documents/zhc/python/brainv2/var/tmp/inner-life-20261026/root/var/models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+[INFO] stopping existing Annie Harbor pid=85059 on 127.0.0.1:18781 ...
+[INFO] old Annie Harbor pid=85059 stopped; starting replacement.
+INFO:     Started server process [85187]
+INFO:     Waiting for application startup.
+2026-10-26 14:52:31,094 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-26 14:52:31,100 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+2026-10-26 14:52:31,104 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-10-26 14:52:31,104 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-10-26 14:52:31,104 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:31,104 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-26 14:52:31,104 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     Uvicorn running on http://127.0.0.1:18781 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58431 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-26 14:52:31,711 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-26 14:52:31,712 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [85187]

@@ -597,7 +597,8 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             if(item.kind==='transcript.ambient_delta')
               setAmbientPreview((item.text??'')+(item.stash??''));
             if(item.kind==='transcript.ambient'){
-              setAmbientPreview('');setPreviewTranscript('');setAsrStage('idle');
+              // A held final shown as pending may turn out to be side talk.
+              setAmbientPreview('');setPreviewTranscript('');setPendingAsr('');setAsrStage('idle');
               // Side talk the decision model declined is listed under decisions.
               if(isProviderAmbient(item)&&item.text?.trim())
                 setAmbient(previous=>[...previous,item.text!.trim()].slice(-5));

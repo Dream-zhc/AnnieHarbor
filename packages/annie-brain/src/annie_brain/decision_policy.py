@@ -176,14 +176,27 @@ _EXPRESSION_NAMES = (("surprise", r"惊讶|吃惊|震惊|惊(?=[。！？!?，,�
 _EXPRESSION_REQUEST = re.compile(r"表情|做个|做一个|来个|来一个|演一下|装一下|给我看")
 
 
+def _look(side, toward=None):
+    """Look that way: asked to (往左看, 看看你的左手边) or asked what is there
+    (左手边有啥, 上面有什么; 10-27 demo). A "what is there" question only
+    counts at the start, so 桌子上面有什么 does not tilt her head."""
+    pattern = (rf"看(?:看|一下|一眼)?(?:你的?|自己的?)*{side}"
+               rf"|(?:^|[，,。？?！!])\s*(?:小?安妮[，,]?\s*)?(?:那|那你|你)?的?{side}"
+               r"(?:(?:都|还|又)?(?:有+|是)(?:什么|啥|谁|哪些|没有)|看(?!起来|上去|着))")
+    return rf"(?:往|向|朝){toward}(?:边|手边|侧|面)?看|" + pattern if toward else pattern
+
+
 _MOTION_NAMES = (
     ("agree_micro_nod", r"点(?:个|一下|下)?头"),
     ("shake_head", r"摇(?:个|一下|下)?头"),
-    ("look_left", r"(?:往|向|朝)左(?:边)?看|看(?:看)?左边"),
-    ("look_right", r"(?:往|向|朝)右(?:边)?看|看(?:看)?右边"),
-    ("look_up", r"(?:往|向|朝)上看|抬头看|看(?:看)?上面"),
+    ("look_left", _look(r"左(?:边|手边|侧)", toward="左")),
+    ("look_right", _look(r"右(?:边|手边|侧)", toward="右")),
+    ("look_up", _look(r"(?:上面|上边|头顶|天花板)", toward="上") + r"|抬头看"),
     ("fast_double_blink", r"眨(?:眨|两下|一下|个)?双?眼|眨两下"),
 )
+_LOOK_SCRIPTS = ("look_left", "look_right", "look_up")
+# "转头看看" names no side; "旋转头了吗" is a question, not a request.
+_HEAD_TURN = re.compile(r"(?:转|扭|回|侧)(?:个|一下|下)?(?:头|身)(?:去|过去|过来)?看|[转扭]过去看")
 GENERIC_MOTION = re.compile(r"做个动作|做一个动作|来个动作|动一下|动一动|表演一下")
 _NEGATED = re.compile(r"别|不要|不用|不许|停")
 
@@ -198,6 +211,18 @@ def explicit_motion(user_text, allowed):
         return face
     return next((script for script, pattern in _MOTION_NAMES
                  if script in allowed and re.search(pattern, text)), None)
+
+
+def head_turn_motion(user_text, previous_texts, allowed):
+    """"转头看看" with no side looks where the user's last few turns pointed her."""
+    text = str(user_text or "")
+    if _NEGATED.search(text) or not _HEAD_TURN.search(text):
+        return None
+    for previous in reversed(list(previous_texts or ())):
+        script = explicit_motion(previous, allowed)
+        if script in _LOOK_SCRIPTS:
+            return script
+    return None
 
 
 def motion_question(descriptions):

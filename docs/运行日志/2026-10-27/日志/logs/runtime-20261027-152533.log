@@ -1,0 +1,188 @@
+2026-10-27 15:25:33,889 WARNING annie.speakers 声纹模型未找到，注册与识别暂不可用: /Users/dream/Documents/zhc/python/brainv2/var/tmp/inner-life-20261027/root/var/models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+INFO:     Started server process [46941]
+INFO:     Waiting for application startup.
+2026-10-27 15:25:33,961 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-27 15:25:33,963 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+2026-10-27 15:25:33,966 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-10-27 15:25:33,966 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-10-27 15:25:33,966 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:33,966 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:33,966 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     Uvicorn running on http://127.0.0.1:18781 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64233 - "GET /api/robots HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64234 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+2026-10-27 15:25:34,968 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-10-27 15:25:34,968 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-10-27 15:25:34,968 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:34,968 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:34,968 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:36,969 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-10-27 15:25:36,969 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-10-27 15:25:36,969 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:36,969 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:36,969 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:40,972 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-10-27 15:25:40,972 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-10-27 15:25:40,972 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:40,972 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:40,973 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:43,985 WARNING annie_runtime 嘴型服务未在线 robot=annie-a room=roomv2 state=disconnected reason=None：10 秒内未收到可用 viseme_health，请确认 Windows tts_viseme 已启动并监听该房间
+2026-10-27 15:25:43,985 WARNING annie_runtime 嘴型服务未在线 robot=annie-b room=roomv3 state=disconnected reason=None：10 秒内未收到可用 viseme_health，请确认 Windows tts_viseme 已启动并监听该房间
+2026-10-27 15:25:48,974 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-27 15:25:48,974 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-27 15:25:48,974 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:48,974 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:25:48,974 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     127.0.0.1:64264 - "GET /?view=workbench HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64265 - "GET /assets/index-DlOeo_NF.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /assets/index-D7ri3usn.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /assets/workbench-jzd5ssSi.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64267 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /assets/audio-devices-CVkbXVOe.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64265 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64267 - "GET /assets/workbench-cLQipCby.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64267 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64264 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64267 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64268 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64265 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64267 - "GET /api/robots/annie-a/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64269 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64269 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64267 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /?view=workbench HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64267 - "GET /assets/index-DlOeo_NF.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64266 - "GET /assets/index-D7ri3usn.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64265 - "GET /assets/three.module-l0Y0qDlF.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64269 - "GET /assets/audio-devices-CVkbXVOe.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64266 - "GET /assets/workbench-jzd5ssSi.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64268 - "GET /assets/workbench-cLQipCby.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64267 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:64267 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64268 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64268 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64268 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64267 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64268 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64267 - "GET /api/robots/annie-a/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64269 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64265 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64279 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64279 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:64265 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64265 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64265 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64266 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64265 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-27 15:26:03,976 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-27 15:26:03,976 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-27 15:26:03,976 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:26:03,976 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:26:03,976 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64283 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64282 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-10-27 15:26:18,978 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-27 15:26:18,978 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-10-27 15:26:18,978 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:26:18,978 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-10-27 15:26:18,978 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     127.0.0.1:64304 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64304 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /health HTTP/1.1" 503 Service Unavailable
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64314 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64332 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-27 15:26:30,772 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-10-27 15:26:30,772 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [46941]

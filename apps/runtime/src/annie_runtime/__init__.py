@@ -936,6 +936,11 @@ class HarborRuntime:
         auto_expression_enabled: bool = False,
         expression_threshold: float = 0.55,
         ambient_enabled: bool = False,
+        inner_life_enabled: bool = False,
+        inner_life_summarizer=None,
+        inner_life_close_seconds: float = 120,
+        inner_life_keep_days: int = 7,
+        motion_options: dict | None = None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
@@ -1286,6 +1291,24 @@ class HarborRuntime:
                                 second_seconds=idle_second_seconds,
                                 continuation_enabled=continuation_enabled,
                                 continuation_seconds=continuation_seconds)
+        # Her own mood and day: beside the reply path, read by the session prompt.
+        self.inner_life = None
+        if inner_life_enabled:
+            from annie_runtime.inner_life import InnerLifeService
+
+            self.inner_life = InnerLifeService(
+                self, summarizer=inner_life_summarizer,
+                close_seconds=inner_life_close_seconds, keep_days=inner_life_keep_days)
+            for client in self.realtime.values():
+                client.inner_life = self.inner_life
+        # Her body while awake and talking; idle motion stays with the embedded player.
+        self.motions = None
+        if motion_options is not None and self.actions is not None:
+            from annie_runtime.motions import InteractionMotions
+
+            self.motions = InteractionMotions(self, **motion_options)
+            for client in self.realtime.values():
+                client.motions = self.motions
         for robot_id, client in self.realtime.items():
             client.idle_observer = (
                 lambda event, robot_id=robot_id: self.idle.on_event(robot_id, event)
@@ -1924,6 +1947,8 @@ class HarborRuntime:
             await robot.start()
         await self.reminders.start()
         await self.idle.start()
+        if self.inner_life is not None:
+            await self.inner_life.start()
         for realtime in self.realtime.values():
             realtime.start()
         if self.decision is not None and self._owns_decision:
@@ -2001,6 +2026,10 @@ class HarborRuntime:
             await self.reminders.close()
             await self.idle.close()
             await self.events.close()
+            if self.inner_life is not None:
+                await self.inner_life.close()
+            if self.motions is not None:
+                await self.motions.close()
             for realtime in self.realtime.values():
                 await realtime.stop()
             if self.voices is not None:
@@ -2223,6 +2252,8 @@ class HarborRuntime:
                 for turn_id, turn in robot.turn_cache.items()
                 if not (turn["chat_id"] == chat_id and turn["persona_id"] == persona_id)
             }
+        if self.inner_life is not None:
+            self.inner_life.on_chat_deleted(robot_id, chat_id)
         return {
             "robot_id": robot_id,
             "chat_id": chat_id,

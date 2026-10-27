@@ -317,6 +317,9 @@ class RealtimeRobot:
         self._visual_last_send_at = 0.0
         self._memory_bootstrap = ""
         self._persona_offer = None  # styles the robot just asked the user to pick from
+        self.inner_life = None  # InnerLifeService: her mood and her own day (optional)
+        self._asked_quiet_at = None  # monotonic time of the last “退下/闭嘴”
+        self.motions = None  # InteractionMotions: listening / speaking / reaction motions
         # Decision model: addressee gate and automatic expressions (optional).
         self.decision = None  # DashScope decision model: the fallback when d3 is down
         self.d3 = None  # D3Route: self-hosted d3 answers first while it is up
@@ -1125,6 +1128,10 @@ class RealtimeRobot:
         # Reuse the visual session-instruction writer; do not block PCM or ASR.
         self.visual_changed()
 
+    def inner_changed(self):
+        """Her mood or day changed: the coalesced instruction writer picks it up."""
+        self.visual_changed()
+
     def _combined_instructions(self, description):
         now = time.time_ns() // 1_000_000
         if self._memory_expires_at_ms is not None and now >= self._memory_expires_at_ms:
@@ -1133,6 +1140,7 @@ class RealtimeRobot:
                   if value.get("generation", self.robot.generation) == self.robot.generation}
         return visual_instructions(
             self._visual_base_instructions + self._memory_bootstrap + self._clock_text
+            + (self.inner_life.hint(self.robot.config.robot_id) if self.inner_life else "")
             + (WAKE_ADDRESS_INSTRUCTIONS if self.wake else "")
             + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now)
             + self.language.instruction_hint()
@@ -1408,6 +1416,21 @@ class RealtimeRobot:
         if self.decision is None:
             return None, None, None
         return "decision", self.decision, getattr(self.decision, "model", "decision")
+
+    async def ask_decision(self, state, questions):
+        """(answers, model) from the decision model answering now; LookupError if none is up."""
+        kind, client, model = self._decision_model()
+        if client is None:
+            raise LookupError("no decision model is up")
+        try:
+            return await client.ask(state, questions), model
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.decision_stats["failures"] += 1
+            if kind == "d3":
+                self.d3.failed(error_kind(exc))  # the next question goes to DashScope
+            raise
 
     def _addressee_judge(self):
         """(judge, model name) for "is this for her?": d3, else qwen-flash, else DashScope."""
@@ -3014,6 +3037,11 @@ class RealtimeRobot:
                                        or self._external_text_only))
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
+            if self.inner_life is not None and turn.get("turn_source") == "user":
+                self.inner_life.on_turn(
+                    self.robot.config.robot_id, chat_id=self.turn_identity.get("chat_id"),
+                    user_text=turn.get("user_text") or "", reply_text=self.text,
+                    input_mode=turn.get("input_mode"), client=self)
             if self.speech is None or turn.get("input_mode") == "text" or self._external_text_only:
                 changed = self.dialogue.observe_delivered(self.turn_id, self.text)
                 if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
@@ -3304,6 +3332,8 @@ class RealtimeRobot:
 
     async def _enter_sleep(self, source, *, item_id=None, keep_playback=False):
         """Close the listen gate. An accepted goodbye keeps playing."""
+        # Someone told her to be quiet: her own wish to speak waits a while.
+        self._asked_quiet_at = time.monotonic()
         if not self.wake:
             self._sleep_closing = False
             return
@@ -3571,6 +3601,8 @@ class RealtimeRobot:
                 self._prewarm_decision()
             if self.wake:
                 self._wake_candidate_pending = self.wake.speech_started(new_item_id)
+            if self.motions is not None:
+                self.motions.on_speech_started(self.robot.config.robot_id, self)
             # A finished LLM turn may still be speaking. Freeze its local
             # playback without cancelling TTS until smart_turn accepts speech.
             if self.speech and self.speech.turn_id:
@@ -3870,9 +3902,13 @@ class RealtimeRobot:
                     self.actions.on_text_ready({"robot_id": self.robot.config.robot_id,
                                                 "turn_id": self.turn_id})
                 self._maybe_auto_expression()
+                if self.motions is not None:
+                    self.motions.on_reply_text(self.robot.config.robot_id, self)
         elif kind == "response.text.done":
             self.language.first_text(self.turn_id)
             self._maybe_auto_expression(final=True)
+            if self.motions is not None:
+                self.motions.on_reply_text(self.robot.config.robot_id, self)
             complete = event.get("text", self.text)
             if self.expression is not None:
                 # Some providers return only final text, others append a suffix

@@ -18,6 +18,8 @@ class IdleState(TypedDict, total=False):
     decision: str
     topic: str
     new_value: bool
+    mood: str  # her own mood right now (annie_brain.inner_life)
+    own_day: str  # her own bodily day, no names: for a stranger-facing remark
 
 
 def build_idle_graph(model):

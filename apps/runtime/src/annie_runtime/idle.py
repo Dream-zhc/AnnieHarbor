@@ -259,10 +259,12 @@ class ShortContinuation:
                          "进展尚未确认" in item["text"]]
                 if plans:
                     recent_plan = plans[0]["text"][:100]
+            inner = getattr(self.runtime, "inner_life", None)
             result = await asyncio.wait_for(self.graph.ainvoke({
                 "mode": "continuation", "user_text": row["user_text"],
                 "assistant_text": row["assistant_text"],
                 "recent_plan": recent_plan,
+                "mood": inner.idle_material(robot_id, public=False)["mood"] if inner else "",
             }), self.timeout)
             elapsed_ms = round((time.monotonic() - started) * 1000)
             if (row["turn_id"] != turn_id or row["identity"] != identity or
@@ -525,6 +527,10 @@ class IdleService:
                  row["scene_samples"] < 2 or row["scene_since"] is None or
                  row["presence_at"] - row["scene_since"] < self.presence_seconds)):
             return "second_no_new_evidence"
+        inner = getattr(self.runtime, "inner_life", None)
+        if inner is not None:
+            # One hourly budget for every unprompted remark (user decision 2026-10-26).
+            return inner.proactive_block(robot_id)
         return None
 
     async def tick(self):
@@ -559,8 +565,14 @@ class IdleService:
             model_started_at = time.monotonic()
             # The row is reset when the user talks; what was said before is not.
             previous_topic = row["previous"] or self.spoken.latest(robot_id)
+            # Her own mood and bodily day give her something of her own to say;
+            # the person in view is unidentified, so no names and no talk.
+            inner = getattr(self.runtime, "inner_life", None)
+            material = (inner.idle_material(robot_id, public=True) if inner
+                        else {"mood": "", "own_day": ""})
             result = await asyncio.wait_for(self.graph.ainvoke({
                 "attempt": attempt, "scene": row["scene"], "previous": previous_topic,
+                **material,
             }), self.timeout)
             elapsed_ms = round((time.monotonic() - model_started_at) * 1000)
             reason = self._eligible(robot_id, time.monotonic())
@@ -598,7 +610,9 @@ class IdleService:
             self.spoken.add(robot_id, topic)
             result = await client.submit_text(
                 "【内部主动交谈规划，非用户发言】现场有身份未知的人。"
-                "仅基于公共场景自然说一句，不透露任何聊天或私人记忆，"
+                + ("基于公共场景或你自己今天真实的经历、此刻的心情自然说一句，" if inner is not None
+                   else "仅基于公共场景自然说一句，")
+                + "不透露任何聊天或私人记忆，"
                 "不要求回答，不调用动作或工具。" + GROUNDED_ONLY + "话题：" + topic,
                 source="external", expected_identity=identity,
             )
@@ -613,6 +627,8 @@ class IdleService:
                 return
             row["attempts"] = attempt
             row["last_spoke"] = time.monotonic()
+            if inner is not None:
+                inner.note_proactive(robot_id)
             row["previous"] = topic
             row["first_scene"] = row["scene"] if attempt == 1 else row["first_scene"]
             row["turn_id"] = result["turn_id"]

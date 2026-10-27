@@ -468,6 +468,17 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
         require_robot(robot_id)
         return runtime.realtime_diagnostics(robot_id)
 
+    @app.get("/api/robots/{robot_id}/inner-life")
+    async def inner_life(robot_id: str):
+        """Her mood, energy and today's real experiences (read only)."""
+        require_robot(robot_id)
+        service = getattr(runtime, "inner_life", None)
+        motions = getattr(runtime, "motions", None)
+        data = (service.snapshot(robot_id) if service is not None
+                else {"robot_id": robot_id, "enabled": False})
+        data["motions"] = motions.snapshot(robot_id) if motions is not None else None
+        return data
+
     @app.get("/api/robots/{robot_id}/realtime/events")
     async def realtime_events(robot_id: str, after: int = 0):
         require_robot(robot_id)

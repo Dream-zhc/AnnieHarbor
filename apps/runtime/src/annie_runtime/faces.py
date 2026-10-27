@@ -190,6 +190,9 @@ class FaceService:
             return {"status": "unavailable", "reason": result["error"],
                     "instruction": "现在删不了，简短告诉对方稍后再试。"}
         self._publish(robot_id, "face.delete.requested", name=name)
+        inner = getattr(self.runtime, "inner_life", None)
+        if inner is not None:
+            inner.on_person_forgotten(robot_id, name)  # her diary lines about TA go too
         self._spawn(self._confirm_deleted(robot_id, name))
         return {"status": "requested", "name": name,
                 "instruction": f"用一句很短的话告诉TA，你会忘掉TA的脸，以后不会再叫{name}。"}

@@ -54,6 +54,13 @@ class EventService:
             identity=robot.session_state(), now_ms=time.time_ns() // 1_000_000,
         )
         if row["decision"] == "need_response":
+            inner = getattr(self.runtime, "inner_life", None)
+            if inner is not None:
+                inner.on_event(robot_id, event)  # her mood first, then the reply
+                if event.kind == "vision.known_arrival" and row.get("prompt"):
+                    # An open thread of TA's she may ask about while greeting.
+                    row["prompt"] += inner.greeting_extra(
+                        robot_id, str(event.payload.get("name") or "").strip())
             if not self.runtime.started or robot_id not in self.runtime.realtime:
                 row.update(status="dropped", reason="realtime_unavailable")
             elif len(self.pending[robot_id]) == self.pending[robot_id].maxlen:

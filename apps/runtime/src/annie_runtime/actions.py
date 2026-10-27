@@ -530,6 +530,52 @@ class ActionCoordinator:
         )
         self._event(row, status=after)
 
+    async def perform_now(self, robot_id, call_id, conversation_id, generation, script, *,
+                          user_text=None):
+        """A runtime-chosen motion that starts now: listening, a sentence's gesture or
+        her own reaction. The caller picks the moment; the same allowlist, veto,
+        durable reservation, physical cooldown and device receipts apply as for
+        every other action. ``conversation_id`` is the reply's turn when there is one."""
+        if not self.enabled or robot_id not in self.main_publishers:
+            return {"status": "not_configured", "real_device_executed": False}
+        if script not in self.allowlist:
+            raise ValueError("action is not enabled for physical execution")
+        if user_text is not None and not current_action_not_vetoed(user_text):
+            raise ValueError("physical action vetoed by current user")
+        if (not isinstance(call_id, str) or not 1 <= len(call_id) <= 128
+                or not isinstance(conversation_id, str) or not conversation_id
+                or type(generation) is not int):
+            raise ValueError("invalid action identity")
+        robot = self.robots[robot_id]
+        if generation != robot.generation:
+            raise ValueError("stale_generation")
+        action = resolve_action(self.catalog, script)
+        async with self.locks[robot_id]:
+            row, duplicate = await asyncio.to_thread(
+                self.store.reserve_action, robot_id, call_id, conversation_id, generation,
+                robot.config.room_id, "action", script, action["duration_ms"],
+            )
+            if row is None:
+                return {"status": "conflict_or_cooldown", "real_device_executed": False}
+            if duplicate:
+                return {"status": "duplicate_" + row["status"], "real_device_executed": False}
+            self._event(row)
+            changed = await asyncio.to_thread(
+                self.store.set_action_status, robot_id, call_id, "awaiting_audio_anchor",
+                "send_unknown",
+            )
+            row = await asyncio.to_thread(self.store.get_action, robot_id, call_id)
+            if not changed or row is None:
+                return {"status": "cancelled_before_send", "real_device_executed": False}
+            packet = {
+                "type": "action_trigger", "ts": time.time_ns() // 1_000_000,
+                "data": {"script_id": script, "offset_ms": 0,
+                         "conversation_id": conversation_id, "anchor_source": "robot_main_brain"},
+            }
+        await self._publish_action(row, packet)
+        row = await asyncio.to_thread(self.store.get_action, robot_id, call_id)
+        return {"status": row["status"] if row else "unknown", "real_device_executed": False}
+
     async def cancel_pending(self, robot_id, turn_id=None):
         if robot_id not in self.locks:
             return

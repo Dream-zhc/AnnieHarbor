@@ -65,6 +65,13 @@ max_concurrent = 1
 model = "qwen3.8-flash"
 timeout_sec = 4.0
 
+# 一段对话结束后，把它写成小安妮“今天的经历”里的一句摘要，同时记下/了结待续话题；每晚反思也用它。
+# 不在回复链路上。2026-10-26 实测：qwen-flash 常把“还在准备”误判为已了结（6 次错 5 次），
+# qwen3.8-flash 同样输入 4/4 全对。
+[llm.diary]
+model = "qwen3.8-flash"
+timeout_ms = 8000
+
 # 后台长期记忆：只在有效用户回合结束后抽取，不阻塞Realtime。
 [memory]
 extract_model = "qwen3.8-flash"

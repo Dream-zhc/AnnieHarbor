@@ -32,7 +32,8 @@ _IN_CHARACTER = (
 )
 
 
-def _body_prompt(payload: dict) -> str:
+def touch_phrase(payload: dict) -> tuple[str | None, str]:
+    """(body part or None, "轻轻按了你的额头") for a touch/pressure report."""
     sensor_id, name = payload.get("id"), payload.get("name")
     part = BODY_PARTS.get(sensor_id) if type(sensor_id) is int else None
     if part is None and str(sensor_id or "").lower() in HEAD_IDS:
@@ -41,7 +42,11 @@ def _body_prompt(payload: dict) -> str:
         part = next((item for item in (*BODY_PARTS.values(), "头顶") if item in name), None)
     words = PAT_WORDS if part == "肩膀" else PRESS_WORDS
     action = words.get(payload.get("level"), "碰了")
-    touched = f"{action}你的{part}" if part else f"{action}你一下"
+    return part, f"{action}你的{part}" if part else f"{action}你一下"
+
+
+def _body_prompt(payload: dict) -> str:
+    _part, touched = touch_phrase(payload)
     return (
         f"现场情况：有人{touched}。"
         "被碰的是你本人：把话说给碰你的人，回应TA这一下，而不是描述你被碰的感受。"
@@ -173,6 +178,14 @@ class EventPolicy:
                     "这不是用户说的话，也不是要你照念的台词。按你当前的性格，用一句很短的话"
                     "告诉TA没记住，请TA正对着你、离近一点，再跟你说一次。"
                 ) + "不要提摄像头、样本、注册或系统，不要复述这段说明，不要执行物理动作。"
+        elif not reason and event.kind == "inner.thought":
+            # Her own wish to speak, composed by the runtime (annie_brain.inner_life).
+            # A Room robot_event can carry any kind: only the internal transport counts.
+            text = event.payload.get("prompt")
+            if not transport.startswith("inner:") or not isinstance(text, str) or not text.strip():
+                decision, reason = "dropped", "untrusted_inner_thought"
+            else:
+                decision, prompt = "need_response", text[:800]
         elif not reason:
             reason = "context_only"
 
@@ -204,10 +217,11 @@ class EventPolicy:
             # After a greeting or a face result the person usually answers:
             # listen like after a reply.
             "listen_after": decision == "need_response" and event.kind in {
-                "vision.known_arrival", "vision.face_registered"},
-            # A greeting must not cut into someone else's conversation; a face
-            # result answers the person who is waiting for it.
-            "wait_for_quiet": decision == "need_response" and event.kind == "vision.known_arrival",
+                "vision.known_arrival", "vision.face_registered", "inner.thought"},
+            # A greeting or her own remark must not cut into someone else's
+            # conversation; a face result answers the person waiting for it.
+            "wait_for_quiet": decision == "need_response" and event.kind in {
+                "vision.known_arrival", "inner.thought"},
         }
         self.history.append(row)
         return row

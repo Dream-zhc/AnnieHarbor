@@ -234,3 +234,85 @@ def pick_anchor(text, start=0):
             if position == match.start():
                 return word, occurrence
     return None, None
+
+
+# ---- motions during live interaction (2026-10-26) -------------------------------------
+# Idle liveliness belongs to the embedded player; these only run while she is
+# awake and actually talking with someone.
+LISTEN_MOTIONS = ("listen_tilt", "agree_micro_nod", "listen_turn", "micro_tilt")
+# When each gesture fits a sentence. Sharper than the catalog's descriptions:
+# with “自然活人感时使用” in the criteria, the model picked micro_tilt for 19 of
+# 21 real sentences (2026-10-26 replay).
+SPEECH_MOTION_CRITERIA = {
+    "agree_micro_nod": "这句在肯定、答应、同意，说“对/好/没错/行”",
+    "shake_head": "这句在否定、拒绝或劝阻，说“不是/不行/别”",
+    "think_tilt": "这句在想办法、权衡利弊，或先说“我想想/嗯……”再给判断",
+    "confused_tilt": "这句表示没听懂、疑惑、觉得奇怪，要对方说清楚",
+    "micro_tilt": "这句是俏皮的反问或调侃对方",
+    "micro_pitch": "这句很有底气地强调自己的观点，或有点得意",
+    "eye_glance_up": "这句在回忆往事或想点子，比如“我记得……”",
+    "sigh_droop": "这句在无奈、吐槽、叹气或说自己累",
+    "shy_retract": "这句是被夸之后的不好意思",
+    "wink_left": "这句是心照不宣的玩笑或和对方的默契",
+}
+SPEECH_MOTIONS = tuple(SPEECH_MOTION_CRITERIA)
+INNER_MOTION_CRITERIA = {
+    "shy_retract": "被夸奖或被关心后有点不好意思",
+    "sigh_droop": "被说了重话、有点失落委屈，或觉得无聊",
+    "micro_tilt": "心情不错、有点小得意或好奇",
+    "think_tilt": "对方遇到难事，她在替对方想",
+    "eye_glance_down": "有点委屈或心虚，想躲开对方的目光",
+    "proud": "被夸得很开心，忍不住得意",
+    "smirk": "被逗乐了，带点调皮",
+    "shy": "被亲昵地夸奖或调侃，脸上害羞",
+}
+INNER_MOTIONS = tuple(INNER_MOTION_CRITERIA)
+_NO_MOTION = "平铺直叙地播报天气、数字、清单，或和其它选项都不沾边"
+
+
+def speech_motion_question(descriptions):
+    """Which gesture fits the sentence she is about to say (or none)."""
+    return {"type": "choice",
+            "instructions": ("机器人小安妮正要说出下面这句话。真人说话时大多会配合一点小动作，"
+                             "从选项里挑最贴合这句话语气的一个；只有平铺直叙地播报天气、数字、"
+                             "清单，或说的话和所有选项都不沾边时才选none。"),
+            "criteria": {"none": _NO_MOTION,
+                         **{script: text[:60] for script, text in descriptions.items()}}}
+
+
+def inner_motion_question(descriptions):
+    """Her own wordless reaction to how the last exchange made her feel (or none)."""
+    return {"type": "choice",
+            "instructions": ("机器人小安妮刚说完话，心里有了下面的感受。像真人一样，"
+                             "她此刻会不会不出声地做个小动作流露一下？哪个最贴合这份感受？"
+                             "感受不明显就选none。"),
+            "criteria": {"none": "感受不明显，或不适合用动作表达",
+                         **{script: text[:60] for script, text in descriptions.items()}}}
+
+
+def motion_pick(answer, allowed, *, threshold):
+    """A script from the decision model's answer; None for none or an unsure answer."""
+    if not isinstance(answer, dict):
+        return None
+    choice, confidence = answer.get("choice"), answer.get("confidence")
+    if choice not in allowed or choice == "none":
+        return None
+    if type(confidence) in (int, float) and confidence < threshold:
+        return None
+    return choice
+
+
+_SENTENCE_END = re.compile(r"[。！？!?；;…～~\n]+")
+
+
+def sentences(text):
+    """(start, end) of each complete sentence in a growing reply; the tail waits."""
+    spans, start = [], 0
+    for match in _SENTENCE_END.finditer(text):
+        if CJK_OR_WORD.search(text[start:match.start()]):
+            spans.append((start, match.end()))
+        start = match.end()
+    return spans
+
+
+CJK_OR_WORD = re.compile(r"[一-鿿A-Za-z0-9]")

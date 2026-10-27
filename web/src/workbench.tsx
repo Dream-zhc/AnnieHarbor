@@ -7,6 +7,7 @@ import {api,robotPath,eventBelongsToSession,type Health,type Session,type Realti
 import {MicrophoneControls,RoomSpeakerPanel} from './audio-panels';
 import {LatencyHud} from './latency-hud';
 import {RoleLanguagePreference,SpeechExpressionPanel} from './speech-expression';
+import {InnerLifePanel} from './inner-life';
 import {ActionPanel} from './action-panel';
 import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
@@ -1278,6 +1279,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
         <aside className="inspector cockpit-hud" aria-label="声学与延迟仪表盘">
           <LatencyHud realtime={realtime} speech={speech}/>
+          <InnerLifePanel key={'inner:'+robotId} robotId={robotId}/>
           <SpeechExpressionPanel key={JSON.stringify([robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation])} robotId={robotId} session={session}/>
           <MicrophoneControls key={robotId+'\u0000'+(route?.room_id??'')}
             route={realtime?.ready?route:undefined} onActive={setMicActive}/>

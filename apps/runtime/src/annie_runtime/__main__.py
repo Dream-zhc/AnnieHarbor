@@ -29,6 +29,33 @@ DEFAULT_ACTION_ALLOWLIST = (
     "agree_micro_nod", "shake_head", "look_left", "look_right", "look_up",
     "fast_double_blink", "surprise", "smirk", "proud", "skeptical", "shy",
 )
+# 2026-10-26: the listening, speaking and reaction groups the runtime picks while
+# she is awake (decision_policy.LISTEN_MOTIONS / SPEECH_MOTIONS / INNER_MOTIONS).
+# Added to the default allowlist only when [motions] is enabled.
+INTERACTION_MOTION_SCRIPTS = (
+    "listen_tilt", "listen_turn", "micro_tilt", "think_tilt", "confused_tilt",
+    "micro_pitch", "eye_glance_up", "eye_glance_down", "sigh_droop", "shy_retract",
+    "wink_left",
+)
+
+
+def motion_options(motions: dict, environ) -> dict | None:
+    """HarborRuntime motion_options from runtime_defaults [motions] and .env.
+
+    ANNIE_INTERACTION_MOTIONS_ENABLED=0/1 overrides the file; each part can be
+    turned off on its own in the file. Real motions still need ANNIE_ACTIONS_ENABLED=1.
+    """
+    enabled = environ.get("ANNIE_INTERACTION_MOTIONS_ENABLED",
+                          "1" if motions.get("enabled", False) else "0") == "1"
+    if not enabled:
+        return None
+    per_reply = int(motions.get("per_reply", 3))
+    if not 0 <= per_reply <= 6:
+        raise ValueError("[motions].per_reply must be between 0 and 6")
+    return {"listening": bool(motions.get("listening", True)),
+            "speaking": bool(motions.get("speaking", True)),
+            "reactions": bool(motions.get("reactions", True)),
+            "per_reply": per_reply}
 
 
 def load_local_env(path: Path) -> None:
@@ -173,6 +200,30 @@ def d3_options(decision: dict, environ) -> dict:
     }
 
 
+def inner_life_options(inner_life: dict, llm: dict, environ) -> dict:
+    """HarborRuntime kwargs for her mood and day: runtime_defaults [inner_life] and .env.
+
+    ANNIE_INNER_LIFE_ENABLED=0/1 overrides the file. Without an API key the day
+    still records events; finished conversations become “聊了N轮” lines only.
+    """
+    enabled = environ.get("ANNIE_INNER_LIFE_ENABLED",
+                          "1" if inner_life.get("enabled", False) else "0") == "1"
+    summarizer = None
+    if enabled and environ.get("DASHSCOPE_API_KEY"):
+        from annie_adapters.diary_summary import DiarySummarizer
+
+        diary = llm.get("diary", {})
+        summarizer = DiarySummarizer(
+            environ["DASHSCOPE_API_KEY"], model=diary.get("model", "qwen3.8-flash"),
+            base_url=llm["base_url"], timeout_ms=int(diary.get("timeout_ms", 8000)))
+    return {
+        "inner_life_enabled": enabled,
+        "inner_life_summarizer": summarizer,
+        "inner_life_close_seconds": float(inner_life.get("conversation_close_seconds", 120)),
+        "inner_life_keep_days": int(inner_life.get("keep_days", 7)),
+    }
+
+
 def main():
     root = Path(__file__).resolve().parents[4]
     parser = argparse.ArgumentParser(description="Annie Harbor — Phase 4 workbench and Runtime")
@@ -258,6 +309,7 @@ def main():
         root,
         args.database or os.environ.get("ANNIE_DATABASE") or config["storage"]["database"],
     )
+    motions = motion_options(runtime_defaults.get("motions", {}), os.environ)
     runtime = HarborRuntime(
         load_robots(root / "config/robots.toml"),
         database,
@@ -318,7 +370,8 @@ def main():
         actions_enabled=os.environ.get("ANNIE_ACTIONS_ENABLED") == "1",
         action_allowlist=tuple(
             item.strip() for item in os.environ.get(
-                "ANNIE_ACTION_ALLOWLIST", ",".join(DEFAULT_ACTION_ALLOWLIST),
+                "ANNIE_ACTION_ALLOWLIST", ",".join(
+                    DEFAULT_ACTION_ALLOWLIST + (INTERACTION_MOTION_SCRIPTS if motions else ())),
             ).split(",") if item.strip()
         ),
         weather_key=os.environ.get("AMAP_WEATHER_API_KEY") or None,
@@ -338,6 +391,9 @@ def main():
         auto_expression_enabled=os.environ.get("ANNIE_AUTO_EXPRESSION_ENABLED", "1") == "1",
         expression_threshold=float(provider_defaults.get("decision", {}).get("expression_threshold", .55)),
         ambient_enabled=os.environ.get("ANNIE_AMBIENT_LISTEN_ENABLED", "0") == "1",
+        motion_options=motions,
+        **inner_life_options(runtime_defaults.get("inner_life", {}),
+                             provider_defaults["llm"], os.environ),
     )
     try:
         runtime.preflight()

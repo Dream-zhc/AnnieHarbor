@@ -17,6 +17,7 @@ from uuid import uuid4
 from annie_core import AudioFormat, NormalizedEvent, RobotConfig
 from websockets.asyncio.client import connect
 
+from .inner_life_store import migrate_inner_life
 from .language_preferences import (
     clear_language_preference,
     delete_unowned_chat_language_preferences,
@@ -784,6 +785,7 @@ class RuntimeStore:
                 PRIMARY KEY(robot_id,chat_id,persona_id))""")
             migrate_language_preferences(db)
             migrate_speaker_profiles(db)
+            migrate_inner_life(db)
             db.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
 
     def recover_actions(self):

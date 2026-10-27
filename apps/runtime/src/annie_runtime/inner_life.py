@@ -33,7 +33,6 @@ from annie_brain.inner_life import (
     appraisal_feeling,
     beijing_day,
     day_start_ms,
-    diary_hint,
     energy_label,
     event_feeling,
     feel,
@@ -41,6 +40,7 @@ from annie_brain.inner_life import (
     mood_hint,
     mood_label,
     mood_text,
+    my_day,
     parse_reflection,
     parse_summary,
     public_day,
@@ -135,9 +135,19 @@ class InnerLifeService:
             return ""
         now = self.clock()
         who = self._partner(robot_id)
-        return (mood_hint(self.moods[robot_id], now) + diary_hint(self.day[robot_id], now, who)
+        # Her day is not always in view: an always-on diary made her treat the
+        # person she was talking to as someone new (replay 2026-10-27). She
+        # looks it up with recall_my_day when asked.
+        return (mood_hint(self.moods[robot_id], now)
                 + threads_hint(self._threads_for(robot_id, who, now), who)
                 + reflection_hint(self.reflection[robot_id], who))
+
+    def my_day(self, robot_id):
+        """The recall_my_day tool result."""
+        if not self.started or robot_id not in self.moods:
+            return {"status": "unavailable"}
+        return my_day(self.day[robot_id], self.clock(), self._partner(robot_id),
+                      self.reflection[robot_id])
 
     def idle_material(self, robot_id, *, public):
         """Mood for any planner; for a stranger-facing remark only her bodily day."""
@@ -214,6 +224,7 @@ class InnerLifeService:
             "summarizer": getattr(self.summarizer, "model", None),
             # What the live Realtime session was last sent, not what was queued.
             "hint_in_session": bool(hint) and hint in sent,
+            "has_hint": bool(hint),
             "stats": dict(self.stats[robot_id]),
         }
 

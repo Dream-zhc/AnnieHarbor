@@ -21,11 +21,14 @@ from uuid import uuid4
 
 from annie_adapters.decision import error_kind
 from annie_brain.decision_policy import (
+    GENERIC_MOTION,
     INNER_MOTION_CRITERIA,
     INNER_MOTIONS,
     LISTEN_MOTIONS,
     SPEECH_MOTION_CRITERIA,
     SPEECH_MOTIONS,
+    explicit_expression,
+    explicit_motion,
     inner_motion_question,
     motion_pick,
     sentences,
@@ -114,12 +117,15 @@ class InteractionMotions:
 
     def _record(self, robot_id, kind, script, **fields):
         rows = self.recent[robot_id]
-        rows.append({"kind": kind, "script": script, "ts_ms": time.time_ns() // 1_000_000,
-                     **fields})
+        actions = getattr(self.runtime, "actions", None)
+        name = (actions.catalog.get(script) or {}).get("name") if actions and script else None
+        rows.append({"kind": kind, "script": script, "name": name,
+                     "ts_ms": time.time_ns() // 1_000_000, **fields})
         del rows[:-12]
 
     def snapshot(self, robot_id):
-        return {"listening": self.listening, "speaking": self.speaking,
+        return {"actions_enabled": self._actions() is not None,
+                "listening": self.listening, "speaking": self.speaking,
                 "reactions": self.reactions, "per_reply": self.per_reply,
                 "groups": {"listen": self._allowed(LISTEN_MOTIONS),
                            "speech": self._allowed(SPEECH_MOTIONS),
@@ -173,6 +179,13 @@ class InteractionMotions:
         spans = sentences(text)
         cached = client.robot.turn_cache.get(turn_id) or {}
         user_text = str(cached.get("user_text") or client.transcript or "")
+        if not reply["seen"] and (
+                explicit_motion(user_text, self.runtime.actions.allowlist)
+                or explicit_expression(user_text) or GENERIC_MOTION.search(user_text)):
+            # The user named the motion: that one runs (auto-expression path);
+            # a gesture of her own on “行，我摇头了” would contradict it (d3 replay 10-27).
+            reply["seen"] = reply["planned"] = 1 << 30
+            return
         for start, end in spans[reply["seen"]:]:
             reply["seen"] += 1
             if reply["planned"] >= self.per_reply:

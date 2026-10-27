@@ -51,6 +51,7 @@ def session_update(instructions: str, history_turns: int = 20, *,
                    faces: bool = False,
                    speaker_volume: bool = False,
                    look: bool = False,
+                   my_day: bool = False,
                    persona_labels: tuple[str, ...] = (),
                    action_descriptions: dict[str, str] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
@@ -120,6 +121,18 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "style_name": {"type": "string",
                                    "description": "Exact style label, or empty when the user did not name one"},
                 }, "required": ["style_name"]},
+            },
+        })
+    if my_day:
+        session["tools"].append({
+            "type": "function",
+            "function": {
+                "name": "recall_my_day",
+                "description": "Your own real day so far (who came, what you were told or did, being "
+                               "touched). Call it when someone asks how YOUR day went, what YOU did "
+                               "today or who came, or before telling about your own day. Tell only "
+                               "what it returns; if it is empty, nothing special happened.",
+                "parameters": {"type": "object", "properties": {}},
             },
         })
     if memory:

@@ -57,7 +57,13 @@ def test_a_gentle_touch_lifts_her_mood_with_the_real_reason_and_then_it_fades():
     moved = feel(Mood(updated_ms=MORNING), MORNING, valence=.5, tone="moved", reason="对方关心了你")
     assert mood_text(moved, MORNING).startswith("心里暖暖的（原因：对方关心了你")
     assert mood_text(Mood(updated_ms=MORNING), MORNING) == "心情平静；精神很好"
-    assert "不要编" in hint and "眼前人的需要优先" in hint
+    assert "别编" in hint and "开心可以带进语气里" in hint
+    hurt = feel(Mood(updated_ms=MORNING), MORNING, valence=-0.5, tone="hurt", reason="对方说了几句重话")
+    assert "先带点小委屈说出来，再大方原谅" in mood_hint(hurt, MORNING)
+    # Nothing going on: no state block at all (replay 2026-10-27).
+    assert mood_hint(Mood(updated_ms=MORNING), MORNING) == ""
+    tired = feel(Mood(updated_ms=MORNING), MORNING, energy=-0.5)
+    assert "有点累就答得简短些" in mood_hint(tired, MORNING)
     later = settle(mood, MORNING + 40 * MINUTE)  # two half-lives, before loneliness
     assert abs(later.valence - BASE_VALENCE) < 0.05
     assert mood_label(later, MORNING + 40 * MINUTE) == "平静"
@@ -78,7 +84,8 @@ def test_hours_without_anyone_make_her_bored_until_someone_comes():
     mood = feel(Mood(updated_ms=MORNING), MORNING, interaction=True)
     lonely = settle(mood, MORNING + LONELY_AFTER_MS + 30 * MINUTE)
     assert lonely.tone == "bored" and lonely.valence < BASE_VALENCE
-    assert "好久没人跟你说话了" in mood_hint(lonely, lonely.updated_ms)
+    assert "好久没人跟你说话了" in mood_text(lonely, lonely.updated_ms)  # the card shows it
+    assert mood_hint(lonely, lonely.updated_ms) == ""  # but the prompt stays quiet about it
     back = feel(lonely, lonely.updated_ms, interaction=True)
     assert back.reason == "" and back.tone == "neutral"
 
@@ -303,7 +310,8 @@ def test_a_finished_conversation_becomes_one_named_diary_line(tmp_path):
             assert (line["kind"], line["text"], line["person"], line["chat_id"]) == (
                 "chat", "和张三聊了下周的面试", "张三", "c1")
             assert line["created_ms"] == MORNING  # when they talked, not when it was written
-            assert "10:00 和张三聊了下周的面试" in service.hint("a")
+            assert "10:00 和张三聊了下周的面试" in service.my_day("a")["today"]
+            assert "和张三聊了" not in service.hint("a")  # her day is looked up, not always shown
             # Deleting the Chat takes the line, also from SQLite.
             service.on_chat_deleted("a", "c1")
             await settled(service)
@@ -342,10 +350,10 @@ def test_forget_me_removes_her_lines_about_that_person(tmp_path):
                 ts_ms=time.time_ns() // 1_000_000, ttl_ms=10_000))
             service.on_event("a", touch())
             await settled(service)
-            assert "张三来了" in service.hint("a")
+            assert "10:00 张三来了" in service.my_day("a")["today"]
             service.on_person_forgotten("a", "张三")
             await settled(service)
-            assert "张三来了" not in service.hint("a")  # her voice may still be matched
+            assert not any("张三" in line for line in service.my_day("a")["today"])
             assert [row["text"] for row in rows.recent_experiences(
                 service.store, "a", since_ms=0)] == ["有人轻轻按了你的额头"]
         finally:
@@ -420,7 +428,10 @@ def test_touch_and_conversation_reach_the_session_instructions(tmp_path):
         try:
             sent = [p["session"]["instructions"] for p in client.socket.outbound
                     if p["type"] == "session.update"]
-            assert "【你此刻的状态】心情平静" in sent[0]
+            assert "【你此刻的状态】" not in sent[0]  # calm: nothing to say about it
+            tools = next(p for p in client.socket.outbound if p["type"] == "session.update"
+                         and "tools" in p["session"])["session"]["tools"]
+            assert any(tool["function"]["name"] == "recall_my_day" for tool in tools)
             await utter(client, "u1", "你真厉害")
             for _ in range(100):
                 if rt.inner_life.moods["a"].reason == "和对方聊得挺开心":
@@ -436,7 +447,11 @@ def test_touch_and_conversation_reach_the_session_instructions(tmp_path):
                 if "有人轻轻按了你的额头" in sent[-1]:
                     break
                 await asyncio.sleep(.02)
-            assert "【你今天的真实经历" in sent[-1] and "有人轻轻按了你的额头" in sent[-1]
+            assert "【你今天的真实经历" not in sent[-1]
+            await client._tool_call({"call_id": "d1", "name": "recall_my_day", "arguments": "{}"})
+            result = next(e for e in client.events if e["kind"] == "tool.result"
+                          and e.get("call_id") == "d1")["result"]
+            assert result["status"] == "ok" and result["today"][-1].endswith("有人轻轻按了你的额头")
             assert "心情" in sent[-1] and "原因：有人轻轻按了你的额头" in sent[-1]
             for _ in range(100):
                 if rt.inner_life.snapshot("a")["hint_in_session"]:

@@ -62,8 +62,8 @@ def test_an_open_thread_is_raised_rarely_and_then_dropped():
     assert not thread_visible(thread(asks=THREAD_MAX_ASKS, asked_ms=MORNING),
                               MORNING + THREAD_TTL_MS - 1)
     hint = threads_hint([thread()], "张三")
-    assert "张三之前说过" in hint and "10-26 下周去面试（可以问问面试结果）" in hint
-    assert "问过就别追问" in hint and threads_hint([], "张三") == ""
+    assert hint.startswith("\n【你记得张三的事】10-26说的下周去面试（可以问问面试结果），还不知道后来怎样。")
+    assert "只问一次" in hint and threads_hint([], "张三") == ""
 
 
 def test_reflection_keeps_only_people_of_her_day_and_no_names_in_her_own_line():
@@ -76,8 +76,8 @@ def test_reflection_keeps_only_people_of_her_day_and_no_names_in_her_own_line():
         "self": "你最近总惦记着张三的面试"}), {"张三"})
     assert parsed == {"people": {"张三": "最近在准备面试，有点紧张"}, "self": ""}
     hint = reflection_hint({"people": parsed["people"], "self": "你最近挺爱聊吃的"}, "张三")
-    assert "【你对张三的印象】最近在准备面试" in hint and "【你最近的状态】你最近挺爱聊吃的" in hint
-    assert "张三" not in reflection_hint({"people": parsed["people"], "self": "x"}, None)
+    assert "【你对张三的印象】最近在准备面试" in hint and "爱聊吃的" not in hint
+    assert reflection_hint({"people": parsed["people"], "self": "x"}, None) == ""
 
 
 def test_moments_and_her_wish_to_speak_never_name_a_stranger():
@@ -241,7 +241,7 @@ def test_a_conversation_leaves_an_open_thread_that_only_its_person_hears_about(t
             await settled(service)
             stored = rows.open_threads(service.store, "a", since_ms=0)
             assert [(row["person"], row["text"]) for row in stored] == [("张三", "下周去面试")]
-            assert "【你记得的待续话题（张三之前说过" in service.hint("a")
+            assert "【你记得张三的事】" in service.hint("a")
             client.speakers.name = "李四"  # someone else in front of her
             assert "下周去面试" not in service.hint("a")
             client.speakers.name = None  # unknown voice: only this Chat's anonymous threads
@@ -335,7 +335,8 @@ def test_each_night_she_looks_back_and_forgets_on_request(tmp_path):
             assert len(summarizer.calls) == 1
             assert summarizer.calls[0][1]["昨天的经历"][0]["事"] == "张三来了"
             hint = service.hint("a")
-            assert "【你对张三的印象】最近在准备面试" in hint and "你最近总被摸头" in hint
+            assert "【你对张三的印象】最近在准备面试" in hint
+            assert service.my_day("a")["lately"] == "你最近总被摸头，挺开心"
             assert rows.latest_reflection(service.store, "a")["day"] == "2026-10-26"
             service.on_person_forgotten("a", "张三")
             await settled(service)
@@ -661,3 +662,20 @@ def test_diary_names_only_who_she_recognised_and_threads_are_not_repeated():
     assert summary_line("聊了天气。", None) == "聊了天气"
     assert same_thread("下周三去面试", "下周三去面试！") and same_thread("面试", "下周三去面试")
     assert not same_thread("明天考科目二", "妈妈下周做手术")
+
+
+def test_a_motion_the_user_named_is_not_contradicted_by_her_own_gestures(tmp_path, monkeypatch):
+    async def run():
+        decision = {"行，我摇头了。": {"choice": "agree_micro_nod", "confidence": .9}}
+        motions, client, publisher = motions_with(tmp_path, monkeypatch, decision=decision)
+        client.turn_id = "t1"
+        client.robot.turn_cache = {"t1": {"user_text": "摇摇头"}}
+        client.speech.generated_text = "行，我摇头了。"
+        client.speech.receipt_tracks = {"speaker": {"state": "progress"}}
+        client.speech.played_samples = 10 ** 6
+        motions.on_reply_text("a", client)
+        client.speech.generated_text += "还要别的吗？"
+        motions.on_reply_text("a", client)
+        await drain(motions)
+        assert client.asked == [] and publisher.sent == []
+    asyncio.run(run())

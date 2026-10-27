@@ -177,22 +177,41 @@ def mood_text(mood, now_ms, *, with_reason=True):
     return f"{prefix}{label}{cause}；{energy_label(mood.energy)}"
 
 
+# One line per feeling, only while she has it: a generic rule in every prompt
+# cost reply quality (replay 2026-10-27), a specific one only when it applies.
+TONE_HINTS = {
+    "hurt": "对方道歉或再提这事时，先带点小委屈说出来，再大方原谅，不记仇。",
+    "moved": "心里暖，可以带出来，回应对方的好意。",
+    "happy": "开心可以带进语气里。",
+    "worried": "你惦记着对方的事，话题合适时关心一句。",
+    "startled": "刚才吓了一跳，可以带点小惊讶，很快恢复。",
+}
+
+
 def mood_hint(mood, now_ms):
+    """Only when something is going on, and short.
+
+    Replays (2026-10-27): a long always-on state block made replies drift to a
+    service tone even when she felt nothing in particular (4.13 -> 3.95).
+    """
     mood = settle(mood, now_ms)
     label = mood_label(mood, now_ms)
-    text = (
-        "\n【你此刻的状态】" + mood_text(mood, now_ms) + "。"
-        "这是你自己真实的状态：像真人一样让它自然影响语气、话量和玩笑多少，不必每句都提；"
-        "被问到心情或原因时如实说，原因只用这里写的，不要编；说起自己的感受像真人一样带点情绪和细节，别像报告。"
-    )
-    if label != "平静":
-        # Replays (2026-10-26): told “别往心里去” after harsh words, she answered
-        # as if nothing had happened; a person lets a little of it show first.
-        text += ("对方说到和这份心情有关的事时，先真实地流露一点（有点委屈就带点小情绪，开心就开心），"
-                 "再自然接话，不要装作什么都没发生；")
-    text += "眼前人的需要优先：对方难过或求助时先照顾对方，不记仇、不冷淡对人。"
-    if mood.energy < 0.45:
-        text += "你现在有点累：回答比平时简短，可以顺口说一句有点累，但该帮的忙照样帮。"
+    tired = mood.energy < 0.45
+    tone = mood.tone if _fresh(mood, now_ms) and label != "平静" else None
+    if tone == "bored" or mood.reason == LONELY_REASON:
+        # Boredom stays inside (the card, her wish to greet someone after a long
+        # wait): in the prompt it made replies flat or a stock “今天过得怎么样”
+        # (replay 2026-10-27, 8 turns, -0.38).
+        label, tone = "平静", None
+    if label == "平静" and not tired:
+        return ""
+    state = mood_text(mood, now_ms) if label != "平静" else "心情平静；" + energy_label(mood.energy)
+    text = ("\n【你此刻的状态】" + state + "。自然带进语气就好，别刻意提；被问起就照实说原因，别编。")
+    if tone in TONE_HINTS:
+        # Told “别往心里去” after harsh words, she answered as if nothing had happened.
+        text += TONE_HINTS[tone]
+    if tired:
+        text += "有点累就答得简短些，该帮的忙照样帮。"
     return text
 
 
@@ -437,13 +456,12 @@ def thread_visible(row, now_ms):
 def threads_hint(rows, who):
     if not rows:
         return ""
-    lines = [datetime.fromtimestamp(row["created_ms"] / 1000, BEIJING).strftime("%m-%d")
-             + " " + row["text"] + (f"（可以{row['follow_up']}）" if row["follow_up"] else "")
-             for row in rows[:3]]
-    return (f"\n【你记得的待续话题（{who or '眼前这位'}之前说过、你还不知道后来怎样）】\n"
-            + "\n".join(lines)
-            + "\n像朋友惦记着：对方刚来、跟你打招呼或聊到相关的事时，顺口问一句后来怎样；"
-            "只问一句，问过就别追问，对方不想说就放下。")
+    things = "；".join(
+        datetime.fromtimestamp(row["created_ms"] / 1000, BEIJING).strftime("%m-%d说的")
+        + row["text"] + (f"（可以{row['follow_up']}）" if row.get("follow_up") else "")
+        for row in rows[:2])
+    return (f"\n【你记得{who or '这位'}的事】{things}，还不知道后来怎样。"
+            "这次打招呼或聊到相关时就顺口问一句，只问一次，对方不想说就放下。")
 
 
 # ---- each night: impressions of people and of herself --------------------------------
@@ -496,16 +514,23 @@ def parse_reflection(content, names):
 
 
 def reflection_hint(reflection, who):
-    if not reflection:
+    """Only her impression of the person in front of her; her own line is for her day."""
+    impression = ((reflection or {}).get("people") or {}).get(who) if who else None
+    if not impression:
         return ""
-    text = ""
-    impression = (reflection.get("people") or {}).get(who) if who else None
-    if impression:
-        text += (f"\n【你对{who}的印象】{impression}（来自你之前的回顾，可能已过时，以对方现在说的为准）"
-                 "对方说起近况、心情或烦心事时，结合这个印象关心一句，让TA觉得你记得。")
-    if reflection.get("self"):
-        text += f"\n【你最近的状态】{reflection['self']}"
-    return text
+    return (f"\n【你对{who}的印象】{impression}（可能已过时，以对方现在说的为准）。"
+            "TA说起心情或烦心事时，可以问问是不是和这有关。")
+
+
+def my_day(rows, now_ms, who=None, reflection=None):
+    """What recall_my_day returns: her real day, private talk shown only to its person."""
+    lines = diary_lines([_private_to(row, who) for row in rows], now_ms)
+    result = {"status": "ok" if lines else "empty", "today": lines,
+              "instruction": ("只讲today里真实发生过的事，不要编别的经历；没有就说今天没什么特别的。"
+                              + (f"眼前跟你说话的就是{who}，说到TA时用“你”。" if who else ""))}
+    if reflection and reflection.get("self"):
+        result["lately"] = reflection["self"]
+    return result
 
 
 # ---- something on her mind: a motivated, bounded wish to speak --------------------------

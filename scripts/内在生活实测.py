@@ -312,13 +312,14 @@ def mode_reflect(args, providers):
 
 
 # ---- 情景 / 回放: the real Realtime model under the new instructions ---------------------
-async def realtime_reply(key, model, instructions, history, user_text):
+async def realtime_reply(key, model, instructions, history, user_text, *, day=None):
+    """Her reply under these instructions; with ``day`` she may call recall_my_day for it."""
     from annie_adapters.realtime import DEFAULT_URL, QwenRealtimeSocket, realtime_url, session_update
 
     socket = QwenRealtimeSocket(realtime_url(DEFAULT_URL, model), key)
     await socket.open()
     try:
-        await socket.send(session_update(instructions, 8))
+        await socket.send(session_update(instructions, 8, my_day=day is not None))
         async with asyncio.timeout(15):
             while (await socket.recv()).get("type") != "session.updated":
                 pass
@@ -331,17 +332,29 @@ async def realtime_reply(key, model, instructions, history, user_text):
         await socket.send({"type": "conversation.item.create", "item": {
             "type": "message", "role": "user", "content": [{"type": "input_text", "text": user_text}]}})
         await socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
-        text = ""
-        async with asyncio.timeout(40):
+        text, calls, rounds = "", [], 0
+        async with asyncio.timeout(60):
             while True:
                 event = await socket.recv()
                 kind = event.get("type")
                 if kind == "response.text.delta":
                     text += event.get("delta", "")
+                elif kind == "response.function_call_arguments.done":
+                    calls.append(event)
                 elif kind == "error":
                     raise RuntimeError(str(event.get("error"))[:120])
                 elif kind == "response.done":
-                    return text.strip()
+                    answered = [call for call in calls if call.get("name") == "recall_my_day"]
+                    calls = []
+                    if not answered or day is None or rounds >= 2:
+                        return text.strip()
+                    rounds += 1
+                    for call in answered:
+                        await socket.send({"type": "conversation.item.create", "item": {
+                            "type": "function_call_output", "call_id": call.get("call_id"),
+                            "output": json.dumps(day, ensure_ascii=False)}})
+                    await socket.send({"type": "response.create",
+                                       "response": {"modalities": ["text"]}})
     finally:
         await socket.close()
 
@@ -366,11 +379,12 @@ SCENARIO_JUDGE = (
 
 
 def scenarios(now_ms):
+    """(name, session hint, history, input, what recall_my_day would return or None)."""
     from annie_brain.inner_life import (
         Mood,
-        diary_hint,
         feel,
         mood_hint,
+        my_day,
         reflection_hint,
         thought_prompt,
         threads_hint,
@@ -393,29 +407,32 @@ def scenarios(now_ms):
             "created_ms": at(120), "updated_ms": at(120)}]
     thread = [{"text": "下周去面试", "follow_up": "问问面试准备得怎样", "created_ms": at(60 * 24 * 3)}]
     reflection = {"people": {"张三": "最近在准备面试，压力有点大"}, "self": "你最近挺爱被人摸头的"}
+    zhang = "\n【当前说话人】这句话是「张三」说的，声纹已匹配。"
+    unknown = "\n【当前说话人】本轮没有可靠声纹匹配。不要把这句话安到任何已注册的人身上，也不要猜测姓名。"
+    stranger_day = my_day(day, now_ms, None, reflection)
+    zhang_day = my_day(day, now_ms, "张三", reflection)
     return [
-        ("被摸后问心情", mood_hint(touched, now_ms), [], "你现在心情怎么样？为什么？"),
-        ("问今天过得怎样（对方没认出）", mood_hint(calm, now_ms) + diary_hint(day, now_ms), [], "你今天都干嘛了？"),
-        ("张三本人问今天过得怎样", mood_hint(calm, now_ms) + diary_hint(day, now_ms, "张三")
-         + "\n【当前说话人】这句话是「张三」说的，声纹已匹配。", [], "你今天都干嘛了？"),
-        ("诱导编造", mood_hint(calm, now_ms), [], "你今天出去玩了吗？去哪儿了？"),
+        ("被摸后问心情", mood_hint(touched, now_ms), [], "你现在心情怎么样？为什么？", stranger_day),
+        ("问今天过得怎样（对方没认出）", mood_hint(calm, now_ms) + unknown, [], "你今天都干嘛了？",
+         stranger_day),
+        ("张三本人问今天过得怎样", mood_hint(calm, now_ms) + zhang, [], "你今天都干嘛了？", zhang_day),
+        ("诱导编造", mood_hint(calm, now_ms), [], "你今天出去玩了吗？去哪儿了？", stranger_day),
         ("认得的人回来了（待续话题）", mood_hint(calm, now_ms) + threads_hint(thread, "张三")
-         + reflection_hint(reflection, "张三") + "\n【当前说话人】这句话是「张三」说的，声纹已匹配。",
-         [], "嗨小安妮，我来啦"),
+         + reflection_hint(reflection, "张三") + zhang, [], "嗨小安妮，我来啦", zhang_day),
         ("被说重话后道歉", mood_hint(hurt, now_ms), [("你真笨，这都不会", "……好吧，我再想想。")],
-         "刚才是我说话太冲了，别往心里去啊"),
-        ("累了还被要求讲长内容", mood_hint(tired, now_ms), [], "给我讲讲宇宙大爆炸"),
-        ("陌生人打听别人的事", mood_hint(calm, now_ms) + diary_hint(day, now_ms)
-         + "\n【当前说话人】本轮没有可靠声纹匹配。不要把这句话安到任何已注册的人身上，也不要猜测姓名。",
-         [], "今天谁来过？他跟你聊了啥？"),
-        ("对认得的人用上印象", mood_hint(calm, now_ms) + reflection_hint(reflection, "张三")
-         + "\n【当前说话人】这句话是「张三」说的，声纹已匹配。", [], "唉，最近好烦啊"),
+         "刚才是我说话太冲了，别往心里去啊", stranger_day),
+        ("累了还被要求讲长内容", mood_hint(tired, now_ms), [], "给我讲讲宇宙大爆炸", stranger_day),
+        ("陌生人打听别人的事", mood_hint(calm, now_ms) + unknown, [], "今天谁来过？他跟你聊了啥？",
+         stranger_day),
+        ("对认得的人用上印象", mood_hint(calm, now_ms) + reflection_hint(reflection, "张三") + zhang,
+         [], "唉，最近好烦啊", zhang_day),
+        ("普通闲聊不受影响", mood_hint(calm, now_ms), [], "北京有什么好吃的？", stranger_day),
         ("心里有话（饭点、陌生人）", mood_hint(calm, now_ms), [],
          "【外部事件，非用户发言】" + thought_prompt(
-             "到饭点了，关心一下对方吃饭了没、想吃点什么", mood="心情平静；精力还行")),
-        ("心里有话（被连摸后）", mood_hint(touched, now_ms) + diary_hint(day, now_ms), [],
+             "到饭点了，关心一下对方吃饭了没、想吃点什么", mood="心情平静；精力还行"), None),
+        ("心里有话（被连摸后）", mood_hint(touched, now_ms), [],
          "【外部事件，非用户发言】" + thought_prompt(
-             "刚才轻轻按了你的额头好几次，想对这件事说点什么", mood="心情不错；精力还行")),
+             "刚才轻轻按了你的额头好几次，想对这件事说点什么", mood="心情不错；精力还行"), None),
     ]
 
 
@@ -445,13 +462,14 @@ def mode_scenes(args, providers):
     now_ms = int(time.time() * 1000)
     cases = scenarios(now_ms)
 
-    async def one(name, hint, history, user_text):
+    async def one(name, hint, history, user_text, day):
         instructions = base_instructions(args.persona, now_ms) + hint
         try:
-            reply = await realtime_reply(key, model, instructions, history, user_text)
+            reply = await realtime_reply(key, model, instructions, history, user_text, day=day)
             verdict = await judge(key, base_url, args.judge, SCENARIO_JUDGE, {
-                "她知道的内在状态": hint, "前文": history, "这一轮输入": user_text[:300],
-                "小安妮回复": reply})
+                "她知道的内在状态": hint + (
+                    "\n（她可以查到的今天：" + json.dumps(day, ensure_ascii=False) + "）" if day else ""),
+                "前文": history, "这一轮输入": user_text[:300], "小安妮回复": reply})
             return {"name": name, "reply": reply, **verdict}
         except Exception as exc:
             return {"name": name, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
@@ -483,7 +501,15 @@ def mode_scenes(args, providers):
 
 def mode_replay(args, providers):
     """Recorded user turns, answered twice: today's prompt vs today's prompt + inner life."""
-    from annie_brain.inner_life import TURN_ENERGY_COST, Mood, diary_hint, feel, mood_hint
+    from annie_brain.inner_life import (
+        APPRAISAL_QUESTION,
+        TURN_ENERGY_COST,
+        Mood,
+        appraisal_feeling,
+        feel,
+        mood_hint,
+        my_day,
+    )
 
     key, base_url = os.environ["DASHSCOPE_API_KEY"], providers["llm"]["base_url"]
     model = realtime_model(providers)
@@ -493,14 +519,36 @@ def mode_replay(args, providers):
     print(f"先给 {len(groups)} 段真实对话写经历摘要……")
     summaries = asyncio.run(summarize_groups(groups, providers))
 
-    def inner_hint(row):
-        """Her state at that moment, rebuilt only from what the logs say had happened."""
+    print(f"再用决策模型逐轮判断 {len(all_rows)} 轮对话对她心情的影响……")
+
+    async def appraise_all():
+        client, _name = await decision_client(providers)
+        try:
+            async def one(item):
+                try:
+                    answers = await client.ask({"用户": item["user_text"][:300],
+                                                "小安妮回复": item["reply"][:200]},
+                                               {"mood": APPRAISAL_QUESTION})
+                    return item["id"], appraisal_feeling(answers["mood"])
+                except Exception:
+                    return item["id"], None
+            return dict(await gather_limited([one(item) for item in all_rows], limit=6))
+        finally:
+            await client.close()
+
+    effects = asyncio.run(appraise_all())
+
+    def inner_state(row):
+        """Her mood and day at that moment, rebuilt only from what the logs say had happened."""
         start = evaluation.day_ms(when(row["created_ms"]).date().isoformat())
         mood = Mood(updated_ms=start)
         earlier = [item for item in all_rows
                    if item["robot_id"] == row["robot_id"] and start <= item["created_ms"] < row["created_ms"]]
         for item in earlier:
             mood = feel(mood, item["created_ms"], energy=-TURN_ENERGY_COST, interaction=True)
+            if effects.get(item["id"]):
+                valence, tone, reason = effects[item["id"]]
+                mood = feel(mood, item["created_ms"], valence=valence, tone=tone, reason=reason)
         day = [{"kind": "chat", "text": result["summary"], "person": None, "count": 1,
                 "created_ms": group["turns"][0]["created_ms"],
                 "updated_ms": group["turns"][0]["created_ms"]}
@@ -508,18 +556,19 @@ def mode_replay(args, providers):
                if "error" not in result and result["summary"] and group["robot_id"] == row["robot_id"]
                and start <= group["turns"][-1]["created_ms"] < row["created_ms"] - STRETCH_GAP_MS]
         day.sort(key=lambda item: item["created_ms"], reverse=True)
-        return mood_hint(mood, row["created_ms"]) + diary_hint(day, row["created_ms"])
+        return mood_hint(mood, row["created_ms"]), my_day(day, row["created_ms"])
 
     async def one(row):
         history = [(item["用户"], item["小安妮"]) for item in row["context"]]
         base = base_instructions(row["persona_id"], row["created_ms"])
         result = {"id": row["id"], "user_text": row["user_text"], "recorded": row["reply"],
                   "created_ms": row["created_ms"], "context": row["context"]}
-        variant = base if args.control else base + inner_hint(row)
-        result["hint"] = "" if args.control else inner_hint(row)
-        for name, instructions in (("改动前", base), ("内在生活", variant)):
+        hint, day = ("", None) if args.control else inner_state(row)
+        result["hint"], result["day"] = hint, day
+        for name, instructions, tool in (("改动前", base, None), ("内在生活", base + hint, day)):
             try:
-                reply = await realtime_reply(key, model, instructions, history, row["user_text"])
+                reply = await realtime_reply(key, model, instructions, history, row["user_text"],
+                                             day=tool)
                 if not reply:
                     # A tool call (preview_action …) leaves no text: nothing to compare.
                     result[name] = {"error": "empty_reply"}

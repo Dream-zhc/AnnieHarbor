@@ -37,8 +37,8 @@ sensor_rearm_gap_ms = 3000
 # 小安妮自己的心情、精力和“今天的真实经历”（2026-10-26 第一版，见 docs/开发记录/2026-10-26/）。
 # 只由真实事件改变：触摸、认出熟人、每轮对话（后台问一次决策模型）、时间和久无人理。
 # .env 的 ANNIE_INNER_LIFE_ENABLED=1/0 覆盖本项。
-# 2026-10-26 客户演示前暂时关闭（第二部分开发与实测未完成），完成后再打开，见开发记录。
-enabled = false
+# 2026-10-27 用户确认默认打开（真实对话回放验证不劣于改动前，见开发记录）。
+enabled = true
 # 最后一句之后多久算这段对话结束，写成一句带人名的经历摘要（秒）。
 conversation_close_seconds = 120
 # 经历保留天数；提示词里只放今天的。
@@ -50,8 +50,8 @@ keep_days = 7
 # speaking：她说的每句话由决策模型选一个动作或不配，等扬声器快播到那句时再发；
 # reactions：一轮对话让她心情明显变化，说完后由决策模型挑一个不出声的小动作。
 # 真动作仍需 .env 的 ANNIE_ACTIONS_ENABLED=1；.env 的 ANNIE_INTERACTION_MOTIONS_ENABLED=1/0 覆盖本项。
-# 2026-10-26 客户演示前暂时关闭（未经真机验证），完成后再打开，见开发记录。
-enabled = false
+# 2026-10-27 用户确认默认打开；电机声对识别与回声消除的影响、动作时机仍待真机统一测试。
+enabled = true
 listening = true
 speaking = true
 reactions = true

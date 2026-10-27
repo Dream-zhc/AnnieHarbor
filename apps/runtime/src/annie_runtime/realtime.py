@@ -2508,6 +2508,7 @@ class RealtimeRobot:
                     configured_instructions,
                     self.history_turns,
                     memory=self.memory is not None,
+                    my_day=self.inner_life is not None,
                     actions=llm_actions,
                     action_descriptions=(
                         {script_id: self.actions.catalog[script_id]["description"]
@@ -4053,7 +4054,7 @@ class RealtimeRobot:
                 raise ValueError("tool call budget exceeded")
             if not isinstance(arguments, str) or len(arguments) > 4096:
                 raise ValueError("invalid arguments size")
-            if name == "enter_sleep" and arguments.strip() in {"", "{}"}:
+            if name in {"enter_sleep", "recall_my_day"} and arguments.strip() in {"", "{}"}:
                 args = {}
             else:
                 args = json.loads(arguments)
@@ -4234,6 +4235,10 @@ class RealtimeRobot:
                     raise ValueError("expected no arguments")
                 lines = self._overheard_recent(OVERHEARD_WINDOW_SECONDS)
                 result = {"status": "ok" if lines else "empty", "lines": lines[-6:]}
+            elif name == "recall_my_day" and self.inner_life is not None:
+                if args:
+                    raise ValueError("expected no arguments")
+                result = self.inner_life.my_day(self.robot.config.robot_id)
             elif name == "recall_memory" and self.memory is not None:
                 if set(args) != {"query"}:
                     raise ValueError("expected exactly query")

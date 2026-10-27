@@ -49,3 +49,32 @@ test('missing, disabled and failing states are told apart', () => {
 test('times are Beijing wall clock', () => {
   assert.equal(beijingTime(AT), '10:20');
 });
+
+test('threads, impressions, her wish to speak and motions are shown as reported', () => {
+  const view = innerLifeView({...sample, partner: '张三',
+    threads: [{person: '张三', text: '下周去面试', follow_up: '问问结果', asks: 1, created_ms: AT, visible: false}],
+    reflection: {day: '2026-10-26', self: '你最近挺爱被摸头', people: 1, partner_impression: '在准备面试'},
+    thought: {status: 'proactive_gap', ts_ms: AT}, proactive_last_hour: 2,
+    motions: {listening: true, speaking: true, reactions: true, per_reply: 3,
+      stats: {listen: 3, speech: 2, inner: 1, skipped: 4, decision_failures: 0},
+      recent: [{kind: 'speech', script: 'agree_micro_nod', name: '附和小点头', status: 'published_unknown',
+                ts_ms: AT, sentence: '我觉得能成。'},
+               {kind: 'listen', script: 'listen_tilt', name: '倾听', status: 'conflict_or_cooldown', ts_ms: AT}]}},
+  '已同步');
+  assert.equal(view.partner, '张三（声纹或画面认出）');
+  assert.deepEqual(view.threads, ['张三：下周去面试 · 问过 1 次 · 暂不提']);
+  assert.equal(view.impression, '在准备面试');
+  assert.equal(view.lately, '你最近挺爱被摸头（2026-10-26 的回顾）');
+  assert.equal(view.thought, '离上次主动开口不到 5 分钟 · 这一小时已主动说 2 次');
+  assert.equal(view.motions, '倾听 3 · 说话 2 · 内心 1 · 跳过 4');
+  assert.deepEqual(view.motionLines, ['10:20 倾听：倾听 · conflict_or_cooldown',
+                                      '10:20 说话：附和小点头（“我觉得能成。”）']);
+  const off = innerLifeView({robot_id: 'annie-a', enabled: false, motions: null}, '已同步');
+  assert.match(off.motions, /ANNIE_INTERACTION_MOTIONS_ENABLED/);
+  const noDevice = innerLifeView({...sample, motions: {actions_enabled: false, listening: true, speaking: true,
+    reactions: true, per_reply: 3, recent: [], stats: {listen: 0, speech: 0, inner: 0, skipped: 0, decision_failures: 0}}},
+  '已同步');
+  assert.match(noDevice.motions, /ANNIE_ACTIONS_ENABLED=1/);
+  assert.match(innerLifeView({...sample, hint_in_session: false, has_hint: true}, '已同步').session, /还没写进去/);
+  assert.match(innerLifeView({...sample, hint_in_session: false, has_hint: false}, '已同步').session, /没有要写的/);
+});

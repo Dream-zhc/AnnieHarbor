@@ -34,6 +34,7 @@ from annie_brain.decision_policy import (
     expression_choice,
     expression_question,
     face_request_question,
+    head_turn_motion,
     instruction_state,
     language_request_question,
     motion_question,
@@ -1196,12 +1197,16 @@ class RealtimeRobot:
             return False  # also retires a carried prefix: the provider answers this one
         transcript = str(event.get("transcript", "")).strip()
         text = _join_call(recovery["prefix"], transcript)
-        if (not (recovery["kws"] or WAKE_NAME.search(text) or recovery.get("check"))
+        if (not (recovery["kws"] or recovery.get("woken") or WAKE_NAME.search(text)
+                 or recovery.get("check"))
                 or not DialoguePresence.is_substantive(text)
                 or DialoguePresence.is_sleep_command(transcript)):
             return False
         if recovery["kws"] or WAKE_NAME.search(text) or self._motion_command(text):
             recovery["check"] = False  # a call by name or a motion needs no second opinion
+        # The quiet wait and the judge take ~1 s: show the whole sentence now
+        # instead of a stale half (10-27: live ASR "stalled, then all at once").
+        self.publish("transcript.final_preview", text=text, item_id=event.get("item_id"))
         recovery["pending"] = {**event, "transcript": text, "_recovery_settled": True}
         self._invalid_recovery = recovery
         task = asyncio.create_task(self._settle_dropped_call(recovery, generation,
@@ -1266,6 +1271,13 @@ class RealtimeRobot:
 
     def _faces_available(self):
         return self.faces is not None and self.faces.available(self.robot.config.robot_id)
+
+    def _first_delta_ms(self):
+        """Provider speech start to its first live ASR text for this utterance (10-27:
+        the workbench showed it late, then all at once); None if no text came."""
+        if self.last_asr_first_delta_ms is None or self.last_provider_speech_ms is None:
+            return None
+        return self.last_asr_first_delta_ms - self.last_provider_speech_ms
 
     def _input_lost(self):
         """PCM frames that never reached Qwen from shortly before this utterance
@@ -1495,10 +1507,17 @@ class RealtimeRobot:
         """An enabled motion she was asked for by name (10-22: qwen-flash took
         “摇摇头。” for side talk with confidence 1.0)."""
         actions = self.actions
-        return bool(actions is not None and actions.enabled
-                    and explicit_motion(text, actions.allowlist))
+        return bool(actions is not None and actions.enabled and self._asked_motion(text))
+
+    def _asked_motion(self, text):
+        """The enabled motion this names, or the side a bare "转头看看" was just pointed at."""
+        allowed = self.actions.allowlist
+        return explicit_motion(text, allowed) or head_turn_motion(
+            text, [turn.get("user_text") for turn in self.robot.recent_context()[-3:]], allowed)
 
     def _begin_addressee_check(self, event, generation, background_tools):
+        self.publish("transcript.final_preview", text=str(event.get("transcript", "")).strip(),
+                     item_id=event.get("item_id"))
         task = asyncio.create_task(
             self._check_addressee(dict(event), generation, background_tools),
             name=f"addressee:{self.robot.config.robot_id}")
@@ -1542,8 +1561,9 @@ class RealtimeRobot:
         answer, error = None, None
         self.decision_stats["addressee_checks"] += 1
         state = self._addressee_state_for(text)
-        # She just answered and waits (the wake gate checks only then).
-        waiting = (self.wake is not None and self.wake.state == "FOLLOWUP") or (
+        # She just answered and waits, or is still answering: the follow-up
+        # wording (87% on d3, 10-21) fits both.
+        waiting = (self.wake is not None and self.wake.state in {"FOLLOWUP", "ACTIVE"}) or (
             self.wake is None and self._last_reply_t is not None
             and time.monotonic() - self._last_reply_t <= RECENT_REPLY_SECONDS)
         judge, model = self._addressee_judge()
@@ -1684,7 +1704,7 @@ class RealtimeRobot:
         # A requested action needs no model and ignores cooldown/preferences;
         # "做个动作" lets the model pick among all enabled actions. Both start
         # with the first spoken word; a spontaneous face waits for a sentence.
-        asked = explicit_motion(user_text, self.actions.allowlist)
+        asked = self._asked_motion(user_text)
         generic = asked is None and bool(GENERIC_MOTION.search(user_text))
         end = next((i for i, char in enumerate(text) if char in "。！？!?；;\n～~…"), None)
         if not (asked or generic or final) and end is None and len(text) < 14:
@@ -2993,10 +3013,12 @@ class RealtimeRobot:
                 self._dialogue_changed()
         self.began = time.perf_counter()
         logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d "
-                    "input_lost_frames=%s",
+                    "input_lost_frames=%s first_delta_ms=%s deltas=%s",
                     self.robot.config.robot_id, turn_id, fields["input_mode"], source,
                     cause or ("asr_final" if audio else "submit"), self.pending_audio_item_id,
-                    len(visible_text), self._input_lost() if audio else None)
+                    len(visible_text), self._input_lost() if audio else None,
+                    self._first_delta_ms() if audio else None,
+                    self.asr_delta_count if audio else None)
         self.publish("turn.started", turn_id=turn_id, user_text=visible_text,
                      turn_source=source,
                      speech_started_ms=(
@@ -3627,13 +3649,18 @@ class RealtimeRobot:
                                 or (carry and carry["kws"]))
                 named = bool(WAKE_NAME.search(draft))
                 # Right after her answer, smart_turn also drops real questions
-                # to her (10/20 18:58: three tries, then the user typed it).
+                # to her (10/20 18:58: three tries, then the user typed it),
+                # and while she speaks (10-27: 15 like "右边看", "你退下").
                 # The decision model judges those instead of silence.
-                followup = bool(self.wake and self.wake.state == "FOLLOWUP"
-                                and self.addressee_enabled)
-                recoverable = kws_call or named or followup
+                state = self.wake.state if self.wake else None
+                judged = bool(state in {"FOLLOWUP", "ACTIVE"} and self.addressee_enabled)
+                # Just woken by name, the window admits what follows as hers
+                # (10-27: "你认为自己是个机器人" dropped right after a call).
+                woken = state == "WAKE_WAIT"
+                recoverable = kws_call or named or judged or woken
                 self._invalid_recovery = ({"item_id": event.get("item_id"), "kws": kws_call,
-                                           "check": not (kws_call or named),
+                                           "woken": woken,
+                                           "check": not (kws_call or named or woken),
                                            "prefix": prefix, "draft": draft,
                                            "at": time.monotonic()} if recoverable else None)
                 if event.get("item_id"):
@@ -3642,13 +3669,14 @@ class RealtimeRobot:
                     self.publish("transcript.dropped", text=self._asr_draft[:80],
                                  item_id=event.get("item_id"), reason="turn_invalid")
                 logger.info("turn_invalid robot=%s wake_state=%s draft_chars=%d named=%s "
-                            "kws_call=%s recover=%s speech_ms=%s input_lost_frames=%s draft=%r",
+                            "kws_call=%s recover=%s speech_ms=%s input_lost_frames=%s "
+                            "first_delta_ms=%s deltas=%d draft=%r",
                             self.robot.config.robot_id,
                             self.wake.state if self.wake else None, len(self._asr_draft),
                             named, kws_call, recoverable,
                             (time.time_ns() // 1_000_000 - self.last_provider_speech_ms)
                             if self.last_provider_speech_ms else None, self._input_lost(),
-                            self._asr_draft[:30])
+                            self._first_delta_ms(), self.asr_delta_count, self._asr_draft[:30])
             if self.wake:
                 # A recoverable call keeps its candidate and the ASR grace
                 # window, otherwise the gate expires before the final arrives.

@@ -195,6 +195,8 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/transcript\.ambient/);
   assert.match(source,/transcript\.ambient_delta/);
   assert.match(source,/transcript\.final_preview/);
+  // A held final shown at once may be side talk: declining it clears it (10-27).
+  assert.match(source,/kind==='transcript\.ambient'\)\{[\s\S]{0,160}setPendingAsr\(''\)/);
   assert.match(source,/transcript\.first_delta/);
   assert.match(source,/setPreviewTranscript\(\(item\.text\?\?'\'\)\+\(item\.stash\?\?'\'\)\)/);
   assert.match(source,/云端起声 → 首次 ASR 增量/);

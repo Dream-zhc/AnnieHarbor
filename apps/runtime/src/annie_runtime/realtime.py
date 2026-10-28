@@ -3444,6 +3444,14 @@ class RealtimeRobot:
             if (source == "external" and
                     (self.speech_active or speech_at != self._last_provider_speech_started_t)):
                 raise RobotUnavailableError("external response preempted by speech")
+            look, script = (self._vision_question(text.strip(), owned_turn)
+                            if source == "user" else (False, None))
+            if look:
+                # Typed "你看看左边有什么" looks first too (10-28 evening: the workbench
+                # answered at once and turned her head only with the reply).
+                await self._begin_vision_turn(owned_turn, None, text.strip(), script,
+                                              self.robot.generation, recovered=False)
+                return {"status": "accepted", "turn_id": owned_turn, **self.robot.session_state()}
             self.publish("llm.request_started", turn_id=self.turn_id)
             ensure_owned()
             # Accepted means the request was sent, not that playback finished.

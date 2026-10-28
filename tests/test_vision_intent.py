@@ -273,6 +273,61 @@ def test_she_turns_first_then_looks_then_answers(tmp_path):
     scenario(tmp_path, body)
 
 
+def test_a_typed_question_also_turns_first_and_waits_for_the_view(tmp_path):
+    """10-28 18:38-18:41: every look question was typed in the workbench, answered at
+    once from look_closely, and look_left went out with offset_ms=0 at her first audio."""
+    async def body(rt, client):
+        accepted = await rt.realtime_text("a", "你看看左边有什么")
+        turn_id = accepted["turn_id"]
+        await until(lambda: triggers(rt))
+        trigger = triggers(rt)[0]["data"]
+        assert (trigger["script_id"], trigger["offset_ms"], trigger["conversation_id"]) == (
+            "look_left", -1, turn_id)
+        asked = [event["item"]["content"][0]["text"]
+                 for event in sent(client, "conversation.item.create")
+                 if event["item"].get("role") == "user"]
+        assert asked == ["你看看左边有什么"]
+        await asyncio.sleep(.05)
+        assert sent(client, "response.create") == [] and intents(rt) == []
+        rt._room_playback_receipt("a", {"type": "action.finished", "data": {
+            "script_id": "look_left", "conversation_id": turn_id}})
+        await until(lambda: intents(rt))
+        assert intents(rt)[0]["data"]["fresh_frame"] is True
+        rt._room_playback_receipt("a", answer(intents(rt)[0], status="ok",
+                                              description="左边有一台电视和一张桌子。"))
+        await until(lambda: sent(client, "response.create"))
+        assert len(triggers(rt)) == 1 and client.turn_id == turn_id
+    scenario(tmp_path, body)
+
+
+def test_asked_while_she_is_still_talking_she_also_looks_first(tmp_path):
+    async def body(rt, client):
+        presence = woken(client)
+        presence.state, presence.deadline = "ACTIVE", None  # her last reply is playing
+        presence._first_wake_transcript = False
+        g = client.robot.generation
+        await client.handle({"type": "input_audio_buffer.speech_started", "item_id": "u10"}, g)
+        await client.handle({"type": "input_audio_buffer.speech_stopped", "item_id": "u10"}, g)
+        await client.handle({"type": "response.created", "response": {"id": "r-early"}}, g)
+        await client.handle({"type": "response.text.delta", "response_id": "r-early",
+                             "delta": "右边好像是"}, g)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "u10", "transcript": "你看看右边有什么"}, g)
+        await until(lambda: triggers(rt))
+        assert (triggers(rt)[0]["data"]["script_id"], triggers(rt)[0]["data"]["offset_ms"]) == (
+            "look_right", -1)
+        assert kinds(client, "text.delta") == [] and sent(client, "response.create") == []
+    scenario(tmp_path, body)
+
+
+def test_other_typed_messages_are_answered_at_once(tmp_path):
+    async def body(rt, client):
+        await rt.realtime_text("a", "你好呀")
+        assert len(sent(client, "response.create")) == 1
+        assert kinds(client, "vision.intent.started") == []
+    scenario(tmp_path, body)
+
+
 def test_a_question_without_a_look_action_uses_the_latest_frame(tmp_path):
     async def body(rt, client):
         await ask_held(client, "u2", "你瞅瞅我拿的什么")

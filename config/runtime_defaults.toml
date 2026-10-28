@@ -66,6 +66,20 @@ attach_frame_to_main_brain = true
 # 认出的熟人来到面前时主动打招呼；同一个人在这段时间内只打一次（分钟）。挥手不触发回应。
 greet_known_cooldown_minutes = 30
 
+[vision.intent]
+# 用户要她现在去看（“你看看左边有什么”“你看到了什么”“你瞅瞅我拿的什么”）时：
+# 有看向动作就先立即转头（action_trigger offset_ms=-1），等嵌入式 action.finished，
+# 再经 reb_main 发 vision.intent 请视觉端看新画面，拿到描述才让实时模型回答；这一轮回复先压住。
+# 协议见 docs/规范/视觉意图协议.md。视觉端对接好之前保持关闭：开着而视觉端不回，
+# 每个视觉问题都要多等 deadline_ms 才回答。.env 的 ANNIE_VISION_INTENT_ENABLED=1/0 覆盖本项。
+enabled = false
+# 让视觉端用哪个模型看：cloud = 阿里云视觉模型；local = 视觉端本地模型。
+route = "cloud"
+# 视觉端从收到请求起最多这么久内回描述（毫秒）；超时就按每秒一条的本地画面照常回答。
+deadline_ms = 3500
+# 看向动作的回执在动作时长之外最多再等多久（毫秒）；等不到也照常取画面。
+action_receipt_extra_ms = 1200
+
 [vision.face]
 # 各机器人自己摄像头的视觉服务（人脸库接口）。配置了的机器人，对话里可以说“记住我，我叫…”和“忘掉我”。
 # 视觉端 192.168.1.13 是 A 机器人（roomv2）的摄像头；B 机器人暂无。

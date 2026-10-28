@@ -194,7 +194,7 @@ _MOTION_NAMES = (
     ("look_up", _look(r"(?:上面|上边|头顶|天花板)", toward="上") + r"|抬头看"),
     ("fast_double_blink", r"眨(?:眨|两下|一下|个)?双?眼|眨两下"),
 )
-_LOOK_SCRIPTS = ("look_left", "look_right", "look_up")
+LOOK_SCRIPTS = ("look_left", "look_right", "look_up")
 # "转头看看" names no side; "旋转头了吗" is a question, not a request.
 _HEAD_TURN = re.compile(r"(?:转|扭|回|侧)(?:个|一下|下)?(?:头|身)(?:去|过去|过来)?看|[转扭]过去看")
 GENERIC_MOTION = re.compile(r"做个动作|做一个动作|来个动作|动一下|动一动|表演一下")
@@ -220,9 +220,37 @@ def head_turn_motion(user_text, previous_texts, allowed):
         return None
     for previous in reversed(list(previous_texts or ())):
         script = explicit_motion(previous, allowed)
-        if script in _LOOK_SCRIPTS:
+        if script in LOOK_SCRIPTS:
             return script
     return None
+
+
+# Questions she has to look at now to answer (10-28): 你看看左边有什么、你看看周围、
+# 你看到了什么、你瞅瞅我拿的什么. The user looking himself (我看看、让我看看) is not
+# one, 帮我看看 is; 附近有什么好吃的 names a place but asks no look.
+_SHE_LOOKS = r"(?:(?<!我)|(?<=帮我)|(?<=给我)|(?<=替我))"
+_PLACE = (r"(?:周围|四周|身边|旁边|附近|眼前|面前|前面|前边|后面|后边|外面|下面|地上"
+          r"|左(?:边|手边|侧)|右(?:边|手边|侧)|上面|上边|头顶|天花板)")
+_SEE_NOW = re.compile("|".join((
+    _SHE_LOOKS + r"(?:看|瞅|瞧)(?:看|瞅|瞧|一下|一眼|下)(?:你的?|自己的?)*" + _PLACE,
+    _SHE_LOOKS + r"(?:看|瞅|瞧)得?[到见](?:了|的)?是?(?:什么|啥|谁|哪些|几个|多少|我)",
+    _SHE_LOOKS + r"(?:看|瞅|瞧)(?:看|瞅|瞧|一下|一眼|下)?(?:这|那)个?(?:是|叫)(?:什么|啥)",
+    _SHE_LOOKS + r"(?:看|瞅|瞧)(?:看|瞅|瞧|一下|一眼|下)?我(?:今天|现在)?"
+                 r"(?:穿|戴|拿|长|帅|美|漂亮|好看|丑|胖|瘦|像)",
+    r"我(?:手里|手上)?(?:拿|举|抱|捧|戴|穿)(?:的|着)的?是?(?:什么|啥)",
+    r"我(?:手里|手上)(?:是|有|拿)(?:什么|啥)",
+    r"(?:眼前|面前)(?:都|还)?(?:有|是)(?:什么|啥|谁)",
+)))
+
+
+def asks_to_look(user_text, previous_texts=()):
+    """She must look now to answer: a side or place to look at, what she sees,
+    or what the user holds or wears. A refusal (别看了) is not a request."""
+    text = str(user_text or "")
+    if _NEGATED.search(text):
+        return False
+    return bool(_SEE_NOW.search(text) or explicit_motion(text, LOOK_SCRIPTS)
+                or head_turn_motion(text, previous_texts, LOOK_SCRIPTS))
 
 
 def motion_question(descriptions):

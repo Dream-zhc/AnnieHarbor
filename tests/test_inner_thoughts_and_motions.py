@@ -440,8 +440,9 @@ def test_perform_now_uses_the_same_gates_as_every_action(tmp_path):
         assert result["status"] == "published_unknown"
         data = publisher.sent[0]["data"]
         assert publisher.sent[0]["type"] == "action_trigger"
+        # -1: the player runs it at once instead of waiting for audio (10-28).
         assert (data["script_id"], data["conversation_id"], data["offset_ms"]) == (
-            "listen_tilt", "listen-1", 0)
+            "listen_tilt", "listen-1", -1)
         busy = await actions.perform_now("a", "listen-2", "listen-2", 1, "listen_tilt")
         assert busy["status"] == "conflict_or_cooldown"  # the first is still moving
         with pytest.raises(ValueError):

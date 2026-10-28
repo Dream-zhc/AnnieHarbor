@@ -70,8 +70,8 @@ greet_known_cooldown_minutes = 30
 # 用户要她现在去看（“你看看左边有什么”“你看到了什么”“你瞅瞅我拿的什么”）时：
 # 有看向动作就先立即转头（action_trigger offset_ms=-1），等嵌入式 action.finished，
 # 再经 reb_main 发 vision.intent 请视觉端看新画面，拿到描述才让实时模型回答；这一轮回复先压住。
-# 协议见 docs/规范/视觉意图协议.md。视觉端对接好之前保持关闭：开着而视觉端不回，
-# 每个视觉问题都要多等 deadline_ms 才回答。.env 的 ANNIE_VISION_INTENT_ENABLED=1/0 覆盖本项。
+# 语音和工作台打字的问法都算。协议见 docs/规范/视觉意图协议.md。2026-10-28 用户确认默认打开；
+# 视觉端不回时每个视觉问题多等 deadline_ms 后按本地画面回答。.env 的 ANNIE_VISION_INTENT_ENABLED=1/0 覆盖本项。
 enabled = true
 # 让视觉端用哪个模型看：cloud = 阿里云视觉模型；local = 视觉端本地模型。
 route = "cloud"

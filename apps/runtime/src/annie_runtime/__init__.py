@@ -1394,6 +1394,12 @@ class HarborRuntime:
                 for robot_id in cameras:
                     self.realtime[robot_id].vision_intents = self.vision_intents
                     self.realtime[robot_id].vision_action_extra_ms = vision_intent_action_extra_ms
+            if vision_intent_enabled:
+                # Exported logs carry no /health: say at startup who looks before answering.
+                logger.info("vision_intent_config robots=%s route=%s deadline_ms=%s tts=%s",
+                            ",".join(sorted(self.vision_intents.publishers))
+                            if self.vision_intents else "none",
+                            vision_intent_route, vision_intent_deadline_ms, bool(tts_voice))
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):

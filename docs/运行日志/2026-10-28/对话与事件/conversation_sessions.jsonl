@@ -1,2 +1,2 @@
-{"robot_id": "annie-a", "room_id": "roomv2", "chat_id": "测试按时", "persona_id": "annie", "persona_revision": 1, "session_epoch": 217, "generation": 217, "updated_ms": 1793183900029}
-{"robot_id": "annie-b", "room_id": "roomv3", "chat_id": "phase3-chat", "persona_id": "annie", "persona_revision": 1, "session_epoch": 189, "generation": 189, "updated_ms": 1793183900031}
+{"robot_id": "annie-a", "room_id": "roomv2", "chat_id": "测试按时", "persona_id": "annie", "persona_revision": 1, "session_epoch": 220, "generation": 220, "updated_ms": 1793188506989}
+{"robot_id": "annie-b", "room_id": "roomv3", "chat_id": "phase3-chat", "persona_id": "annie", "persona_revision": 1, "session_epoch": 192, "generation": 192, "updated_ms": 1793188506991}

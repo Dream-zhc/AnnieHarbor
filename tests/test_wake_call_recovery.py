@@ -256,7 +256,8 @@ def test_a_call_cut_at_a_pause_is_joined_with_what_follows(tmp_path):
     asyncio.run(run())
 
 
-def test_when_the_rest_is_answered_normally_nothing_is_resent(tmp_path):
+def test_when_the_rest_is_a_valid_turn_the_whole_sentence_is_answered(tmp_path):
+    """Before 10-28 Qwen answered the tail alone: “一下自己吗？” -> “想啊，有时候也会想想自己”."""
     async def run():
         rt = runtime(tmp_path)
         client = await ready(rt)
@@ -265,10 +266,12 @@ def test_when_the_rest_is_answered_normally_nothing_is_resent(tmp_path):
             await say(client, "q1", draft="小安妮，我们", final="小安妮，我们。", invalid=True)
             await say(client, "q2", draft="刚才说周末", final="刚才说周末要去干嘛？")
             await settled(client)
-            assert not sent(client, "response.create")  # Qwen answers q2 itself
-            assert not kinds(client, "turn.recovered")
+            creates = [e["item"]["content"][0]["text"] for e in sent(client, "conversation.item.create")
+                       if e["item"]["type"] == "message"]
+            assert creates == ["小安妮，我们刚才说周末要去干嘛？"]
+            assert len(sent(client, "response.create")) == 1
             assert client._invalid_recovery is None
-            assert kinds(client, "transcript.done")[-1]["text"] == "刚才说周末要去干嘛？"
+            assert kinds(client, "transcript.done")[-1]["text"] == "小安妮，我们刚才说周末要去干嘛？"
         finally:
             await rt.close()
     asyncio.run(run())

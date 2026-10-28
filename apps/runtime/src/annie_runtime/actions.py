@@ -3,6 +3,8 @@
 Every action goes out as action_trigger, the only motion message the embedded
 player runs. Legacy actions use the first published PCM; word actions wait
 until the real reply contains the requested word and its first PCM is out.
+Both send offset_ms=0, which the player anchors to this conversation's audio;
+motions the runtime times itself (perform_now) send offset_ms=-1: run at once.
 Published is UNKNOWN, never a claim that the embedded motor finished; only the
 device's reb_main action.started / action.finished / action.dropped receipts
 (matched by conversation_id + script_id) move an action past that.
@@ -29,6 +31,9 @@ RECEIPT_FROM = {
 }
 DEVICE_COMPLETION = {"device_started": "started", "device_finished": "finished",
                      "device_dropped": "dropped"}
+# offset_ms=-1 tells the embedded player to run the script at once instead of
+# waiting for this conversation's audio (user decision 10-28, docs/规范/动作立即触发.md).
+IMMEDIATE_OFFSET_MS = -1
 
 
 def current_action_not_vetoed(text):
@@ -63,6 +68,7 @@ class ActionCoordinator:
         self.word_sends = {}  # (robot_id,call_id) -> (turn_id, cancellable anchor)
         self.word_turns = {}  # robot -> current authoritative turn.started identity
         self.pending_expressions = {}  # (robot_id,call_id) -> turn_id
+        self.receipt_watchers = {}  # (robot_id,conversation_id,script) -> future of its last receipt
         self.tasks = set()
         self.connection_errors = {}
         self.receipts = {"applied": 0, "ignored": 0, "unmatched": 0, "invalid": 0}
@@ -114,6 +120,9 @@ class ActionCoordinator:
             self.receipts["invalid"] += 1
             return False
         reason = data.get("reason")
+        watcher = self.receipt_watchers.get((robot_id, cid, script))
+        if watcher is not None and not watcher.done() and after != "device_started":
+            watcher.set_result(DEVICE_COMPLETION[after])
         detail = {"device_" + key: data[key] for key in ("offset_ms", "duration_ms")
                   if type(data.get(key)) in (int, float)}
         if type(message.get("ts")) is int:
@@ -123,6 +132,17 @@ class ActionCoordinator:
             reason[:64] if isinstance(reason, str) and reason else None, detail,
         ))
         return True
+
+    def watch_receipt(self, robot_id, conversation_id, script):
+        """A future set to "finished" or "dropped" when the device reports this action
+        over. Register it before sending: a fast device may answer first."""
+        future = asyncio.get_running_loop().create_future()
+        self.receipt_watchers[(robot_id, conversation_id, script)] = future
+        return future
+
+    def unwatch_receipt(self, robot_id, conversation_id, script, future):
+        if self.receipt_watchers.get((robot_id, conversation_id, script)) is future:
+            del self.receipt_watchers[(robot_id, conversation_id, script)]
 
     async def _apply_receipt(self, robot_id, cid, script, after, reason, detail):
         async with self.locks[robot_id]:
@@ -532,10 +552,11 @@ class ActionCoordinator:
 
     async def perform_now(self, robot_id, call_id, conversation_id, generation, script, *,
                           user_text=None):
-        """A runtime-chosen motion that starts now: listening, a sentence's gesture or
-        her own reaction. The caller picks the moment; the same allowlist, veto,
-        durable reservation, physical cooldown and device receipts apply as for
-        every other action. ``conversation_id`` is the reply's turn when there is one."""
+        """A runtime-chosen motion that starts now: listening, a sentence's gesture,
+        her own reaction or a look before she answers. The caller picks the moment; the
+        same allowlist, veto, durable reservation, physical cooldown and device receipts
+        apply as for every other action. ``conversation_id`` is the reply's turn when
+        there is one."""
         if not self.enabled or robot_id not in self.main_publishers:
             return {"status": "not_configured", "real_device_executed": False}
         if script not in self.allowlist:
@@ -569,7 +590,7 @@ class ActionCoordinator:
                 return {"status": "cancelled_before_send", "real_device_executed": False}
             packet = {
                 "type": "action_trigger", "ts": time.time_ns() // 1_000_000,
-                "data": {"script_id": script, "offset_ms": 0,
+                "data": {"script_id": script, "offset_ms": IMMEDIATE_OFFSET_MS,
                          "conversation_id": conversation_id, "anchor_source": "robot_main_brain"},
             }
         await self._publish_action(row, packet)

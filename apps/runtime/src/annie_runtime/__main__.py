@@ -224,6 +224,20 @@ def inner_life_options(inner_life: dict, llm: dict, environ) -> dict:
     }
 
 
+def vision_intent_options(vision: dict, environ) -> dict:
+    """HarborRuntime kwargs for looking before answering: runtime_defaults [vision.intent]
+    and .env. ANNIE_VISION_INTENT_ENABLED=0/1 overrides the file; keep it off until the
+    robot's vision service answers vision.intent (docs/规范/视觉意图协议.md)."""
+    intent = vision.get("intent", {})
+    return {
+        "vision_intent_enabled": environ.get(
+            "ANNIE_VISION_INTENT_ENABLED", "1" if intent.get("enabled", False) else "0") == "1",
+        "vision_intent_route": str(intent.get("route", "cloud")),
+        "vision_intent_deadline_ms": int(intent.get("deadline_ms", 3500)),
+        "vision_intent_action_extra_ms": int(intent.get("action_receipt_extra_ms", 1200)),
+    }
+
+
 def main():
     root = Path(__file__).resolve().parents[4]
     parser = argparse.ArgumentParser(description="Annie Harbor — Phase 4 workbench and Runtime")
@@ -394,6 +408,7 @@ def main():
         motion_options=motions,
         **inner_life_options(runtime_defaults.get("inner_life", {}),
                              provider_defaults["llm"], os.environ),
+        **vision_intent_options(runtime_defaults["vision"], os.environ),
     )
     try:
         runtime.preflight()

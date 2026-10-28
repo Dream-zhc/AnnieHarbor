@@ -941,9 +941,16 @@ class HarborRuntime:
         inner_life_close_seconds: float = 120,
         inner_life_keep_days: int = 7,
         motion_options: dict | None = None,
+        vision_intent_enabled: bool = False,
+        vision_intent_route: str = "cloud",
+        vision_intent_deadline_ms: int = 3500,
+        vision_intent_action_extra_ms: int = 1200,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
+        if (type(vision_intent_action_extra_ms) is not int
+                or not 0 <= vision_intent_action_extra_ms <= 10000):
+            raise ValueError("vision_intent_action_extra_ms must be an integer between 0 and 10000")
         if type(conversation_history_turns) is not int or not 1 <= conversation_history_turns <= 100:
             raise ValueError("conversation_history_turns must be an integer between 1 and 100")
         if type(realtime_history_turns) is not int or not 1 <= realtime_history_turns <= 50:
@@ -1319,6 +1326,7 @@ class HarborRuntime:
                 self.reminders.wake(robot_id)
 
             client.event_activity = wake_external
+        self.vision_intents = None
         if room_server is not None:
             from annie_adapters.playback import RoomEventListener
 
@@ -1368,6 +1376,24 @@ class HarborRuntime:
                     # look_closely: only robots with a camera feed get the tool.
                     client.visual_details = (
                         lambda robot_id=config.robot_id: self._current_view_details(robot_id))
+            # "你看看左边有什么": a robot with a camera feed asks its vision service to look
+            # now (docs/规范/视觉意图协议.md). The answer comes back on reb_main, which
+            # reaches _room_playback_receipt only when TTS is configured.
+            if vision_intent_enabled and tts_voice:
+                from annie_adapters.tts import RoomTtsPublisher
+
+                from annie_runtime.vision_intent import VisionIntents
+
+                cameras = [robot_id for robot_id, client in self.realtime.items()
+                           if client.visual_details is not None]
+                self.vision_intents = VisionIntents(
+                    {robot_id: (room_action_factory or RoomTtsPublisher)(
+                        room_server, self.robots[robot_id].config.room_id, channel="main")
+                     for robot_id in cameras},
+                    route=vision_intent_route, deadline_ms=vision_intent_deadline_ms)
+                for robot_id in cameras:
+                    self.realtime[robot_id].vision_intents = self.vision_intents
+                    self.realtime[robot_id].vision_action_extra_ms = vision_intent_action_extra_ms
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):
@@ -1623,6 +1649,10 @@ class HarborRuntime:
         self._room_external_event(robot_id, "main", message)
         if str(message.get("type", "")).startswith("action.") and self.actions is not None:
             self.actions.on_receipt(robot_id, message)
+            return
+        if message.get("type") == "vision.intent.result":
+            if self.vision_intents is not None:
+                self.vision_intents.on_result(robot_id, message)
             return
         client = self.realtime.get(robot_id)
         if client is None:
@@ -2042,6 +2072,8 @@ class HarborRuntime:
                 await publisher.close()
             if self.actions is not None:
                 await self.actions.close()
+            if self.vision_intents is not None:
+                await self.vision_intents.close()
             if self.weather is not None:
                 await self.weather.close()
             if self.faces is not None:
@@ -2705,6 +2737,11 @@ class HarborRuntime:
             },
             "weather": {"configured": self.weather is not None, "source": "amap"},
             "faces": {"configured_robots": sorted(self.faces.registries) if self.faces else []},
+            "vision_intent": {
+                "configured_robots": (sorted(self.vision_intents.publishers)
+                                      if self.vision_intents else []),
+                "route": self.vision_intents.route if self.vision_intents else None,
+            },
             "room_gateway": {
                 "configured": room_required,
                 "ready": room_ready,

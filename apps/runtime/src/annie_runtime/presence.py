@@ -303,6 +303,30 @@ class DialoguePresence:
         self._reply_admitted = True
         return True
 
+    def overheard(self):
+        """Background speech still to be judged keeps the window open like ASR grace.
+
+        The provider sends no speech_started for speech it files as background
+        and gives it a standalone temporary item id (10-28), so it never becomes
+        the candidate and speech_stopped cannot extend the window for it.
+        """
+        self._expire()
+        if self.state in {"WAKE_WAIT", "FOLLOWUP"} and self.deadline is not None:
+            self.deadline = max(self.deadline, self.clock() + ASR_GRACE_SECONDS)
+
+    def overheard_accepted(self, text):
+        """Background speech judged said to her, or calling her by name: a reply
+        grant like transcript_accepted, leaving any newer speech candidate alone."""
+        self._expire()
+        if self.state == "SLEEP" or self.is_wake_transcript(text) or not self.is_substantive(text):
+            return False
+        self._first_wake_transcript = False
+        self.state = "ACTIVE"
+        self.deadline = None
+        self.epoch += 1
+        self._reply_admitted = True
+        return True
+
     def speaker_drained(self, *, verified=False):
         self._expire()
         if not verified or self.state != "ACTIVE" or not self._reply_admitted:

@@ -206,12 +206,12 @@
     "logs/runtime-20261027-155413.log": 415335,
     "logs/runtime-20261027-182945.log": 409195,
     "logs/runtime-20261028-105449.log": 78439,
-    "logs/runtime-20261028-105715.log": 180424
+    "logs/runtime-20261028-105715.log": 227785
   },
   "table_cursors": {
-    "conversation_turns": 870,
-    "runtime_events": 112883,
-    "action_requests": 1793156621456
+    "conversation_turns": 873,
+    "runtime_events": 112885,
+    "action_requests": 1793156680989
   },
-  "last_export": "2026-10-28T11:04:00"
+  "last_export": "2026-10-28T11:05:51"
 }

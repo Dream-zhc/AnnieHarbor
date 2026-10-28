@@ -21,3 +21,5 @@
 {"id": 112881, "robot_id": "annie-a", "room_id": "roomv2", "kind": "input_event:sensor.radar", "request_id": null, "ts_ms": 1793156353007, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room:roomv2:main-event"}
 {"id": 112882, "robot_id": "annie-a", "room_id": "roomv2", "kind": "input_event:sensor.radar", "request_id": null, "ts_ms": 1793156365236, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room:roomv2:main-event"}
 {"id": 112883, "robot_id": "annie-a", "room_id": "roomv2", "kind": "input_event:sensor.radar", "request_id": null, "ts_ms": 1793156522889, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room:roomv2:main-event"}
+{"id": 112884, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_offline", "request_id": null, "ts_ms": 1793156728527, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}
+{"id": 112885, "robot_id": "annie-a", "room_id": "roomv2", "kind": "robot_head_online", "request_id": null, "ts_ms": 1793156730760, "elapsed_ms": null, "error": null, "queue_wait_ms": null, "source": "room_audio"}

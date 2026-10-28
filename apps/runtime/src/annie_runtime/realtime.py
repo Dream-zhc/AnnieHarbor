@@ -291,6 +291,7 @@ class RealtimeRobot:
         self.last_provider_speech_ms = None
         self.last_provider_transcript_ms = None
         self.last_asr_first_delta_ms = None
+        self._asr_first_text_ms = None
         self.asr_delta_count = 0
         self._candidate_confirmed = False
         self._candidate_playback_turn_id = None
@@ -1191,10 +1192,16 @@ class RealtimeRobot:
 
     def _hold_dropped_call(self, event, generation, background_tools):
         """True when this final ASR is a dropped call now waiting for quiet."""
+        carried = self._fresh_recovery(carry=True)
         recovery, self._invalid_recovery = self._fresh_recovery(carry=False), None
+        if recovery is None and carried is not None:
+            # The provider cut one sentence in two (10-28): it dropped the head
+            # (ambient or turn_invalid) and would answer this valid tail alone.
+            # Answer the whole sentence; its speculative reply is rejected.
+            recovery = {**carried, "carry": False, "item_id": event.get("item_id"), "draft": ""}
         if recovery is None or (recovery["item_id"] is not None
                                 and event.get("item_id") != recovery["item_id"]):
-            return False  # also retires a carried prefix: the provider answers this one
+            return False
         transcript = str(event.get("transcript", "")).strip()
         text = _join_call(recovery["prefix"], transcript)
         if (not (recovery["kws"] or recovery.get("woken") or WAKE_NAME.search(text)
@@ -1233,6 +1240,25 @@ class RealtimeRobot:
         self._invalid_recovery = None
         await self.handle(pending, generation, background_tools=background_tools)
 
+    def _ambient_recovery(self, text, item_id):
+        """A recovery for speech the provider filed as ambient. That is a stronger
+        "not for her" than turn_invalid, so only a call by name skips the judge:
+        in any open window the decision model decides, without one it stays ignored."""
+        state = self.wake.state if self.wake else None
+        if (state in (None, "SLEEP") or DialoguePresence.is_sleep_command(text)
+                or self._is_self_echo(text)):  # her own voice is often filed as ambient
+            return None
+        carry = self._fresh_recovery(carry=True)
+        prefix = carry["prefix"] if carry else ""
+        joined = _join_call(prefix, text)
+        if not DialoguePresence.is_substantive(joined):
+            return None
+        named = bool(WAKE_NAME.search(joined))
+        if not (named or self.addressee_enabled):
+            return None
+        return {"item_id": item_id, "kws": bool(carry and carry["kws"]), "woken": False,
+                "check": not named, "prefix": prefix, "draft": text, "at": time.monotonic()}
+
     def _carry_dropped_call(self):
         recovery = self._fresh_recovery(carry=False)
         if recovery is None:
@@ -1240,8 +1266,9 @@ class RealtimeRobot:
         if recovery.get("task") is not None:
             recovery["task"].cancel()
         prefix = (recovery.get("pending") or {}).get("transcript") or recovery["draft"]
-        self._invalid_recovery = {"carry": True, "kws": recovery["kws"], "prefix": prefix,
-                                  "at": time.monotonic()}
+        self._invalid_recovery = {"carry": True, "kws": recovery["kws"],
+                                  "woken": recovery.get("woken"), "check": recovery.get("check"),
+                                  "prefix": prefix, "at": time.monotonic()}
         self.publish("turn.recovery_deferred", chars=len(prefix))
 
     async def _answer_recovered_call(self, turn_id, item_id):
@@ -1272,12 +1299,13 @@ class RealtimeRobot:
     def _faces_available(self):
         return self.faces is not None and self.faces.available(self.robot.config.robot_id)
 
-    def _first_delta_ms(self):
-        """Provider speech start to its first live ASR text for this utterance (10-27:
-        the workbench showed it late, then all at once); None if no text came."""
-        if self.last_asr_first_delta_ms is None or self.last_provider_speech_ms is None:
+    def _asr_text_ms(self):
+        """Provider speech start to its first non-empty live ASR text for this utterance
+        (10-27: the workbench showed it late, then all at once; 10-28: the first delta
+        always came 1-2 ms after speech start, empty). None if no text came."""
+        if self._asr_first_text_ms is None or self.last_provider_speech_ms is None:
             return None
-        return self.last_asr_first_delta_ms - self.last_provider_speech_ms
+        return self._asr_first_text_ms - self.last_provider_speech_ms
 
     def _input_lost(self):
         """PCM frames that never reached Qwen from shortly before this utterance
@@ -2594,7 +2622,7 @@ class RealtimeRobot:
                 self.session_frames_sent = self.speech_started_count = 0
                 self.transcripts_completed = self.invalid_turns = 0
                 self.last_provider_speech_ms = self.last_provider_transcript_ms = None
-                self.last_asr_first_delta_ms = None
+                self.last_asr_first_delta_ms = self._asr_first_text_ms = None
                 self.asr_delta_count = 0
                 self._candidate_confirmed = False
                 self.persona_snapshot = {**self.robot.session_state(), **persona_snapshot,
@@ -3013,11 +3041,11 @@ class RealtimeRobot:
                 self._dialogue_changed()
         self.began = time.perf_counter()
         logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d "
-                    "input_lost_frames=%s first_delta_ms=%s deltas=%s",
+                    "input_lost_frames=%s asr_text_ms=%s deltas=%s",
                     self.robot.config.robot_id, turn_id, fields["input_mode"], source,
                     cause or ("asr_final" if audio else "submit"), self.pending_audio_item_id,
                     len(visible_text), self._input_lost() if audio else None,
-                    self._first_delta_ms() if audio else None,
+                    self._asr_text_ms() if audio else None,
                     self.asr_delta_count if audio else None)
         self.publish("turn.started", turn_id=turn_id, user_text=visible_text,
                      turn_source=source,
@@ -3605,7 +3633,7 @@ class RealtimeRobot:
             self._candidate_playback_turn_id = (
                 self.speech.turn_id if self.speech and self.speech.turn_id else None
             )
-            self.last_asr_first_delta_ms = None
+            self.last_asr_first_delta_ms = self._asr_first_text_ms = None
             self.asr_delta_count = 0
             self.pending_audio_item_id = new_item_id
             # Never attribute the previous utterance's stop time to this one.
@@ -3670,13 +3698,13 @@ class RealtimeRobot:
                                  item_id=event.get("item_id"), reason="turn_invalid")
                 logger.info("turn_invalid robot=%s wake_state=%s draft_chars=%d named=%s "
                             "kws_call=%s recover=%s speech_ms=%s input_lost_frames=%s "
-                            "first_delta_ms=%s deltas=%d draft=%r",
+                            "asr_text_ms=%s deltas=%d draft=%r",
                             self.robot.config.robot_id,
                             self.wake.state if self.wake else None, len(self._asr_draft),
                             named, kws_call, recoverable,
                             (time.time_ns() // 1_000_000 - self.last_provider_speech_ms)
                             if self.last_provider_speech_ms else None, self._input_lost(),
-                            self._first_delta_ms(), self.asr_delta_count, self._asr_draft[:30])
+                            self._asr_text_ms(), self.asr_delta_count, self._asr_draft[:30])
             if self.wake:
                 # A recoverable call keeps its candidate and the ASR grace
                 # window, otherwise the gate expires before the final arrives.
@@ -3707,13 +3735,20 @@ class RealtimeRobot:
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
             final_text = str(event.get("transcript", "")).strip()
+            item_id = event.get("item_id")
             await self._release_early_tools(confirmed=False, generation=generation)
+            # 10-28: smart_turn filed most of the user's speech, often the head
+            # of a sentence, as ambient. It is judged like a turn_invalid drop.
+            recovery = self._ambient_recovery(final_text, item_id)
+            logger.info("ambient_heard robot=%s wake_state=%s recover=%s chars=%d text=%r",
+                        self.robot.config.robot_id, self.wake.state if self.wake else None,
+                        recovery is not None, len(final_text), final_text[:30])
             if self.wake:
-                self.wake.speech_stopped(event.get("item_id"), invalid=True)
+                self.wake.speech_stopped(item_id, invalid=recovery is None)
             if self.wake or self._wake_held_events:
                 await self._reject_wake_response("ambient_audio")
-            # A plausible sentence is not evidence the robot was addressed.
-            # Ambient content must never create a Chat turn or response.create.
+            # A plausible sentence alone is not evidence the robot was addressed:
+            # unless a call, the wake window or the judge says so, no turn.
             # Demo: an ambient-only outcome rejects a speculative hold. Qwen
             # need not emit turn_invalid first; without this the TTS player can
             # remain silently HELD while the microphone keeps hearing it.
@@ -3727,6 +3762,16 @@ class RealtimeRobot:
             self.speech_active = False
             self.pending_audio_item_id = None
             self._candidate_playback_turn_id = None
+            if recovery is not None:
+                if item_id:
+                    self._dropped_audio_items.append(item_id)  # never ours to delete
+                self._invalid_recovery = recovery
+                as_final = {"type": "conversation.item.input_audio_transcription.completed",
+                            "item_id": item_id, "transcript": final_text}
+                if self._hold_dropped_call(as_final, generation, background_tools):
+                    return
+                if self.wake:
+                    self.wake.speech_stopped(item_id, invalid=True)  # as before 10-28
             self.publish("transcript.ambient", text=final_text, reason="ambient_audio")
             if (self.wake and self.wake.state != "SLEEP"
                     and DialoguePresence.is_sleep_command(final_text)):
@@ -3756,6 +3801,8 @@ class RealtimeRobot:
             self.publish("transcript.delta", text=event["text"],
                          stash=event["stash"], item_id=event.get("item_id"))
             self._asr_draft = draft
+            if draft.strip() and self._asr_first_text_ms is None:
+                self._asr_first_text_ms = time.time_ns() // 1_000_000
             stable = event["text"].strip()
             if self.language.user_request(stable):
                 self.visual_changed()
@@ -3804,6 +3851,9 @@ class RealtimeRobot:
             if recovering:
                 # Smart_turn produced no reply and kept no item for this call:
                 # retire any reply still playing, like a confirmed barge-in.
+                # A tail joined to its dropped head may have a speculative reply
+                # of its own held: only the whole sentence is answered.
+                await self._reject_wake_response("recovered_call")
                 if self.turn_id or self.response_id or (self.speech and self.speech.turn_id):
                     await self._interrupt_active_turn("recovered_call")
                 self.audio_turn_id = None

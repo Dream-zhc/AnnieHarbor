@@ -1,0 +1,5 @@
+{"id": 1, "robot_id": "annie-a", "kind": "arrival", "text": "张林来了", "person": "张林", "chat_id": null, "count": 1, "created_ms": 1793097066382, "updated_ms": 1793097066382}
+{"id": 2, "robot_id": "annie-a", "kind": "touch", "text": "有人轻轻拍了你的肩膀", "person": null, "chat_id": null, "count": 1, "created_ms": 1793156168373, "updated_ms": 1793156168373}
+{"id": 3, "robot_id": "annie-a", "kind": "close", "text": "有人突然凑得很近", "person": null, "chat_id": null, "count": 1, "created_ms": 1793156269224, "updated_ms": 1793156269224}
+{"id": 4, "robot_id": "annie-a", "kind": "arrival", "text": "张林来了", "person": "张林", "chat_id": null, "count": 1, "created_ms": 1793156326741, "updated_ms": 1793156326741}
+{"id": 5, "robot_id": "annie-a", "kind": "close", "text": "有人突然凑得很近", "person": null, "chat_id": null, "count": 3, "created_ms": 1793156345134, "updated_ms": 1793156522889}

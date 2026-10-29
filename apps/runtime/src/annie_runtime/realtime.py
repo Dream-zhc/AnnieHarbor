@@ -292,6 +292,8 @@ class RealtimeRobot:
         self._pending_deletes = {}  # item_id -> monotonic, deletions we asked for
         self.wake_calls_normalized = 0
         self._invalid_recovery = None
+        self._recovered_create = None  # the response.create a recovered call is waiting on
+        self._ambient_delta = None  # first delta of the background speech being heard
         # Qwen keeps no item for turn_invalid audio; deleting one returns an
         # error event that would tear the session down.
         self._dropped_audio_items = deque(maxlen=32)
@@ -1229,7 +1231,7 @@ class RealtimeRobot:
         transcript = str(event.get("transcript", "")).strip()
         text = _join_call(recovery["prefix"], transcript)
         if (not (recovery["kws"] or recovery.get("woken") or WAKE_NAME.search(text)
-                 or recovery.get("check"))
+                 or recovery.get("check") or recovery.get("accepted"))
                 or not DialoguePresence.is_substantive(text)
                 or DialoguePresence.is_sleep_command(transcript)):
             return False
@@ -1267,11 +1269,12 @@ class RealtimeRobot:
     def _ambient_recovery(self, text, item_id):
         """A recovery for speech the provider filed as ambient. That is a stronger
         "not for her" than turn_invalid, so only a call by name skips the judge:
-        in any open window the decision model decides, without one it stays ignored."""
-        state = self.wake.state if self.wake else None
-        if (state in (None, "SLEEP") or DialoguePresence.is_sleep_command(text)
-                or self._is_self_echo(text)):  # her own voice is often filed as ambient
+        in any open window the decision model decides, without one it stays ignored.
+        A dropped head still waiting for quiet is continued by it."""
+        if not self._ambient_may_answer() or DialoguePresence.is_sleep_command(text) \
+                or self._is_self_echo(text):  # her own voice is often filed as ambient
             return None
+        self._continued_after_drop()
         carry = self._fresh_recovery(carry=True)
         prefix = carry["prefix"] if carry else ""
         joined = _join_call(prefix, text)
@@ -1280,8 +1283,25 @@ class RealtimeRobot:
         named = bool(WAKE_NAME.search(joined))
         if not (named or self.addressee_enabled):
             return None
+        accepted = bool(carry and carry.get("accepted"))  # a head already admitted
         return {"item_id": item_id, "kws": bool(carry and carry["kws"]), "woken": False,
-                "check": not named, "prefix": prefix, "draft": text, "at": time.monotonic()}
+                "check": not (named or accepted), "accepted": accepted,
+                "prefix": prefix, "draft": text, "at": time.monotonic()}
+
+    def _ambient_may_answer(self):
+        return bool(self.wake and self.wake.state != "SLEEP")
+
+    def _continued_after_drop(self):
+        """Background speech while a dropped head waits for quiet: the user goes on.
+
+        No speech_started precedes background speech (10-28 evening, 0 of 34
+        judged-for-her heads answered), so its delta or final is the only sign.
+        Only a head whose final is in is carried: a turn_invalid draft would be
+        joined again with its own final.
+        """
+        recovery = self._fresh_recovery(carry=False)
+        if recovery is not None and recovery.get("pending") is not None:
+            self._carry_dropped_call()
 
     def _carry_dropped_call(self):
         recovery = self._fresh_recovery(carry=False)
@@ -1292,6 +1312,7 @@ class RealtimeRobot:
         prefix = (recovery.get("pending") or {}).get("transcript") or recovery["draft"]
         self._invalid_recovery = {"carry": True, "kws": recovery["kws"],
                                   "woken": recovery.get("woken"), "check": recovery.get("check"),
+                                  "accepted": recovery.get("accepted"),
                                   "prefix": prefix, "at": time.monotonic()}
         self.publish("turn.recovery_deferred", chars=len(prefix))
 
@@ -1306,11 +1327,43 @@ class RealtimeRobot:
             "item": {"type": "message", "role": "user",
                      "content": [{"type": "input_text", "text": text}]},
         })
-        await self.socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
+        event_id = "annie_recovered_" + uuid4().hex
+        self._recovered_create = {"event_id": event_id, "turn_id": turn_id, "text": text,
+                                  "at": time.monotonic()}
+        await self.socket.send({"type": "response.create", "event_id": event_id,
+                                "response": {"modalities": ["text"]}})
         self.publish("turn.recovered", turn_id=turn_id, item_id=item_id,
                      reason="provider_turn_invalid", text=text[:80])
         logger.info("turn_recovered robot=%s turn=%s chars=%d", self.robot.config.robot_id,
                     turn_id, len(text))
+
+    def _refused_recovered_answer(self, event):
+        """The recovered call's response.create, refused because the provider already
+        heard the user speak again (10-28 19:51:50 tore the whole session down)."""
+        error = event.get("error") or {}
+        asked = self._recovered_create
+        if (asked is None or error.get("code") != "invalid_value"
+                or "while user is speaking" not in str(error.get("message", ""))):
+            return None
+        # DashScope may omit the nested event_id: then only right after our request.
+        if error.get("event_id") != asked["event_id"] and (
+                error.get("event_id") or time.monotonic() - asked["at"] > 3):
+            return None
+        self._recovered_create = None
+        return asked
+
+    def _carry_refused_answer(self, asked):
+        """She waits for the user to finish and answers what they add with it."""
+        if self.turn_id != asked["turn_id"] or self.response_id:
+            return  # a newer turn already took over; the text item stays in context
+        self._finish("cancelled", cancel_source="user_speaking")
+        # Already admitted: what follows joins it without a second opinion.
+        self._invalid_recovery = {"carry": True, "kws": False, "woken": False, "check": False,
+                                  "accepted": True, "prefix": asked["text"],
+                                  "at": time.monotonic()}
+        self.publish("turn.recovery_deferred", chars=len(asked["text"]), reason="user_speaking")
+        logger.info("recovered_answer_deferred robot=%s turn=%s reason=user_speaking chars=%d",
+                    self.robot.config.robot_id, asked["turn_id"], len(asked["text"]))
 
     # ---- look first, then answer (10-28, docs/规范/视觉意图协议.md) --------------------
     def _turn_waiting(self):
@@ -1863,14 +1916,7 @@ class RealtimeRobot:
         repeating her words rarely talks over her. A call by name is never echo.
         """
         heard = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", text)
-        if len(heard) < 2 or WAKE_NAME.match(heard):
-            return False
-        speech = self.speech
-        if speech is None or not hasattr(speech, "output_active"):
-            return False
-        last_receipt = getattr(speech, "_last_receipt_t", None)
-        if not (speech.output_active() or last_receipt is not None
-                and time.monotonic() - last_receipt <= ECHO_TAIL_SECONDS):
+        if len(heard) < 2 or WAKE_NAME.match(heard) or not self._her_voice_audible():
             return False
         said = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "",
                       (self.text if self.turn_id else "") + (self._last_reply_text or ""))
@@ -1882,6 +1928,15 @@ class RealtimeRobot:
         pairs = {heard[i:i + 2] for i in range(len(heard) - 1)}
         hers = {said[i:i + 2] for i in range(len(said) - 1)}
         return len(heard) >= 4 and len(pairs & hers) / len(pairs) >= .6
+
+    def _her_voice_audible(self):
+        """She plays, or played within ECHO_TAIL_SECONDS: the microphone may hear her."""
+        speech = self.speech
+        if speech is None or not hasattr(speech, "output_active"):
+            return False
+        last_receipt = getattr(speech, "_last_receipt_t", None)
+        return bool(speech.output_active() or last_receipt is not None
+                    and time.monotonic() - last_receipt <= ECHO_TAIL_SECONDS)
 
     async def _drop_self_echo(self, item_id, text):
         """Not a person: no turn, no reply, no side-talk memory; keep playing."""
@@ -2825,6 +2880,7 @@ class RealtimeRobot:
                 self._cancelled_response_ids.clear()
                 self._provider_active_response_id = None
                 self._pending_cancel_events.clear()
+                self._recovered_create = None
                 self._response_output_ids.clear()
                 self._unheard_output_ids.clear()
                 self.pending_audio_item_id = None
@@ -3690,6 +3746,10 @@ class RealtimeRobot:
                 # dropped reset the whole session and its context.
                 self.publish("context.delete_missing_ignored")
                 return
+            refused = self._refused_recovered_answer(event)
+            if refused is not None:
+                self._carry_refused_answer(refused)
+                return
             raise RuntimeError(self._provider_error(event))
         if kind == "response.created":
             self._provider_active_response_id = (event.get("response") or {}).get("id")
@@ -3954,19 +4014,31 @@ class RealtimeRobot:
                              reason="turn_invalid")
                 self.speech.request_playback_control("resume", reason="turn_invalid")
         elif kind == "conversation.item.ambient_audio_transcription.completed":
-            if self._stale_audio_event(kind, event.get("item_id")):
-                return
             final_text = str(event.get("transcript", "")).strip()
             item_id = event.get("item_id")
+            heard, self._ambient_delta = self._ambient_delta, None
+            heard = heard if heard and heard["item_id"] == item_id else None
+            if self._stale_audio_event(kind, item_id):
+                # Its temporary id never matches a speech item: count how often an
+                # open speech segment swallows background speech (10-28 evening).
+                logger.info("ambient_ignored robot=%s reason=speech_pending chars=%d text=%r",
+                            self.robot.config.robot_id, len(final_text), final_text[:30])
+                return
             await self._release_early_tools(confirmed=False, generation=generation)
             # 10-28: smart_turn filed most of the user's speech, often the head
             # of a sentence, as ambient. It is judged like a turn_invalid drop.
             recovery = self._ambient_recovery(final_text, item_id)
-            logger.info("ambient_heard robot=%s wake_state=%s recover=%s chars=%d text=%r",
+            logger.info("ambient_heard robot=%s wake_state=%s recover=%s chars=%d joined_chars=%d "
+                        "deltas=%d delta_ms=%s text=%r",
                         self.robot.config.robot_id, self.wake.state if self.wake else None,
-                        recovery is not None, len(final_text), final_text[:30])
+                        recovery is not None, len(final_text),
+                        len(recovery["prefix"]) if recovery else 0, heard["count"] if heard else 0,
+                        round((time.monotonic() - heard["at"]) * 1000) if heard else None,
+                        final_text[:30])
             if self.wake:
                 self.wake.speech_stopped(item_id, invalid=recovery is None)
+                if recovery is not None:
+                    self.wake.presence.overheard()  # no candidate of its own keeps the window
             if self.wake or self._wake_held_events:
                 await self._reject_wake_response("ambient_audio")
             # A plausible sentence alone is not evidence the robot was addressed:
@@ -3989,7 +4061,7 @@ class RealtimeRobot:
                     self._dropped_audio_items.append(item_id)  # never ours to delete
                 self._invalid_recovery = recovery
                 as_final = {"type": "conversation.item.input_audio_transcription.completed",
-                            "item_id": item_id, "transcript": final_text}
+                            "item_id": item_id, "transcript": final_text, "_overheard": True}
                 if self._hold_dropped_call(as_final, generation, background_tools):
                     return
                 if self.wake:
@@ -4001,6 +4073,13 @@ class RealtimeRobot:
         elif kind == "conversation.item.ambient_audio_transcription.delta":
             if self._stale_audio_event(kind, event.get("item_id")):
                 return
+            item_id = event.get("item_id")
+            if self._ambient_delta is None or self._ambient_delta["item_id"] != item_id:
+                self._ambient_delta = {"item_id": item_id, "at": time.monotonic(), "count": 0}
+                # No speech_started shows the user goes on; her own echo does not.
+                if self._ambient_may_answer() and not self._her_voice_audible():
+                    self._continued_after_drop()
+            self._ambient_delta["count"] += 1
             self.publish("transcript.ambient_delta", text=event.get("text", ""),
                          stash=event.get("stash", ""), item_id=event.get("item_id"))
         elif kind == "conversation.item.input_audio_transcription.delta":
@@ -4088,11 +4167,22 @@ class RealtimeRobot:
             final_text = self.transcript.strip()
             item_id = event.get("item_id")
             wake_only_alias = bool(self.wake and self.wake.presence.is_wake_transcript(final_text))
-            admitted = self.wake.transcript_accepted(final_text, item_id) if self.wake else True
+            if not self.wake:
+                admitted = True
+            elif recovering and event.get("_overheard"):
+                # Background speech never started a candidate (10-28 evening: 0 of 34
+                # judged for her were answered): the judge or her name admits it.
+                admitted = self.wake.presence.overheard_accepted(final_text)
+            else:
+                admitted = self.wake.transcript_accepted(final_text, item_id)
             if self.wake and admitted and self.wake.presence.is_sleep_command(final_text):
                 await self._enter_sleep("asr", item_id=item_id)
                 return
             if self.wake and not admitted:
+                if recovering:
+                    logger.info("recovery_unadmitted robot=%s wake_state=%s overheard=%s chars=%d "
+                                "text=%r", self.robot.config.robot_id, self.wake.state,
+                                bool(event.get("_overheard")), len(final_text), final_text[:30])
                 await self._reject_wake_response("unadmitted_transcript")
                 if wake_only_alias:
                     # The provider keeps input items even if we reject their
@@ -4170,6 +4260,7 @@ class RealtimeRobot:
             if recovering and target and target == self.turn_id and not self.response_id:
                 await self._answer_recovered_call(target, item_id)
         elif kind == "response.created":
+            self._recovered_create = None  # the request a refusal could answer was taken
             self.language.response_started()
             self.response_id = (event.get("response") or {}).get("id")
             self.publish("response.created", response_id=self.response_id)

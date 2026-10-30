@@ -2859,7 +2859,7 @@ class RealtimeRobot:
                     if event.get("type") == "session.updated":
                         config = event.get("session") or {}
                         if config.get("modalities") != ["text"] or (
-                            (config.get("turn_detection") or {}).get("type") != "smart_turn"
+                            (config.get("turn_detection") or {}).get("type") not in ("smart_turn", "smart_turn_v2")
                         ):
                             raise RuntimeError("Provider did not confirm requested smart_turn session")
                         if (config.get("max_history_turns") is not None and
@@ -3263,6 +3263,10 @@ class RealtimeRobot:
     def _create_turn(self, user_text, *, audio=False, source="user", cause=None):
         if self.turn_id:
             return
+        # The fresh view was captured for the previous question only ("回答这一问
+        # 以它为准"); a new turn must not inherit it, or every later answer keeps
+        # describing that scene.
+        self._vision_fresh = None
         self._last_conversation_activity_t = time.monotonic()
         if source == "user":
             self._last_user_turn_at = self._last_conversation_activity_t

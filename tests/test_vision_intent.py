@@ -441,3 +441,16 @@ def test_the_fresh_view_leaves_the_prompt_after_a_while(tmp_path, monkeypatch):
         await asyncio.sleep(.01)
         assert "左边有两盆绿植。" not in client._combined_instructions(None)
     scenario(tmp_path, body)
+
+
+def test_the_fresh_view_does_not_leak_into_the_next_turn(tmp_path):
+    # 2026-10-30: "回答这一问以它为准" was time-based (30s), so the next
+    # question ("讲个故事") still answered from the stale scene description.
+    async def body(rt, client):
+        client._vision_fresh = {"text": "左边有两盆绿植。", "script": "look_left",
+                                "at": realtime_module.time.monotonic()}
+        assert "左边有两盆绿植。" in client._combined_instructions(None)
+        client._reset_turn()
+        client._create_turn("讲个故事")
+        assert "左边有两盆绿植。" not in client._combined_instructions(None)
+    scenario(tmp_path, body)

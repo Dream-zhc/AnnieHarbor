@@ -60,7 +60,7 @@ def session_update(instructions: str, history_turns: int = 20, *,
     session = {
         "modalities": ["text"],
         "input_audio_format": "pcm",
-        "turn_detection": {"type": "smart_turn"},
+        "turn_detection": {"type": "smart_turn_v2"},
         "max_history_turns": history_turns,
         "instructions": instructions,
     }

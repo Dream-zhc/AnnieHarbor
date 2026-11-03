@@ -13,7 +13,8 @@ STYLE_MARKERS = {
     "annie-roast": ("机灵互怼", "硬核损友", "抓包", "招牌三连", "刀子嘴后面是豆腐心"),
     "annie-weary": ("怨种搭档", "工位", "抱怨一句工作量", "打工人词汇", "茶水间"),
     "annie-deadpan": ("优雅乐子人", "纪录片解说员", "英式管家", "新闻播报", "越短越冷"),
-    "annie-savage": ("毒舌开喷", "吐槽大会", "弹药库", "粗口当语气词", "嘴硬三秒"),
+    "annie-savage": ("毒舌开喷", "吐槽大会", "弹药库", "粗口当语气词", "嘴硬三秒", "阴阳怪气",
+                     "普通话网络腔"),
 }
 # Each personality must visibly step out of its act when the user is hurting.
 SERIOUS_SWITCH = {
@@ -69,6 +70,8 @@ def test_idioms_are_occasional_not_a_repeated_script(style_id):
         assert "不碰外貌身材" in style and "不带性暗示" in style
         assert "不用辱骂人格的脏话" in style
         assert "不连着两轮用同一个梗" in style
+        # “老铁” pulled her replies into dialect words; she speaks Mandarin internet slang.
+        assert "老铁" not in style and "不用方言" in style
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

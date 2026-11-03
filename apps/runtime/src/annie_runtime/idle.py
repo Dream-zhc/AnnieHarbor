@@ -293,7 +293,8 @@ class ShortContinuation:
             submitted = await client.submit_text(
                 "【内部短时续聊规划，非用户发言】仅在刚刚的话题上自然补一句新观察或一个"
                 "不催促的简短问题；如果刚才已经问过，不要催促回答，也不要再重复提问。"
-                "不重复上句，不执行旧任务，不调用工具。" + GROUNDED_ONLY + "续聊方向：" + topic,
+                "不重复上句，不执行旧任务，不调用工具。" + GROUNDED_ONLY
+                + "续聊方向只是方向，用你自己的话说，不照念。续聊方向：" + topic,
                 source="external", expected_identity=identity,
                 text_only=row["channel"] == "text")
             if (row["turn_id"] != turn_id or row["identity"] != identity or

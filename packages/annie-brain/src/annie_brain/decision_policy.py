@@ -124,12 +124,33 @@ def language_request_question(name):
 def face_request_question(name):
     return {"type": "choice",
             "instructions": (f"机器人小安妮能用摄像头记住人脸。当前这句话是不是在让小安妮记住说话人自己，"
-                             f"而且说话人的名字是“{name}”？"),
+                             f"而且说话人的名字是“{name}”？语音识别可能有错字、同音字。"),
             "criteria": {
                 "yes": (f"说话人在自我介绍、报自己的名字或让小安妮记住、认识自己，{name}是TA自己的名字；"
                         "回答小安妮“你叫什么”也算"),
                 "other": f"{name}是别人的名字，在介绍或谈论别人",
                 "no": "没有要她记人：只是聊天里提到名字、在提问、开玩笑，或者不想被记住",
+            }}
+
+
+def face_forget_question(name):
+    return {"type": "choice",
+            "instructions": (f"机器人小安妮能用摄像头记住人脸。当前这句话是不是在让小安妮忘掉“{name}”的脸，"
+                             "以后不再认出TA？语音识别可能有错字、同音字。"),
+            "criteria": {
+                "yes": f"要她忘掉、删掉{name}的脸，或者以后别再认{name}（{name}可以是说话人自己）",
+                "no": "没有要她忘掉谁的脸：在聊天、提问、开玩笑，或者是让她忘掉说过的话、别的事",
+            }}
+
+
+def face_forget_confirm_question(name):
+    """Her one “确定要我忘掉你吗”: did the answer agree?"""
+    return {"type": "choice",
+            "instructions": (f"机器人小安妮刚问过用户确定要她忘掉“{name}”的脸吗。当前这句话是不是答应了？"
+                             "语音识别可能有错字、半截话。"),
+            "criteria": {
+                "yes": "答应了：确定、对、好、嗯、忘吧、删吧，或者再说一遍要她忘掉",
+                "no": "没答应：不要、算了、犹豫、反问、改主意，或者在说别的事",
             }}
 
 
@@ -251,6 +272,52 @@ def asks_to_look(user_text, previous_texts=()):
         return False
     return bool(_SEE_NOW.search(text) or explicit_motion(text, LOOK_SCRIPTS)
                 or head_turn_motion(text, previous_texts, LOOK_SCRIPTS))
+
+
+# What the phrase rules above miss but still needs her eyes (11-03): 有戴眼镜的人吗、
+# 水桶在哪里、饮水机在什么位置、你当前在什么场景下. The decision model only picks
+# whether and where she looks; the answer still comes from the vision service
+# (user decision 11-03).
+LOOK_DIRECTIONS = {"front": None, "left": "look_left", "right": "look_right", "up": "look_up"}
+_LOOK_CRITERIA = {
+    "none": ("不用看：闲聊、问知识、天气、价格或做法，问附近或外地的店、车站、好吃好玩的地方，聊她自己，"
+             "或者“看”不是用眼睛看（看电影、看病、你看着办、我看看），或者在叫她别看"),
+    "front": ("看面前：问面前、眼前、周围或这里有什么、有谁、有没有某人某物，某样东西现在在哪里，"
+              "她现在在什么场景，或用户自己穿戴、拿着、长得怎样"),
+    "left": "看左边：问左边、左手边有什么，或让她往左看",
+    "right": "看右边：问右边、右手边有什么，或让她往右看",
+    "up": "看上面：问上面、头顶、天花板有什么，或让她抬头看",
+}
+# Only these go to the decision model: a line without any of them (讲个笑话、
+# 今天天气怎么样) is answered at once.
+_LOOK_CUE = re.compile(
+    r"看|瞧|瞅|眼前|面前|前面|前边|后面|后边|周围|四周|旁边|身边|附近|这里|这儿|那里|那儿|"
+    r"房间|屋里|外面|场景|环境|左|右|上面|上边|头顶|天花板|下面|地上|桌|墙|窗|门口|"
+    r"哪|位置|有没有|有人|谁|几个|多少人|穿|戴|拿|举|颜色|长得|样子|帅|好看|有什么|"
+    r"[这那](?:个|些|边)?(?:是|叫)(?:什么|啥)")
+
+
+def look_cue(user_text):
+    """The line could be about what is around her: worth asking the decision model."""
+    return bool(_LOOK_CUE.search(str(user_text or "")))
+
+
+def look_question(*, image=False):
+    return {"type": "choice",
+            "instructions": ("机器人小安妮头上有摄像头" + ("，附图是她此刻正前方的画面" if image else "")
+                             + "。要回答用户当前这句话，她需不需要现在看一眼周围，往哪看？"
+                             "语音识别可能有错字、半截话。"),
+            "criteria": dict(_LOOK_CRITERIA)}
+
+
+def look_state(utterance, previous_texts=()):
+    """Bounded evidence for look_question: “那右边呢” needs the line before."""
+    previous = [str(text)[:80] for text in previous_texts or () if str(text or "").strip()][-3:]
+    state = {"机器人": "小安妮"}
+    if previous:
+        state["用户前几句"] = previous
+    state["当前这句话"] = str(utterance)[:200]
+    return state
 
 
 def motion_question(descriptions):

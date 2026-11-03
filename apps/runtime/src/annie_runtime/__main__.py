@@ -224,17 +224,44 @@ def inner_life_options(inner_life: dict, llm: dict, environ) -> dict:
     }
 
 
-def vision_intent_options(vision: dict, environ) -> dict:
+def livekit_room_env(robot_id):
+    """The .env key naming a robot's LiveKit room, as the exhibit display reads it."""
+    return "ANNIE_EXHIBIT_LIVEKIT_ROOM_" + "".join(
+        char if char.isalnum() else "_" for char in robot_id.upper())
+
+
+def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
     """HarborRuntime kwargs for looking before answering: runtime_defaults [vision.intent]
     and .env. ANNIE_VISION_INTENT_ENABLED=0/1 overrides the file; keep it off until the
-    robot's vision service answers vision.intent (docs/规范/视觉意图协议.md)."""
+    robot's vision service answers vision.intent (docs/规范/视觉意图协议.md).
+
+    [vision.intent.decision] has the decision model judge looks the phrase rules miss
+    (ANNIE_VISION_LOOK_DECISION_ENABLED=0/1 overrides). Its picture comes from the
+    LiveKit camera the exhibit display shows, configured by ANNIE_EXHIBIT_LIVEKIT_*."""
     intent = vision.get("intent", {})
+    decision = intent.get("decision", {})
+    url = environ.get("ANNIE_EXHIBIT_LIVEKIT_URL", "").strip()
+    key = environ.get("ANNIE_EXHIBIT_LIVEKIT_API_KEY", "").strip()
+    secret = environ.get("ANNIE_EXHIBIT_LIVEKIT_API_SECRET", "").strip()
+    rooms = {robot_id: environ.get(livekit_room_env(robot_id), "").strip()
+             for robot_id in robot_ids}
+    rooms = {robot_id: room for robot_id, room in rooms.items() if room}
     return {
         "vision_intent_enabled": environ.get(
             "ANNIE_VISION_INTENT_ENABLED", "1" if intent.get("enabled", False) else "0") == "1",
         "vision_intent_route": str(intent.get("route", "cloud")),
         "vision_intent_deadline_ms": int(intent.get("deadline_ms", 3500)),
         "vision_intent_action_extra_ms": int(intent.get("action_receipt_extra_ms", 1200)),
+        "vision_look_decision": {
+            "enabled": environ.get("ANNIE_VISION_LOOK_DECISION_ENABLED",
+                                   "1" if decision.get("enabled", False) else "0") == "1",
+            "scope": decision.get("scope", "cue"),
+            "timeout_ms": int(decision.get("timeout_ms", 700)),
+            "image": decision.get("image", True),
+        },
+        "livekit": ({"url": url, "api_key": key, "api_secret": secret, "rooms": rooms,
+                     "source": environ.get("ANNIE_EXHIBIT_LIVEKIT_SOURCE", "").strip() or "camera-a"}
+                    if url and key and secret and rooms else None),
     }
 
 
@@ -324,8 +351,9 @@ def main():
         args.database or os.environ.get("ANNIE_DATABASE") or config["storage"]["database"],
     )
     motions = motion_options(runtime_defaults.get("motions", {}), os.environ)
+    robots = load_robots(root / "config/robots.toml")
     runtime = HarborRuntime(
-        load_robots(root / "config/robots.toml"),
+        robots,
         database,
         load_room_server(root / "config/rooms.toml"),
         conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
@@ -408,7 +436,8 @@ def main():
         motion_options=motions,
         **inner_life_options(runtime_defaults.get("inner_life", {}),
                              provider_defaults["llm"], os.environ),
-        **vision_intent_options(runtime_defaults["vision"], os.environ),
+        **vision_intent_options(runtime_defaults["vision"], os.environ,
+                                [robot.robot_id for robot in robots]),
     )
     try:
         runtime.preflight()

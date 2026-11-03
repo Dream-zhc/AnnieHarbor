@@ -81,6 +81,18 @@ def test_a_name_needs_two_messages_and_a_brief_misread_does_not_stick():
     assert text.count("张三") == 1 and "一位朋友" in text
 
 
+def test_a_name_holds_through_frames_without_it_and_goes_after_three():
+    clock = Clock()
+    monitor = RoomMonitor("roomv2", clock=clock)
+    feed(monitor, clock, [ME], times=2)
+    turned = dict(ME, label="一位朋友", name=None, known=False)  # face turned away a moment
+    assert "你正看着张三" in feed(monitor, clock, [turned])
+    assert "你正看着张三" in feed(monitor, clock, [ME])
+    assert "你正看着张三" in feed(monitor, clock, [turned], times=2)
+    assert feed(monitor, clock, [turned]).startswith("【眼前画面】你正看着一位朋友")
+    assert monitor.people_view()["names"] == []
+
+
 def test_edge_flicker_is_neither_a_new_person_nor_a_departure():
     clock = Clock()
     monitor = RoomMonitor("roomv2", clock=clock)

@@ -2,7 +2,7 @@
 
 import json
 import time
-from collections import deque
+from collections import Counter, deque
 
 VISUAL_CONTEXT_LIMIT = 2000
 VISUAL_DESCRIPTION_LIMIT = 4000
@@ -33,6 +33,9 @@ _SHOWN_EXPRESSIONS = frozenset({"微笑", "开心", "高兴", "大笑", "惊讶"
 # Messages that must agree before a value is shown. Expressions are the least
 # reliable field (a person at a computer read as "厌恶" two frames running).
 AGREEMENT = {"name": 2, "expression": 3}
+# A name needs 2 of the last 3 messages and goes only after 3 without it: a face
+# turned away for a frame keeps its name, one frame naming someone else changes nothing.
+NAME_WINDOW = 3
 
 
 def _phrase(value, limit=30):
@@ -178,18 +181,23 @@ class PeopleSmoother:
         changes = []
         for sid, row in seen.items():
             track = self.tracks.setdefault(sid, {"hits": deque(maxlen=ABSENT_MISSES),
-                                                 "names": deque(maxlen=AGREEMENT["name"]),
+                                                 "names": deque(maxlen=NAME_WINDOW),
                                                  "name": None,
                                                  "expressions": deque(
                                                      maxlen=AGREEMENT["expression"]),
                                                  "expression": None,
                                                  "present": False, "label": None})
             track["row"] = row
-            for field, needed in AGREEMENT.items():
-                history = track[field + "s"]
-                history.append(row[field])
-                if len(history) == needed and len(set(history)) == 1:
-                    track[field] = history[0]  # also back to None after enough misses
+            track["names"].append(row["name"])
+            name, votes = Counter(track["names"]).most_common(1)[0]
+            if name is not None and votes >= AGREEMENT["name"]:
+                track["name"] = name
+            elif votes == NAME_WINDOW:
+                track["name"] = None
+            history = track["expressions"]
+            history.append(row["expression"])
+            if len(history) == AGREEMENT["expression"] and len(set(history)) == 1:
+                track["expression"] = history[0]  # also back to None after enough misses
         for sid, track in list(self.tracks.items()):
             track["hits"].append(sid in seen)
             hits = sum(track["hits"])

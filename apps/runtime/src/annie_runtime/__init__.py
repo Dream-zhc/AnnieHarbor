@@ -945,12 +945,23 @@ class HarborRuntime:
         vision_intent_route: str = "cloud",
         vision_intent_deadline_ms: int = 3500,
         vision_intent_action_extra_ms: int = 1200,
+        vision_look_decision: dict | None = None,
+        camera_frames: dict | None = None,
+        livekit: dict | None = None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
         if (type(vision_intent_action_extra_ms) is not int
                 or not 0 <= vision_intent_action_extra_ms <= 10000):
             raise ValueError("vision_intent_action_extra_ms must be an integer between 0 and 10000")
+        look_decision = {"enabled": False, "scope": "cue", "timeout_ms": 700, "image": True,
+                         **(vision_look_decision or {})}
+        if (type(look_decision["enabled"]) is not bool or type(look_decision["image"]) is not bool
+                or look_decision["scope"] not in {"cue", "all"}
+                or type(look_decision["timeout_ms"]) is not int
+                or not 100 <= look_decision["timeout_ms"] <= 3000):
+            raise ValueError("vision look decision needs boolean enabled/image, scope cue or all "
+                             "and timeout_ms between 100 and 3000")
         if type(conversation_history_turns) is not int or not 1 <= conversation_history_turns <= 100:
             raise ValueError("conversation_history_turns must be an integer between 1 and 100")
         if type(realtime_history_turns) is not int or not 1 <= realtime_history_turns <= 50:
@@ -1327,6 +1338,8 @@ class HarborRuntime:
 
             client.event_activity = wake_external
         self.vision_intents = None
+        self.vision_look_decision = None
+        self.camera_frames = {}  # robot_id -> LiveKitFrames for the look decision's picture
         if room_server is not None:
             from annie_adapters.playback import RoomEventListener
 
@@ -1394,12 +1407,38 @@ class HarborRuntime:
                 for robot_id in cameras:
                     self.realtime[robot_id].vision_intents = self.vision_intents
                     self.realtime[robot_id].vision_action_extra_ms = vision_intent_action_extra_ms
+                # “有戴眼镜的人吗”: what the phrase rules miss goes to the decision model, with
+                # the newest LiveKit camera frame when d3 answers (user decision 11-03).
+                if look_decision["enabled"] and (self.d3 is not None or self.decision is not None):
+                    self.vision_look_decision = look_decision
+                    frames = dict(camera_frames or {}) if look_decision["image"] else {}
+                    rooms = (livekit or {}).get("rooms") or {}
+                    if look_decision["image"] and self.d3 is not None and livekit:
+                        from annie_adapters.livekit_frames import LiveKitFrames
+
+                        for robot_id in cameras:
+                            if robot_id not in frames and rooms.get(robot_id):
+                                frames[robot_id] = LiveKitFrames(
+                                    livekit["url"], livekit["api_key"], livekit["api_secret"],
+                                    rooms[robot_id], livekit["source"], label=robot_id)
+                    self.camera_frames = {robot_id: frames[robot_id] for robot_id in cameras
+                                          if robot_id in frames}
+                    for robot_id in cameras:
+                        self.realtime[robot_id].look_decision = look_decision
+                        self.realtime[robot_id].camera_frames = self.camera_frames.get(robot_id)
             if vision_intent_enabled:
                 # Exported logs carry no /health: say at startup who looks before answering.
                 logger.info("vision_intent_config robots=%s route=%s deadline_ms=%s tts=%s",
                             ",".join(sorted(self.vision_intents.publishers))
                             if self.vision_intents else "none",
                             vision_intent_route, vision_intent_deadline_ms, bool(tts_voice))
+            if self.vision_look_decision is not None:
+                logger.info("vision_look_decision_config scope=%s timeout_ms=%s image=%s frames=%s",
+                            look_decision["scope"], look_decision["timeout_ms"],
+                            look_decision["image"],
+                            ",".join(f"{robot_id}:{getattr(item, 'room_name', '?')}"
+                                     for robot_id, item in sorted(self.camera_frames.items()))
+                            or "none")
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):
@@ -1991,6 +2030,8 @@ class HarborRuntime:
             self._decision_warm = asyncio.create_task(self._warm_decision())
         if self.d3 is not None and self._owns_d3:
             self.d3.start()
+        for frames in self.camera_frames.values():
+            frames.start()
         for connection in self.room_connections.values():
             connection.start()
         for connections in self.playback_listeners.values():
@@ -2080,6 +2121,8 @@ class HarborRuntime:
                 await self.actions.close()
             if self.vision_intents is not None:
                 await self.vision_intents.close()
+            for frames in self.camera_frames.values():
+                await frames.close()
             if self.weather is not None:
                 await self.weather.close()
             if self.faces is not None:
@@ -2747,6 +2790,11 @@ class HarborRuntime:
                 "configured_robots": (sorted(self.vision_intents.publishers)
                                       if self.vision_intents else []),
                 "route": self.vision_intents.route if self.vision_intents else None,
+            },
+            "vision_look_decision": {
+                **(self.vision_look_decision or {"enabled": False}),
+                "camera_frames": {robot_id: frames.snapshot()
+                                  for robot_id, frames in sorted(self.camera_frames.items())},
             },
             "room_gateway": {
                 "configured": room_required,

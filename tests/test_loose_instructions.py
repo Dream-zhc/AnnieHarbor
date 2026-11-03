@@ -245,7 +245,7 @@ def test_any_self_introduction_registers_and_the_rest_is_judged(tmp_path):
     live(tmp_path, body, decision=decision, registry=registry)
 
 
-def test_a_face_known_by_another_name_is_asked_about_once(tmp_path):
+def test_a_face_known_by_another_name_keeps_the_picture_s_name(tmp_path):
     registry = FakeRegistry(people=('张三',))
 
     async def body(rt, client):
@@ -254,7 +254,7 @@ def test_a_face_known_by_another_name_is_asked_about_once(tmp_path):
         assert first['status'] == 'known_as_other' and first['known_as'] == '张三'
         assert registry.calls == []
         again = await say(client, '对，我就叫李四，记住我', 'k2', 'remember_face', {'name': '李四'})
-        assert again['status'] == 'started' and registry.calls == [('register', '李四', 18)]
+        assert again['status'] == 'known_as_other' and registry.calls == []  # 11-03: never renamed
 
     live(tmp_path, body, registry=registry)
 

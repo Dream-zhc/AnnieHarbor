@@ -70,6 +70,17 @@ class RealtimeWireTests(unittest.TestCase):
                        "先停下来把那个故事讲完"):
             self.assertFalse(DialoguePresence.is_sleep_request(phrase), phrase)
 
+    def test_chained_stuttered_or_corrected_sleep_commands_still_close_the_gate(self):
+        for phrase in ("你你闭嘴，别说话了。", "闭嘴，你别说话了", "别说了别说了", "闭闭嘴",
+                       "不是让你闭嘴，是让你退下。"):
+            self.assertTrue(DialoguePresence.is_sleep_command(phrase), phrase)
+        for phrase in ("闭嘴吧，安静一会儿", "别说了，你去休息吧", "不是让你闭嘴，是让你先安静一会儿"):
+            self.assertTrue(DialoguePresence.is_sleep_request(phrase), phrase)
+        for phrase in ("别说了，听我讲个故事", "闭嘴，我给你讲个故事", "你你好",
+                       "不是让你闭嘴", "不是让你闭嘴，是让你小声点"):
+            self.assertFalse(DialoguePresence.is_sleep_command(phrase), phrase)
+            self.assertFalse(DialoguePresence.is_sleep_request(phrase), phrase)
+
     def test_enter_sleep_tool_is_advertised_only_with_the_listen_gate(self):
         absent = [tool["function"]["name"] for tool in session_update("小安妮")["session"]["tools"]]
         present = session_update("小安妮", sleep=True)["session"]["tools"]

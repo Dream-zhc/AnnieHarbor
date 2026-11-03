@@ -45,11 +45,13 @@ def canonical_wake_call(text, *, kws_confirmed=False):
 
 _BACKCHANNEL = frozenset({"嗯", "嗯嗯", "啊", "哦", "噢", "好", "好的", "对", "是", "呃"})
 _WAKE_FRAGMENTS = frozenset({"妮", "安妮", "小安", "小安尼"})
+_SLEEP_VERB = r"(?:退下|闭嘴|别说话|不要说话|别说了|停止聊天|结束对话)(?:吧|了|一下)?"
 _SLEEP_COMMAND = re.compile(
     r"^(?:小安妮|安妮)?(?:请|现在|先|马上|立刻|赶紧|你)?"
-    r"(?:退下(?:退下)?(?:别说了)?|闭嘴|别说话|不要说话|别说了|停止聊天|结束对话)"
-    r"(?:吧|了|一下)?$"
+    rf"{_SLEEP_VERB}(?:你?{_SLEEP_VERB})*$"  # "闭嘴，别说话了" is one command said twice
 )
+_STUTTER = re.compile(r"(.)\1+")  # ASR keeps stutters: "你你闭嘴"
+_SLEEP_CORRECTION = re.compile(r"我?不是.{1,8}?(?:而是|是)(?:[让叫要]你)?(.+)")
 _SLEEP_LEADS = (
     "小安妮", "能不能", "可不可以", "请你", "现在", "马上", "立刻", "赶紧",
     "可以", "帮我", "安妮", "请", "你", "先",
@@ -65,11 +67,40 @@ _SLEEP_TAIL = re.compile(
     r"^(?:(?:了|吧)?(?:好吗|行吗|可以吗|好不好|啊|呀|哦|啦)?|"
     r"(?:一下|一会儿|一会|吗|么|点)?)$"
 )
+_SLEEP_JOIN = re.compile(r"^(?:了|吧|啊|呀|啦|哦)")
 _SLEEP_REJECT = (
     "为什么", "怎么", "什么", "没让", "没有", "不是", "别让", "不要让",
     "干嘛", "干什么", "怎样",
 )
 ASR_GRACE_SECONDS = 10.0
+
+
+def _sleep_text(source):
+    """Punctuation and stutters dropped; of "不是让你闭嘴，是让你退下" only the corrected half."""
+    normalized = _STUTTER.sub(r"\1", _PUNCTUATION.sub("", source).strip())
+    corrected = _SLEEP_CORRECTION.fullmatch(normalized)
+    return corrected[1] if corrected else normalized
+
+
+def _sleep_phrase(rest):
+    """Leads, one stem, then a polite tail or another sleep phrase ("别说了，去休息吧")."""
+    for _ in range(6):
+        for stem in _SLEEP_STEMS:
+            if not rest.startswith(stem):
+                continue
+            tail = rest[len(stem):]
+            if _SLEEP_TAIL.fullmatch(tail):
+                return True
+            tail = _SLEEP_JOIN.sub("", tail, count=1)
+            if tail and _sleep_phrase(tail):
+                return True
+        for lead in _SLEEP_LEADS:
+            if rest.startswith(lead) and len(rest) > len(lead):
+                rest = rest[len(lead):]
+                break
+        else:
+            return False
+    return False
 
 
 class DialoguePresence:
@@ -225,8 +256,7 @@ class DialoguePresence:
         source = unicodedata.normalize("NFKC", str(text or ""))
         if "?" in source or "？" in source:
             return False  # A question about leaving is not an explicit command.
-        normalized = _PUNCTUATION.sub("", source).strip()
-        return bool(_SLEEP_COMMAND.fullmatch(normalized))
+        return bool(_SLEEP_COMMAND.fullmatch(_sleep_text(source)))
 
     @staticmethod
     def is_sleep_request(text):
@@ -240,23 +270,12 @@ class DialoguePresence:
         source = unicodedata.normalize("NFKC", str(text or ""))
         if "?" in source or "？" in source:
             return False
-        normalized = _PUNCTUATION.sub("", source).strip()
+        normalized = _sleep_text(source)
         if not normalized or len(normalized) > 24:
             return False
         if any(word in normalized for word in _SLEEP_REJECT):
             return False
-        rest = normalized
-        for _ in range(6):
-            for stem in _SLEEP_STEMS:
-                if rest.startswith(stem) and _SLEEP_TAIL.fullmatch(rest[len(stem):]):
-                    return True
-            for lead in _SLEEP_LEADS:
-                if rest.startswith(lead) and len(rest) > len(lead):
-                    rest = rest[len(lead):]
-                    break
-            else:
-                return False
-        return False
+        return _sleep_phrase(normalized)
 
     def is_wake_transcript(self, text):
         """One observed misdecode, only on the first utterance after KWS.

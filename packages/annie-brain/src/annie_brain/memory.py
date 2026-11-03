@@ -62,8 +62,14 @@ _ASSISTANT_NICKNAME = re.compile(
 # Many visitors talk to one robot: "the user's name" is not a fact about whoever
 # speaks next (10/21 demo: every visitor was greeted as “海超”). Names come from
 # the camera's face library only.
-_USER_NAME = re.compile(r"用户(?:的)?(?:名字|姓名|名)(?:是|叫|为)|用户(?:自称|名叫|叫做)")
+_USER_NAME = re.compile(r"用户(?:的)?(?:名字|姓名|名)(?:是|叫|为)|用户(?:自称|名叫|叫做)"
+                        r"|用户(?:说|称|表示|介绍)自己(?:叫|名叫)")
 _USER_NAME_KEY = re.compile(r"^(?:user_)?(?:real_)?(?:name|nickname|called)(?:_|$)", re.I)
+# "是" alone may be a job ("用户说自己是老师"); under a name key it is a name.
+_NAME_TOKEN_KEY = re.compile(r"(?:^|_)(?:name|nickname|called)(?:_|$)", re.I)
+_USER_IS = re.compile(r"用户(?:说|称|表示|介绍)?(?:自己)?(?:是|叫)")
+# Keeping "asked to forget X" keeps X; "asked to leave" is a one-off gate action.
+_ONE_SHOT_REQUEST = re.compile(r"用户.{0,6}(?:要求|让|请求|叫).{0,8}(?:忘记|忘掉|退下|闭嘴|休眠)")
 _PLAN_LIFETIME_MS = 30 * 86_400_000
 
 
@@ -94,6 +100,8 @@ def is_meta_memory(key, value):
     """Historical empty-result prose is not conversation evidence."""
     return bool(_EMPTY_FACT_KEY.fullmatch(key) or _EMPTY_FACT_TEXT.search(value)
                 or _USER_NAME_KEY.search(key)
+                or (_NAME_TOKEN_KEY.search(key) and _USER_IS.search(value))
+                or _ONE_SHOT_REQUEST.search(value) or value.strip("。. ") in {"无", "没有", "暂无"}
                 or value.startswith(("placeholder", "用户询问", "用户曾询问",
                                      "用户问过", "用户只是询问", "用户提及地点为",
                                      "用户称呼助手", "本轮没有", "本轮未"))
@@ -232,6 +240,8 @@ class CloudMemoryModel:
                 "用episodes，key=ongoing_plan_car_viewing，状态必须待确认；"
                 "完成或取消不再当成待做计划。不能把‘北京的’推断为居住北京。"
                 "提醒、查询、称呼、残缺短句、临时疲惫和重复闲聊都不提取。"
+                "用户自报的名字（“我叫X”“我是X”）、让助手忘掉某人或退下的话都不提取："
+                "来的人很多，名字只认摄像头的人脸库。"
                 "明确稳定的用户偏好用semantic，明确针对当前AI角色的长期关系事实"
                 "用persona；已发生且值得记住的角色经历用episodes。"
                 "询问能力、测试口令、一次性动作请求、假设、闲聊及助手说过的话不抽取；"

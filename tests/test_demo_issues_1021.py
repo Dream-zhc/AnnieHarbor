@@ -10,7 +10,7 @@ import asyncio
 import time
 from types import SimpleNamespace
 
-from annie_brain.memory import is_meta_memory
+from annie_brain.memory import is_meta_memory, prepare_extracted_fact
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 from annie_runtime.display import build_display_message
@@ -97,6 +97,19 @@ def test_a_user_name_is_not_a_robot_wide_memory():
     assert is_meta_memory("k", "用户的名字是张三。")
     assert not is_meta_memory("pet_name", "用户的猫叫咪咪。")
     assert not is_meta_memory("travel", "用户叫车去机场。")
+
+
+def test_a_self_reported_name_or_a_forget_request_is_not_a_memory():
+    # 11/03: “用户说自己是张三” under a person name key greeted a later visitor as 张三.
+    assert is_meta_memory("fact_person_zhangsan_name", "用户说自己是张三。")
+    assert is_meta_memory("k", "用户说自己叫张三。")
+    assert not is_meta_memory("user_occupation", "用户说自己是老师。")
+    assert not is_meta_memory("lunch", "用户自己叫了外卖。")
+    assert is_meta_memory("chat_forget", "用户要求当前助手忘记张三。")
+    assert is_meta_memory("chat_dismiss", "用户当前要求助手退下。")
+    assert is_meta_memory("chat_empty", "无")
+    fact = {"kind": "semantic", "key": "fact_person_zhangsan_name", "text": "用户说自己是张三。"}
+    assert prepare_extracted_fact(fact, "我是张三") is None
 
 
 def test_the_big_screen_gets_playback_ignored_speech_and_decisions():

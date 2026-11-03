@@ -22,6 +22,7 @@ import {WakeIndicator} from './wake-indicator';
 import {VoiceSettings} from './voice-settings';
 import {AnnieStatePod} from './annie-state-pod';
 import {isPodStatusEvent} from './annie-pod-refresh';
+import {isVisionEvent,turnVision,visionBadge,type TurnVision} from './vision-badge';
 
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
@@ -141,6 +142,14 @@ function getTurnActions(
     }
   }
   return Array.from(map.values());
+}
+
+function VisionBadge({vision}:{vision:TurnVision}){
+  const badge=visionBadge(vision);
+  return <span className={'turn-vision-badge '+badge.tone} title={badge.title} aria-label={badge.title}>
+    <span className="turn-action-icon" aria-hidden="true">{badge.icon}</span>
+    <span className="turn-action-label">{badge.label}</span>
+  </span>;
 }
 
 function DecisionItem({ entry, isExpanded, seqLabel }: { entry: DecisionEntry; isExpanded?: boolean; seqLabel?: string }){
@@ -551,11 +560,13 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
           setPodStatusRevision(previous=>previous+1);
         if(scoped.length){
           // Audio/diagnostic events should not diff the whole conversation
-          // while the diagnostics drawer is closed. Keep only playback controls
-          // and bounded event-policy updates; retain the full stream when inspected.
+          // while the diagnostics drawer is closed. Keep only playback controls,
+          // bounded event-policy updates and the vision events behind the turn
+          // badges; retain the full stream when inspected.
           const controls=scoped.filter(item=>item.kind==='playback.hold_requested'||
             item.kind==='playback.resume_requested'||item.kind==='event.policy'||
-            item.kind==='task.status'||item.kind==='action.state'||item.kind==='tool.call');
+            item.kind==='task.status'||item.kind==='action.state'||item.kind==='tool.call'||
+            isVisionEvent(item.kind));
           if(developerOpenRef.current||controls.length)
             setRealtimeEvents(prev=>[...prev,...(developerOpenRef.current?scoped:controls)].slice(-100));
           for(const item of scoped){
@@ -836,6 +847,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
   const lastUserText=history?.turns?.at(-1)?.user_text;
   const lastAssistantReply=history?.turns?.at(-1)?.assistant_spoken_text||history?.turns?.at(-1)?.assistant_generated_text;
+  const liveVision=liveTurn?turnVision(liveTurn.turnId,realtimeEvents,diagnostics):null;
 
   return <div className="app-shell cockpit-shell" ref={root}>
     <ParticleCanvas theme={theme} palette={palette} micActive={micActive}
@@ -1191,6 +1203,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                   if(history.turns.length>visibleHistoryCount)setVisibleHistoryCount(count=>count+HISTORY_PAGE_SIZE);
                   else void loadOlder();
                 }}>{olderLoading?'读取历史中…':'加载更早对话'}</button>}
+                const vision=turnVision(turn.turn_id,realtimeEvents,diagnostics);
               {history?.turns.slice(-visibleHistoryCount).map(turn=>{
                 const streaming=liveTurn?.turnId===turn.turn_id&&turn.status==='running';
                 const reply=streaming?(liveText||turn.assistant_generated_text):
@@ -1201,13 +1214,14 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                 );
                 return <div className="exchange" key={turn.turn_id}>
                   {turn.turn_source!=='external'&&<div className="message-row me"><div className="message-content"><span className="message-author">你{turn.updated_ms&&<time className="message-timestamp"> · {formatTimestamp(turn.updated_ms)}</time>}</span><div className="bubble me-bubble">{user||'语音转写中…'}</div></div></div>}
-                  {(reply||(turn.turn_source!=='external'&&turn.status!=='running'))&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
+                  {(reply||vision?.state==='looking'||(turn.turn_source!=='external'&&turn.status!=='running'))&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
                     <span className="message-author">
                       小安妮
                       {getTurnActions(turn.turn_id,actionRequests,realtimeEvents,diagnostics).map(act=>{
                         const label=ACTION_SCRIPT_NAMES[act.value]??act.value;
                         const statusText=actionStatusLabel[act.status]??act.status;
                         const isFailed=['cancelled_before_send','expired_no_pcm','rejected_late'].includes(act.status);
+                      {vision&&<VisionBadge vision={vision}/>}
                         return <button key={act.call_id||act.value} type="button"
                           className={'turn-action-badge '+(isFailed?'failed':'')}
                           onClick={()=>setActionOpen(true)}
@@ -1223,20 +1237,22 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                         key={index}>{part}</div>)}
                     <span className="message-foot">
                       {streaming&&<i className="streaming-pulse-dot" aria-hidden="true"/>}
-                      {streaming?'正在生成':playbackLabel(turn,speech?.state==='not_configured')}
+                      {vision?.state==='looking'&&!reply?'正在看画面…':
+                        streaming?'正在生成':playbackLabel(turn,speech?.state==='not_configured')}
                     </span>
                   </div></div>}
                 </div>;
               })}
               {liveTurn&&!history?.turns.some(turn=>turn.turn_id===liveTurn.turnId)&&<div className="exchange" aria-live="polite">
                 {liveTurn.source!=='external'&&<div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===liveTurn.turnId?finalTranscript.text:previewTranscript||liveTurn.userText||'语音转写中…'}</div></div></div>}
-                {liveText&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
+                {(liveText||liveVision?.state==='looking')&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
                   <span className="message-author">
                     小安妮
                     {getTurnActions(liveTurn.turnId,actionRequests,realtimeEvents,diagnostics).map(act=>{
                       const label=ACTION_SCRIPT_NAMES[act.value]??act.value;
                       const statusText=actionStatusLabel[act.status]??act.status;
                       const isFailed=['cancelled_before_send','expired_no_pcm','rejected_late'].includes(act.status);
+                    {liveVision&&<VisionBadge vision={liveVision}/>}
                       return <button key={act.call_id||act.value} type="button"
                         className={'turn-action-badge '+(isFailed?'failed':'')}
                         onClick={()=>setActionOpen(true)}
@@ -1246,7 +1262,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                       </button>;
                     })}
                   </span>
-                  <div className="bubble agent-bubble">{liveText}</div><span className="message-foot"><i className="streaming-pulse-dot" aria-hidden="true"/>实时回复，等待入账</span>
+                  {liveText&&<div className="bubble agent-bubble">{liveText}</div>}<span className="message-foot"><i className="streaming-pulse-dot" aria-hidden="true"/>{liveText?'实时回复，等待入账':'正在看画面…'}</span>
                 </div></div>}
               </div>}
               {(previewTranscript||pendingAsr)&&!liveTurn&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · {pendingAsr?'最终转写':'语音转写中'}</span><div className="bubble me-bubble">{pendingAsr||previewTranscript}</div></div></div>}

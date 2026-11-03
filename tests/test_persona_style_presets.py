@@ -74,6 +74,8 @@ def test_idioms_are_occasional_not_a_repeated_script(style_id):
         assert "老铁" not in style and "不用方言" in style
         # Roasting someone into a laughing "破防" is the aim; real distress still ends the act.
         assert "遥遥领先" in style and "再补一刀" in style and "喊破防是玩笑" in style
+        # Memes only land word for word, so she alone is exempt from the header's improvise-everything rule.
+        assert "梗要原样说、不用现编" in style
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

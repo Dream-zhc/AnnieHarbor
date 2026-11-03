@@ -26,6 +26,7 @@ export type InnerLife={
 };
 
 const KIND_ICON:Record<string,string>={touch:'🤲',smell:'👃',close:'👀',arrival:'👋',met:'🤝',chat:'💬'};
+const TONE_FACE:Record<string,string>={happy:'😊',moved:'🥹',hurt:'😣',worried:'😟',bored:'😑',startled:'😳',neutral:'🙂'};
 const CHOICE_LABEL:Record<string,string>={happy:'开心',moved:'感动',hurt:'委屈',worried:'担心',bored:'无聊',neutral:'平常'};
 const THOUGHT_LABEL:Record<string,string>={
   idle:'还没开始',queued:'刚说出口',nothing_on_mind:'没什么想说的',below_threshold:'有点想说，但还不到开口的程度',
@@ -41,6 +42,9 @@ export const beijingTime=(ms:number)=>new Date(ms).toLocaleTimeString('zh-CN',
 
 export type InnerLifeView={
   badge:string;ready:boolean;mood:string;energy:string;valence:string;
+  face:string;tone:string;moodLabel:string;moodNote:string;
+  energyPct:number|null;valencePct:number|null;valenceText:string;
+  partnerName:string;talk:string;latelyText:string;latelyDay:string;
   day:Array<{time:string;icon:string;text:string}>;
   conversation:string;appraisal:string;summarizer:string;session:string;failures:string;
   partner:string;threads:string[];impression:string;lately:string;thought:string;
@@ -53,7 +57,9 @@ function thoughtLabel(status:string){
 }
 
 export function innerLifeView(data:InnerLife|null,status:string):InnerLifeView{
-  const empty={mood:'—',energy:'—',valence:'—',day:[],conversation:'—',appraisal:'—',
+  const empty={mood:'—',energy:'—',valence:'—',face:'🙂',tone:'',moodLabel:'—',moodNote:'',
+    energyPct:null,valencePct:null,valenceText:'—',partnerName:'',talk:'—',latelyText:'—',latelyDay:'',
+    day:[],conversation:'—',appraisal:'—',
     summarizer:'—',session:'—',failures:'',partner:'—',threads:[],impression:'—',lately:'—',
     thought:'—',motions:'—',motionLines:[]};
   if(!data)return {...empty,badge:status,ready:false};
@@ -65,8 +71,10 @@ export function innerLifeView(data:InnerLife|null,status:string):InnerLifeView{
     `${beijingTime(row.ts_ms)} ${MOTION_KIND[row.kind]??row.kind}：${row.name??row.script??'不配动作'}`+
     (row.sentence?`（“${row.sentence}”）`:row.reason?`（${row.reason}）`:'')+
     (row.status&&row.status!=='published_unknown'?` · ${row.status}`:''));
-  if(!data.enabled)return {...empty,badge:'未启用',ready:false,motions,motionLines,
-    mood:'未启用：config/runtime_defaults.toml [inner_life] 或 ANNIE_INNER_LIFE_ENABLED'};
+  if(!data.enabled){
+    const hint='未启用：config/runtime_defaults.toml [inner_life] 或 ANNIE_INNER_LIFE_ENABLED';
+    return {...empty,badge:'未启用',ready:false,motions,motionLines,mood:hint,moodLabel:'未启用',moodNote:hint};
+  }
   const mood=data.mood;
   const stats=data.stats;
   const last=stats?.last_appraisal;
@@ -83,6 +91,17 @@ export function innerLifeView(data:InnerLife|null,status:string):InnerLifeView{
     mood:mood?.text??'—',
     energy:mood?`${mood.energy_label}（${Math.round(mood.energy*100)}%）`:'—',
     valence:mood?`${mood.valence>0?'+':''}${mood.valence.toFixed(2)}（-1 难过 … +1 开心）`:'—',
+    face:TONE_FACE[mood?.tone??'']??'🙂',
+    tone:mood?.tone??'',
+    moodLabel:mood?.label??'—',
+    moodNote:mood?.reason?mood.reason+(mood.reason_ms?` · ${beijingTime(mood.reason_ms)}`:''):'',
+    energyPct:mood?Math.round(Math.max(0,Math.min(1,mood.energy))*100):null,
+    valencePct:mood?Math.round((Math.max(-1,Math.min(1,mood.valence))+1)*50):null,
+    valenceText:mood?`${mood.valence>0?'+':''}${mood.valence.toFixed(2)}`:'—',
+    partnerName:data.partner??'',
+    talk:talk?.open?`进行中 · ${talk.turns??0} 轮`:'没有',
+    latelyText:data.reflection?.self||'还没做过每晚反思',
+    latelyDay:data.reflection?.self?data.reflection.day:'',
     day:(data.today??[]).map(row=>({time:beijingTime(row.created_ms),icon:KIND_ICON[row.kind]??'•',
       text:row.text+(row.count>1?`（共${row.count}次）`:'')})),
     conversation:talk?.open?`进行中 · ${talk.turns??0} 轮${talk.who?' · 和'+talk.who:' · 没认出是谁'}`:'没有进行中的对话',

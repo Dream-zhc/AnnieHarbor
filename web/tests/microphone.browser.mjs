@@ -50,6 +50,7 @@ try{
   });
   const url=new URL('?view=workbench',process.env.ANNIE_BROWSER_TEST_URL??'http://127.0.0.1:8780/').href;
   await page.goto(url,{waitUntil:'domcontentloaded'});
+  await page.locator('details.audio-debug-panel > summary').click();
   await page.getByRole('checkbox',{name:/此 Room 没有另一个麦克风/}).check();
   await page.getByRole('button',{name:'开启麦克风'}).click();
   await page.waitForFunction(()=>window.__micFrames.length>=10,null,{timeout:10000});
@@ -114,6 +115,7 @@ try{
       };
     },scenario);
     await fixture.goto(url,{waitUntil:'domcontentloaded'});
+    await fixture.locator('details.audio-debug-panel > summary').click();
     await fixture.getByRole('checkbox',{name:/此 Room 没有另一个麦克风/}).check();
     await fixture.getByRole('button',{name:'开启麦克风'}).click();
     if(scenario==='cancel'){

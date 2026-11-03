@@ -89,10 +89,10 @@ export function RoleLanguagePreference({robotId,session}:{robotId:string;session
 
 /** Diagnostics only. Does not alter model/sidecar state or persist preferences. */
 export function SpeechExpressionPanel({robotId,session}:{robotId:string;session:Session|null}){
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(true);
   const {data,status}=useExpression(robotId,session,open,2000);
   const view=data?speechExpressionView(data):null;
-  return <details className="hud-section inspector-panel speech-expression-panel"
+  return <details className="hud-section inspector-panel speech-expression-panel" open={open}
     onToggle={event=>setOpen(event.currentTarget.open)}>
     <summary className="speech-exp-summary">
       <span className="speech-summary-title">语音状态 · 语种 / TTS</span>

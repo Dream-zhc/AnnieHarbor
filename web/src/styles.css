@@ -1412,7 +1412,7 @@
   color: #0969da !important;
   font-weight: 600 !important;
 }
-:root[data-theme="light"] .card-body.ambient {
+:root[data-theme="light"] .card-foot {
   color: #656d76 !important;
 }
 :root[data-theme="light"] .card-body.decision.declined {
@@ -1728,29 +1728,6 @@
 :root[data-theme="light"] .hud-heading small {
   color: #57606a !important;
   font-size: 11px !important;
-}
-:root[data-theme="light"] .metric-card {
-  background: #f6f8fa !important;
-  border: 1px solid #d0d7de !important;
-}
-:root[data-theme="light"] .metric-card span {
-  color: #57606a !important;
-}
-:root[data-theme="light"] .metric-card strong {
-  color: #1f2328 !important;
-}
-:root[data-theme="light"] .metric-card.hero-metric {
-  background: #ddf4ff !important;
-  border: 1px solid #54aeff !important;
-  box-shadow: none !important;
-}
-:root[data-theme="light"] .metric-card.hero-metric span {
-  color: #0969da !important;
-  font-weight: 600 !important;
-}
-:root[data-theme="light"] .metric-card.hero-metric strong {
-  color: #0969da !important;
-  text-shadow: none !important;
 }
 :root[data-theme="light"] .live-item {
   background: #f6f8fa !important;
@@ -2596,6 +2573,10 @@ details summary::-webkit-details-marker {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
 }
+.stage-header-left .latency-tag {
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
 .stage-header-tools {
   display: flex;
   align-items: center;
@@ -2622,11 +2603,11 @@ details summary::-webkit-details-marker {
   background: var(--bg-card);
 }
 
-/* Live 5 cards - Precision Realtime Pipeline Deck */
+/* Live 3 cards - Precision Realtime Pipeline Deck */
 .live-cockpit-cards {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(140px, 1.25fr) minmax(140px, 1.25fr) minmax(80px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.15fr);
   gap: 8px;
   padding: 8px 14px;
   background: rgba(8, 12, 19, 0.95);
@@ -2679,9 +2660,13 @@ details summary::-webkit-details-marker {
   color: var(--accent-ai);
   font-weight: 600;
 }
-.live-cockpit-card .card-body.ambient {
+.live-cockpit-card .card-foot {
+  font-size: 10.5px;
+  line-height: 1.2;
   color: #64748b;
-  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* A second microphone/speaker in the Room: warn, never block. */
 .device-conflict {
@@ -3514,6 +3499,21 @@ details summary::-webkit-details-marker {
 }
 
 :root[data-theme="light"] .turn-action-badge {
+  background: #f3e8ff !important;
+  color: #7e22ce !important;
+  border: 1px solid #d8b4fe !important;
+  box-shadow: 0 1px 2px rgba(126, 34, 206, 0.08) !important;
+}
+:root[data-theme="light"] .turn-action-badge:hover {
+  background: #ede9fe !important;
+  color: #6b21a8 !important;
+  border-color: #c084fc !important;
+}
+:root[data-theme="light"] .turn-action-badge.failed {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border-color: #fca5a5 !important;
+}
 .turn-vision-badge {
   display: inline-flex;
   align-items: center;
@@ -3559,21 +3559,6 @@ details summary::-webkit-details-marker {
   background: #f1f5f9;
   color: #475569;
   border-color: #cbd5e1;
-}
-  background: #f3e8ff !important;
-  color: #7e22ce !important;
-  border: 1px solid #d8b4fe !important;
-  box-shadow: 0 1px 2px rgba(126, 34, 206, 0.08) !important;
-}
-:root[data-theme="light"] .turn-action-badge:hover {
-  background: #ede9fe !important;
-  color: #6b21a8 !important;
-  border-color: #c084fc !important;
-}
-:root[data-theme="light"] .turn-action-badge.failed {
-  background: #fee2e2 !important;
-  color: #dc2626 !important;
-  border-color: #fca5a5 !important;
 }
 .message-timestamp {
   font-size: 10px;
@@ -3866,56 +3851,6 @@ details summary::-webkit-details-marker {
   letter-spacing: 0.02em;
 }
 
-/* 2-Column Metrics Grid (全链路延迟 11 项) */
-.metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-}
-.hud-section .metrics-grid > .metric-card:first-child { grid-column: 1 / -1; }
-.hud-section .metric-card span { white-space: normal; overflow: visible; text-overflow: clip; }
-.metric-card {
-  background: rgba(10, 15, 24, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-  padding: 5px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  transition: all 0.15s ease;
-}
-.metric-card:hover {
-  background: rgba(18, 26, 40, 0.85);
-  border-color: rgba(255, 255, 255, 0.09);
-}
-.metric-card.hero-metric {
-  background: rgba(30, 58, 138, 0.22);
-  border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: inset 0 1px 0 rgba(59, 130, 246, 0.2);
-}
-.metric-card.hero-metric strong {
-  color: #93c5fd;
-  font-size: 12.5px;
-  text-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
-}
-.metric-card span {
-  font-size: 9.5px;
-  color: var(--text-sub);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.2;
-}
-.metric-card strong {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-main);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
 /* 3-Column Live Acoustic Grid */
 .live-grid {
   display: grid;
@@ -4095,6 +4030,10 @@ details summary::-webkit-details-marker {
   background: rgba(37, 99, 235, 0.4);
   border-color: #3b82f6;
   color: #ffffff;
+}
+.delete-chat {
+  width: 100%;
+  margin-top: 10px;
 }
 .chat-list {
   display: flex;
@@ -4306,6 +4245,21 @@ details summary::-webkit-details-marker {
   display: grid;
   gap: 8px;
   padding-top: 8px;
+}
+/* Web microphone and audition: debug tools folded into one panel */
+.audio-debug-panel > .hud-section,
+:root[data-theme="light"] .audio-debug-panel > .hud-section {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.audio-debug-panel > .hud-section + .hud-section {
+  padding-top: 8px !important;
+  border-top: 1px solid var(--border-card) !important;
 }
 
 /* Top Status & Bypass Control Card */
@@ -4974,17 +4928,6 @@ pre {
   margin-top: 16px;
 }
 
-.eyebrow {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #818cf8;
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  padding: 1.5px 7px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
 .empty-copy {
   color: #64748b;
   font-size: 12px;
@@ -5294,9 +5237,10 @@ pre {
   }
   .live-cockpit-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row dense;
   }
-  .metrics-grid {
-    grid-template-columns: 1fr;
+  .live-cockpit-card.decision-card {
+    grid-column: 1 / -1;
   }
   .live-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -17,11 +17,10 @@ try{
   const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];
   page.on('pageerror',error=>errors.push(String(error)));
   await page.goto(new URL('?view=workbench',base).href,{waitUntil:'domcontentloaded'});
-  const panel=()=>page.locator('details.speech-expression-panel');
+  const panel=()=>page.locator('details.speech-expression-panel:not(.inner-life-panel)');
   const preference=()=>page.locator('.stage-header-tools [role="group"][aria-label="回复语言"]');
   await preference().waitFor();
-  assert.equal(await panel().getAttribute('open'),null);
-  await panel().locator('summary').click();
+  assert.notEqual(await panel().getAttribute('open'),null);
   await panel().getByText('输入识别',{exact:true}).waitFor();
   const original=await page.request.get(new URL('/api/robots/annie-a/speech-expression',base).href).then(r=>r.json());
   const last={...original,turn_id:'fixture-last',times:{},durations:{},tts:{

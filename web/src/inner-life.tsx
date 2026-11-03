@@ -29,7 +29,7 @@ export function InnerLifePanel({robotId}:{robotId:string}){
     return()=>{disposed=true;controller?.abort();if(timer)clearTimeout(timer);};
   },[robotId]);
   const view=innerLifeView(data,status);
-  return <details className="hud-section inspector-panel speech-expression-panel inner-life-panel">
+  return <details className="hud-section inspector-panel speech-expression-panel inner-life-panel" open>
     <summary className="speech-exp-summary">
       <span className="speech-summary-title">内心 · 心情 / 今天 / 动作</span>
       <span className="speech-summary-badge">{view.badge}</span>

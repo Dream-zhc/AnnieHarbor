@@ -72,6 +72,8 @@ def test_idioms_are_occasional_not_a_repeated_script(style_id):
         assert "不连着两轮用同一个梗" in style
         # “老铁” pulled her replies into dialect words; she speaks Mandarin internet slang.
         assert "老铁" not in style and "不用方言" in style
+        # Roasting someone into a laughing "破防" is the aim; real distress still ends the act.
+        assert "遥遥领先" in style and "再补一刀" in style and "喊破防是玩笑" in style
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

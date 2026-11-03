@@ -74,10 +74,10 @@ class ContextSelectionTests(unittest.TestCase):
     def test_four_presets_share_identity_and_do_not_invent_user_facts(self):
         self.assertEqual(set(PROFILES), {
             "annie", "annie-calm", "annie-lively", "annie-roast",
-            "annie-weary", "annie-deadpan",
+            "annie-weary", "annie-deadpan", "annie-savage",
         })
         instructions = [session_instructions(name, PROFILES, {})[0] for name in PROFILES]
-        self.assertEqual(len(set(instructions)), 6)
+        self.assertEqual(len(set(instructions)), 7)
         for text in instructions:
             self.assertIn("你是小安妮", text)
             self.assertIn("最新明确更正", text)

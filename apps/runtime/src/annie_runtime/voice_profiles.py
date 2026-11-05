@@ -5,6 +5,7 @@ import io
 import os
 import re
 import shutil
+import struct
 import time
 import wave
 from hashlib import sha256
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
+import numpy as np
 from annie_adapters.tts import QwenTtsSocket
 from annie_adapters.tts import command as tts_command
 from annie_adapters.tts import task_id as new_task_id
@@ -42,19 +44,92 @@ PRESET_MAP = {item[0]: item for item in PRESETS}
 AUTO_PREVIEWS = tuple(row[0] for row in PRESETS)
 
 
-def check_audio(filename: str, audio: bytes):
+def _accepted(filename: str, audio: bytes):
     suffix = Path(filename).suffix.lower()
     if suffix not in {".wav", ".mp3", ".m4a"} or not 1024 <= len(audio) <= MAX_BYTES:
         raise ValueError("音频须为 WAV/MP3/M4A，大小不得超过 10MB")
+    return suffix
+
+
+def _check_clip(rate: int, duration: float):
+    if rate < 16000:
+        raise ValueError(f"采样率须不低于16kHz，当前 {rate}Hz")
+    if not 5 <= duration <= 60:
+        raise ValueError(f"参考音频须为5至60秒，当前 {duration:.1f} 秒")
+
+
+_PCM, _FLOAT, _EXTENSIBLE = 1, 3, 0xFFFE
+_SAMPLE_TYPES = {(_PCM, 1): "u1", (_PCM, 2): "<i2", (_PCM, 4): "<i4",
+                 (_FLOAT, 4): "<f4", (_FLOAT, 8): "<f8"}
+
+
+def normalize_wav(audio: bytes):
+    """16-bit mono WAV at the source rate from PCM or float WAV, plain or EXTENSIBLE.
+
+    The provider accepts only 16-bit WAV and reads just the first channel of stereo.
+    """
+    if audio[:4] != b"RIFF" or audio[8:12] != b"WAVE":
+        raise ValueError("无效的 WAV 音频")
+    chunks, offset = {}, 12
+    while offset + 8 <= len(audio):
+        size = int.from_bytes(audio[offset + 4:offset + 8], "little")
+        chunks.setdefault(audio[offset:offset + 4], audio[offset + 8:offset + 8 + size])
+        offset += 8 + size + size % 2
+    fmt, data = chunks.get(b"fmt ", b""), chunks.get(b"data", b"")
+    if len(fmt) < 16 or not data:
+        raise ValueError("无效的 WAV 音频")
+    tag, channels, rate, _, block, _ = struct.unpack("<HHIIHH", fmt[:16])
+    if tag == _EXTENSIBLE and len(fmt) >= 26:
+        tag = int.from_bytes(fmt[24:26], "little")
+    width = block // channels if channels else 0
+    if not width or block != width * channels or not rate:
+        raise ValueError("无效的 WAV 音频")
+    if (tag, width) not in _SAMPLE_TYPES and (tag, width) != (_PCM, 3):
+        raise ValueError(f"不支持的 WAV 编码（格式{tag}，{8 * width}bit），请转成 PCM WAV 或 MP3")
+    frames = len(data) // block
+    _check_clip(rate, frames / rate)
+    raw = data[:frames * block]
+    if (tag, width) == (_PCM, 3):
+        triples = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        values = triples[:, 0] | triples[:, 1] << 8 | triples[:, 2] << 16
+        samples = np.where(values >= 1 << 23, values - (1 << 24), values) / float(1 << 23)
+    else:
+        samples = np.frombuffer(raw, _SAMPLE_TYPES[tag, width]).astype(np.float64)
+        if width == 1:
+            samples = (samples - 128) / 128
+        elif tag == _PCM:
+            samples /= float(1 << (8 * width - 1))
+    mono = samples.reshape(frames, channels).mean(axis=1)
+    pcm = np.clip(np.rint(mono * 32768), -32768, 32767).astype("<i2")
+    target = io.BytesIO()
+    with wave.open(target, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(pcm.tobytes())
+    return target.getvalue()
+
+
+def prepare_audio(filename: str, audio: bytes):
+    """Reference audio as uploaded: WAV converted to 16-bit mono, MP3/M4A unchanged."""
+    if _accepted(filename, audio) == ".wav":
+        audio = normalize_wav(audio)
+    check_audio(filename, audio)
+    return audio
+
+
+def check_audio(filename: str, audio: bytes):
+    suffix = _accepted(filename, audio)
     if suffix == ".wav":
         try:
             with wave.open(io.BytesIO(audio), "rb") as source:
-                duration = source.getnframes() / max(1, source.getframerate())
-                if (source.getsampwidth() != 2 or source.getframerate() < 16000
-                        or not 5 <= duration <= 60):
-                    raise ValueError("WAV 须为16bit、16kHz以上、5至60秒")
+                width, rate = source.getsampwidth(), source.getframerate()
+                duration = source.getnframes() / max(1, rate)
         except (wave.Error, EOFError) as exc:
             raise ValueError("无效的 WAV 音频") from exc
+        if width != 2:
+            raise ValueError("WAV 须为16bit")
+        _check_clip(rate, duration)
     elif suffix == ".mp3" and not (audio.startswith(b"ID3") or audio[0] == 255
                                    and audio[1] & 224 == 224):
         raise ValueError("文件内容不是 MP3")
@@ -67,6 +142,54 @@ def voice_name(value: str):
     if not isinstance(value, str) or not 1 <= len(value.strip()) <= 40:
         raise ValueError("音色备注须为1至40字符")
     return value.strip()
+
+
+_CLONE_STAGES = {"policy": "云端上传凭证获取失败", "upload": "参考音频上传云端失败",
+                 "enroll": "云端创建音色失败"}
+_PROVIDER_HINTS = {"Arrearage": "阿里云账户欠费或余额不足", "InvalidApiKey": "API Key 无效"}
+
+
+class VoiceCloneError(RuntimeError):
+    """A refused cloning step reduced to stage, status, provider code and message.
+
+    OSS error bodies echo the signed upload policy, so nothing else is kept.
+    """
+
+    def __init__(self, stage: str, status: int, code: str = "", message: str = ""):
+        self.stage, self.status = stage, status
+        self.code = " ".join(code.split())[:80]
+        self.message = re.sub(r"sk-\w+", "sk-***", " ".join(message.split()))[:200]
+        super().__init__(f"stage={stage} status={status} code={self.code or '-'} "
+                         f"message={self.message or '-'}")
+
+    @classmethod
+    def from_response(cls, stage: str, response: httpx.Response):
+        try:
+            body = response.json()
+        except ValueError:
+            found = [re.search(f"<{tag}>([^<]*)</{tag}>", response.text)
+                     for tag in ("Code", "Message")]
+            return cls(stage, response.status_code, *(m[1] if m else "" for m in found))
+        body = body if isinstance(body, dict) else {}
+        return cls(stage, response.status_code, str(body.get("code") or ""),
+                   str(body.get("message") or ""))
+
+    @property
+    def reason(self):
+        said = _PROVIDER_HINTS.get(self.code) or self.message or self.code
+        if said and self.code and said != self.code:
+            said += f"（{self.code}）"
+        return f"{_CLONE_STAGES[self.stage]}：{said or f'HTTP {self.status}'}"
+
+
+async def _checked(stage: str, request):
+    try:
+        response = await request
+    except httpx.TransportError as exc:
+        raise VoiceCloneError(stage, 0, type(exc).__name__, "连接云端出错") from exc
+    if response.is_error:
+        raise VoiceCloneError.from_response(stage, response)
+    return response
 
 
 class DashscopeVoiceProvider:
@@ -95,10 +218,9 @@ class DashscopeVoiceProvider:
             raise ValueError("不支持的参考音频语言")
         headers = {"Authorization": f"Bearer {self.key}"}
         async with httpx.AsyncClient(timeout=httpx.Timeout(30., read=180.)) as client:
-            policy = await client.get("https://dashscope.aliyuncs.com/api/v1/uploads",
-                                      headers=headers,
-                                      params={"action": "getPolicy", "model": TARGET_MODEL})
-            policy.raise_for_status()
+            policy = await _checked("policy", client.get(
+                "https://dashscope.aliyuncs.com/api/v1/uploads", headers=headers,
+                params={"action": "getPolicy", "model": TARGET_MODEL}))
             data = policy.json()["data"]
             host = data["upload_host"]
             # Never send user audio or provider-issued credentials to other hosts.
@@ -113,19 +235,17 @@ class DashscopeVoiceProvider:
                 "x-oss-forbid-overwrite": data["x_oss_forbid_overwrite"],
                 "key": key, "success_action_status": "200",
             }
-            upload = await client.post(host, data=form,
-                                       files={"file": (Path(filename).name, audio,
-                                                       "application/octet-stream")})
-            upload.raise_for_status()
-            result = await client.post(
+            await _checked("upload", client.post(
+                host, data=form,
+                files={"file": (Path(filename).name, audio, "application/octet-stream")}))
+            result = await _checked("enroll", client.post(
                 self.http_base + "/services/audio/tts/customization",
                 headers={**headers, "X-DashScope-OssResourceResolve": "enable"},
                 json={"model": "voice-enrollment", "input": {
                     "action": "create_voice", "target_model": TARGET_MODEL,
                     "prefix": prefix, "url": f"oss://{key}", "language_hints": [language],
                 }},
-            )
-            result.raise_for_status()
+            ))
         output = result.json()
         value = (output.get("output") or {}).get("voice_id")
         if not isinstance(value, str) or not VOICE_ID.fullmatch(value):
@@ -346,6 +466,7 @@ class VoiceProfiles:
 
     async def clone(self, name, filename, audio, *, language="zh"):
         name = voice_name(name)
+        audio = await asyncio.to_thread(prepare_audio, filename, audio)
         async with self.lock:
             if any(row["name"].casefold() == name.casefold()
                    for row in self.voices.values()):

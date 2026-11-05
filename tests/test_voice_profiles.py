@@ -2,8 +2,11 @@
 
 import asyncio
 import io
+import struct
 import wave
 
+import httpx
+import numpy as np
 import pytest
 from annie_adapters import RuntimeStore
 from annie_adapters.tts import command
@@ -12,21 +15,39 @@ from annie_runtime.voice_profiles import (
     DEFAULT,
     PRESETS,
     VOICE_ID,
+    DashscopeVoiceProvider,
+    VoiceCloneError,
     VoiceProfiles,
     check_audio,
+    prepare_audio,
 )
 
 from tests.test_phase7_runtime import ready, result_from_call, runtime
 
 
-def wav(duration=5.1):
+def wav(duration=5.1, rate=16000):
     target = io.BytesIO()
     with wave.open(target, "wb") as audio:
         audio.setnchannels(1)
         audio.setsampwidth(2)
-        audio.setframerate(16000)
-        audio.writeframes(b"\0\0" * round(duration * 16000))
+        audio.setframerate(rate)
+        audio.writeframes(b"\0\0" * round(duration * rate))
     return target.getvalue()
+
+
+def extensible_wav(left, right, *, rate=44100, width=3, tag=1):
+    """Stereo WAVE_FORMAT_EXTENSIBLE as editors export it; Python's wave cannot read it."""
+    samples = np.stack([left, right], axis=1).reshape(-1)
+    if tag == 3:
+        data = samples.astype("<f4" if width == 4 else "<f8").tobytes()
+    else:
+        data = samples.astype("<i4").view(np.uint8).reshape(-1, 4)[:, :width].tobytes()
+    fmt = (struct.pack("<HHIIHHHHIH", 0xFFFE, 2, rate, rate * 2 * width, 2 * width,
+                       8 * width, 22, 8 * width, 3, tag)
+           + bytes.fromhex("000000001000800000aa00389b71"))
+    return (b"RIFF" + struct.pack("<I", 20 + len(fmt) + len(data)) + b"WAVE"
+            + b"fmt " + struct.pack("<I", len(fmt)) + fmt
+            + b"data" + struct.pack("<I", len(data)) + data)
 
 
 class FakeVoiceProvider:
@@ -54,6 +75,56 @@ def test_invalid_audio_is_rejected_before_provider(tmp_path):
         with pytest.raises(ValueError):
             check_audio(filename, content)
     check_audio("voice.wav", wav())
+
+
+def test_wav_of_any_depth_or_layout_is_uploaded_as_16bit_mono():
+    """11-05: a 24-bit EXTENSIBLE editor export was refused before reaching the provider."""
+    ramp = (np.arange(242550) % 2000 - 1000) * 7
+    pcm24 = extensible_wav(ramp * 512, np.zeros_like(ramp))
+    floats = extensible_wav(np.full(88000, .25), np.full(88000, .25), rate=16000, width=4, tag=3)
+    with pytest.raises(ValueError):
+        check_audio("voice.wav", pcm24)
+    for audio, rate, expected in ((pcm24, 44100, ramp), (floats, 16000, np.full(88000, 8192))):
+        with wave.open(io.BytesIO(prepare_audio("voice.wav", audio))) as sent:
+            assert (sent.getnchannels(), sent.getsampwidth(), sent.getframerate()) == (1, 2, rate)
+            assert np.array_equal(np.frombuffer(sent.readframes(sent.getnframes()), "<i2"),
+                                  expected)
+    assert prepare_audio("voice.wav", wav()) == wav()
+
+
+def test_unusable_reference_audio_says_what_is_wrong():
+    with pytest.raises(ValueError, match="当前 4.2 秒"):
+        prepare_audio("voice.wav", wav(4.2))
+    with pytest.raises(ValueError, match="当前 8000Hz"):
+        prepare_audio("voice.wav", wav(6, rate=8000))
+    adpcm = extensible_wav(np.zeros(1000), np.zeros(1000), width=2, tag=2)
+    with pytest.raises(ValueError, match="不支持的 WAV 编码"):
+        prepare_audio("voice.wav", adpcm)
+
+
+def test_cloud_refusal_names_the_step_and_reason_without_upload_secrets(monkeypatch):
+    def reply(request):
+        if request.url.path.endswith("/uploads"):
+            return httpx.Response(200, json={"data": {
+                "upload_host": "https://bucket.oss-cn-beijing.aliyuncs.com",
+                "upload_dir": "voices", "oss_access_key_id": "STS.upload-id",
+                "signature": "signed", "policy": "policy", "x_oss_object_acl": "private",
+                "x_oss_forbid_overwrite": "true"}})
+        return httpx.Response(403, text=(
+            "<Error><Code>AccessDenied</Code><Message>Invalid according to Policy: "
+            "Policy expired.</Message><OSSAccessKeyId>STS.upload-id</OSSAccessKeyId></Error>"))
+    client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient",
+                        lambda **kw: client(transport=httpx.MockTransport(reply), **kw))
+    provider = DashscopeVoiceProvider("test-key", "wss://dashscope.aliyuncs.com/api-ws/v1/inference")
+    with pytest.raises(VoiceCloneError) as refused:
+        asyncio.run(provider.clone("voice.wav", wav(), "annie12345", "zh"))
+    assert refused.value.reason == ("参考音频上传云端失败：Invalid according to Policy: "
+                                    "Policy expired.（AccessDenied）")
+    assert "STS.upload-id" not in str(refused.value)
+    arrears = httpx.Response(400, json={"code": "Arrearage", "message": "Access denied."})
+    assert (VoiceCloneError.from_response("enroll", arrears).reason
+            == "云端创建音色失败：阿里云账户欠费或余额不足（Arrearage）")
 
 
 def test_realistic_dashscope_voice_identifier_accepts_model_version_dots():

@@ -364,7 +364,7 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     async def clone_voice(robot_id: str, request: Request, name: str, filename: str,
                           language: str = "zh"):
         require_robot(robot_id)
-        from annie_runtime.voice_profiles import MAX_BYTES
+        from annie_runtime.voice_profiles import MAX_BYTES, VoiceCloneError
         size = request.headers.get("content-length")
         if size and size.isdecimal() and int(size) > MAX_BYTES:
             raise HTTPException(413, "音色参考音频不可超过10MB")
@@ -377,6 +377,9 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
             return await runtime.clone_voice(robot_id, name, filename, bytes(content), language)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        except VoiceCloneError as exc:
+            logger.warning("voice_clone failed robot=%s %s", robot_id, exc)
+            raise HTTPException(502, exc.reason) from exc
         except Exception as exc:
             logger.warning("voice_clone failed robot=%s error=%s", robot_id, type(exc).__name__)
             raise HTTPException(502, "云端音色复刻失败，请检查模型权限和服务器日志") from exc

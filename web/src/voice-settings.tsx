@@ -508,8 +508,9 @@ export function VoiceSettings({robotId,session}:{robotId:string;session:Session|
       const qs=new URLSearchParams({name:name.trim(),filename:source.name,language});
       const response=await fetch(base+'/voices/clone?'+qs.toString(),
         {method:'POST',headers:{'Content-Type':'application/octet-stream'},body:source});
-      const result=await response.json() as {voice_id?:string;name?:string;detail?:string};
-      if(!response.ok||!result.voice_id)throw Error(result.detail||'音色克隆失败');
+      const result=await response.json().catch(()=>({})) as {voice_id?:string;name?:string;detail?:unknown};
+      if(!response.ok||!result.voice_id)throw Error(typeof result.detail==='string'&&result.detail
+        ?result.detail:'音色克隆失败（HTTP '+response.status+'）');
       await refresh();
       setVoiceForPreview(result.voice_id);
       setActiveTab('preview');
@@ -633,7 +634,7 @@ export function VoiceSettings({robotId,session}:{robotId:string;session:Session|
             <h4>创建克隆音色</h4>
             <span className="voice-badge-soft">定制声音</span>
           </div>
-          <p className="voice-note">上传本人声音或已获授权的声音。建议10–20秒清晰独白；WAV 16bit/16kHz以上，或 MP3/M4A，最多10MB。参考音频不在本机长期保存。</p>
+          <p className="voice-note">上传本人声音或已获授权的声音。至少5秒连续清晰的说话，建议10–20秒独白、最长60秒，避免背景音乐；WAV（16kHz以上，位深和声道自动转换）、MP3 或 M4A，最多10MB。参考音频不在本机长期保存。</p>
           
           <div className="voice-clone-form">
             <div className="voice-inputs-row">

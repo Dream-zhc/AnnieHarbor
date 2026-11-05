@@ -2173,8 +2173,6 @@ class HarborRuntime:
     async def clone_voice(self, robot_id, name, filename, audio, language="zh"):
         if self.voices is None:
             raise ValueError("TTS voice cloning is not configured")
-        from annie_runtime.voice_profiles import check_audio
-        check_audio(filename, audio)
         result = await self.voices.clone(name, filename, audio, language=language)
         for client in self.realtime.values():
             client.visual_changed()

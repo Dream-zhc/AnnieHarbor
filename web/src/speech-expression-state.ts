@@ -14,7 +14,9 @@ const emotions:Record<string,string>={neutral:'中性',warm:'温柔关切',playf
 const sources:Record<string,string>={typed_text:'键盘文本语种（启发式）',runtime_context:'语境默认表达',asr_language:'ASR 语种观察',lexical_inference:'词汇推断（非声学确认）',llm_inferred:'LLM 推断',llm_early:'LLM 早期选择',explicit_user:'用户明确要求',chat_preference:'Chat 显式偏好',robot_preference:'机器人显式偏好',runtime_default:'运行默认'};
 const language=(value?:string)=>languages[value??'']??'未知';
 const dialect=(value?:string)=>dialects[value??'']??'未知';
-const selection=(value?:LanguageSelection|null)=>value?`${language(value.language)} · ${dialect(value.dialect)}`:'未设置';
+const selection=(value?:LanguageSelection|null)=>!value?'未设置':
+  value.dialect&&value.dialect!=='unknown'?`${language(value.language)} · ${dialect(value.dialect)}`:
+  value.language==='zh'?'中文（未指定方言）':language(value.language);
 const milliseconds=(value?:number|null)=>value!=null&&Number.isFinite(value)?`${Math.round(value)} ms`:'未知';
 
 export function speechExpressionView(data:SpeechExpression){
@@ -75,9 +77,9 @@ export function speechExpressionView(data:SpeechExpression){
     ttsStage:recorded?.tts?({locked:'表达已锁定，尚无提交证据',run_sent:'run-task 已提交',started:'云端任务已开始',completed:'云端完成（不等于已播完）',cancelled:'已取消',failed:'TTS 失败'})[recorded.tts.state]??'未记录':'未记录',
     ttsError:recorded?.tts?.error??null,ttsText:recorded?.tts?.submitted_text?.replace(/https?:\/\/\S+/gi,'[地址已隐藏]').slice(0,240)??'',
     ttsInstruction,ttsRate:parameter(wire?.rate),ttsPitch:parameter(wire?.pitch),ttsVolume:parameter(wire?.volume),
-    ttsLanguage:style?selection(style):'未知',
+    ttsLanguage:style?selection(style):'未记录',
     ttsEmotion:style?.tone?`${style.tone}性格语气${style.emotion&&style.emotion!=='neutral'?` · ${emotions[style.emotion]??style.emotion}`:''}`:
-      style?.emotion==='neutral'&&style.delivery==='contextual'?'未指定固定情绪':emotions[style?.emotion??'']??'未知',
+      style?.emotion==='neutral'&&style.delivery==='contextual'?'未指定固定情绪':style?.emotion?emotions[style.emotion]??style.emotion:'未记录',
     ttsDelivery:style?.tone&&style.delivery==='contextual'?'随语义表达':({natural:'自然表达',contextual:'随语义表达（未指定固定情绪）',expressive:'丰富表达（随文本语义起伏）'})[style?.delivery as 'natural'|'contextual'|'expressive']??'未记录',
     ttsSource:sources[style?.source??'']??'未知',
     audibleLanguage:languages[data.language?.tts_audibly_verified_language??'']??'待听测',

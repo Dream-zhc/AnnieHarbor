@@ -23,7 +23,8 @@ test('input ASR dialect candidates never become LLM decisions or audible TTS pro
   assert.equal(view.dialectCandidate,'四川话（候选，非声学确认）');
   assert.equal(view.llmDecision,'尚无本轮决策');
   assert.equal(view.llmApplication,'未确认');
-  assert.equal(view.ttsLanguage,'未知');
+  assert.equal(view.ttsLanguage,'未记录');
+  assert.equal(view.ttsEmotion,'未记录');
   assert.equal(view.audibleLanguage,'待听测');
 });
 
@@ -68,7 +69,7 @@ test('TTS wire parameters and independent first PCM, Room publication and speake
   data.language.application='next_turn';
   data.language.llm_decision={language:'en',dialect:'unknown'};
   const view=speechExpressionView(data);
-  assert.equal(view.llmDecision,'英语 · 未知');
+  assert.equal(view.llmDecision,'英语');
   assert.equal(view.llmApplication,'下轮生效');
   assert.equal(view.ttsLanguage,'粤语 · 粤语');
   assert.equal(view.ttsEmotion,'温柔关切');
@@ -82,7 +83,7 @@ test('disabled and failed sidecars preserve preferences and accurately show stat
   const data=snapshot({enabled:false,sidecar:{status:'disabled'}});
   data.language.preferences.robot={language:'en',dialect:'unknown'};
   assert.equal(speechExpressionView(data).sidecar,'已关闭（保留偏好）');
-  assert.equal(speechExpressionView(data).robotPreference,'英语 · 未知');
+  assert.equal(speechExpressionView(data).robotPreference,'英语');
   assert.equal(speechExpressionView(snapshot({sidecar:{status:'unavailable',connected:false}})).sidecar,'旁路失败');
   assert.equal(speechExpressionView(snapshot({sidecar:{status:'reconnecting',connected:false}})).sidecar,'旁路断线 / 等待重连');
   assert.equal(speechExpressionView(snapshot({sidecar:{state:'not_configured'}})).sidecar,'未接入');
@@ -166,7 +167,7 @@ test('disabled unconfigured sidecar remains not connected; preferences can be re
   const view=speechExpressionView(data);
   assert.equal(view.sidecar,'未接入');
   assert.equal(view.canToggleSidecar,false);
-  assert.equal(view.chatPreference,'日语 · 未知');
+  assert.equal(view.chatPreference,'日语');
   assert.equal(speechExpressionView(snapshot({enabled:false,sidecar:{status:'disabled'}})).canToggleSidecar,true);
   const {readFileSync}=await import('node:fs');
   const panel=readFileSync(new URL('../src/speech-expression.tsx',import.meta.url),'utf8');
@@ -225,7 +226,7 @@ test('finished owner does not erase latest same-session actual TTS instruction a
   assert.equal(view.ttsTurn,'turn-last');
   assert.equal(view.ttsInstruction,'Actually sent instruction');
   assert.equal(view.ttsRate,'1.03');assert.equal(view.ttsPitch,'1.02');assert.equal(view.ttsVolume,'55');
-  assert.equal(view.ttsLanguage,'英语 · 未知');
+  assert.equal(view.ttsLanguage,'英语');
 });
 
 test('latest TTS never crosses robot, room, chat, persona, revision, epoch or generation',()=>{
@@ -233,7 +234,7 @@ test('latest TTS never crosses robot, room, chat, persona, revision, epoch or ge
     const view=speechExpressionView(snapshot({latest_tts:latestTts({[key]:'other'})}));
     assert.equal(view.ttsTask,'当前无任务',key);
     assert.equal(view.ttsInstruction,'未记录（请查看逐轮诊断）',key);
-    assert.equal(view.ttsLanguage,'未知',key);
+    assert.equal(view.ttsLanguage,'未记录',key);
   }
 });
 
@@ -271,4 +272,14 @@ test('recent wire evidence never borrows latency or device proof from another ow
   const view=speechExpressionView(snapshot({latest_tts:latestTts(),speech:{state:'idle',turn_id:'different',run_to_first_pcm_ms:99,first_publish_ms:101,playback_evidence:'speaker_reported_drained'}}));
   assert.equal(view.firstPcm,'未知');assert.equal(view.firstPublish,'未知');
   assert.equal(view.speakerEvidence,'待设备回执 / 未核验');
+});
+
+test('Chinese TTS without a dialect instruction reads as unspecified rather than unknown',()=>{
+  const style={language:'zh',dialect:'unknown',emotion:'neutral',delivery:'contextual',tone:'毒舌',rate:1,pitch:1,volume:48,instruction:'',source:'runtime_context'};
+  const view=speechExpressionView(snapshot({speech:{state:'active',turn_id:'turn-zh',speech_style:style}}));
+  assert.equal(view.ttsLanguage,'中文（未指定方言）');
+  assert.equal(view.ttsEmotion,'毒舌性格语气');
+  assert.equal(view.target,'中文（未指定方言）');
+  const odd=speechExpressionView(snapshot({speech:{state:'active',turn_id:'turn-zh',speech_style:{...style,tone:undefined,emotion:'shy',delivery:'natural'}}}));
+  assert.equal(odd.ttsEmotion,'shy');
 });

@@ -122,3 +122,8 @@ test('continue-task fragment labels use backend one-based indices without renumb
   assert.match(source,/片段 \{piece\.index\}/);
   assert.doesNotMatch(source,/piece\.index\s*\+\s*1/);
 });
+
+test('a turn sent without a dialect instruction says unspecified, not unknown',async()=>{
+  const result=await view(tts({speech_style:{...tts().speech_style,dialect:'unknown'}}));
+  assert.equal(result.dialect,'未指定');
+});

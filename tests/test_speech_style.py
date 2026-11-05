@@ -6,7 +6,12 @@ from functools import wraps
 
 import pytest
 from annie_adapters.tts import command
-from annie_core.speech_style import SpeechStyle, choose_speech_style
+from annie_core.speech_style import (
+    PersonaTone,
+    SpeechStyle,
+    apply_persona_tone,
+    choose_speech_style,
+)
 from annie_runtime.speech import SpeechOutput
 
 from tests.test_phase4b import FakePublisher, FakeRobot, FakeTts
@@ -269,3 +274,46 @@ async def test_unsupported_hint_diagnoses_and_keeps_speech_pcm_running():
         assert "language_hints" not in FakeTts.instances[-1].sent[0]["payload"]["parameters"]
     finally:
         await output.close()
+
+
+SAVAGE = PersonaTone(instruction="语气里满是不屑和嘲讽。", rate=1.08, pitch=1.02, volume=54)
+
+
+def test_persona_tone_is_the_base_and_turn_emotion_an_accent():
+    style = apply_persona_tone(
+        choose_speech_style(emotion="sarcastic", source="llm_early", delivery="contextual"), SAVAGE)
+    assert style.instruction.startswith("语气里满是不屑和嘲讽。")
+    assert "这一句再带一点调侃的情绪" in style.instruction
+    # The generic sarcastic wording would tame a savage personality.
+    assert "避免刻薄" not in style.instruction
+    assert (style.rate, style.pitch, style.volume) == (1.08, 1.02, 54)
+    assert style.source == "llm_early" and style.emotion == "sarcastic"
+
+
+def test_persona_tone_shifts_with_emotion_within_limits():
+    excited = apply_persona_tone(choose_speech_style(emotion="excited"), SAVAGE)
+    assert excited.rate == 1.12 and excited.pitch == 1.04  # 1.08+0.06 clamps to the cap
+    calm = apply_persona_tone(choose_speech_style(emotion="sad"),
+                              PersonaTone(instruction="轻柔。", rate=.92, pitch=.96))
+    assert calm.rate == .9 and calm.pitch == .95
+    neutral = apply_persona_tone(choose_speech_style(), SAVAGE)
+    assert "这一句再带" not in neutral.instruction
+    dialect = apply_persona_tone(choose_speech_style(dialect="sichuan"), SAVAGE)
+    assert dialect.instruction.startswith("请使用自然四川话。语气里满是")
+
+
+def test_explicit_request_and_serious_context_skip_the_persona_tone():
+    explicit = choose_speech_style(emotion="warm", source="explicit_user")
+    assert apply_persona_tone(explicit, SAVAGE) is explicit
+    serious = choose_speech_style(emotion="playful", serious=True)
+    assert apply_persona_tone(serious, SAVAGE) is serious
+    assert apply_persona_tone(explicit, None) is explicit
+
+
+@pytest.mark.parametrize("fields", [
+    {"instruction": "快" * 201}, {"rate": 1.2}, {"pitch": .9}, {"volume": 61}, {"volume": 50.0},
+    {"rate": True}, {"instruction": None},
+])
+def test_persona_tone_rejects_values_outside_tts_policy(fields):
+    with pytest.raises(ValueError):
+        PersonaTone(**fields)

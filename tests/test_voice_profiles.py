@@ -187,6 +187,35 @@ def test_persisted_voice_library_chat_and_robot_scope_without_extra_llm(tmp_path
     asyncio.run(exercise())
 
 
+def test_personality_voice_sits_between_chat_and_robot_choices(tmp_path):
+    async def exercise():
+        store = RuntimeStore(tmp_path / "var" / "runtime.db")
+        store.migrate()
+        profiles = VoiceProfiles(store, FakeVoiceProvider(), "original")
+        await profiles.start()
+        try:
+            bound = (await profiles.clone("毒舌女声", "voice.wav", wav()))["voice_id"]
+            chosen = (await profiles.clone("温柔女声", "voice.wav", wav()))["voice_id"]
+            identity = {"robot_id": "a", "chat_id": "daily", "persona_id": "annie"}
+            wanted = {"voice": None}
+            profiles.bound_voice = lambda _identity: wanted["voice"]
+            await profiles.select(identity, chosen, "robot")
+            assert profiles.resolved(identity) == chosen
+            wanted["voice"] = "毒舌女声"  # bound by name
+            assert profiles.resolved(identity) == bound
+            assert profiles.snapshot(identity)["persona_voice_id"] == bound
+            wanted["voice"] = bound  # or by ID
+            assert profiles.resolved(identity) == bound
+            wanted["voice"] = "还没克隆的声音"  # an unknown voice falls through
+            assert profiles.resolved(identity) == chosen
+            wanted["voice"] = "毒舌女声"
+            await profiles.select(identity, chosen, "chat")
+            assert profiles.resolved(identity) == chosen  # the chat's own choice wins
+        finally:
+            await profiles.close()
+    asyncio.run(exercise())
+
+
 def test_realtime_voice_switch_calls_current_chat_and_keeps_tts_task_identity(tmp_path):
     async def exercise():
         rt = runtime(tmp_path)

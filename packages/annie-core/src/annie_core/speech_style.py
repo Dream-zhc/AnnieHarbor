@@ -1,7 +1,7 @@
 """Small deterministic per-turn TTS policy, with no provider or model dependency."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 LANGUAGES = frozenset({"zh", "yue", "en", "fr", "de", "ja", "ko", "ru", "pt", "th",
                        "id", "vi", "es", "it", "ms", "fil", "ar", "hi", "tr", "uk"})
@@ -35,6 +35,15 @@ _EXPRESSIONS = {
     "excited": ("请用适度开心兴奋而自然的语气表达，避免尖叫。", 1.06, 1.02),
     "calm": ("请用平稳、温和安抚而自然的语气表达。", .95, 1.0),
 }
+_TONED_DELIVERY = ("请围绕指定语气，根据文本语义和标点自然变化重音、停顿和句尾语调，"
+                   "不要平直念稿，保持原音色和自然音量。")
+# Under a personality the turn's emotion is an accent, not a second full
+# instruction: the generic "sarcastic" text ("避免刻薄") would undo a savage style.
+_EMOTION_ACCENTS = {
+    "warm": "温柔关切", "playful": "俏皮", "sarcastic": "调侃", "curious": "好奇",
+    "sad": "低落", "excited": "兴奋", "calm": "平稳安抚",
+}
+PERSONA_TONE_INSTRUCTION_LIMIT = 200  # leaves room for dialect, accent and delivery within 512
 
 
 def _choice(name, value, choices):
@@ -108,12 +117,54 @@ def choose_speech_style(*, language="zh", dialect="unknown", emotion="neutral",
     expression, default_rate, default_pitch = _EXPRESSIONS[emotion]
     delivery_instruction = _DELIVERY_INSTRUCTIONS[delivery]
     if delivery == "contextual" and emotion != "neutral":
-        delivery_instruction = ("请围绕指定语气，根据文本语义和标点自然变化重音、停顿和句尾语调，"
-                                "不要平直念稿，保持原音色和自然音量。")
+        delivery_instruction = _TONED_DELIVERY
     return SpeechStyle(
         language=language, dialect=dialect, emotion=emotion,
         instruction=_DIALECT_INSTRUCTIONS[dialect] + expression + delivery_instruction,
         rate=default_rate if rate is None else rate,
         pitch=default_pitch if pitch is None else pitch,
         volume=50 if volume is None else volume, source=source, delivery=delivery,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PersonaTone:
+    """Standing delivery of one personality; the turn's emotion is layered on top."""
+
+    instruction: str = ""
+    rate: float = 1.0
+    pitch: float = 1.0
+    volume: int = 50
+
+    def __post_init__(self):
+        if not isinstance(self.instruction, str) or len(self.instruction) > PERSONA_TONE_INSTRUCTION_LIMIT:
+            raise ValueError("persona tone instruction must be a string of at most "
+                             f"{PERSONA_TONE_INSTRUCTION_LIMIT} characters")
+        validate_tts_number("rate", self.rate, .90, 1.12)
+        validate_tts_number("pitch", self.pitch, .95, 1.05)
+        validate_tts_number("volume", self.volume, 40, 60, integer=True)
+
+
+def _shifted(base, turn_value, lower, upper):
+    return round(min(upper, max(lower, base + turn_value - 1.0)), 3)
+
+
+def apply_persona_tone(style, tone):
+    """Speak the turn in the personality's voice, with its emotion as an accent.
+
+    A tone the user asked for this turn and a serious context keep the plain
+    turn style: acting out a personality over either would be wrong.
+    """
+    if tone is None or style.source == "explicit_user" or style.emotion == "serious":
+        return style
+    accent = _EMOTION_ACCENTS.get(style.emotion)
+    delivery = {"natural": "", "contextual": _TONED_DELIVERY}.get(
+        style.delivery, _DELIVERY_INSTRUCTIONS[style.delivery])
+    return replace(
+        style,
+        instruction=(_DIALECT_INSTRUCTIONS[style.dialect] + tone.instruction
+                     + (f"这一句再带一点{accent}的情绪。" if accent else "") + delivery),
+        rate=_shifted(tone.rate, style.rate, .90, 1.12),
+        pitch=_shifted(tone.pitch, style.pitch, .95, 1.05),
+        volume=tone.volume,
     )

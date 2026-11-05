@@ -55,11 +55,14 @@ from annie_brain.persona import (
     PREFERENCE_REQUEST,
     active_style_id,
     chat_preference,
+    persona_tone,
+    persona_voice,
     resolve_persona_style_request,
     session_instructions,
     social_instruction_hint,
 )
 from annie_core import RobotUnavailableError
+from annie_core.speech_style import apply_persona_tone
 
 from annie_runtime.display import DISPLAY_NOTIFY_KINDS
 from annie_runtime.faces import FORGET_CONFIRM_SECONDS, face_name, heard_name, same_person
@@ -936,11 +939,20 @@ class RealtimeRobot:
             "latency_window": self._latency_window(),
         }
 
+    def active_persona_profile(self):
+        return self.persona_profiles.get(
+            active_style_id(self.robot.persona_id, self.persona_profiles, self.social_state))
+
+    def persona_voice(self):
+        return persona_voice(self.active_persona_profile())
+
     def turn_speech_style(self, turn_id, identity):
         if identity != self.robot.session_state():
             return None
         style = self.language.style_for(turn_id)
         self.language.locked_turns.add(turn_id)
+        if style is not None:
+            style = apply_persona_tone(style, persona_tone(self.active_persona_profile()))
         rate = SPEECH_RATE.get(chat_preference(self.social_state, "speech_rate"))
         volume = SPEECH_VOLUME.get(chat_preference(self.social_state, "speech_volume"))
         if style is not None and style.source != "explicit_user" and (rate or volume):

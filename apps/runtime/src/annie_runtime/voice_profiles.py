@@ -305,6 +305,8 @@ class VoiceProfiles:
         self.preview_locks = {}
         self.preview_root = store.path.parent / "voice_previews"
         self.errors = {}
+        # identity -> voice name or ID bound to the chat's personality, if any
+        self.bound_voice = None
 
     def _initialize(self):
         with self.store.connect() as db:
@@ -386,9 +388,21 @@ class VoiceProfiles:
         return None, [self.label(voice_id) if voice_id != DEFAULT else "系统默认"
                       for voice_id in alternatives]
 
+    def persona_bound(self, identity):
+        """The cloned voice the chat's personality is bound to, by name or ID."""
+        wanted = self.bound_voice(identity) if self.bound_voice else None
+        if not wanted:
+            return None
+        if wanted in self.voices:
+            return wanted
+        return next((voice_id for voice_id, row in self.voices.items() if row["name"] == wanted), None)
+
     def resolved(self, identity):
+        # A chat's own choice beats the personality's voice, which beats the robot-wide one.
         robot, chat, persona = (identity[key] for key in ("robot_id", "chat_id", "persona_id"))
         selected = self.selections.get((robot, chat, persona))
+        if selected is None:
+            selected = self.persona_bound(identity)
         if selected is None:
             selected = self.selections.get((robot, "", ""))
         return selected if selected in self.voices else self.default_voice
@@ -400,6 +414,7 @@ class VoiceProfiles:
                 "default_voice_id": self.default_voice,
                 "robot_voice_id": self.selections.get((robot, "", ""), DEFAULT),
                 "chat_voice_id": self.selections.get((robot, chat, persona), DEFAULT),
+                "persona_voice_id": self.persona_bound(identity),
                 "previews": [
                     {"key": key, "name": name,
                      "ready": self.preview_path(active, key).exists() if active in self.voices else False}

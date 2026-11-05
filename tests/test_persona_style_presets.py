@@ -1,45 +1,69 @@
 """Style configuration contracts, not a claim of live model speech quality."""
 
+from itertools import combinations
 from pathlib import Path
 
 import pytest
-from annie_brain.persona import COMPANION_CORE, load_personas, session_instructions
+from annie_brain.persona import (
+    COMPANION_CORE,
+    CONVERSATION_CRAFT,
+    USER_REQUESTS,
+    load_personas,
+    persona_tone,
+    persona_voice,
+    session_instructions,
+)
+from annie_core.speech_style import PersonaTone
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "personas.toml"
 STYLE_MARKERS = {
-    "annie": ("自然陪伴", "生活观察家", "冷知识", "不和稀泥", "先说一个具体发现"),
-    "annie-calm": ("温柔知心", "深夜电台", "对方当轮原话里的一个词", "是想说说，还是想听点建议", "小小的选择"),
-    "annie-lively": ("活泼俏皮", "小烟花", "好笑的外号", "拟声词", "小傲娇"),
-    "annie-roast": ("机灵互怼", "硬核损友", "抓包", "招牌三连", "刀子嘴后面是豆腐心"),
-    "annie-weary": ("怨种搭档", "工位", "抱怨一句工作量", "打工人词汇", "茶水间"),
-    "annie-deadpan": ("优雅乐子人", "纪录片解说员", "英式管家", "新闻播报", "越短越冷"),
-    "annie-savage": ("毒舌开喷", "吐槽大会", "弹药库", "粗口当语气词", "嘴硬三秒", "阴阳怪气",
-                     "普通话网络腔"),
+    "annie": ("机灵", "机灵鬼", "最会聊天", "抖个机灵", "不掉书袋"),
+    "annie-calm": ("温柔", "温柔到骨子里", "春天午后", "裹着糖说", "一团棉花"),
+    "annie-deadpan": ("高冷", "惜字如金", "冰山", "无动于衷", "越淡定"),
+    "annie-savage": ("毒舌", "嘴比刀快", "中国脏话张口就来", "让骂就痛快骂", "一点面子不留"),
 }
 # Each personality must visibly step out of its act when the user is hurting.
 SERIOUS_SWITCH = {
-    "annie": "把他稳稳接住",
-    "annie-calm": "一句话就够",
-    "annie-lively": "先收起烟花",
-    "annie-roast": "秒切靠谱同盟",
-    "annie-weary": "稳稳地和他一起扛",
-    "annie-deadpan": "卸下解说腔",
-    "annie-savage": "立刻熄火闭麦",
+    "annie": "收起机灵",
+    "annie-calm": "安安静静守着他",
+    "annie-deadpan": "放下冷淡",
+    "annie-savage": "立刻闭麦",
 }
 
 
 def test_header_forbids_reusing_style_wording():
     instructions, _ = session_instructions("annie", load_personas(CONFIG), {})
     assert "每次现编，不原样复用描述里的词句" in instructions
+    # Older replies in the history may come from another personality.
+    assert "只取内容，不学口吻" in instructions
+    assert "口吻一律听性格的" in instructions
 
 
-def test_presets_keep_four_stable_ids_labels_schema_and_budget():
+def test_presets_keep_stable_ids_two_character_labels_schema_and_budget():
     profiles = load_personas(CONFIG)
     assert set(profiles) == set(STYLE_MARKERS)
     for style_id, profile in profiles.items():
-        assert set(profile) == {"label", "style"}
+        assert set(profile) == {"label", "style", "tts"}
         assert profile["label"] == STYLE_MARKERS[style_id][0]
+        assert len(profile["label"]) == 2
         assert 1 <= len(profile["style"]) <= 500
+
+
+def test_labels_never_contain_each_other():
+    # The switch matcher finds labels inside the user's words; nested labels would be ambiguous.
+    labels = [profile["label"] for profile in load_personas(CONFIG).values()]
+    assert len(set(labels)) == len(labels)
+    for first, second in combinations(labels, 2):
+        assert first not in second and second not in first
+
+
+def test_removed_styles_fall_back_to_the_default():
+    # Chats that saved a retired style keep working on the default personality.
+    profiles = load_personas(CONFIG)
+    for retired in ("annie-lively", "annie-roast", "annie-weary"):
+        _, snapshot = session_instructions(
+            "annie", profiles, {"persona_style": {"source": "user_setting", "value": retired}})
+        assert snapshot["style_id"] == "annie" and snapshot["label"] == "机灵"
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)
@@ -56,26 +80,81 @@ def test_each_style_has_own_observation_rhythm_voice_and_closure(style_id):
 def test_idioms_are_occasional_not_a_repeated_script(style_id):
     style = load_personas(CONFIG)[style_id]["style"]
     # Quotable sample lines were parroted verbatim in live tests; describe technique instead.
-    assert "示意" not in style and "“" not in style.replace("“抓包”", "").replace("“我只是AI”", "").replace("“随便都行”", "")
+    assert "示意" not in style and "“" not in style
     assert SERIOUS_SWITCH[style_id] in style
     assert all(SERIOUS_SWITCH[style_id] not in other["style"]
                for key, other in load_personas(CONFIG).items() if key != style_id)
     for retired in ("好家伙，还有这一出", "这题算你会出", "还挺会挑时候", "这点倒挺有意思"):
         assert retired not in style
-    if style_id == "annie-roast":
-        assert "严禁机械重复" in style
-        assert "绝不攻击真实智商" in style
+    if style_id == "annie":
+        assert "不写舞台动作或旁白" in style
+        assert "不拿别人的痛处开玩笑" in style
     if style_id == "annie-savage":
-        # Swearing is allowed as attitude; insults about who someone is are not.
-        assert "不碰外貌身材" in style and "不带性暗示" in style
-        assert "不用辱骂人格的脏话" in style
-        assert "不连着两轮用同一个梗" in style
-        # “老铁” pulled her replies into dialect words; she speaks Mandarin internet slang.
-        assert "老铁" not in style and "不用方言" in style
-        # Roasting someone into a laughing "破防" is the aim; real distress still ends the act.
-        assert "遥遥领先" in style and "再补一刀" in style and "喊破防是玩笑" in style
-        # Memes only land word for word, so she alone is exempt from the header's improvise-everything rule.
-        assert "梗要原样说、不用现编" in style
+        # Real scolding is the point; only discrimination and sexual jokes stay off limits.
+        assert "不搞地域和性别歧视" in style and "不开黄腔" in style
+        for retired in ("不用辱骂人格的脏话", "不碰外貌身材", "不是骂街", "不用方言"):
+            assert retired not in style
+        # A fixed meme list said word for word made replies repeat; memes rotate instead.
+        assert "梗要原样说" not in style and "遥遥领先" not in style
+        assert "一个梗用过就换" in style and "同一句话绝不说第二遍" in style
+        # Roast material is everything she knows about the user, not only this sentence.
+        assert "把你对TA的全部了解都当弹药" in style
+        # Hitting back is fine, blaming the user for her own slip is not.
+        assert "绝不赖到对方头上" in style
+        assert "对方要方言就用方言骂" in style
+        assert "喊破防是玩笑" in style
+
+
+def test_each_style_has_a_contrasting_tts_tone():
+    profiles = load_personas(CONFIG)
+    tones = {style_id: persona_tone(profile) for style_id, profile in profiles.items()}
+    assert all(isinstance(tone, PersonaTone) and tone.instruction for tone in tones.values())
+    assert len({tone.instruction for tone in tones.values()}) == len(tones)
+    # Gentle is the slowest, the savage one the fastest; the cold one sits lowest.
+    assert tones["annie-calm"].rate == min(tone.rate for tone in tones.values())
+    assert tones["annie-savage"].rate == max(tone.rate for tone in tones.values())
+    assert tones["annie-deadpan"].pitch == min(tone.pitch for tone in tones.values())
+    assert "轻柔" in tones["annie-calm"].instruction
+    assert "嘲讽" in tones["annie-savage"].instruction
+    assert "冷淡" in tones["annie-deadpan"].instruction
+    # Each personality speaks with its own cloned voice.
+    voices = [persona_voice(profile) for profile in profiles.values()]
+    assert all(voices) and len(set(voices)) == len(voices)
+
+
+def test_tts_table_is_validated_at_load(tmp_path):
+    def write(tts):
+        path = tmp_path / "personas.toml"
+        path.write_text(f'[personas.annie]\nlabel = "机灵"\nstyle = "说话快"\n[personas.annie.tts]\n{tts}\n')
+        return path
+
+    profile = load_personas(write('instruction = " 明亮 "\nrate = 1.05\nvoice = "半藏森林"'))["annie"]
+    assert profile["tts"] == {"instruction": "明亮", "rate": 1.05, "voice": "半藏森林"}
+    assert persona_voice(profile) == "半藏森林"
+    assert persona_tone(profile) == PersonaTone(instruction="明亮", rate=1.05)
+    for bad in ('rate = 1.5', 'pitch = 0.5', 'volume = 70', 'volume = 50.5',
+                f'instruction = "{"快" * 201}"', 'speed = 1.0', 'voice = 3'):
+        with pytest.raises(ValueError):
+            load_personas(write(bad))
+
+
+def test_shared_craft_keeps_talk_sharp_without_muzzling_styles():
+    assert 250 <= len(COMPANION_CORE) <= 350
+    # A savage style is told to roast weaknesses; the shared core must not forbid it.
+    assert "不拿个人弱点当笑料" not in COMPANION_CORE + CONVERSATION_CRAFT
+    assert "给明确判断和一个理由" in CONVERSATION_CRAFT
+    assert "不重复自我介绍" in CONVERSATION_CRAFT
+    # 11-04: a traffic answer was invented with no data behind it.
+    assert "没有查询工具就直说查不到" in CONVERSATION_CRAFT
+    assert "任何性格都先收起玩笑稳稳接住" in CONVERSATION_CRAFT
+    instructions, _ = session_instructions("annie", load_personas(CONFIG), {})
+    assert instructions.index("【当前表达风格") < instructions.index("【聊得有意思】")
+
+
+def test_scolding_requests_follow_the_current_style():
+    assert "骂人或说伤人的话时不照做" not in USER_REQUESTS
+    assert "要你骂人、损人时，按当前性格的脾气来接" in USER_REQUESTS
+    assert "编造事实时不照做" in USER_REQUESTS
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

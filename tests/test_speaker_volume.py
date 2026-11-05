@@ -197,15 +197,15 @@ def test_change_your_personality_is_an_explicit_request():
     from annie_brain.persona import load_personas, resolve_persona_style_request
 
     profiles = load_personas(Path(__file__).resolve().parents[1] / "config/personas.toml")
-    social = {"persona_style": {"value": "annie-weary", "source": "user_setting"}}
+    social = {"persona_style": {"value": "annie-deadpan", "source": "user_setting"}}
     for said in ("小安妮，换一个你的性格。", "换个性格", "给你换换风格"):
         style, options = resolve_persona_style_request("annie", profiles, social, "", said)
-        assert style is None and "活泼俏皮" in options, said
-    style, _ = resolve_persona_style_request("annie", profiles, social, "活泼俏皮",
+        assert style is None and "温柔" in options, said
+    style, _ = resolve_persona_style_request("annie", profiles, social, "温柔",
                                              "小安妮，换一个你的性格。")
-    assert style == "annie-lively"
+    assert style == "annie-calm"
     with pytest.raises(ValueError):
-        resolve_persona_style_request("annie", profiles, social, "活泼俏皮", "你的性格挺好")
+        resolve_persona_style_request("annie", profiles, social, "温柔", "你的性格挺好")
 
 
 def test_systemctl_stop_sends_the_goodbye_like_ctrl_c():

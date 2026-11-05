@@ -993,6 +993,7 @@ class HarborRuntime:
             from annie_runtime.voice_profiles import DashscopeVoiceProvider, VoiceProfiles
             provider = DashscopeVoiceProvider(realtime_key, tts_url or TTS_DEFAULT_URL)
             self.voices = VoiceProfiles(self.store, provider, tts_voice)
+            self.voices.bound_voice = self._persona_voice
         self.recorder = Recorder(self.store.write_batch)
         self.process_probe = ProcessProbe()
         self.ledger = ConversationLedgerWriter(self.store)
@@ -2169,6 +2170,13 @@ class HarborRuntime:
         if self.voices is None:
             return {"available": False, "voices": [], "previews": []}
         return {"available": True, **self.voices.snapshot(identity)}
+
+    def _persona_voice(self, identity):
+        # Only the live chat's personality is known without a store read.
+        client = self.realtime.get(identity.get("robot_id"))
+        if client is None or identity != client.robot.session_state():
+            return None
+        return client.persona_voice()
 
     async def clone_voice(self, robot_id, name, filename, audio, language="zh"):
         if self.voices is None:

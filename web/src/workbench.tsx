@@ -216,7 +216,7 @@ function DecisionItem({ entry, isExpanded, seqLabel }: { entry: DecisionEntry; i
   );
 }
 
-export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 'workbench') => void } = {}){
+export function Workbench(){
   const root=useRef<HTMLDivElement>(null);
   useGSAP(()=>{
     const media=gsap.matchMedia();
@@ -866,11 +866,6 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
         {!health?.robots.length&&<span className="empty-copy">无可用机器人</span>}
       </div>
       <div className="topbar-right">
-        {onSwitchMode && (
-          <button className="action-pill" type="button" onClick={() => onSwitchMode('cockpit')} title="切回全息态势大屏" style={{ color: 'var(--neon-cyan, #00f0ff)', fontWeight: 600 }}>
-            🌌 态势大屏
-          </button>
-        )}
         <button className="action-pill theme-toggle-btn" type="button"
           onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}
           aria-label={theme==='dark'?'切换至日间模式':'切换至夜间模式'}

@@ -78,6 +78,7 @@ from annie_runtime.language import (
     explicit_language_request,
     explicit_language_stop,
     named_languages,
+    normalize_dialect,
     stop_covers,
     unplaced_language_mention,
 )
@@ -1159,6 +1160,10 @@ class RealtimeRobot:
         text = str(cached.get('user_text') or self.transcript or '')
         if self.turn_id == self.external_turn_id or self.turn_identity != self.robot.session_state():
             raise ValueError('language tool requires current user turn')
+        if isinstance(args.get('dialect'), str):
+            args = {**args, 'dialect': normalize_dialect(args['dialect'])}
+            if args['dialect'] == 'cantonese' and args.get('language') == 'zh':
+                args['language'] = 'yue'
         if name == 'select_reply_style':
             if not {'language', 'dialect', 'emotion'} <= set(args) <= {
                     'language', 'dialect', 'emotion', 'evidence', 'reason'}:

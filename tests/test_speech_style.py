@@ -7,6 +7,7 @@ from functools import wraps
 import pytest
 from annie_adapters.tts import command
 from annie_core.speech_style import (
+    CHINESE_DIALECTS,
     PersonaTone,
     SpeechStyle,
     apply_persona_tone,
@@ -317,6 +318,21 @@ def test_explicit_request_and_serious_context_skip_the_persona_tone():
 def test_persona_tone_rejects_values_outside_tts_policy(fields):
     with pytest.raises(ValueError):
         PersonaTone(**fields)
+
+
+def test_every_dialect_a_cloned_voice_speaks_has_an_instruction():
+    for key, name in CHINESE_DIALECTS.items():
+        assert choose_speech_style(dialect=key).instruction.startswith(f"请使用自然{name}。")
+
+
+def test_a_dialect_request_keeps_the_personality_and_names_it():
+    tone = PersonaTone(instruction="语气里满是不屑和嘲讽。", label="毒舌")
+    asked = choose_speech_style(dialect="dongbei", source="explicit_user", delivery="contextual")
+    style = apply_persona_tone(asked, tone)
+    assert style.instruction.startswith("请使用自然东北话。语气里满是不屑和嘲讽。")
+    assert style.tone == "毒舌"
+    warm = choose_speech_style(emotion="warm", source="explicit_user", delivery="contextual")
+    assert apply_persona_tone(warm, tone) == warm  # a tone the user asked for still wins
 
 
 def test_a_cloned_voice_keeps_the_model_it_was_cloned_for():

@@ -5,7 +5,16 @@ from dataclasses import dataclass, replace
 
 LANGUAGES = frozenset({"zh", "yue", "en", "fr", "de", "ja", "ko", "ru", "pt", "th",
                        "id", "vi", "es", "it", "ms", "fil", "ar", "hi", "tr", "uk"})
-DIALECTS = frozenset({"unknown", "mandarin", "sichuan", "henan", "shaanxi", "cantonese"})
+# Chinese dialects a cloned Qwen-Audio voice speaks on instruction: the voice-cloning
+# language list (help.aliyun.com/zh/model-studio/voice-cloning-user-guide, 11-05).
+CHINESE_DIALECTS = {
+    "mandarin": "普通话", "sichuan": "四川话", "henan": "河南话", "shaanxi": "陕西话",
+    "dongbei": "东北话", "shanghai": "上海话", "chongqing": "重庆话", "yunnan": "云南话",
+    "guizhou": "贵州话", "hubei": "湖北话", "hunan": "湖南话", "jiangxi": "江西话",
+    "zhejiang": "浙江话", "ningbo": "宁波话", "shandong": "山东话", "qingdao": "青岛话",
+    "hebei": "河北话", "shanxi": "山西话", "gansu": "甘肃话", "ningxia": "宁夏话",
+}
+DIALECTS = frozenset({"unknown", "cantonese", *CHINESE_DIALECTS})
 EMOTIONS = frozenset({"neutral", "warm", "playful", "sarcastic", "curious", "serious",
                       "sad", "excited", "calm"})
 DELIVERIES = frozenset({"natural", "contextual", "expressive"})
@@ -19,9 +28,8 @@ _DELIVERY_INSTRUCTIONS = {
                    "不把整段固定成同一种情绪，不尖叫，不把指令读出来。"),
 }
 _DIALECT_INSTRUCTIONS = {
-    "unknown": "", "mandarin": "请使用自然普通话。", "sichuan": "请使用自然四川话。",
-    "henan": "请使用自然河南话。", "shaanxi": "请使用自然陕西话。",
-    "cantonese": "请使用自然粤语。",
+    "unknown": "", "cantonese": "请使用自然粤语。",
+    **{key: f"请使用自然{name}。" for key, name in CHINESE_DIALECTS.items()},
 }
 # Modest whole-turn shifts; warmth never means turning down the user's volume.
 _EXPRESSIONS = {
@@ -59,6 +67,11 @@ def validate_tts_number(name, value, lower, upper, *, integer=False):
         raise ValueError(f"TTS {name} must be finite and within [{lower}, {upper}]")
 
 
+def _label(name, value):
+    if not isinstance(value, str) or len(value) > 40:
+        raise ValueError(f"{name} must be a string of at most 40 characters")
+
+
 def validate_instruction(instruction):
     if not isinstance(instruction, str) or len(instruction) > 512:
         raise ValueError("TTS instruction must be a string of at most 512 characters")
@@ -77,6 +90,7 @@ class SpeechStyle:
     volume: int = 50
     source: str = "runtime_default"
     delivery: str = "natural"
+    tone: str = ""  # label of the personality whose standing delivery shaped the instruction
 
     def __post_init__(self):
         _choice("language", self.language, LANGUAGES)
@@ -92,6 +106,7 @@ class SpeechStyle:
         validate_tts_number("volume", self.volume, 40, 60, integer=True)
         if not isinstance(self.source, str) or not self.source or len(self.source) > 64:
             raise ValueError("speech style source must be a nonempty string of at most 64 characters")
+        _label("speech style tone", self.tone)
 
 
 def choose_speech_style(*, language="zh", dialect="unknown", emotion="neutral",
@@ -135,8 +150,10 @@ class PersonaTone:
     rate: float = 1.0
     pitch: float = 1.0
     volume: int = 50
+    label: str = ""
 
     def __post_init__(self):
+        _label("persona tone label", self.label)
         if not isinstance(self.instruction, str) or len(self.instruction) > PERSONA_TONE_INSTRUCTION_LIMIT:
             raise ValueError("persona tone instruction must be a string of at most "
                              f"{PERSONA_TONE_INSTRUCTION_LIMIT} characters")
@@ -153,9 +170,11 @@ def apply_persona_tone(style, tone):
     """Speak the turn in the personality's voice, with its emotion as an accent.
 
     A tone the user asked for this turn and a serious context keep the plain
-    turn style: acting out a personality over either would be wrong.
+    turn style: acting out a personality over either would be wrong. A request
+    for a language or dialect alone ("用东北话骂我") keeps the personality.
     """
-    if tone is None or style.source == "explicit_user" or style.emotion == "serious":
+    if (tone is None or style.emotion == "serious" or style.source == "explicit_user"
+            and (style.emotion != "neutral" or style.delivery != "contextual")):
         return style
     accent = _EMOTION_ACCENTS.get(style.emotion)
     delivery = {"natural": "", "contextual": _TONED_DELIVERY}.get(
@@ -166,5 +185,5 @@ def apply_persona_tone(style, tone):
                      + (f"这一句再带一点{accent}的情绪。" if accent else "") + delivery),
         rate=_shifted(tone.rate, style.rate, .90, 1.12),
         pitch=_shifted(tone.pitch, style.pitch, .95, 1.05),
-        volume=tone.volume,
+        volume=tone.volume, tone=tone.label,
     )

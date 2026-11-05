@@ -1,8 +1,7 @@
 import time
 
 import pytest
-
-from annie_runtime.language import ReplyLanguageState, explicit_language_request
+from annie_runtime.language import ReplyLanguageState, explicit_language_request, normalize_dialect
 
 IDENTITY = dict(robot_id="a", room_id="r", chat_id="c", persona_id="p", generation=1,
                 session_epoch=1)
@@ -243,3 +242,23 @@ def test_saved_preferences_keep_only_the_first_follow():
     s.first_text("t2")
     assert s.style_for("t2").dialect == "sichuan"  # back to the saved choice
     assert s.preferences["chat"]["dialect"] == "sichuan"
+
+
+@pytest.mark.parametrize(("text", "dialect"), [
+    ("用东北话骂我两句", "dongbei"), ("用上海话说", "shanghai"), ("重庆话来一段", "chongqing"),
+    ("用沪语讲讲", "shanghai"), ("用四川话说", "sichuan"),
+])
+def test_every_tts_dialect_is_understood_by_name(text, dialect):
+    assert explicit_language_request(text)["dialect"] == dialect
+
+
+def test_loose_dialect_names_from_the_model_are_normalized():
+    assert normalize_dialect("northeast") == "dongbei"
+    assert normalize_dialect("东北话") == "dongbei"
+    assert normalize_dialect("Sichuanese") == "sichuan"
+    assert normalize_dialect("klingon") == "klingon"
+    state = ReplyLanguageState()
+    state.reply_intent(language="zh", dialect="northeast", transcript="用东北话骂我两句")
+    assert state.intent["dialect"] == "dongbei"
+    with pytest.raises(ValueError):
+        state.reply_intent(language="zh", dialect="klingon", transcript="用东北话骂我两句")

@@ -5,6 +5,7 @@ import json
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from annie_core.speech_style import CHINESE_DIALECTS
 from websockets.asyncio.client import connect
 
 from annie_adapters.net import cloud_proxy
@@ -298,13 +299,13 @@ def session_update(instructions: str, history_turns: int = 20, *,
              {'scope': {'type': 'string', 'enum': ['chat', 'robot']}}, ['scope']),
             ('select_reply_style',
              'Sets how the voice sounds; not saved. Call it first when you START answering in '
-             'a dialect the user is speaking (zh + sichuan/henan/shaanxi, or yue), so the voice '
+             'a dialect the user is speaking or asked for (zh + a listed dialect, or yue + '
+             'cantonese), so the voice '
              'pronounces it; not again while the dialect continues. Dialect evidence = an EXACT '
              'phrase the user said, never a place name. Otherwise optional; a late call affects '
              'the next reply only.',
              {'language': {'type': 'string'},
-              'dialect': {'type': 'string', 'enum': ['unknown', 'mandarin', 'sichuan', 'henan',
-                                                     'shaanxi', 'cantonese']},
+              'dialect': {'type': 'string', 'enum': ['unknown', *CHINESE_DIALECTS, 'cantonese']},
               'emotion': {'type': 'string', 'enum': ['neutral','warm','playful','sarcastic',
                                                     'curious','serious','sad','excited','calm']},
               'evidence': {'type': 'string'}, 'reason': {'type': 'string'}},

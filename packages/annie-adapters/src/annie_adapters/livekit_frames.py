@@ -2,10 +2,10 @@
 
 The main brain joins the robot's LiveKit room as a hidden, subscribe-only
 participant and subscribes to one video track only: the configured source
-participant's camera (the same identity the exhibit display shows). It keeps
-just the newest decoded frame and encodes a small JPEG only when asked, so an
-idle room costs no image work. Room, source identity and the API key/secret
-are explicit configuration; nothing is guessed from the robot id.
+participant's camera. It keeps just the newest decoded frame and encodes a
+small JPEG only when asked, so an idle room costs no image work. Room, source
+identity and the API key/secret are explicit configuration; nothing is guessed
+from the robot id.
 
 A dropped connection only means no picture until the next reconnect: callers
 must treat ``latest_jpeg()`` returning None as "no frame" and carry on.

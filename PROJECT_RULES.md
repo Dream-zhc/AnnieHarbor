@@ -24,7 +24,7 @@
 
 ## 正式前端与开发者工作台
 
-- 唯一前端在现有 `web/`，React + TypeScript + Vite工作台和大屏共用工程/构建/后端。`annie-web`只做Web接口；不建第二套前端、Pipecat空壳或阶段临时HTML。
+- 唯一前端在现有 `web/`，React + TypeScript + Vite工作台；数据大屏由前端团队另做，只经 Java Room 的 `reb_display` 数据通道取数据。`annie-web`只做Web接口；不建第二套前端、Pipecat空壳或阶段临时HTML。
 - 保留健康/实例状态、Room PCM、多Chat/Persona、完整历史、20轮上下文、Ledger/Coordinator/SocialState、Realtime、独立TTS/嘴型及已有记忆/动作/事件与诊断接线。缺失能力标未接入；不复制后端状态机、不用Mock冒充实际完成。
 - 网页关闭后Runtime仍独立处理机器人PCM。浏览器麦克风显式启用，同Room一路音源；多Chat是可保存/切换的逻辑会话，不允许同一机器人同时发声多个Session。Provider密钥不入浏览器。
 - Python提供 `web/dist/`，Node热更新只用于开发；构建失败不得静默回旧页。保留已有功能、回归与数据，不覆盖并行构建成果；受影响迁移和恢复必须验证。

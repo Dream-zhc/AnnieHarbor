@@ -1,6 +1,6 @@
 # Annie Harbor（安妮港）
 
-小安妮机器人实时陪伴项目。一个 Python Runtime 管理多个独立机器人，React 工作台与数据大屏共用同一后端。
+小安妮机器人实时陪伴项目。一个 Python Runtime 管理多个独立机器人，自带 React 工作台；数据大屏由前端团队另做，从 Java Room 的 `reb_display` 频道取数据。
 
 **当前状态：软件阶段规划已收束，等待统一实测；Phase 10/11及后续阶段暂停。** 软件接线、自动化通过、真实设备验收分开记录，后续只按具体 Bug 最小修复。
 
@@ -14,8 +14,7 @@ sh start.sh
 
 Windows 使用 `start.bat`。默认端口 `8780`：
 
-- 数据大屏：`http://localhost:8780/?view=cockpit`（默认视图）
-- 交互工作台：`http://localhost:8780/?view=workbench`
+- 交互工作台：`http://localhost:8780/`
 - 健康状态：`http://localhost:8780/health`
 
 非敏感配置在 `config/`；机器差异与密钥在根 `.env`，模板为 `.env.example`。同项目旧实例由启动器验证后替换，其他程序占用端口时明确报错，不静默换端口。
@@ -26,9 +25,9 @@ Windows 使用 `start.bat`。默认端口 `8780`：
 | --- | --- |
 | `apps/runtime/` | 统一启动、机器人生命周期、音频准入与回合协调 |
 | `packages/` | 核心类型、对话/记忆、外部适配、诊断和 Web API |
-| `web/` | 唯一 React + TypeScript 前端，工作台与大屏共享构建 |
+| `web/` | 唯一 React + TypeScript 前端（交互工作台） |
 | `config/` | 可提交的配置资产，不存真实密钥 |
-| `scripts/` | 中文唤醒模型下载、展厅访问初始化等运维工具 |
+| `scripts/` | 唤醒/声纹模型下载、运行日志导出、对话质量评测等运维工具 |
 | `tests/`、`web/tests/` | 长期回归测试，不是临时探针 |
 | `docs/` | 当前边界、规范、协议及实际验收证据 |
 | `var/` | 本机数据库、日志、缓存和模型，不参与源码发布 |

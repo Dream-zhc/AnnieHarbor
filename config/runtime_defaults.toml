@@ -87,7 +87,7 @@ enabled = true
 scope = "cue"
 # 最多等决策模型这么久（毫秒）。11-03 实测 d3 带图中位约 250 ms、最慢约 400 ms。
 timeout_ms = 700
-# d3 判断时附上该机器人 LiveKit 摄像头的最新一帧（.env 的 ANNIE_EXHIBIT_LIVEKIT_*，和展厅大屏同一路画面）；
+# d3 判断时附上该机器人 LiveKit 摄像头的最新一帧（.env 的 ANNIE_EXHIBIT_LIVEKIT_*）；
 # 没配置或取不到 3 秒内的画面就只发文字。
 image = true
 

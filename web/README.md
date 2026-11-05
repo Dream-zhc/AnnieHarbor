@@ -1,15 +1,14 @@
 # Annie Harbor｜唯一前端工程
 
-React + TypeScript + Vite工作台与数据大屏共用一个 `web/`构建、Python静态服务器与后端业务数据；页面懒加载，不另建前端项目。
+React + TypeScript + Vite工作台，一个 `web/`构建，由Python静态服务器提供并读同一套后端业务数据；不另建前端项目。
 
 ## 正式入口
 
-- `/?view=cockpit`：默认实时数据大屏。
-- `/?view=workbench`：完整交互工作台与开发者诊断。
+- `/`：完整交互工作台与开发者诊断。
 
-内网启动后直接访问 `http://<主机内网IP>:8780/`；当前访问方案无需展厅登录凭据或逐次访客授权。真实视频仍需配置LiveKit服务、密钥、摄像头source与视频Room，支持内网 `ws://`。具体接线和待验项见[大屏实施记录](../docs/开发记录/2026-10-08/具身智能展厅大屏.md)。
+内网启动后直接访问 `http://<主机内网IP>:8780/`，无需登录凭据或逐次访客授权。数据大屏已交给前端团队另做，本工程不再包含大屏页面；大屏从 Java Room 的 `reb_display` 频道取数据，见[数据大屏数据同步说明](../docs/规范/数据大屏数据同步说明.md)和[数据大屏监听接口](../docs/规范/数据大屏监听接口.md)。
 
-`src/`是源码，`dist/`是正式静态产物，`package-lock.json`是唯一npm锁文件；旧演示cockpit及模拟dashboard接口已删除。声学sidecar自带测试HTML不是正式前端入口。
+`src/`是源码，`dist/`是正式静态产物，`package-lock.json`是唯一npm锁文件。声学sidecar自带测试HTML不是正式前端入口。
 
 ## 构建与回归
 

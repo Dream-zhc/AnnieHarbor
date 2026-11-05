@@ -240,7 +240,7 @@ def inner_life_options(inner_life: dict, llm: dict, environ) -> dict:
 
 
 def livekit_room_env(robot_id):
-    """The .env key naming a robot's LiveKit room, as the exhibit display reads it."""
+    """The .env key naming a robot's LiveKit room."""
     return "ANNIE_EXHIBIT_LIVEKIT_ROOM_" + "".join(
         char if char.isalnum() else "_" for char in robot_id.upper())
 
@@ -252,7 +252,8 @@ def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
 
     [vision.intent.decision] has the decision model judge looks the phrase rules miss
     (ANNIE_VISION_LOOK_DECISION_ENABLED=0/1 overrides). Its picture comes from the
-    LiveKit camera the exhibit display shows, configured by ANNIE_EXHIBIT_LIVEKIT_*."""
+    robot's LiveKit camera, configured by ANNIE_EXHIBIT_LIVEKIT_* (deployed .env
+    files use these names, so they keep the old prefix)."""
     intent = vision.get("intent", {})
     decision = intent.get("decision", {})
     url = environ.get("ANNIE_EXHIBIT_LIVEKIT_URL", "").strip()

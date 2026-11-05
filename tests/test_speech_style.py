@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 from functools import wraps
 
 import pytest
-from annie_adapters.tts import command
+from annie_adapters.tts import MAX_VOLUME, command
 from annie_core.speech_style import (
     CHINESE_DIALECTS,
     PersonaTone,
@@ -82,10 +82,10 @@ def test_unknown_intent_falls_back_without_guessed_expression():
     assert choose_speech_style(emotion="unverified").emotion == "neutral"
 
 
-def test_default_wire_remains_byte_equivalent_parameters():
+def test_default_wire_sends_only_base_parameters_and_a_safe_volume():
     assert command("run-task", "task", voice="keep")["payload"]["parameters"] == {
         "text_type": "PlainText", "voice": "keep", "format": "pcm",
-        "sample_rate": 24000, "enable_ssml": False,
+        "sample_rate": 24000, "enable_ssml": False, "volume": MAX_VOLUME,
     }
 
 
@@ -99,9 +99,19 @@ def test_adapter_validates_only_known_parameters(kwargs):
         command("run-task", "task", **kwargs)
 
 
+def test_tts_volume_stays_below_the_clipping_range():
+    def volume(**kwargs):
+        return command("run-task", "task", **kwargs)["payload"]["parameters"]["volume"]
+
+    assert MAX_VOLUME < 50
+    assert volume() == MAX_VOLUME
+    assert volume(volume=56) == volume(style=SpeechStyle(volume=60)) == MAX_VOLUME
+    assert volume(volume=44) == 44
+
+
 def test_adapter_raw_official_bounds_and_non_run_rejection():
     params = command("run-task", "task", instruction="自然", rate=.5, pitch=2., volume=100)["payload"]["parameters"]
-    assert (params["rate"], params["pitch"], params["volume"]) == (.5, 2., 100)
+    assert (params["rate"], params["pitch"], params["volume"]) == (.5, 2., MAX_VOLUME)
     with pytest.raises(ValueError):
         command("continue-task", "task", text="你好", rate=1.1)
 

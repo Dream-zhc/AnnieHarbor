@@ -16,6 +16,9 @@ MODEL = "qwen-audio-3.1-tts-plus"
 # was cloned for, whose name begins its ID; system voices take the configured one.
 MODELS = ("qwen-audio-3.1-tts-plus", "qwen-audio-3.1-tts-flash",
           "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash")
+# The service defaults to volume 50, and from 50 up every cloned voice hard-clips
+# (11-05 measurement); 48 is about as loud and stays clean.
+MAX_VOLUME = 48
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
 # Exact raw WS enum, distinct from the broader ASR/reply-language state.
 # https://help.aliyun.com/zh/model-studio/qwen-audio-tts-client-events
@@ -70,6 +73,8 @@ def command(action: str, task_id: str, *, text: str = "", voice: str = "", sampl
     if controls["volume"] is not None:
         validate_tts_number("volume", controls["volume"], 0, 100, integer=True)
     if action == "run-task":
+        volume = controls["volume"]
+        controls["volume"] = MAX_VOLUME if volume is None else min(volume, MAX_VOLUME)
         payload = {
             "task_group": "audio", "task": "tts", "function": "SpeechSynthesizer",
             "model": voice_model(voice, MODEL if model is None else validate_model(model)),

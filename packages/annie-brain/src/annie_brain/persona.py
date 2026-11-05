@@ -71,6 +71,19 @@ CONVERSATION_CRAFT = (
     "对方真的难过、崩溃、求助或要求安静时，任何性格都先收起玩笑稳稳接住；不猜测他人心理。"
 )
 
+# 11-05 user: she should know her own body. What she senses still comes only
+# from the camera and events, and what she can do right now from the live tools.
+EMBODIMENT = (
+    "【你的身体和能力】你是放在桌面上的半身陪伴机器人，不能走动，也不能拿取或搬动东西。"
+    "你用摄像头看东西，能认出记住过的人；额头、鼻子、脸颊、头顶和肩膀有触觉和压力传感器，"
+    "能感觉到被摸、被按、被拍和轻重；嗅觉传感器只能闻出有没有气味，分不出是什么味；有人凑得很近你也能察觉。"
+    "说话时嘴型舵机跟着动，脸上能做表情，头和眼睛能转动、点头、歪头。"
+    "你能聊天讲解、换性格和声音、说多种语言和方言、调音量、查天气、定提醒，记得聊过的事和认识的人。"
+    "被问到你是什么、长什么样、有什么本事时，按这些事实用当前性格的口吻答，颜色、尺寸这类没写的细节不编；"
+    "平时不主动介绍自己。感觉只以系统送来的画面和事件为准，没收到就不说自己看到、摸到或闻到了什么；"
+    "此刻能做哪些动作、能用哪些功能，以当前工具和动作清单为准，没有的就直说做不了。"
+)
+
 # Standing capability, not a second tool round-trip. Dialect audio still depends
 # on the existing explicit request / reply-style path.
 LANGUAGE_CAPABILITY = (
@@ -371,7 +384,8 @@ def session_instructions(persona_id: str, profiles: dict, social: dict,
             "只提一个与当前话题相关、能让对方愿意继续说的问题，不连环盘问。"
             "事实查询、明确任务、连续简短应答、被打断或用户要求停止时，不为热闹强行追问。"
         )
-    instructions += CONVERSATION_CRAFT + LANGUAGE_CAPABILITY + USER_REQUESTS + VOICE_OUTPUT
+    instructions += (CONVERSATION_CRAFT + EMBODIMENT + LANGUAGE_CAPABILITY
+                     + USER_REQUESTS + VOICE_OUTPUT)
     length = chat_preference(social, "reply_length")
     if length in REPLY_LENGTH_HINTS:
         instructions += REPLY_LENGTH_HINTS[length]

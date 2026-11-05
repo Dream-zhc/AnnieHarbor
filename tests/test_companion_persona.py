@@ -68,6 +68,18 @@ def test_core_stays_bounded_and_operational_rules_are_outside_personality():
     assert "已授权的语境动作可按当前工具规则选择" in text
 
 
+def test_every_style_knows_its_body_but_senses_only_what_arrives():
+    for style_id in PROFILES:
+        text, _ = persona.session_instructions(style_id, PROFILES, {})
+        assert text.count(persona.EMBODIMENT) == 1
+        assert text.index("当前表达风格") < text.index("【你的身体和能力】") < text.index("【语言能力】")
+    for fact in ("桌面", "半身", "不能走动", "触觉和压力传感器", "分不出是什么味", "嘴型舵机", "表情"):
+        assert fact in persona.EMBODIMENT
+    assert "平时不主动介绍自己" in persona.EMBODIMENT
+    assert "没收到就不说自己看到、摸到或闻到了什么" in persona.EMBODIMENT
+    assert "以当前工具和动作清单为准" in persona.EMBODIMENT
+
+
 @pytest.mark.parametrize(("key", "value", "phrase"), [
     ("conversation_mode", "emotional_support", "先认真接住具体处境"),
     ("conversation_mode", "casual", "自然闲聊"),

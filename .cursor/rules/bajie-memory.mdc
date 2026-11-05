@@ -1,0 +1,19 @@
+---
+description: 八戒工作记忆（共享笔记镜像，自动生成）
+alwaysApply: true
+---
+
+<!-- bajie-memory: generated from the shared agent notes; edits here are overwritten -->
+
+# 八戒工作记忆（共享笔记）
+
+来源 `/Users/dream/.cursor/projects/Users-dream-Documents-zhc-python-brainv2/agent-notes/shared`（1 篇）。本文件由八戒插件按共享笔记自动生成，手改会在下次写笔记时被覆盖；改记忆请用 `workspace_notes`（op: write / append / delete）或直接编辑来源目录里的 markdown。读某篇全文用 `workspace_notes({ op: "read", name: "<文件名>" })`。
+
+## 决策模型开关与人脸规则.md
+
+# 决策模型开关与人脸规则（2026-11-03 用户确认）
+
+- “是不是在跟机器人说话”（对话对象）的决策判断继续关闭：本机 `.env` 的 `ANNIE_ADDRESSEE_ENABLED=0`（10-30 起只用 smart_turn_v2 判断）。不要打开，也不要改它的默认值。
+- 只打开 D3 判断视觉意图（要不要看、往哪看）：`config/runtime_defaults.toml` 的 `[vision.intent.decision] enabled = true`；回答内容仍由视觉服务的描述给出。
+- 人脸：不能替别人注册（只有本人说“记住我/我叫…”才录）；遗忘要先确认一次，但触发门槛和录入一样宽：先清洗 ASR 文本，规则拿不准再问决策模型。
+- 人脸名字以画面为准（11-03 用户规则）：只录画面里还不认识的脸；画面认得的人不管报什么名字都不录、照画面的名字叫；不支持当面改名，名字错了只能先让她忘掉再重录；画面不可用（5 秒内没有人脸观察）时才按上下文的名字录。实现在 `faces.py` `_remember`，不要再加“坚持就重录”。

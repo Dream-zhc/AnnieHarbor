@@ -22,6 +22,7 @@ from annie_brain.context import (
     select_restorable_context,
 )
 from annie_brain.decision_policy import (
+    ABSENT_PERSON_QUESTION,
     ADDRESSEE_FOLLOWUP_QUESTION,
     ADDRESSEE_QUESTION,
     EXPRESSION_SCRIPTS,
@@ -29,6 +30,7 @@ from annie_brain.decision_policy import (
     LANGUAGE_REQUEST_SCOPES,
     LOOK_DIRECTIONS,
     LOOK_SCRIPTS,
+    REPEAT_QUESTION,
     WAKE_NAME,
     addressee_prompt,
     addressee_state,
@@ -48,6 +50,8 @@ from annie_brain.decision_policy import (
     look_state,
     motion_question,
     pick_anchor,
+    repeat_state,
+    reply_likeness,
 )
 from annie_brain.dialogue import DialogueState
 from annie_brain.persona import (
@@ -77,6 +81,7 @@ from annie_runtime.language import (
     stop_covers,
     unplaced_language_mention,
 )
+from annie_runtime.name_guard import PAST_PERSON, NameGuard
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
 from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
@@ -121,6 +126,12 @@ EXPLICIT_MOTION = re.compile(
 SLEEP_AFTER_REPLY_SECONDS = 20.0
 WEATHER_QUERY = re.compile(r"天气|气温|温度|下雨|下雪|刮风|冷不冷|热不热|带伞|穿什么|weather", re.I)
 REPEAT_REQUEST = re.compile(r"再说一[遍次下]|再讲一[遍次下]|重复一[下遍次]|刚才说(?:了)?(?:什么|啥)|没听[清见到]")
+# A reply this alike to a recent one repeats it; from REPEAT_ASK_RATIO the decision model judges.
+REPEAT_RATIO = 0.85
+REPEAT_ASK_RATIO = 0.4
+KNOWN_PEOPLE_SECONDS = 60
+NAME_NOTE = ("\n【称呼】你刚才的回复提到了眼前没认出的人，已替你隐去。画面里没认出、也没在说话的人，"
+             "不叫名字、不说TA在场；用户问起时再提。")
 
 
 def held_response_id(event):
@@ -328,6 +339,11 @@ class RealtimeRobot:
         self.expression = None
         self._expression_raw = ""
         self._stage = StageDirections()
+        self._names = NameGuard()
+        self._seen_names = set()  # recognised in view during this run
+        self._known_people = (float("-inf"), frozenset())  # (loaded at, filed face names)
+        self._absent_asked = {}  # turn_id -> asks about someone not here; None while judged
+        self._once_notes = {}  # kind -> (instruction note, turn that set it) until her next reply
         self._last_expression = None
         self._last_expression_identity = None
         self.socket = None
@@ -1281,7 +1297,7 @@ class RealtimeRobot:
                + "already_selected表示本来就是它，其余结果或没调用都表示没换，"
                + "这时不说已切换、不让用户试听。换声线不改变人格、语言或情绪。"
                if self.voices and self.voices.choices() else ""), description,
-        ) + self._fresh_view_hint()
+        ) + self._fresh_view_hint() + "".join(note for note, _turn in self._once_notes.values())
 
     def _fresh_view_hint(self):
         """What she just looked at for the user's question (10-28), for a short while."""
@@ -1749,12 +1765,17 @@ class RealtimeRobot:
                            "response": {"modalities": ["text"]}})
 
     def _stage_filter(self, text, *, final=False):
-        """Stage directions like 【眨眼】 are never spoken or shown."""
+        """Stage directions like 【眨眼】 are never spoken or shown, nor the names
+        of people who are not here (name_guard)."""
         before = len(self._stage.dropped)
         cleaned = self._stage.feed(text) + (self._stage.finish() if final else "")
         if len(self._stage.dropped) != before and self.turn_id:
             self.publish("speech.stage_direction.dropped", turn_id=self.turn_id,
                          text=self._stage.dropped[-1][:24])
+        withheld = len(self._names.withheld)
+        cleaned = self._names.feed(cleaned, final=final)
+        if len(self._names.withheld) != withheld and self.turn_id:
+            self._name_withheld()
         return cleaned
 
     def _faces_available(self):
@@ -1799,6 +1820,159 @@ class RealtimeRobot:
                 texts.append(str(turn.get("user_text") or ""))
                 break
         return texts
+
+    def _background(self, coroutine, name):
+        try:
+            task = asyncio.get_running_loop().create_task(
+                coroutine, name=f"{name}:{self.robot.config.robot_id}")
+        except RuntimeError:
+            coroutine.close()
+            return None
+        self._decision_tasks.add(task)
+        task.add_done_callback(self._decision_tasks.discard)
+        return task
+
+    def _seen_in_view(self):
+        """Names recognised in view now; each stays known as someone she has seen."""
+        view = self.faces.in_view(self.robot.config.robot_id) if self._faces_available() else None
+        here = {name for name in (*(view or {}).get("names", ()), (view or {}).get("gaze_name")) if name}
+        self._seen_names |= here
+        return here
+
+    def _refresh_known_people(self):
+        """Filed face names, reloaded in the background at most once a minute."""
+        if (not self._faces_available()
+                or time.monotonic() - self._known_people[0] < KNOWN_PEOPLE_SECONDS):
+            return
+        self._known_people = (time.monotonic(), self._known_people[1])
+        robot_id = self.robot.config.robot_id
+
+        async def load():
+            try:
+                known = await self.faces.registries[robot_id].people()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("known_people_failed robot=%s error=%s", robot_id, type(exc).__name__)
+                return
+            if known.get("ok"):
+                self._known_people = (time.monotonic(), frozenset(
+                    person["name"] for person in known["people"] if person.get("name")))
+
+        self._background(load(), "known-people")
+
+    def _absent_candidates(self, turn_id):
+        """Names she may know of people neither in view nor speaking now: filed faces,
+        enrolled voices and anyone recognised in view during this run (11-04 18:59)."""
+        here = self._seen_in_view()
+        self._refresh_known_people()
+        speaker = self.speakers.public() if self.speakers is not None else {}
+        if speaker.get("name") and speaker.get("status") != "ambiguous":
+            here.add(speaker["name"])
+        voices, service = set(), getattr(self.speakers, "service", None)
+        if service is not None:
+            voices = {row["name"] for row in service.catalog()["speakers"]}
+        known = (self._known_people[1] | self._seen_names | voices) - here
+        candidates = sorted(name for name in known if name and name not in {WAKE_NAME, "安妮", "小安妮"})
+        logger.info("turn_people robot=%s turn=%s here=%d speaker=%s candidates=%d",
+                    self.robot.config.robot_id, turn_id, len(here), speaker.get("status"),
+                    len(candidates))
+        return candidates
+
+    def _may_name(self, turn_id, name):
+        """May her reply in this turn say the name of someone not here? None: not known yet."""
+        turn = self.robot.turn_cache.get(turn_id) or {}
+        if turn.get("turn_source", "user") != "user":
+            return name in str(turn.get("external_prompt") or "")
+        texts = self._recent_user_texts()
+        if not texts[0].strip():
+            return None
+        if any(name in text for text in texts):
+            return True
+        asked = self._absent_asked.get(turn_id)
+        return bool(PAST_PERSON.search(texts[0])) if asked is None else asked
+
+    def _ask_absent(self, turn_id, text):
+        """Is the user asking about someone not here (刚才那个人是谁)? The decision model
+        answers while her reply streams; until then name_guard.PAST_PERSON decides."""
+        text = str(text or "").strip()
+        if (not text or not self._names.names or turn_id in self._absent_asked
+                or not self._has_decision()):
+            return
+        self._absent_asked[turn_id] = None
+        while len(self._absent_asked) > 32:
+            self._absent_asked.pop(next(iter(self._absent_asked)))
+        before = (self._recent_user_texts() + [""])[1]
+        state = instruction_state(text, previous_user=before or None, robot_last=self._last_reply_text)
+
+        async def decide():
+            started = time.perf_counter()
+            try:
+                answers, model = await self.ask_decision(state, {"absent": ABSENT_PERSON_QUESTION})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("absent_person_check robot=%s turn=%s error=%s",
+                            self.robot.config.robot_id, turn_id, error_kind(exc))
+                return
+            answer = answers.get("absent") or {}
+            if answer.get("choice") in ABSENT_PERSON_QUESTION["criteria"] and turn_id in self._absent_asked:
+                self._absent_asked[turn_id] = answer["choice"] == "absent"
+            logger.info("absent_person_check robot=%s turn=%s choice=%s confidence=%s model=%s ms=%.0f",
+                        self.robot.config.robot_id, turn_id, answer.get("choice"),
+                        answer.get("confidence"), model, (time.perf_counter() - started) * 1000)
+
+        self._background(decide(), "absent-person")
+
+    def _name_withheld(self):
+        """11-04 18:59: she named someone the vision service no longer saw."""
+        count = len(self._names.withheld)
+        self.publish("reply.name_withheld", turn_id=self.turn_id, count=count)
+        logger.info("reply_name_withheld robot=%s turn=%s count=%d",
+                    self.robot.config.robot_id, self.turn_id, count)
+        self._once_notes["names"] = (NAME_NOTE, self.turn_id)
+
+    def _after_reply(self, turn, earlier):
+        """Notes meant for this reply are spent; whether it repeats is checked meanwhile."""
+        spent = [kind for kind, (_note, by) in self._once_notes.items() if by != self.turn_id]
+        for kind in spent:
+            del self._once_notes[kind]
+        if spent:
+            self.visual_changed()
+        heard = str(turn.get("user_text") or "")
+        if earlier and len(self.text) >= 6 and not REPEAT_REQUEST.search(heard):
+            self._background(self._check_repeat(self.turn_id, self.text, earlier, heard), "reply-repeat")
+
+    async def _check_repeat(self, turn_id, reply, earlier, heard):
+        """11-04: two answers about Trump said the same. A reply saying a recent line again
+        turns the next one to something new; it was heard already, so nothing waits on this."""
+        ratio, line = max((reply_likeness(reply, said), said) for said in earlier)
+        verdict = model = confidence = None
+        if ratio >= REPEAT_RATIO:
+            verdict, model = "repeat", "rule"
+        elif ratio >= REPEAT_ASK_RATIO and self._has_decision():
+            try:
+                answers, model = await self.ask_decision(
+                    repeat_state(reply, earlier, utterance=heard or None), {"repeat": REPEAT_QUESTION})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("reply_repeat_check robot=%s turn=%s ratio=%.2f error=%s",
+                            self.robot.config.robot_id, turn_id, ratio, error_kind(exc))
+                return
+            answer = answers.get("repeat") or {}
+            verdict, confidence = answer.get("choice"), answer.get("confidence")
+        if verdict is None:
+            return
+        logger.info("reply_repeat_check robot=%s turn=%s ratio=%.2f verdict=%s confidence=%s model=%s",
+                    self.robot.config.robot_id, turn_id, ratio, verdict, confidence, model)
+        if verdict != "repeat":
+            return
+        self.publish("reply.repeated", turn_id=turn_id, ratio=round(ratio, 2), model=model)
+        self._once_notes["repeat"] = (
+            f"\n【别复读】你刚说的「{reply[:60]}」和之前说过的「{line[:60]}」差不多。"
+            "下一句换个角度、给点新东西或者换种说法，别再绕回这个意思。", turn_id)
+        self.visual_changed()
 
     def _overhearing(self):
         """Side talk is kept by ambient listening or by declined utterances.
@@ -2834,6 +3008,7 @@ class RealtimeRobot:
         self.expression = None
         self._expression_raw = ""
         self._stage = StageDirections()
+        self._names = NameGuard()
         self.turn_id = self.response_id = None
         self.external_turn_id = None
         self._external_text_only = False
@@ -3567,6 +3742,10 @@ class RealtimeRobot:
         })
         self.turn_id = turn_id
         self._stage = StageDirections()
+        self._names = NameGuard(self._absent_candidates(turn_id),
+                                lambda name: self._may_name(turn_id, name))
+        if source == "user":
+            self._ask_absent(turn_id, user_text)
         if self.expression_enabled:
             self.expression = ExpressionStream()
             self._expression_raw = ""
@@ -3624,6 +3803,7 @@ class RealtimeRobot:
                         assistant_planned_text=self.text or None, updated_ms=now,
                         cancelled=interrupted, interrupted=interrupted, cancel_source=cancel_source)
         if status == "completed" and turn is not None and self.turn_identity == self.robot.session_state():
+            earlier = self._recent_replies(limit=6)
             # A completed typed reply is already visible text; an audio reply
             # still requires a genuine speaker receipt before restoration.
             self.robot._cache_context_turn(
@@ -3632,6 +3812,7 @@ class RealtimeRobot:
                                        or self._external_text_only))
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
+            self._after_reply(turn, earlier)
             if self.inner_life is not None and turn.get("turn_source") == "user":
                 self.inner_life.on_turn(
                     self.robot.config.robot_id, chat_id=self.turn_identity.get("chat_id"),
@@ -4047,7 +4228,7 @@ class RealtimeRobot:
         return kept
 
     def _held_repeat(self, events):
-        """The text of a finished held reply that repeats one of her recent lines."""
+        """The text of a finished held reply that (nearly) repeats one of her recent lines."""
         heard = (self.transcript or "").strip()
         if not events or not heard or REPEAT_REQUEST.search(heard):
             return None
@@ -4059,11 +4240,10 @@ class RealtimeRobot:
             return None
         text = "".join(str(event.get("delta") or "") for event in events
                        if event.get("type") == "response.text.delta")
-        key = re.sub(r"[\W_]+", "", text)
-        if len(key) < 4:
+        if len(re.sub(r"[\W_]+", "", text)) < 4:
             return None
-        recent = {re.sub(r"[\W_]+", "", line) for line in self._recent_replies(limit=6)}
-        return text if key in recent else None
+        recent = self._recent_replies(limit=6)
+        return text if any(reply_likeness(text, line) >= REPEAT_RATIO for line in recent) else None
 
     async def _answer_without_repeat(self, repeated):
         """11-02 18:56:39: a held reply said her previous greeting again to an unrelated line."""
@@ -4074,7 +4254,7 @@ class RealtimeRobot:
         await self.socket.send({
             "type": "conversation.item.create",
             "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": (
-                f"【内部提示，非用户发言】你准备说的「{repeated[:60]}」和你之前说过的话一字不差，已经撤回。"
+                f"【内部提示，非用户发言】你准备说的「{repeated[:60]}」和你之前说过的话几乎一样，已经撤回。"
                 f"换个说法，直接回应用户刚才这句：「{heard[:120]}」。")}]},
         })
         # A refusal while the user speaks again carries their words, not this note.
@@ -4590,6 +4770,8 @@ class RealtimeRobot:
                         "set_conversation_turn_user_text",
                         self.robot.config.robot_id, target, self.transcript, now,
                     )
+            if target and target == self.turn_id:
+                self._ask_absent(target, self.transcript)
             if self.language.user_request(self.transcript):
                 self.visual_changed()
             if target:
@@ -4697,9 +4879,16 @@ class RealtimeRobot:
                 complete = self.text
             else:
                 # The full text replaces the streamed one: the same cleanup.
+                tail = self._stage_filter("", final=True)
+                if tail and self.text:
+                    self.text += tail
+                    self.publish("text.delta", turn_id=self.turn_id, delta=tail, text=self.text)
+                    if self.speech and not self._external_text_only:
+                        await self.speech.feed(self.turn_id, self.turn_identity, tail)
                 whole = StageDirections()
-                complete = whole.feed(complete) + whole.finish()
+                complete = self._names.fresh().feed(whole.feed(complete) + whole.finish(), final=True)
                 self._stage = StageDirections()
+                self._names = self._names.fresh()
             if (self.speech and not self._external_text_only
                     and not self.text and complete and self.turn_id):
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)

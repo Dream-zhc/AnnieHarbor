@@ -7,6 +7,7 @@ so every question names its options and criteria.
 
 import json
 import re
+from difflib import SequenceMatcher
 
 WAKE_NAME = re.compile(r"小?安妮")
 
@@ -162,6 +163,40 @@ def instruction_state(utterance, *, previous_user=None, robot_last=None):
     if robot_last:
         state["机器人上一句"] = robot_last[:120]
     return state
+
+
+# Answered while her reply is generated: may it name someone who is not in view?
+ABSENT_PERSON_QUESTION = {
+    "type": "choice",
+    "instructions": "用户这句话是在打听之前见过或聊过、现在不在眼前的某个人吗？",
+    "criteria": {
+        "absent": "在问刚才、之前或别处的某个人：那个人是谁、叫什么、去哪了、还记不记得TA",
+        "present": "其他情况：和眼前的人聊天、聊自己、问眼前的东西，或者只是顺口提到别人",
+    },
+}
+
+# Asked after a reply was spoken, so nothing waits on it (11-04: two Trump answers).
+REPEAT_QUESTION = {
+    "type": "choice",
+    "instructions": "机器人这句新回复，和它最近说过的话比，是不是在复读？",
+    "criteria": {
+        "repeat": "意思、梗或句式和最近某句基本一样，只换了几个字，没有新内容",
+        "new": "有新的信息、角度或回应，或者只是用了同一个常用词",
+    },
+}
+
+
+def repeat_state(reply, earlier, *, utterance=None):
+    state = {"最近说过": [line[:120] for line in earlier[-3:]], "新回复": reply[:300]}
+    if utterance:
+        state["用户刚才说"] = utterance[:120]
+    return state
+
+
+def reply_likeness(reply, line):
+    """How alike two replies read, punctuation and spaces aside: 0 to 1."""
+    a, b = (re.sub(r"[\W_]+", "", text or "") for text in (reply, line))
+    return SequenceMatcher(None, a, b, autojunk=False).ratio() if a and b else 0.0
 
 
 def addressee_verdict(answer):

@@ -135,6 +135,10 @@ class FaceService:
         monitor = getattr(self.runtime, "room_monitors", {}).get(robot_id)
         return monitor.people_view() if monitor is not None else None
 
+    def in_view(self, robot_id):
+        """Who she recognises in front of her now: {"count", "names", "gaze_name"} or None."""
+        return self._unforgotten(robot_id, self._view(robot_id))
+
     def _unforgotten(self, robot_id, view):
         """The view without a name she was just told to forget: the picture keeps it a few
         seconds, and forgetting then filing again is how a wrong name is corrected."""

@@ -104,6 +104,7 @@ def test_idioms_are_occasional_not_a_repeated_script(style_id):
         # Hitting back is fine, blaming the user for her own slip is not.
         assert "绝不赖到对方头上" in style
         assert "对方要方言就用方言骂" in style
+        assert "只让骂两句的，骂完就换回来" in style
         assert "喊破防是玩笑" in style
         # 11-05: still too proper. She swears from the first line and folds answers into the roast.
         assert "开口第一句就骂" in style and "句句带刺带脏字" in style
@@ -172,6 +173,11 @@ def test_scolding_requests_follow_the_current_style():
     assert "骂人或说伤人的话时不照做" not in USER_REQUESTS
     assert "要你骂人、损人时，按当前性格的脾气来接" in USER_REQUESTS
     assert "编造事实时不照做" in USER_REQUESTS
+
+
+def test_acting_cute_on_request_is_played_in_the_current_style():
+    assert "让你撒娇、卖萌、夸人这类表演也照做，用当前性格的方式演" in USER_REQUESTS
+    assert "不拒绝、不推说不会" in USER_REQUESTS
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

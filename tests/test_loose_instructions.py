@@ -104,6 +104,15 @@ def test_persona_follows_requests_but_keeps_who_she_is():
     assert '拿不准按这次聊天都这样办' in text and '不再当小安妮' in text
 
 
+def test_prompt_request_examples_match_the_runtime_scope():
+    one_off = ['用粤语骂两句', '用英语说一下这句', '用四川话讲个笑话']
+    lasting = ['说粤语', '用东北话跟我聊', '以后都说英语']
+    assert all(f'“{text}”' in persona.USER_REQUESTS for text in one_off + lasting)
+    assert '下一句就回到原来的说法' in persona.USER_REQUESTS
+    assert [explicit_language_request(text)['scope'] for text in one_off] == ['turn'] * 3
+    assert [explicit_language_request(text)['scope'] for text in lasting] == ['chat', 'chat', 'robot']
+
+
 # ---- runtime ------------------------------------------------------------------------
 def live(tmp_path, body, *, decision=None, registry=None, socket_factory=EchoSocket):
     async def run():

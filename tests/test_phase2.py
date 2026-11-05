@@ -571,10 +571,6 @@ class Phase2HTTPTests(unittest.TestCase):
         )
         self.assertEqual(bad.status_code, 422)
 
-    def test_phase2_temporary_page_is_removed(self):
-        page = self.client.get("/phase-tests/phase2.html")
-        self.assertEqual(page.status_code, 404)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

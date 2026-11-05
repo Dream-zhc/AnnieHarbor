@@ -6,22 +6,19 @@ from annie_web import create_app
 from fastapi.testclient import TestClient
 
 
-class FakeCloud:
+class FakeChat:
     async def close(self):
         pass
 
-    async def embed(self, _):
-        return [1.0, 0.0]
-
-    async def extract(self, user, existing):
-        return []
+    async def complete(self, system, user, *, max_tokens):
+        return '{"ops": []}'
 
 
 def test_memory_endpoints_use_current_server_persona(tmp_path):
     runtime = HarborRuntime(
         [RobotConfig("a", room_id="roomv2", fake_delay_ms=0)],
         tmp_path / "http.db",
-        memory_model=FakeCloud(),
+        memory_chat=FakeChat(),
     )
     with TestClient(create_app(runtime, tmp_path)) as client:
         base = "/api/robots/a/memories"

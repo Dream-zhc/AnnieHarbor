@@ -163,6 +163,11 @@ class MemoryForget(BaseModel):
     version: int = Field(ge=1)
 
 
+class MemoryRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+
+
 def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
@@ -660,6 +665,25 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "memory not found") from exc
         except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/robots/{robot_id}/memories/{memory_id}/restore")
+    async def memory_restore(robot_id: str, memory_id: str, body: MemoryRestore):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_restore(robot_id, persona, memory_id, body.version)
+        except KeyError as exc:
+            raise HTTPException(404, "memory not found") from exc
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/memory-insight")
+    async def memory_insight(robot_id: str):
+        require_robot(robot_id)
+        try:
+            return runtime.memory_insight(robot_id)
+        except RobotUnavailableError as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/robots/{robot_id}/conversations/{chat_id}")

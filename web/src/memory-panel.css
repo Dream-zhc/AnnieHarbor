@@ -501,6 +501,142 @@
 :root[data-theme="light"] .memory-create-backdrop { background: rgba(15,23,42,.36); }
 :root[data-theme="light"] .memory-create-close { color: #57606a; }
 
+/* Forgetting curve: outdated / faded facts and how strongly each is remembered */
+.memory-item-outdated { opacity: .62; border-style: dashed; }
+.memory-item-outdated:hover { opacity: .9; }
+.memory-item-faded .memory-content-text { color: #94a3b8; }
+
+.memory-tag.memory-importance-tag { color: #cbd5e1; }
+.memory-tag.memory-importance-tag.important { background: rgba(250, 204, 21, 0.12); color: #facc15; }
+.memory-tag.memory-outdated-tag { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.memory-tag.memory-faded-tag { background: rgba(100, 116, 139, 0.18); color: #94a3b8; cursor: help; }
+
+.memory-superseded {
+  margin: 0;
+  font-size: 11.5px;
+  color: #fbbf24;
+  word-break: break-word;
+}
+
+.memory-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #8190a8;
+}
+.memory-strength {
+  width: 56px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.memory-strength span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38bdf8, #34d399);
+}
+
+.memory-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.memory-toolbar .memory-toggle input[type="checkbox"] {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: #38bdf8;
+}
+
+/* 想起与整理 */
+.memory-insight { display: flex; flex-direction: column; gap: 12px; }
+.memory-insight-card {
+  background: rgba(14, 20, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #cbd5e1;
+}
+.memory-insight-card h3 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+.memory-insight-card p { margin: 0; line-height: 1.6; }
+.memory-insight-count { font-size: 11px; font-weight: 400; color: #64748b; }
+.memory-insight-muted { color: #64748b; font-size: 11.5px; }
+.memory-recap-text { color: #f1f5f9; white-space: pre-wrap; word-break: break-word; }
+.memory-insight-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.memory-insight-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 11.5px; }
+.memory-insight-time { color: #64748b; font-variant-numeric: tabular-nums; }
+.memory-insight-query { color: #e2e8f0; word-break: break-word; }
+.memory-insight-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.memory-insight-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.memory-insight-text { flex: 1 1 200px; min-width: 0; color: #e2e8f0; word-break: break-word; }
+.memory-insight-why { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.memory-why-word { font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); color: #7dd3fc; }
+.memory-insight-score { font-size: 10.5px; color: #64748b; font-variant-numeric: tabular-nums; }
+.memory-tag.memory-source-turn { background: rgba(56, 189, 248, 0.12); color: #7dd3fc; }
+.memory-tag.memory-source-tool { background: rgba(167, 139, 250, 0.14); color: #c4b5fd; }
+.memory-tag.memory-result-tag { white-space: nowrap; }
+.memory-tag.result-added, .memory-tag.result-updated { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.memory-tag.result-merged, .memory-tag.result-known { background: rgba(56, 189, 248, 0.12); color: #7dd3fc; }
+.memory-tag.result-outdated { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.memory-tag.result-blocked, .memory-tag.result-rejected, .memory-tag.result-skipped { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+
+:root[data-theme="light"] .memory-item-outdated { border-style: dashed !important; }
+:root[data-theme="light"] .memory-item-faded .memory-content-text { color: #57606a !important; }
+:root[data-theme="light"] .memory-insight-card { background: #ffffff; border-color: #d0d7de; color: #424a53; }
+:root[data-theme="light"] .memory-insight-card h3,
+:root[data-theme="light"] .memory-recap-text,
+:root[data-theme="light"] .memory-insight-query,
+:root[data-theme="light"] .memory-insight-text { color: #1f2328; }
+:root[data-theme="light"] .memory-insight-entry { border-color: #eaeef2; }
+:root[data-theme="light"] .memory-insight-muted,
+:root[data-theme="light"] .memory-insight-time,
+:root[data-theme="light"] .memory-insight-count,
+:root[data-theme="light"] .memory-stats,
+:root[data-theme="light"] .memory-toggle { color: #57606a; }
+:root[data-theme="light"] .memory-strength { background: #eaeef2; }
+:root[data-theme="light"] .memory-superseded { color: #9a6700; }
+:root[data-theme="light"] .memory-why-word { background: #ddf4ff; color: #0969da; }
+:root[data-theme="light"] .memory-tag.memory-importance-tag.important { background: #fff8c5 !important; color: #9a6700 !important; }
+:root[data-theme="light"] .memory-tag.memory-outdated-tag,
+:root[data-theme="light"] .memory-tag.result-outdated { background: #fff1e5 !important; color: #bc4c00 !important; }
+:root[data-theme="light"] .memory-tag.result-added,
+:root[data-theme="light"] .memory-tag.result-updated { background: #dafbe1 !important; color: #1a7f37 !important; }
+:root[data-theme="light"] .memory-tag.result-merged,
+:root[data-theme="light"] .memory-tag.result-known,
+:root[data-theme="light"] .memory-tag.memory-source-turn { background: #ddf4ff !important; color: #0969da !important; }
+:root[data-theme="light"] .memory-tag.memory-source-tool { background: #fbefff !important; color: #8250df !important; }
+:root[data-theme="light"] .memory-tag.result-blocked,
+:root[data-theme="light"] .memory-tag.result-rejected,
+:root[data-theme="light"] .memory-tag.result-skipped { background: #ffebe9 !important; color: #cf222e !important; }
+
 @media (max-width: 580px) {
   .memory-dialog { width: 98vw !important; max-height: 94vh !important; }
   .memory-dialog-header { padding-left: 14px; }

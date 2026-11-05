@@ -32,11 +32,14 @@ test('memory panel separates public, persona-only and current-chat records',asyn
   assert.match(source,/长期通用/);
   assert.match(source,/当前角色/);
   assert.match(source,/本次会话/);
-  assert.match(source,/visibleMemory\(item,scope,Date\.now\(\)\)/);
+  assert.match(source,/visibleMemory\(item,scope,now,withOutdated&&scope!=='chat'\)/);
   assert.match(source,/scope==='chat'\?'\/chat-memories':'\/memories'/);
-  assert.match(source,/creating&&<div className="memory-create-backdrop"/);
+  assert.match(source,/creating&&listing&&<div className="memory-create-backdrop"/);
   assert.match(source,/scope==='persona'&&<div className="memory-form-row">/);
-  assert.match(source,/activeCount=valid\.length/);
+  assert.match(source,/activeCount=valid\.filter\(item=>item\.status==='active'\)\.length/);
+  assert.match(source,/想起与整理/);
+  assert.match(source,/'\/memory-insight'/);
+  assert.match(source,/'\/restore','POST',\{version:item\.version\}/);
   assert.doesNotMatch(source,/memory-key-badge/);
 });
 

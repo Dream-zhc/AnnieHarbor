@@ -109,7 +109,7 @@ export function SpeechExpressionPanel({robotId,session}:{robotId:string;session:
         </div>}
         <section className="speech-subcard" aria-label="核心声学状态">
           <div className="speech-kv-list">
-            <p className="speech-kv-line"><span className="speech-k">输入识别</span><span className="speech-v">{view.inputLanguage} · {view.inputSource}</span></p>
+            <p className="speech-kv-line"><span className="speech-k">输入识别</span><span className="speech-v">{view.typedInput?'打字输入（没有语音可识别）':`${view.inputLanguage} · ${view.inputSource}`}</span></p>
             <p className="speech-kv-line"><span className="speech-k">输出语种</span><span className="speech-v">{view.ttsLanguage}</span></p>
             <p className="speech-kv-line"><span className="speech-k">整轮情绪</span><span className="speech-v">{view.ttsEmotion}</span></p>
             <p className="speech-kv-line"><span className="speech-k">表达模式</span><span className="speech-v">{view.ttsDelivery}</span></p>

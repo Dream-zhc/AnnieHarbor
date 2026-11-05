@@ -9,7 +9,7 @@ export function speechResponseIsCurrent(response:Identity,current:Identity|null,
 }
 
 const languages:Record<string,string>={zh:'中文',yue:'粤语',en:'英语',ja:'日语',de:'德语',ko:'韩语',ru:'俄语',fr:'法语',pt:'葡萄牙语',ar:'阿拉伯语',it:'意大利语',es:'西班牙语',hi:'印地语',id:'印尼语',th:'泰语',tr:'土耳其语',uk:'乌克兰语',vi:'越南语',ms:'马来语',fil:'菲律宾语'};
-const dialects:Record<string,string>={mandarin:'普通话',sichuan:'四川话',henan:'河南话',shaanxi:'陕西话',cantonese:'粤语'};
+const dialects:Record<string,string>={mandarin:'普通话',sichuan:'四川话',henan:'河南话',shaanxi:'陕西话',dongbei:'东北话',shanghai:'上海话',chongqing:'重庆话',yunnan:'云南话',guizhou:'贵州话',hubei:'湖北话',hunan:'湖南话',jiangxi:'江西话',zhejiang:'浙江话',ningbo:'宁波话',shandong:'山东话',qingdao:'青岛话',hebei:'河北话',shanxi:'山西话',gansu:'甘肃话',ningxia:'宁夏话',cantonese:'粤语'};
 const emotions:Record<string,string>={neutral:'中性',warm:'温柔关切',playful:'轻松俏皮',sarcastic:'轻微打趣',curious:'好奇',serious:'认真稳重',sad:'低落',excited:'适度兴奋',calm:'平稳安抚',angry:'愤怒',fearful:'害怕',happy:'开心'};
 const sources:Record<string,string>={typed_text:'键盘文本语种（启发式）',runtime_context:'语境默认表达',asr_language:'ASR 语种观察',lexical_inference:'词汇推断（非声学确认）',llm_inferred:'LLM 推断',llm_early:'LLM 早期选择',explicit_user:'用户明确要求',chat_preference:'Chat 显式偏好',robot_preference:'机器人显式偏好',runtime_default:'运行默认'};
 const language=(value?:string)=>languages[value??'']??'未知';
@@ -62,6 +62,7 @@ export function speechExpressionView(data:SpeechExpression){
     inputSource:input?.source==='typed_text'?'键盘文本推断':
       input?.source==='asr_text_heuristic'?'主 ASR 文本推断':
       input?.source==='qwen3_asr_sidecar'?'Qwen3 ASR 旁路':'未知',
+    typedInput:latest?.input_mode==='text'&&!data.language?.typed_input,
     inputAge:input?.age_ms!=null&&Number.isFinite(input.age_ms)&&input.age_ms>=0?`${milliseconds(input.age_ms)}${input.age_ms>3000?'（历史观察，超过 3 秒有效窗）':'（服务端观测年龄）'}`:'未知',
     inputTime:input?.observed_monotonic_ms!=null&&Number.isFinite(input.observed_monotonic_ms)?`${milliseconds(input.observed_monotonic_ms)}（单调时钟，非日期时间）`:'未知',
     robotPreference:selection(data.language?.preferences?.robot),chatPreference:selection(data.language?.preferences?.chat),
@@ -74,8 +75,10 @@ export function speechExpressionView(data:SpeechExpression){
     ttsStage:recorded?.tts?({locked:'表达已锁定，尚无提交证据',run_sent:'run-task 已提交',started:'云端任务已开始',completed:'云端完成（不等于已播完）',cancelled:'已取消',failed:'TTS 失败'})[recorded.tts.state]??'未记录':'未记录',
     ttsError:recorded?.tts?.error??null,ttsText:recorded?.tts?.submitted_text?.replace(/https?:\/\/\S+/gi,'[地址已隐藏]').slice(0,240)??'',
     ttsInstruction,ttsRate:parameter(wire?.rate),ttsPitch:parameter(wire?.pitch),ttsVolume:parameter(wire?.volume),
-    ttsLanguage:style?selection(style):'未知',ttsEmotion:style?.emotion==='neutral'&&style.delivery==='contextual'?'未指定固定情绪':emotions[style?.emotion??'']??'未知',
-    ttsDelivery:({natural:'自然表达',contextual:'随语义表达（未指定固定情绪）',expressive:'丰富表达（随文本语义起伏）'})[style?.delivery as 'natural'|'contextual'|'expressive']??'未记录',
+    ttsLanguage:style?selection(style):'未知',
+    ttsEmotion:style?.tone?`${style.tone}性格语气${style.emotion&&style.emotion!=='neutral'?` · ${emotions[style.emotion]??style.emotion}`:''}`:
+      style?.emotion==='neutral'&&style.delivery==='contextual'?'未指定固定情绪':emotions[style?.emotion??'']??'未知',
+    ttsDelivery:style?.tone&&style.delivery==='contextual'?'随语义表达':({natural:'自然表达',contextual:'随语义表达（未指定固定情绪）',expressive:'丰富表达（随文本语义起伏）'})[style?.delivery as 'natural'|'contextual'|'expressive']??'未记录',
     ttsSource:sources[style?.source??'']??'未知',
     audibleLanguage:languages[data.language?.tts_audibly_verified_language??'']??'待听测',
     firstPcm:milliseconds(ownerMatches?data.speech?.run_to_first_pcm_ms:null),firstPublish:milliseconds(ownerMatches?data.speech?.first_publish_ms:null),
@@ -88,6 +91,10 @@ export function speechExpressionView(data:SpeechExpression){
 export const REPLY_LANGUAGE_CHOICES=[
   {value:'auto',label:'自动跟随'},
   ...[['zh:mandarin','普通话'],['zh:sichuan','四川话'],['zh:henan','河南话'],['zh:shaanxi','陕西话'],
+    ['zh:dongbei','东北话'],['zh:shanghai','上海话'],['zh:chongqing','重庆话'],['zh:yunnan','云南话'],
+    ['zh:guizhou','贵州话'],['zh:hubei','湖北话'],['zh:hunan','湖南话'],['zh:jiangxi','江西话'],
+    ['zh:zhejiang','浙江话'],['zh:ningbo','宁波话'],['zh:shandong','山东话'],['zh:qingdao','青岛话'],
+    ['zh:hebei','河北话'],['zh:shanxi','山西话'],['zh:gansu','甘肃话'],['zh:ningxia','宁夏话'],
     ['yue:cantonese','粤语'],['en:unknown','英语'],['ja:unknown','日语'],['ko:unknown','韩语'],
     ['ru:unknown','俄语'],['fr:unknown','法语'],['de:unknown','德语'],['es:unknown','西班牙语'],
     ['pt:unknown','葡萄牙语'],['it:unknown','意大利语'],['ar:unknown','阿拉伯语'],['th:unknown','泰语'],

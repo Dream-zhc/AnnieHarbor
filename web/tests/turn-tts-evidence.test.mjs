@@ -103,6 +103,20 @@ test('default contextual delivery communicates semantic variation, not a fixed n
   assert.match(source,/view\.ttsDelivery/);
 });
 
+test('a personality tone names the personality instead of an unset emotion',async()=>{
+  const toned=tts({speech_style:{...tts().speech_style,delivery:'contextual',source:'runtime_context',dialect:'dongbei',tone:'毒舌'}});
+  const result=await view(toned);
+  assert.equal(result.emotion,'毒舌性格语气');
+  assert.equal(result.delivery,'随语义表达');
+  assert.equal(result.dialect,'东北话');
+  assert.equal((await view(tts({speech_style:{...toned.speech_style,emotion:'excited'}}))).emotion,'毒舌性格语气 · 兴奋');
+  const {speechExpressionView}=await import('../src/speech-expression-state.ts');
+  const current=speechExpressionView({enabled:false,sidecar:{status:'disabled'},language:{preferences:{}},speech:{speech_style:toned.speech_style}});
+  assert.equal(current.ttsEmotion,'毒舌性格语气');
+  assert.equal(current.ttsDelivery,'随语义表达');
+  assert.equal(current.ttsLanguage,'中文 · 东北话');
+});
+
 test('continue-task fragment labels use backend one-based indices without renumbering',()=>{
   const source=readFileSync(new URL('../src/turn-diagnostics.tsx',import.meta.url),'utf8');
   assert.match(source,/片段 \{piece\.index\}/);

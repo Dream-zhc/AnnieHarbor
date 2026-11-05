@@ -53,7 +53,7 @@ export const eventBelongsToSession = (
   event.persona_id===session.persona_id&&event.session_epoch===session.session_epoch&&
   event.generation===session.generation;
 
-export type SpeechStyle={delivery?:'natural'|'contextual'|'expressive';language:string;dialect:string;emotion:string;instruction:string;rate:number;pitch:number;volume:number;source:string};
+export type SpeechStyle={delivery?:'natural'|'contextual'|'expressive';language:string;dialect:string;emotion:string;instruction:string;rate:number;pitch:number;volume:number;source:string;tone?:string};
 export type LanguageSelection={language:string;dialect:string;source?:string};
 export type LanguagePreference=LanguageSelection&{scope?:'chat'|'robot';revision?:number};
 export type SpeechExpression=Session&{

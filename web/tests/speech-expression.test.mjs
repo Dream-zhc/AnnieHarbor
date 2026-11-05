@@ -99,7 +99,7 @@ test('reply language choices cover auto follow and every TTS language',async()=>
   const {REPLY_LANGUAGE_CHOICES,replyLanguageValue,replyLanguageSelection,replyLanguageLabel}=
     await import('../src/speech-expression-state.ts');
   assert.deepEqual(REPLY_LANGUAGE_CHOICES[0],{value:'auto',label:'自动跟随'});
-  for(const label of ['普通话','四川话','河南话','陕西话','粤语','英语','俄语','马来语','菲律宾语'])
+  for(const label of ['普通话','四川话','河南话','陕西话','东北话','上海话','重庆话','宁夏话','粤语','英语','俄语','马来语','菲律宾语'])
     assert.ok(REPLY_LANGUAGE_CHOICES.some(item=>item.label===label),label);
   assert.equal(replyLanguageValue(null),'auto');
   assert.equal(replyLanguageValue({language:'ru',dialect:'unknown'}),'ru:unknown');
@@ -182,6 +182,16 @@ test('typed language evidence shows separately from voice ASR and does not becom
   assert.equal(view.inputSource,'键盘文本推断');
   assert.equal(view.chatPreference,'未设置');
   assert.equal(view.robotPreference,'未设置');
+});
+
+test('a typed turn with no language evidence says it was typed instead of unknown',async()=>{
+  const data=snapshot();
+  data.latest_tts={turn_id:'typed-1',input_mode:'text',times:{},durations:{}};
+  assert.equal(speechExpressionView(data).typedInput,true);
+  data.language.typed_input={language:'en',dialect:'unknown',source:'typed_text',evidence_level:'typed_text_heuristic'};
+  assert.equal(speechExpressionView(data).typedInput,false);
+  const {readFileSync}=await import('node:fs');
+  assert.match(readFileSync(new URL('../src/speech-expression.tsx',import.meta.url),'utf8'),/view\.typedInput\?'打字输入/);
 });
 
 test('main ASR language heuristic stays distinguishable from acoustic classification',()=>{

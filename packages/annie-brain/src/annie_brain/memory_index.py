@@ -14,6 +14,9 @@ DAY_MS = 86_400_000
 K1, B = 1.4, 0.7
 MIN_SCORE = 0.35
 HINT_LIMIT = 4
+# A hint nobody asked for needs two shared terms: one shared character is chance
+# (星 in 星期 and 星际). The recall_memory tool still matches on one.
+HINT_MIN_TERMS = 2
 HINT_CHARS = 300
 # “嗯嗯”“然后呢” find nothing on their own: the previous sentence joins the search.
 SHORT_QUERY_CHARS = 12
@@ -24,6 +27,10 @@ FADE_IMPORTANCE = 0.6
 FADE_RETENTION = 0.05
 
 _STOP = frozenset("的了是我你他她它们在有和就不也都很吗吧呢啊呀哦嗯这那个一上下来去说要会能着过")
+# A pair holding a particle (养了, 的车) or opening with a pronoun (你叫) spans two words;
+# 吉他 and 酒吧 are words.
+_GLUE = frozenset("的了是吗呢啊呀哦嗯一")
+_PRONOUNS = frozenset("我你他她它")
 _WORDS = re.compile(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]+")
 _SUBJECT = re.compile(r"^\s*用户")
 _WEEKDAYS = "一二三四五六日"
@@ -47,9 +54,11 @@ def terms(text):
     """What BM25 matches on: the tokens plus each character of a Chinese run.
 
     Pairs alone never find a one-character word inside a longer run, like 茶 in
-    用户喜欢茶 or 猫 in 用户养了一只猫.
+    用户喜欢茶 or 猫 in 用户养了一只猫. Glue pairs are left out: 养了 would tie
+    保养了 to 养了一只猫.
     """
-    out = tokenize(text)
+    out = [token for token in tokenize(text)
+           if token.isascii() or not (_GLUE & set(token) or token[0] in _PRONOUNS)]
     for word in _WORDS.findall(str(text or "").lower()):
         if len(word) > 1 and not word.isascii():
             out.extend(char for char in word if char not in _STOP)
@@ -110,8 +119,9 @@ class MemoryIndex:
             self.docs.append((row, counts, len(words) or 1))
         self.average = sum(doc[2] for doc in self.docs) / (len(self.docs) or 1)
 
-    def search(self, query, now_ms, *, limit=6, min_score=MIN_SCORE):
+    def search(self, query, now_ms, *, limit=6, min_score=MIN_SCORE, min_terms=1):
         words = set(terms(query))
+        need = min(min_terms, len(words))
         total = len(self.docs)
         found = []
         for row, counts, length in self.docs:
@@ -128,7 +138,7 @@ class MemoryIndex:
             if score <= 0:
                 continue
             score *= (0.6 + 0.8 * importance_of(row)) * (0.55 + 0.45 * retention(row, now_ms))
-            if score >= min_score:
+            if score >= min_score and len(why) >= need:
                 shown = [item for item in why if len(item[1]) > 1] or why
                 found.append({"row": row, "score": score,
                               "why": [word for _part, word in sorted(shown, reverse=True)[:3]]})
@@ -137,11 +147,11 @@ class MemoryIndex:
 
 
 def recall(index, query, now_ms, *, previous="", limit=HINT_LIMIT):
-    hits = index.search(query, now_ms, limit=limit)
+    hits = index.search(query, now_ms, limit=limit, min_terms=HINT_MIN_TERMS)
     if len(query.strip()) < SHORT_QUERY_CHARS and previous.strip() and len(hits) < limit:
         have = {hit["row"]["id"] for hit in hits}
         for hit in index.search(previous[-PREVIOUS_CHARS:], now_ms, limit=limit,
-                                min_score=PREVIOUS_MIN_SCORE):
+                                min_score=PREVIOUS_MIN_SCORE, min_terms=HINT_MIN_TERMS):
             if len(hits) >= limit:
                 break
             if hit["row"]["id"] not in have:

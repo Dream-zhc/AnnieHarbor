@@ -6,7 +6,16 @@ import math
 import pytest
 from annie_brain.memory_consolidate import consolidate_request, parse_ops
 from annie_brain.memory_index import (
-    DAY_MS, MemoryIndex, faded, recall, recall_hint, retention, similarity, tokenize, weight, when_text,
+    DAY_MS,
+    MemoryIndex,
+    faded,
+    recall,
+    recall_hint,
+    retention,
+    similarity,
+    tokenize,
+    weight,
+    when_text,
 )
 from annie_brain.recap import RECAP_CHARS, parse_recap, recap_hint, recap_request
 
@@ -50,6 +59,21 @@ def test_one_character_words_are_found_inside_longer_runs():
     index = MemoryIndex([fact("tea", "用户喜欢茶"), fact("cat", "用户养了一只猫叫团子")])
     assert [(hit["row"]["id"], hit["why"]) for hit in index.search("茶", NOW)] == [("tea", ["茶"])]
     assert [hit["row"]["id"] for hit in index.search("我的猫最近不爱吃饭", NOW)] == ["cat"]
+
+
+def test_hints_need_two_shared_terms_the_tool_needs_one():
+    index = MemoryIndex([fact("movie", "用户最喜欢的电影是《星际穿越》"), fact("tea", "用户喜欢喝茶")])
+    assert recall(index, "今天星期几", NOW) == []
+    assert [hit["row"]["id"] for hit in index.search("今天星期几", NOW)] == ["movie"]
+    assert [hit["row"]["id"] for hit in recall(index, "茶", NOW)] == ["tea"]
+    assert [hit["row"]["id"] for hit in recall(index, "我想喝点茶", NOW)] == ["tea"]
+
+
+def test_particle_pairs_do_not_tie_unrelated_sentences():
+    index = MemoryIndex([fact("cat", "用户养了一只叫年糕的橘猫"), fact("guitar", "用户在学吉他")])
+    assert recall(index, "我的车该保养了", NOW) == []
+    assert [hit["row"]["id"] for hit in recall(index, "吉他弦又断了", NOW)] == ["guitar"]
+    assert [hit["row"]["id"] for hit in recall(index, "年糕最近胖了", NOW)] == ["cat"]
 
 
 def test_importance_and_forgetting_order_equal_matches():

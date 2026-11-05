@@ -285,18 +285,6 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
                 AudioFormat("pcm_s16le", 24000, 1, 20, 960),
             )
 
-    async def test_pcm_active_blocks_same_source_legacy_asr_double_trigger(self):
-        from annie_core import InputRejectedError
-
-        self.runtime.bind_input_source("mic-a", ["annie-a"])
-        asr = {"type": "asr", "text": "兼容输入", "from": "mic-a", "ts": 1}
-        result = await self.runtime.ingest_legacy_asr("mic-a", asr)
-        self.assertEqual(result["annie-a"].reply, "[FAKE annie-a] 兼容输入")
-
-        self.runtime.ingest_mic_start("mic-a", self.mic_start)
-        with self.assertRaisesRegex(InputRejectedError, "pcm_stream_active"):
-            await self.runtime.ingest_legacy_asr("mic-a", asr)
-
     async def test_normalized_events_are_recorded_without_triggering_fake_brain(self):
         self.runtime.bind_input_source("device-events", ["annie-a", "annie-b"])
         delivered = self.runtime.dispatch_room_event(

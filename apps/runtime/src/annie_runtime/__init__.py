@@ -1568,24 +1568,6 @@ class HarborRuntime:
             robot.record("input_reconnected", source=source_id)
         return targets
 
-    async def ingest_legacy_asr(
-        self, source_id: str, message: dict, *, target_robot_id=None, broadcast=False
-    ):
-        event = normalize_room_event(message)
-        if event is None or event.kind != "legacy_asr":
-            raise InputRejectedError("invalid_legacy_asr")
-        targets = self._input_targets(
-            source_id, target_robot_id=target_robot_id, broadcast=broadcast
-        )
-        if any(self.robots[robot_id].audio.source_id == source_id for robot_id in targets):
-            raise InputRejectedError("pcm_stream_active")
-        results = await asyncio.gather(
-            *(self.submit(robot_id, event.payload["text"]) for robot_id in targets)
-        )
-        for robot_id in targets:
-            self.robots[robot_id].snapshot.last_input_source = source_id
-        return dict(zip(targets, results, strict=True))
-
     def dispatch_room_event(
         self, source_id: str, message: dict, *, target_robot_id=None, broadcast=False
     ):

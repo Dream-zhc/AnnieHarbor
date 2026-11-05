@@ -15,8 +15,6 @@ WINDOW_BYTES = SAMPLE_RATE * 2 * 2  # simulation test window; not sherpa require
 # Its confirmation can lag behind the start of a same-breath question.
 # Retain 1.6s of bounded PCM: 800ms could omit early question words.
 PRE_ROLL_BYTES = FRAME_BYTES * 80  # 1600ms accommodates late keyword confirmation
-WAKE_WAIT_SECONDS = 5.0
-FOLLOWUP_SECONDS = 20.0
 STREAM_BATCH_BYTES = FRAME_BYTES * 2     # 40ms input reduces detection batch wait
 STREAM_BACKLOG_LIMIT_BYTES = FRAME_BYTES * 25  # 500ms fail-closed backlog
 WAKE_ADDRESS_INSTRUCTIONS = (

@@ -331,18 +331,6 @@ def _private_to(row, who):
     return {**row, "text": f"和{row['person']}聊了一会儿"}
 
 
-def diary_hint(rows, now_ms, who=None):
-    # Replays (2026-10-26): with the full line in view and “别讲给旁人” as the
-    # only guard, she told a stranger about 张三's interview. Others now never
-    # see the content at all.
-    lines = diary_lines([_private_to(row, who) for row in rows], now_ms)
-    if not lines:
-        return ""
-    return ("\n【你今天的真实经历（北京时间，只能讲这些，不要编别的）】\n" + "\n".join(lines)
-            + "\n被问今天过得怎样，或正好相关时可以自然提起。"
-            + (f"眼前跟你说话的就是{who}：说到TA时用“你”。" if who else ""))
-
-
 def public_day(rows, now_ms):
     """Her own bodily day for a stranger-facing idle remark: no names, no talk."""
     lines = []

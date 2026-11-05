@@ -8,8 +8,6 @@ web_forward = true
 eye_enabled = true
 
 [duplex]
-enabled = false
-mode = "wake"
 wake_wait_ms = 5000
 # 机器人说完后免唤醒继续听的时间（真实扬声器播完才开始计时）。
 # 2026-10-22 实测 20 秒偏短（回复后 25～54 秒内又得喊名字），改为上限 30 秒。

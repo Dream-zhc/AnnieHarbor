@@ -9,6 +9,7 @@ from annie_brain.persona import (
     CONVERSATION_CRAFT,
     USER_REQUESTS,
     load_personas,
+    persona_opener,
     persona_tone,
     persona_voice,
     session_instructions,
@@ -43,7 +44,8 @@ def test_presets_keep_stable_ids_two_character_labels_schema_and_budget():
     profiles = load_personas(CONFIG)
     assert set(profiles) == set(STYLE_MARKERS)
     for style_id, profile in profiles.items():
-        assert set(profile) == {"label", "style", "tts"}
+        assert set(profile) == {"label", "style", "opener", "tts"}
+        assert 1 <= len(profile["opener"]) <= 200
         assert profile["label"] == STYLE_MARKERS[style_id][0]
         assert len(profile["label"]) == 2
         assert 1 <= len(profile["style"]) <= 500
@@ -103,6 +105,21 @@ def test_idioms_are_occasional_not_a_repeated_script(style_id):
         assert "绝不赖到对方头上" in style
         assert "对方要方言就用方言骂" in style
         assert "喊破防是玩笑" in style
+        # 11-05: still too proper. She swears from the first line and folds answers into the roast.
+        assert "开口第一句就骂" in style and "句句带刺带脏字" in style
+        assert "答案裹在骂里" in style and "不用客服腔" in style
+        assert "损完顺手把正事办对" not in style
+
+
+def test_each_style_opens_its_own_way_after_a_switch():
+    profiles = load_personas(CONFIG)
+    openers = {style_id: persona_opener(profile) for style_id, profile in profiles.items()}
+    assert all(openers.values()) and len(set(openers.values())) == len(openers)
+    assert all("“" not in opener and "已切换" not in opener for opener in openers.values())
+    assert "反转" in openers["annie"]
+    assert "接住对方此刻的心情" in openers["annie-calm"]
+    assert "十个字以内" in openers["annie-deadpan"]
+    assert "直接开骂" in openers["annie-savage"]
 
 
 def test_each_style_has_a_contrasting_tts_tone():
@@ -131,7 +148,7 @@ def test_tts_table_is_validated_at_load(tmp_path):
     profile = load_personas(write('instruction = " 明亮 "\nrate = 1.05\nvoice = "半藏森林"'))["annie"]
     assert profile["tts"] == {"instruction": "明亮", "rate": 1.05, "voice": "半藏森林"}
     assert persona_voice(profile) == "半藏森林"
-    assert persona_tone(profile) == PersonaTone(instruction="明亮", rate=1.05)
+    assert persona_tone(profile) == PersonaTone(instruction="明亮", rate=1.05, label="机灵")
     for bad in ('rate = 1.5', 'pitch = 0.5', 'volume = 70', 'volume = 50.5',
                 f'instruction = "{"快" * 201}"', 'speed = 1.0', 'voice = 3'):
         with pytest.raises(ValueError):

@@ -49,6 +49,7 @@ from annie_brain.decision_policy import (
     look_question,
     look_state,
     motion_question,
+    persona_switch_question,
     pick_anchor,
     repeat_state,
     reply_likeness,
@@ -57,13 +58,16 @@ from annie_brain.dialogue import DialogueState
 from annie_brain.persona import (
     CHAT_PREFERENCES,
     PREFERENCE_REQUEST,
+    UnclearPersonaRequest,
     active_style_id,
     chat_preference,
+    persona_opener,
     persona_tone,
     persona_voice,
     resolve_persona_style_request,
     session_instructions,
     social_instruction_hint,
+    style_named,
 )
 from annie_core import RobotUnavailableError
 from annie_core.speech_style import apply_persona_tone
@@ -2180,6 +2184,28 @@ class RealtimeRobot:
         if self.turn_identity != self.robot.session_state():
             raise ValueError("stale face request")
 
+    def _previous_user_text(self):
+        previous = [turn.get("user_text") for turn in self.robot.recent_context()
+                    if turn.get("turn_id") != self.turn_id and turn.get("user_text")]
+        return previous[-1] if previous else None
+
+    async def _persona_switch_decided(self, requested, utterance, active):
+        """The style a phrasing the rules missed asked for, when the decision model says
+        so (11-05: “切换温柔性格” was refused). Otherwise she asks which one."""
+        style_id = style_named(self.persona_profiles, requested)
+        if style_id is not None and style_id != active:
+            choice = await self._decide_instruction(
+                "persona_switch", persona_switch_question(self.persona_profiles[style_id]["label"]),
+                instruction_state(utterance, previous_user=self._previous_user_text(),
+                                  robot_last=self._last_reply_text))
+            if self.turn_identity != self.robot.session_state():
+                raise ValueError("stale persona style switch")
+            if choice == "yes":
+                return style_id
+        self._persona_offer = {"options": [key for key in self.persona_profiles if key != active],
+                               "at": time.monotonic(), "identity": dict(self.robot.session_state())}
+        raise ValueError("persona switch requires an explicit current request")
+
     async def _forget_agreed(self, cleaned, texts, name):
         """True or False when the user answered “确定要我忘掉你吗”; None if nobody could tell."""
         current = cleaned[0]
@@ -2782,9 +2808,12 @@ class RealtimeRobot:
         personality or voice instead of announcing it; spent after that reply."""
         if persona:
             before, after = persona
+            opener = persona_opener(next((profile for profile in (self.persona_profiles or {}).values()
+                                          if profile.get("label") == after), None))
             note = (f"\n【刚换了性格】你刚从「{before}」换成「{after}」。下一句先用「{after}」"
                     "来一句最有这个性格味道的开场，像本来就是这样，别说“已切换”“换好了”；"
-                    f"之前的回复是「{before}」时说的，只取内容，别学那个口吻。")
+                    + (f"开场手法：{opener}；" if opener else "")
+                    + f"之前的回复是「{before}」时说的，只取内容，别学那个口吻。")
         else:
             note = (f"\n【刚换了声音】你刚换成「{voice}」的声音。下一句先来一句配得上这把声音、"
                     "有特点的开场，别说“已切换”“换好了”；性格不变。")
@@ -2910,10 +2939,13 @@ class RealtimeRobot:
         offer = self._persona_offer
         offered = (offer["options"] if offer and offer["identity"] == self.robot.session_state()
                    and time.monotonic() - offer["at"] <= PERSONA_OFFER_SECONDS else None)
-        style_id, options = resolve_persona_style_request(
-            self.robot.persona_id, self.persona_profiles, self.social_state,
-            requested.strip(), utterance, offered=offered,
-        )
+        try:
+            style_id, options = resolve_persona_style_request(
+                self.robot.persona_id, self.persona_profiles, self.social_state,
+                requested.strip(), utterance, offered=offered,
+            )
+        except UnclearPersonaRequest:
+            style_id, options = await self._persona_switch_decided(requested, utterance, active), None
         if style_id is None:
             labels = {profile["label"]: key for key, profile in self.persona_profiles.items()}
             self._persona_offer = {"options": [labels[label] for label in options if label in labels],
@@ -5380,13 +5412,15 @@ class RealtimeRobot:
         elif name == "select_persona_style" and isinstance(result, dict):
             status = str(result.get("status", "unavailable"))
             if status == "selected":
+                opener = persona_opener((self.persona_profiles or {}).get(result.get("style_id")))
                 model_result = {
                     "status": "selected", "style_changed": True,
                     "style_label": result["style_label"], "effective": "next_reply",
                     "instruction": (
                         f"当前会话性格已是「{result['style_label']}」，没有新建会话。"
                         "马上用这个性格来一句最有它味道的话，接住用户刚才的话，像本来就是这样；"
-                        "别说已切换、换好了，不要念固定确认稿，不要复述风格规则；"
+                        + (f"开场手法：{opener}；" if opener else "")
+                        + "别说已切换、换好了，不要念固定确认稿，不要复述风格规则；"
                         "之前的回复是旧性格说的，只取内容，别学那个口吻。"
                     ),
                 }
@@ -5405,8 +5439,10 @@ class RealtimeRobot:
             else:
                 model_result = {
                     "status": status, "style_changed": False,
-                    "instruction": "性格没有变化，不要说已经换成新性格，也不要换个名称重复调用；"
-                                   "直接用一句话问用户想要哪一种。",
+                    "instruction": ("性格没有变：用户不想换，按普通对话回应，不要再调用本工具。"
+                                    if "negated" in str(result.get("reason")) else
+                                    "性格没有变化，不要说已经换成新性格，也不要换个名称重复调用；"
+                                    "直接用一句话问用户想要哪一种。"),
                 }
         if (isinstance(model_result, dict) and model_result.get("status") == "rejected"
                 and "instruction" not in model_result):

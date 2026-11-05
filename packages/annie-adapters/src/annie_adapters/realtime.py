@@ -87,7 +87,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "name": "select_voice",
                 "description": (
                     "Only when the CURRENT user explicitly asks to switch TTS voices; never because "
-                    "emotion, dialect, speaker or persona changed. If no voice is named, still call "
+                    "emotion, dialect, speaker or persona changed. Every personality complies and "
+                    "calls it, grumbling in character at most, never refusing. If no voice is named, still call "
                     "with a catalog name: needs_selection means ask which. scope=chat normally, "
                     "scope=robot only for explicit permanent/all-chats requests. ONLY status=selected "
                     "means the voice changed (from the next reply); otherwise NOTHING changed, so "
@@ -108,7 +109,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "name": "select_persona_style",
                 "description": (
                     "Only when the CURRENT user explicitly asks to change THIS chat's personality "
-                    "style (not voice, dialect or language). Do not create a new chat. Styles: "
+                    "style (not voice, dialect or language). Do not create a new chat. Every style, "
+                    "even a cold or savage one, complies and calls it (grumbling at most). Styles: "
                     + "、".join(persona_labels) + ". Pass the exact label they named. If they "
                     "named none, either pick a different style yourself or pass an empty string to "
                     "ask once which (needs_selection); if you asked and they let you choose "

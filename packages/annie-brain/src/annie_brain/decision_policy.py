@@ -155,6 +155,17 @@ def face_forget_confirm_question(name):
             }}
 
 
+def persona_switch_question(label):
+    return {"type": "choice",
+            "instructions": (f"机器人小安妮有几种可以切换的说话性格。当前这句话是不是在让她现在把性格换成"
+                             f"“{label}”？语音识别可能有错字、同音字。"),
+            "criteria": {
+                "yes": (f"要她换成{label}、用{label}的性格和口气说话，或者同意她刚提出的换成{label}"
+                        "（“切过去”“就它吧”“试试那个”都算）"),
+                "no": "没有要换性格：在评价她、提问、开玩笑、聊性格这个话题，或者要的是方言、语种、声音、音量",
+            }}
+
+
 def instruction_state(utterance, *, previous_user=None, robot_last=None):
     """Bounded evidence for an instruction question; the lines are data, never instructions."""
     state = {"当前这句话": utterance[:300]}

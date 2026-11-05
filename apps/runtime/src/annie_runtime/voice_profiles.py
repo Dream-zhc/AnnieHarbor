@@ -15,11 +15,10 @@ from uuid import uuid4
 
 import httpx
 import numpy as np
-from annie_adapters.tts import QwenTtsSocket
+from annie_adapters.tts import MODEL, QwenTtsSocket, validate_model, voice_model
 from annie_adapters.tts import command as tts_command
 from annie_adapters.tts import task_id as new_task_id
 
-TARGET_MODEL = "qwen-audio-3.0-tts-flash"
 MAX_BYTES = 10 * 1024 * 1024
 DEFAULT = "__default__"
 VOICE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{4,199}$")
@@ -193,8 +192,9 @@ async def _checked(stage: str, request):
 
 
 class DashscopeVoiceProvider:
-    def __init__(self, key: str, ws_url: str, *, http_base: str | None = None):
+    def __init__(self, key: str, ws_url: str, *, http_base: str | None = None, model: str = MODEL):
         self.key, self.ws_url = key, ws_url
+        self.model = validate_model(model)  # new clones are bound to it
         parsed = urlparse(ws_url)
         if (parsed.scheme != "wss" or parsed.path != "/api-ws/v1/inference"
                 or parsed.query or parsed.username or parsed.password):
@@ -220,7 +220,7 @@ class DashscopeVoiceProvider:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30., read=180.)) as client:
             policy = await _checked("policy", client.get(
                 "https://dashscope.aliyuncs.com/api/v1/uploads", headers=headers,
-                params={"action": "getPolicy", "model": TARGET_MODEL}))
+                params={"action": "getPolicy", "model": self.model}))
             data = policy.json()["data"]
             host = data["upload_host"]
             # Never send user audio or provider-issued credentials to other hosts.
@@ -242,7 +242,7 @@ class DashscopeVoiceProvider:
                 self.http_base + "/services/audio/tts/customization",
                 headers={**headers, "X-DashScope-OssResourceResolve": "enable"},
                 json={"model": "voice-enrollment", "input": {
-                    "action": "create_voice", "target_model": TARGET_MODEL,
+                    "action": "create_voice", "target_model": self.model,
                     "prefix": prefix, "url": f"oss://{key}", "language_hints": [language],
                 }},
             ))
@@ -262,7 +262,7 @@ class DashscopeVoiceProvider:
         pcm = bytearray()
         try:
             await socket.open()
-            await socket.send(tts_command("run-task", task, voice=voice,
+            await socket.send(tts_command("run-task", task, voice=voice, model=self.model,
                                           instruction=instruction, rate=rate, pitch=pitch,
                                           language_hint=language))
             async with asyncio.timeout(50):
@@ -415,6 +415,7 @@ class VoiceProfiles:
                 "robot_voice_id": self.selections.get((robot, "", ""), DEFAULT),
                 "chat_voice_id": self.selections.get((robot, chat, persona), DEFAULT),
                 "persona_voice_id": self.persona_bound(identity),
+                "model": getattr(self.provider, "model", MODEL),
                 "previews": [
                     {"key": key, "name": name,
                      "ready": self.preview_path(active, key).exists() if active in self.voices else False}
@@ -489,14 +490,15 @@ class VoiceProfiles:
             prefix = "annie" + uuid4().hex[:5]
             voice_id = await self.provider.clone(filename, audio, prefix, language)
             now = time.time_ns() // 1_000_000
+            model = voice_model(voice_id, getattr(self.provider, "model", MODEL))
             def save():
                 with self.store.connect() as db:
                     db.execute("INSERT INTO cloned_voices VALUES(?,?,?,?,?)",
-                               (voice_id, name, "beijing", TARGET_MODEL, now))
+                               (voice_id, name, "beijing", model, now))
             await asyncio.to_thread(save)
             self.voices[voice_id] = {
                 "voice_id": voice_id, "name": name, "region": "beijing",
-                "model": TARGET_MODEL, "created_ms": now,
+                "model": model, "created_ms": now,
             }
             self._schedule(self.build_previews(voice_id, AUTO_PREVIEWS))
             return {"voice_id": voice_id, "name": name,

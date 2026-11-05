@@ -1,4 +1,4 @@
-"""Qwen-Audio 3.0 TTS Flash wire protocol (NOT the Qwen Realtime protocol)."""
+"""Qwen-Audio TTS wire protocol (NOT the Qwen Realtime protocol)."""
 
 import asyncio
 import json
@@ -11,7 +11,11 @@ from websockets.protocol import State
 
 from annie_adapters.net import cloud_proxy, room_connect
 
-MODEL = "qwen-audio-3.0-tts-flash"
+MODEL = "qwen-audio-3.1-tts-plus"
+# One wire protocol for all four. A cloned voice only works with the model it
+# was cloned for, whose name begins its ID; system voices take the configured one.
+MODELS = ("qwen-audio-3.1-tts-plus", "qwen-audio-3.1-tts-flash",
+          "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash")
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
 # Exact raw WS enum, distinct from the broader ASR/reply-language state.
 # https://help.aliyun.com/zh/model-studio/qwen-audio-tts-client-events
@@ -28,10 +32,21 @@ def validate_url(url: str) -> str:
     return url
 
 
+def validate_model(model: str) -> str:
+    if model not in MODELS:
+        raise ValueError(f"unsupported TTS model: {model!r}")
+    return model
+
+
+def voice_model(voice: str, default: str = MODEL) -> str:
+    """The model a voice must be synthesized with."""
+    return next((model for model in MODELS if voice.startswith(model + "-")), default)
+
+
 def command(action: str, task_id: str, *, text: str = "", voice: str = "", sample_rate: int = 24000,
             style: SpeechStyle | None = None, instruction: str | None = None,
             rate: float | None = None, pitch: float | None = None, volume: int | None = None,
-            language_hint: str | None = None, one_shot: bool = False):
+            language_hint: str | None = None, one_shot: bool = False, model: str | None = None):
     if action not in {"run-task", "continue-task", "finish-task"}:
         raise ValueError("unsupported TTS command")
     controls = {"instruction": instruction, "rate": rate, "pitch": pitch, "volume": volume}
@@ -56,7 +71,8 @@ def command(action: str, task_id: str, *, text: str = "", voice: str = "", sampl
         validate_tts_number("volume", controls["volume"], 0, 100, integer=True)
     if action == "run-task":
         payload = {
-            "task_group": "audio", "task": "tts", "function": "SpeechSynthesizer", "model": MODEL,
+            "task_group": "audio", "task": "tts", "function": "SpeechSynthesizer",
+            "model": voice_model(voice, MODEL if model is None else validate_model(model)),
             "parameters": {
                 "text_type": "PlainText", "voice": voice, "format": "pcm",
                 "sample_rate": sample_rate, "enable_ssml": one_shot,

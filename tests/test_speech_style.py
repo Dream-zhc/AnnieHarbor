@@ -317,3 +317,13 @@ def test_explicit_request_and_serious_context_skip_the_persona_tone():
 def test_persona_tone_rejects_values_outside_tts_policy(fields):
     with pytest.raises(ValueError):
         PersonaTone(**fields)
+
+
+def test_a_cloned_voice_keeps_the_model_it_was_cloned_for():
+    old = command("run-task", "t", voice="qwen-audio-3.0-tts-flash-annie-x", model="qwen-audio-3.1-tts-plus")
+    assert old["payload"]["model"] == "qwen-audio-3.0-tts-flash"
+    system = command("run-task", "t", voice="longanhuan_v3.1", model="qwen-audio-3.1-tts-plus")
+    assert system["payload"]["model"] == "qwen-audio-3.1-tts-plus"
+    assert command("run-task", "t", voice="longanhuan_v3.1")["payload"]["model"] == "qwen-audio-3.1-tts-plus"
+    with pytest.raises(ValueError):
+        command("run-task", "t", voice="longanhuan_v3.1", model="qwen-tts-latest")

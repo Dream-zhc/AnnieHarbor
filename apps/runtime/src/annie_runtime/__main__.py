@@ -391,6 +391,10 @@ def main():
             provider_defaults["tts"]["qwen_audio"]["voice"]
             if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
         ),
+        tts_model=(
+            provider_defaults["tts"]["qwen_audio"].get("model")
+            if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
+        ),
         tts_url=os.environ.get("ANNIE_TTS_URL") or None,
         tts_first_chars=provider_defaults["tts"]["first_min_chars"],
         tts_min_chars=provider_defaults["tts"]["sentence_min_chars"],

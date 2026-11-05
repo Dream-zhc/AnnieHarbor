@@ -891,6 +891,7 @@ class HarborRuntime:
         cloud_aec_sync_offset_ms: int = 80,
         cloud_aec_delay_ms: int = 0,
         tts_voice: str | None = None,
+        tts_model: str | None = None,
         tts_url: str | None = None,
         tts_socket_factory=None,
         room_tts_factory=None,
@@ -991,7 +992,8 @@ class HarborRuntime:
             from annie_adapters.tts import DEFAULT_URL as TTS_DEFAULT_URL
 
             from annie_runtime.voice_profiles import DashscopeVoiceProvider, VoiceProfiles
-            provider = DashscopeVoiceProvider(realtime_key, tts_url or TTS_DEFAULT_URL)
+            provider = DashscopeVoiceProvider(realtime_key, tts_url or TTS_DEFAULT_URL,
+                                              **({"model": tts_model} if tts_model else {}))
             self.voices = VoiceProfiles(self.store, provider, tts_voice)
             self.voices.bound_voice = self._persona_voice
         self.recorder = Recorder(self.store.write_batch)
@@ -1230,7 +1232,7 @@ class HarborRuntime:
                     first_chars=tts_first_chars, min_chars=tts_min_chars, max_chars=tts_max_chars,
                     event=client.publish,
                     style_provider=client.turn_speech_style,
-                    mixed_enabled=tts_mixed_mode_enabled,
+                    mixed_enabled=tts_mixed_mode_enabled, model=tts_model,
                     voice_provider=(lambda identity: self.voices.resolved(identity))
                     if self.voices is not None else None,
                     voice_publisher=self.voice_publishers.get(robot_id),

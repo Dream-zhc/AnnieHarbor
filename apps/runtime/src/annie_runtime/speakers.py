@@ -11,6 +11,7 @@ import wave
 import numpy as np
 import soxr
 from annie_adapters.speakers import (
+    MIN_EMBED_SECONDS,
     MODEL_ID,
     SAMPLE_RATE,
     SpeakerModelMissing,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 MIN_ENROLL_SECONDS = 3.0
 MAX_ENROLL_SECONDS = 12.0
 EARLY_SECONDS = 1.0
-FINAL_MIN_SECONDS = 0.6
+FINAL_MIN_SECONDS = MIN_EMBED_SECONDS
 MAX_MATCH_SECONDS = 6.0
 CARRY_SECONDS = 20.0
 IDENTIFY_WAIT_SECONDS = 0.35

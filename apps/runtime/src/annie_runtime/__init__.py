@@ -22,7 +22,7 @@ from annie_adapters import (
 from annie_adapters.playback import PLAYBACK_EVENTS as PLAYBACK_RECEIPTS
 from annie_adapters.playback import playback_receipt
 from annie_brain import FakeBrain
-from annie_brain.persona import CHAT_PREFERENCES
+from annie_brain.persona import CHAT_PREFERENCES, active_style_id
 from annie_core import (
     AudioFormat,
     InputRejectedError,
@@ -2215,6 +2215,9 @@ class HarborRuntime:
         if client:
             client.publish("tts.voice.selected", voice_id=result["active_voice_id"],
                            scope=scope, effective="next_tts_task")
+            if result.get("status") == "selected":
+                client.note_switch(voice=self.voices.label(result["active_voice_id"]))
+                client.open_after_switch()
             client.visual_changed()
         return {**result, **self.voice_library(robot_id)}
 
@@ -2448,6 +2451,9 @@ class HarborRuntime:
         if source != "user_setting" and ttl_ms is None:
             ttl_ms = 120_000  # observed interaction cues are not permanent user preferences
         expires_at_ms = None if ttl_ms is None else now_ms + ttl_ms
+        live = self.realtime.get(robot_id)
+        before_style = (active_style_id(robot.persona_id, self.persona_profiles, live.social_state)
+                        if live is not None and "persona_style" in fields else None)
         for key, value in fields.items():
             await asyncio.to_thread(
                 self.store.upsert_social_state,
@@ -2473,7 +2479,15 @@ class HarborRuntime:
         if source == "user_setting" and robot_id in self.realtime:
             # User-initiated setting, not a per-turn SocialState update. Apply
             # on a newly created Session without injecting full Persona midturn.
+            after_style = fields.get("persona_style")
+            switched = bool(before_style and after_style and after_style != before_style)
+            if switched:
+                label = {key: profile["label"] for key, profile in self.persona_profiles.items()}
+                self.realtime[robot_id].note_switch(
+                    persona=(label.get(before_style, before_style), label[after_style]))
             await self.realtime[robot_id].restart()
+            if switched:
+                self.realtime[robot_id].open_after_switch()
         return await self.social_state(robot_id)
 
     async def social_state(self, robot_id: str):

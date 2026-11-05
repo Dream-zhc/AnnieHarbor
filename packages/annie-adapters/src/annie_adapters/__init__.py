@@ -678,7 +678,8 @@ class RuntimeStore:
                 cancelled INTEGER NOT NULL DEFAULT 0,
                 cancel_source TEXT,
                 created_ms INTEGER NOT NULL,
-                updated_ms INTEGER NOT NULL)""")
+                updated_ms INTEGER NOT NULL,
+                persona_style TEXT)""")
             turn_columns = {row[1] for row in db.execute("PRAGMA table_info(conversation_turns)")}
             if "turn_source" not in turn_columns:
                 db.execute("ALTER TABLE conversation_turns ADD COLUMN turn_source TEXT NOT NULL DEFAULT 'user'")
@@ -687,6 +688,9 @@ class RuntimeStore:
                 db.execute("ALTER TABLE conversation_turns ADD COLUMN input_mode TEXT NOT NULL DEFAULT 'unknown'")
             if "external_prompt" not in turn_columns:
                 db.execute("ALTER TABLE conversation_turns ADD COLUMN external_prompt TEXT")
+            if "persona_style" not in turn_columns:
+                # Earlier turns cannot be proved in one style: they carry no label.
+                db.execute("ALTER TABLE conversation_turns ADD COLUMN persona_style TEXT")
             # Repair previously persisted internal input, preserving the real
             # prompt in diagnostics rather than treating it as user testimony.
             if version < 8:
@@ -1027,8 +1031,8 @@ class RuntimeStore:
                 """INSERT INTO conversation_turns
                 (turn_id,robot_id,room_id,chat_id,persona_id,persona_revision,
                 session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
-                status,created_ms,updated_ms)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                status,created_ms,updated_ms,persona_style)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     turn["turn_id"],
                     turn["robot_id"],
@@ -1045,6 +1049,7 @@ class RuntimeStore:
                     turn["status"],
                     turn["created_ms"],
                     turn["updated_ms"],
+                    turn.get("persona_style"),
                 ),
             )
 
@@ -1142,6 +1147,7 @@ class RuntimeStore:
             "cancel_source",
             "created_ms",
             "updated_ms",
+            "persona_style",
         )
         item = dict(zip(keys, row, strict=True))
         item["interrupted"] = bool(item["interrupted"])
@@ -1155,7 +1161,7 @@ class RuntimeStore:
                 session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
-                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                interrupted,cancelled,cancel_source,created_ms,updated_ms,persona_style
                 FROM conversation_turns WHERE robot_id=? AND turn_id=?""",
                 (robot_id, turn_id),
             ).fetchone()
@@ -1168,7 +1174,7 @@ class RuntimeStore:
                 session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
-                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                interrupted,cancelled,cancel_source,created_ms,updated_ms,persona_style
                 FROM conversation_turns
                 WHERE robot_id=? AND chat_id=? AND persona_id=?
                 ORDER BY id""",
@@ -1190,7 +1196,7 @@ class RuntimeStore:
                 session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
-                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                interrupted,cancelled,cancel_source,created_ms,updated_ms,persona_style
                 FROM conversation_turns WHERE """ + where + " ORDER BY id DESC LIMIT ?",
                 (*args, limit + 1),
             ).fetchall()
@@ -1230,7 +1236,7 @@ class RuntimeStore:
                 session_epoch,generation,user_text,turn_source,input_mode,external_prompt,
                 assistant_planned_text,assistant_generated_text,
                 assistant_published_text,assistant_spoken_text,playback_evidence_status,status,
-                interrupted,cancelled,cancel_source,created_ms,updated_ms
+                interrupted,cancelled,cancel_source,created_ms,updated_ms,persona_style
                 FROM conversation_turns
                 WHERE robot_id=? AND chat_id=? AND persona_id=?
                   AND (

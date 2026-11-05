@@ -130,6 +130,11 @@ REPEAT_REQUEST = re.compile(r"再说一[遍次下]|再讲一[遍次下]|重复�
 REPEAT_RATIO = 0.85
 REPEAT_ASK_RATIO = 0.4
 KNOWN_PEOPLE_SECONDS = 60
+SWITCH_OPENER_SETTLE_SECONDS = 1.5
+SWITCH_OPENER_READY_SECONDS = 10.0
+SWITCH_OPENER_PROMPT = ("【内部切换展示，非用户发言】你刚在工作台换了性格或声音，现在没人在说话。"
+                        "照【刚换了性格】或【刚换了声音】那条主动开口，来一两句；可以接刚才的话题或眼前的事，"
+                        "别编新事，别提工作台，别说已切换，不调用工具。")
 NAME_NOTE = ("\n【称呼】你刚才的回复提到了眼前没认出的人，已替你隐去。画面里没认出、也没在说话的人，"
              "不叫名字、不说TA在场；用户问起时再提。")
 
@@ -344,6 +349,7 @@ class RealtimeRobot:
         self._known_people = (float("-inf"), frozenset())  # (loaded at, filed face names)
         self._absent_asked = {}  # turn_id -> asks about someone not here; None while judged
         self._once_notes = {}  # kind -> (instruction note, turn that set it) until her next reply
+        self._opener = None
         self._last_expression = None
         self._last_expression_identity = None
         self.socket = None
@@ -2766,6 +2772,51 @@ class RealtimeRobot:
         self.publish("persona.style.selected", style_id=style_id,
                      style_label=snapshot.get("label"), effective="next_reply")
 
+    def note_switch(self, *, persona=None, voice=None):
+        """11-05: the first line after a switch made in the workbench shows off the new
+        personality or voice instead of announcing it; spent after that reply."""
+        if persona:
+            before, after = persona
+            note = (f"\n【刚换了性格】你刚从「{before}」换成「{after}」。下一句先用「{after}」"
+                    "来一句最有这个性格味道的开场，像本来就是这样，别说“已切换”“换好了”；"
+                    f"之前的回复是「{before}」时说的，只取内容，别学那个口吻。")
+        else:
+            note = (f"\n【刚换了声音】你刚换成「{voice}」的声音。下一句先来一句配得上这把声音、"
+                    "有特点的开场，别说“已切换”“换好了”；性格不变。")
+        self._once_notes["switch"] = (note, None)
+        self.visual_changed()
+
+    def open_after_switch(self):
+        """11-05: a switch made in the workbench is heard at once; clicking through several
+        opens once, for the last. Someone talking leaves the note for the next reply."""
+        if self._opener is not None:
+            self._opener.cancel()
+        self._opener = self._background(self._switch_opener(), "switch-opener")
+
+    async def _switch_opener(self):
+        await asyncio.sleep(SWITCH_OPENER_SETTLE_SECONDS)
+        waited = 0.0
+        while not self.ready or self.socket is None:
+            if waited >= SWITCH_OPENER_READY_SECONDS:
+                return self._opener_done("skipped", "not_ready")
+            await asyncio.sleep(.2)
+            waited += .2
+        if "switch" not in self._once_notes:
+            return self._opener_done("skipped", "already_shown")
+        if (self.speech_active or self.turn_id or self.response_id
+                or (self.speech is not None and self.speech.turn_id is not None)):
+            return self._opener_done("skipped", "busy")
+        try:
+            result = await self.submit_text(SWITCH_OPENER_PROMPT, source="external")
+        except RobotUnavailableError:
+            return self._opener_done("skipped", "busy")
+        self._opener_done("spoken", None, turn_id=result.get("turn_id"))
+
+    def _opener_done(self, status, reason, turn_id=None):
+        logger.info("switch_opener robot=%s status=%s reason=%s turn=%s",
+                    self.robot.config.robot_id, status, reason, turn_id)
+        self.publish("switch.opener", status=status, reason=reason, turn_id=turn_id)
+
     async def _update_chat_preference(self, args):
         if set(args) != {"setting", "value"}:
             raise ValueError("expected setting and value")
@@ -3549,6 +3600,16 @@ class RealtimeRobot:
             if used + len(note) <= self.restore_char_budget:
                 turn["provider_user_text"] = note + turn["user_text"]
                 used += len(note)
+        # 11-04: what she said in another personality is history, not a voice to keep using.
+        active = active_style_id(self.robot.persona_id, self.persona_profiles, self.social_state)
+        for turn in reversed(packet["turns"]):
+            style = turn.get("persona_style")
+            if not style or style == active or style not in self.persona_profiles:
+                continue
+            note = f"【这轮你还是「{self.persona_profiles[style]['label']}」性格，回复只参考内容，别学那个口吻】"
+            if used + len(note) <= self.restore_char_budget:
+                turn["provider_user_text"] = note + turn.get("provider_user_text", turn["user_text"])
+                used += len(note)
         packet["chars_used"] = used
         for turn in packet["turns"]:
             if not turn["assistant_text"]:
@@ -3732,6 +3793,8 @@ class RealtimeRobot:
                   "turn_source": source,
                   "input_mode": "external" if source == "external" else "audio" if audio else "text",
                   "external_prompt": user_text if source == "external" else None,
+                  "persona_style": active_style_id(
+                      self.robot.persona_id, self.persona_profiles, self.social_state),
                   "status": "running", "created_ms": now, "updated_ms": now}
         self.robot.ledger.enqueue("create_conversation_turn", fields)
         self.robot._remember_turn({
@@ -5297,7 +5360,8 @@ class RealtimeRobot:
                     "status": "selected", "voice_changed": True,
                     "voice_name": result["voice_name"],
                     "effective": "next_tts_task",
-                    "instruction": "音色已写入当前偏好；仅下一次TTS任务使用，勿声称当前正在播的新声音。",
+                    "instruction": ("音色已写入当前偏好；仅下一次TTS任务使用，勿声称当前正在播的新声音。"
+                                    "用一句有特点、配得上新声音的话回应，别说已切换。"),
                 }
             else:
                 model_result = {
@@ -5316,8 +5380,9 @@ class RealtimeRobot:
                     "style_label": result["style_label"], "effective": "next_reply",
                     "instruction": (
                         f"当前会话性格已是「{result['style_label']}」，没有新建会话。"
-                        "用这个性格自然说一句，接住用户刚才的话；"
-                        "不要念固定确认稿，不要复述风格规则。"
+                        "马上用这个性格来一句最有它味道的话，接住用户刚才的话，像本来就是这样；"
+                        "别说已切换、换好了，不要念固定确认稿，不要复述风格规则；"
+                        "之前的回复是旧性格说的，只取内容，别学那个口吻。"
                     ),
                 }
             elif status == "needs_selection":

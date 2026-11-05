@@ -12,6 +12,7 @@ import {ActionPanel} from './action-panel';
 import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
+import {personaMark} from './persona-marks';
 import {RoomObservationsBar} from './room-observations';
 import {decisionEntry,decisionSource,formatDecision,isProviderAmbient,parseDecision,type DecisionEntry} from './decision-log';
 import {audioDevices,conflictMessages,handoverEventMessage,handoverMessage,headLabel} from './audio-devices';
@@ -27,7 +28,7 @@ import {isVisionEvent,turnVision,visionBadge,type TurnVision} from './vision-bad
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
 type PersonaInstance={persona_id:string;display_name:string;created_ms:number;updated_ms:number};
-type Turn={id:number;turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string;created_ms?:number;updated_ms?:number};
+type Turn={id:number;turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string;created_ms?:number;updated_ms?:number;persona_style?:string|null};
 type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string;has_more?:boolean;next_before_id?:number|null};
 const HISTORY_PAGE_SIZE=80;
 type SocialState=Record<string,{value:unknown;source:string;expires_at_ms:number|null}>;
@@ -1195,8 +1196,9 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                   if(history.turns.length>visibleHistoryCount)setVisibleHistoryCount(count=>count+HISTORY_PAGE_SIZE);
                   else void loadOlder();
                 }}>{olderLoading?'读取历史中…':'加载更早对话'}</button>}
-              {history?.turns.slice(-visibleHistoryCount).map(turn=>{
+              {history?.turns.slice(-visibleHistoryCount).map((turn,index,shown)=>{
                 const streaming=liveTurn?.turnId===turn.turn_id&&turn.status==='running';
+                const persona=personaMark(turn,index?shown[index-1]:null,profiles);
                 const reply=streaming?(liveText||turn.assistant_generated_text):
                   (turn.assistant_spoken_text||turn.assistant_generated_text);
                 const user=turn.user_text||(
@@ -1205,10 +1207,12 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                 );
                 const vision=turnVision(turn.turn_id,realtimeEvents,diagnostics);
                 return <div className="exchange" key={turn.turn_id}>
+                  {persona.switched&&<div className="persona-divider" role="separator"><span>切换为「{persona.label}」</span></div>}
                   {turn.turn_source!=='external'&&<div className="message-row me"><div className="message-content"><span className="message-author">你{turn.updated_ms&&<time className="message-timestamp"> · {formatTimestamp(turn.updated_ms)}</time>}</span><div className="bubble me-bubble">{user||'语音转写中…'}</div></div></div>}
                   {(reply||vision?.state==='looking'||(turn.turn_source!=='external'&&turn.status!=='running'))&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
                     <span className="message-author">
                       小安妮
+                      {persona.label&&<span className="persona-tag" title="说这句时的性格">{persona.label}</span>}
                       {getTurnActions(turn.turn_id,actionRequests,realtimeEvents,diagnostics).map(act=>{
                         const label=ACTION_SCRIPT_NAMES[act.value]??act.value;
                         const statusText=actionStatusLabel[act.status]??act.status;

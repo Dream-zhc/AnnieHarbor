@@ -91,6 +91,7 @@ from annie_runtime.language import (
 )
 from annie_runtime.name_guard import PAST_PERSON, NameGuard
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
+from annie_runtime.repeat_guard import RepeatGuard, asked_again
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
 from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
 from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
@@ -357,6 +358,7 @@ class RealtimeRobot:
         self._expression_raw = ""
         self._stage = StageDirections()
         self._names = NameGuard()
+        self._repeats = None
         self._seen_names = set()  # recognised in view during this run
         self._known_people = (float("-inf"), frozenset())  # (loaded at, filed face names)
         self._absent_asked = {}  # turn_id -> asks about someone not here; None while judged
@@ -1789,7 +1791,7 @@ class RealtimeRobot:
 
     def _stage_filter(self, text, *, final=False):
         """Stage directions like 【眨眼】 are never spoken or shown, nor the names
-        of people who are not here (name_guard)."""
+        of people who are not here (name_guard), nor what she just said (repeat_guard)."""
         before = len(self._stage.dropped)
         cleaned = self._stage.feed(text) + (self._stage.finish() if final else "")
         if len(self._stage.dropped) != before and self.turn_id:
@@ -1799,6 +1801,16 @@ class RealtimeRobot:
         cleaned = self._names.feed(cleaned, final=final)
         if len(self._names.withheld) != withheld and self.turn_id:
             self._name_withheld()
+        if self._repeats is None and self.turn_id:
+            self._repeats = self._repeat_guard()
+        if self._repeats is not None:
+            dropped = len(self._repeats.dropped)
+            cleaned = self._repeats.feed(cleaned, final=final)
+            if len(self._repeats.dropped) != dropped:
+                sentence = self._repeats.dropped[-1][:24]
+                self.publish("reply.sentence_repeat_dropped", turn_id=self.turn_id, text=sentence)
+                logger.info("reply_sentence_repeat_dropped robot=%s turn=%s text=%r",
+                            self.robot.config.robot_id, self.turn_id, sentence)
         return cleaned
 
     def _faces_available(self):
@@ -1825,6 +1837,16 @@ class RealtimeRobot:
         said = [str(turn.get("assistant_context_text") or "").strip()
                 for turn in self.robot.recent_context()]
         return [line for line in said if line][-limit:]
+
+    def _repeat_guard(self):
+        """Her last replies stay out of this one unless the user asked to hear it again
+        (再说一遍) or asked the same thing again."""
+        current = self.robot.turn_cache.get(self.turn_id) or {}
+        heard = str(current.get("user_text") or self.transcript or "")
+        asked = [str(turn.get("user_text") or "") for turn in self.robot.recent_context()][-3:]
+        if REPEAT_REQUEST.search(heard) or asked_again(heard, asked):
+            return RepeatGuard()
+        return RepeatGuard(self._recent_replies())
 
     def _not_again_hint(self):
         """10-30–11-02: one smell event got the same sentence three times."""
@@ -3132,6 +3154,7 @@ class RealtimeRobot:
         self._expression_raw = ""
         self._stage = StageDirections()
         self._names = NameGuard()
+        self._repeats = None
         self.turn_id = self.response_id = None
         self.external_turn_id = None
         self._external_text_only = False
@@ -3879,6 +3902,7 @@ class RealtimeRobot:
         self._stage = StageDirections()
         self._names = NameGuard(self._absent_candidates(turn_id),
                                 lambda name: self._may_name(turn_id, name))
+        self._repeats = None
         if source == "user":
             self._ask_absent(turn_id, user_text)
         if self.expression_enabled:

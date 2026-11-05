@@ -88,7 +88,7 @@ first_min_chars = 2
 # New clones and system voices use this model; a cloned voice keeps the model
 # its ID starts with (Qwen-Audio binds clones to their target model).
 model = "qwen-audio-3.1-tts-plus"
-voice = "qwen-audio-3.0-tts-flash-annie-9417629004fa4493a2c172b24d3e764a"
+voice = "qwen-audio-3.1-tts-plus-annie7fecc-ac037b19782c49399a1d412d162bbefc"
 sample_rate = 24000
 
 [vision]

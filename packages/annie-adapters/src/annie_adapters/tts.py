@@ -16,8 +16,8 @@ MODEL = "qwen-audio-3.1-tts-plus"
 # was cloned for, whose name begins its ID; system voices take the configured one.
 MODELS = ("qwen-audio-3.1-tts-plus", "qwen-audio-3.1-tts-flash",
           "qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash")
-# The service defaults to volume 50, and from 50 up every cloned voice hard-clips
-# (11-05 measurement); 48 is about as loud and stays clean.
+# The service defaults to volume 50; above 48 cloned voices hard-clip on loud lines
+# (11-05 measurement, 3.0-flash and 3.1-plus clones alike), while 48 stays clean.
 MAX_VOLUME = 48
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
 # Exact raw WS enum, distinct from the broader ASR/reply-language state.

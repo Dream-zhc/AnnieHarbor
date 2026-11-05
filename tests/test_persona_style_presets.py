@@ -175,9 +175,8 @@ def test_scolding_requests_follow_the_current_style():
     assert "编造事实时不照做" in USER_REQUESTS
 
 
-def test_acting_cute_on_request_is_played_in_the_current_style():
-    assert "让你撒娇、卖萌、夸人这类表演也照做，用当前性格的方式演" in USER_REQUESTS
-    assert "不拒绝、不推说不会" in USER_REQUESTS
+def test_acting_cute_is_left_to_the_current_style():
+    assert "撒娇" not in USER_REQUESTS
 
 
 @pytest.mark.parametrize("style_id", STYLE_MARKERS)

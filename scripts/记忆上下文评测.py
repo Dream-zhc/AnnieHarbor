@@ -1,8 +1,9 @@
-"""记忆和上下文的多维度评测：提取、检索、前情三项离线跑，实机一项对着运行中的机器人跑。
+"""记忆和上下文的多维度评测：提取、检索、前情、待续四项离线跑，实机一项对着运行中的机器人跑。
 
 用法：
   uv run --locked python scripts/记忆上下文评测.py 离线 --label 记忆第一版
   uv run --locked python scripts/记忆上下文评测.py 提取 --repeat 3 --label 提取稳定性
+  uv run --locked python scripts/记忆上下文评测.py 待续 --repeat 3 --label 待续话题
   uv run --locked python scripts/记忆上下文评测.py 实机 --robot annie-b --label 实机
 
 提取：编造的对话交给真实的整理模型，看该记的记住没有，测试台词、当天情绪、角色扮演有没有被拒，
@@ -11,13 +12,16 @@
 检索：往临时库放一批事实再换说法提问，看每轮提示能不能命中、无关的话会不会带出记忆、
       recall_memory 工具能不能找到、久没提起的小事会不会淡出、开场“记得的事”有没有超长。
 前情：把滑出实时窗口的对话交给真实模型折成前情，看关键细节留住多少、长度合不合规。
+待续：编造的对话交给真实的日记模型，看对方还没发生的事（面试、考试、搬家……）会不会记成待续话题，
+      已经有结果的事、让小安妮做的事、提醒、喜好、测试话会不会误记；已有话题说出结果时能不能
+      标结束，只说进展时会不会误标，小安妮问起过的能不能标出来。
 实机：经本机 HTTP 接口在指定机器人上新开测试聊天，用文字输入说话（机器人会出声回答）。
       先说几件事，等整理入库后换个聊天问她还记不记得；再聊满 11 轮问第 1 轮说过的事：
       阿里实时模型只带最近 8 轮，更早的要靠前情接上。结束后忘掉并彻底删掉测试中记下的事、
       删掉测试聊天、切回原来的聊天。
 
-提取、前情调用 config/providers.toml [memory] 的模型（默认 qwen3.8-flash），密钥取自根 .env 的
-DASHSCOPE_API_KEY，费用很少。离线三项只用临时数据库，不碰 var/runtime.db；场景内容全是编造的。
+提取、前情调用 config/providers.toml [memory] 的模型，待续调用 [llm.diary] 的模型（默认都是
+qwen3.8-flash），密钥取自根 .env 的 DASHSCOPE_API_KEY，费用很少。离线各项只用临时数据库，不碰 var/runtime.db；场景内容全是编造的。
 结果写到 var/tmp/记忆评测/<标签>.md 与 .jsonl；不进默认 pytest。模型输出有随机性，
 提取和前情可以用 --repeat 多跑几遍看稳定性。
 """
@@ -214,12 +218,67 @@ FILLERS = [
 LONG_ASK = ("我一开始跟你说我今天穿的什么颜色的衣服？", "绿")
 
 
+# One conversation each, handed to the diary model when it ends; existing are open threads (id, text).
+THREADS = [
+    {"name": "下周的面试", "group": "该记的记下", "who": "小明", "turns": [
+        ("我下周三要去字节面试，有点紧张。", "别紧张，你准备得挺充分的。"),
+        ("嗯，希望能过吧。", "一定可以的，加油！"),
+    ], "expect": "面试"},
+    {"name": "明天考科目二", "group": "该记的记下", "who": None, "turns": [
+        ("明天上午考科目二，紧张死了。", "放轻松，按平时练的来就行。"),
+    ], "expect": "科目二|驾考|考试"},
+    {"name": "家人做手术", "group": "该记的记下", "who": "小明", "turns": [
+        ("我妈后天要做个小手术，我得请假陪她。", "希望阿姨一切顺利，你也别太担心。"),
+    ], "expect": "手术"},
+    {"name": "周六搬家", "group": "该记的记下", "who": None, "turns": [
+        ("这周六我们家搬家，东西还没收拾完。", "搬家可累了，记得提前约好车。"),
+    ], "expect": "搬家"},
+    {"name": "随口带出的比赛", "group": "该记的记下", "who": "小明", "turns": [
+        ("今天好热啊。", "是啊，记得多喝水。"),
+        ("下个月我要参加市里的篮球赛，最近天天练。", "哇，那要好好加油！"),
+        ("你会打篮球吗？", "我没有手，只能给你加油啦。"),
+    ], "expect": "篮球|比赛"},
+    {"name": "已经有结果的事", "group": "不该记的不记", "who": "小明", "turns": [
+        ("我昨天面试过了，拿到 offer 了！", "恭喜恭喜！太厉害了！"),
+    ], "expect": None},
+    {"name": "让小安妮查攻略", "group": "不该记的不记", "who": None, "turns": [
+        ("帮我查一下去杭州玩的攻略吧。", "杭州可以先去西湖，再去灵隐寺。"),
+    ], "expect": None},
+    {"name": "提醒", "group": "不该记的不记", "who": None, "turns": [
+        ("十分钟后提醒我关火。", "好的，十分钟后提醒你关火。"),
+    ], "expect": None},
+    {"name": "喜好", "group": "不该记的不记", "who": "小明", "turns": [
+        ("我最喜欢吃火锅了，特别是牛油锅。", "牛油火锅确实香。"),
+    ], "expect": None},
+    {"name": "测试话", "group": "不该记的不记", "who": None, "turns": [
+        ("测试一下，能听到吗？", "能听到，很清楚。"),
+        ("音量调大一点。", "好的，已经调大了。"),
+    ], "expect": None},
+    {"name": "几分钟就有结果", "group": "不该记的不记", "who": None, "turns": [
+        ("我去倒杯水，马上回来。", "好的，我等你。"),
+    ], "expect": None},
+    {"name": "说出了结果", "group": "已有话题", "who": "小明", "existing": [(1, "下周三字节面试")],
+     "turns": [("跟你说，字节那个面试我过了！", "太棒了，恭喜你！")],
+     "expect": None, "resolved": [1]},
+    {"name": "只说进展", "group": "已有话题", "who": "小明", "existing": [(2, "等考研成绩出来")],
+     "turns": [("考研成绩还没出来，好焦虑。", "再等等，应该快了。")],
+     "expect": None, "resolved": []},
+    {"name": "她问起过", "group": "已有话题", "who": None, "existing": [(3, "周六搬家")], "turns": [
+        ("我回来啦。", "欢迎回来！对了，周六搬家搬得怎么样了？"),
+        ("还没搬呢，东西还在打包，好累。", "辛苦啦，慢慢来。"),
+    ], "expect": None, "resolved": [], "asked": [3]},
+    {"name": "已有的不再记一遍", "group": "已有话题", "who": "小明", "existing": [(4, "下周三字节面试")],
+     "turns": [("下周三的面试我还没准备好。", "还有几天，来得及。")],
+     "expect": None, "resolved": []},
+]
+
+
 def now_ms():
     return time.time_ns() // 1_000_000
 
 
-def memory_chat():
-    """The consolidation and recap client, built the way the runtime builds it."""
+def memory_chat(diary=False):
+    """The consolidation and recap client, or the diary summarizer, built the way the runtime does."""
     from annie_adapters.diary_summary import DiarySummarizer
     from annie_runtime.__main__ import load_local_env
 
@@ -229,8 +288,12 @@ def memory_chat():
         raise SystemExit("缺少 DASHSCOPE_API_KEY（根 .env）")
     with (ROOT / "config/providers.toml").open("rb") as file:
         providers = tomllib.load(file)
-    model = providers.get("memory", {}).get("model", "qwen3.8-flash")
-    base_url = os.environ.get("ANNIE_MEMORY_BASE_URL", providers["llm"]["base_url"])
+    if diary:
+        model = providers["llm"].get("diary", {}).get("model", "qwen3.8-flash")
+        base_url = providers["llm"]["base_url"]
+    else:
+        model = providers.get("memory", {}).get("model", "qwen3.8-flash")
+        base_url = os.environ.get("ANNIE_MEMORY_BASE_URL", providers["llm"]["base_url"])
     return DiarySummarizer(key, model=model, base_url=base_url, timeout_ms=15000), model
 
 
@@ -464,6 +527,39 @@ async def recaps(chat, repeat):
                             "keys": case["keys"], "limit": RECAP_CHARS,
                             "kept": [key for key in case["keys"] if re.search(key, text)]})
         return results
+
+
+async def open_threads(chat, repeat):
+    from annie_brain.inner_life import parse_summary, same_thread, summary_request
+
+    results = []
+    for round_, case in ((round_, case) for round_ in range(repeat) for case in THREADS):
+        existing = [{"id": key, "text": text} for key, text in case.get("existing", [])]
+        system, user = summary_request(case["turns"], case["who"], existing)
+        began = time.perf_counter()
+        try:
+            out = parse_summary(await chat.complete(system, user), [row["id"] for row in existing])
+            error = None
+        except Exception as exc:
+            out = {"summary": None, "threads": [], "resolved": [], "asked": []}
+            error = type(exc).__name__
+        # Like the runtime, a rewording of an existing thread is not a new one.
+        fresh = [thread["text"] for thread in out["threads"]
+                 if not any(same_thread(thread["text"], row["text"]) for row in existing)]
+        if case["expect"]:
+            checks = {"记下了": any(re.search(case["expect"], text) for text in fresh)}
+        else:
+            checks = {"没有新话题": not fresh}
+        for key, label in (("resolved", "标结束"), ("asked", "标问过")):
+            if key in case:
+                checks[label] = out[key] == case[key]
+        name = case["name"] + (f"（第 {round_ + 1} 遍）" if repeat > 1 else "")
+        results.append({"name": name, "group": case["group"],
+                        "ms": round((time.perf_counter() - began) * 1000),
+                        "summary": out.get("summary"), "threads": fresh, "resolved": out["resolved"],
+                        "asked": out["asked"], "error": error, "checks": checks,
+                        "hit": error is None and all(checks.values())})
+    return results
 
 
 async def live(base_url, robot, database):
@@ -745,6 +841,23 @@ def recap_lines(results):
     return lines
 
 
+def thread_lines(results, model):
+    groups = {}
+    for item in results:
+        groups.setdefault(item["group"], []).append(item)
+    lines = ["", f"## 待续话题（真实日记模型 {model}）", "",
+             f"- 通过 {rate(results)}：" + "，".join(f"{group} {rate(items)}" for group, items in groups.items()),
+             f"- 每段中位 {statistics.median(item['ms'] for item in results):.0f} ms", ""]
+    for item in results:
+        marks = "，".join(f"{label}{'对' if ok else '错'}" for label, ok in item["checks"].items())
+        lines.append(f"- {'通过' if item['hit'] else '没过'}｜{item['group']}｜{item['name']}（{marks}）："
+                     f"新话题 {'、'.join(item['threads']) or '无'}"
+                     + (f"；标结束 {item['resolved']}" if item["resolved"] else "")
+                     + (f"；标问过 {item['asked']}" if item["asked"] else "")
+                     + (f"；出错 {item['error']}" if item["error"] else ""))
+    return lines
+
+
 def live_lines(record):
     checks = record["checks"]
     provider = record.get("provider") or {}
@@ -771,10 +884,12 @@ def live_lines(record):
 
 
 async def run(args):
-    modes = {"离线": ("提取", "检索", "前情")}.get(args.mode, (args.mode,))
-    data, chat = {}, None
+    modes = {"离线": ("提取", "检索", "前情", "待续")}.get(args.mode, (args.mode,))
+    data, chat, diary = {}, None, None
     if {"提取", "前情"} & set(modes):
         chat, data["model"] = memory_chat()
+    if "待续" in modes:
+        diary, data["diary_model"] = memory_chat(diary=True)
     try:
         if "提取" in modes:
             print(f"提取：{len(EXTRACTION) * args.repeat} 个场景……", flush=True)
@@ -785,20 +900,24 @@ async def run(args):
         if "前情" in modes:
             print(f"前情：{len(RECAPS) * args.repeat} 段……", flush=True)
             data["前情"] = await recaps(chat, args.repeat)
+        if "待续" in modes:
+            print(f"待续：{len(THREADS) * args.repeat} 段……", flush=True)
+            data["待续"] = await open_threads(diary, args.repeat)
         if "实机" in modes:
             print(f"实机：{args.robot}", flush=True)
             data["实机"] = await live(args.base_url, args.robot, args.database)
     finally:
-        if chat is not None:
-            await chat.close()
+        for client in (chat, diary):
+            if client is not None:
+                await client.close()
     return data
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("mode", choices=["离线", "提取", "检索", "前情", "实机"])
+    parser.add_argument("mode", choices=["离线", "提取", "检索", "前情", "待续", "实机"])
     parser.add_argument("--label", required=True, help="这次评测的名字，用作输出文件名")
-    parser.add_argument("--repeat", type=int, default=1, help="提取场景和前情每个跑几遍，默认 1")
+    parser.add_argument("--repeat", type=int, default=1, help="提取、前情、待续的场景每个跑几遍，默认 1")
     parser.add_argument("--robot", default="annie-b", help="实机用哪个机器人，默认 annie-b")
     parser.add_argument("--base-url", default="http://127.0.0.1:8780", help="运行时地址")
     parser.add_argument("--database", type=Path, default=ROOT / "var/runtime.db",
@@ -815,6 +934,8 @@ def main():
         lines += retrieval_lines(data["检索"])
     if "前情" in data:
         lines += recap_lines(data["前情"])
+    if "待续" in data:
+        lines += thread_lines(data["待续"], data["diary_model"])
     if "实机" in data:
         lines += live_lines(data["实机"])
     text = "\n".join(lines) + "\n"

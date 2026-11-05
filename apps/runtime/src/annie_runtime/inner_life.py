@@ -401,9 +401,9 @@ class InnerLifeService:
         if self.summarizer is not None:
             system, user = summary_request(stretch["turns"], who, known)
             try:
-                result = parse_summary(await asyncio.wait_for(
+                result.update(parse_summary(await asyncio.wait_for(
                     self.summarizer.complete(system, user), SUMMARY_TIMEOUT_SECONDS),
-                    [row["id"] for row in known])
+                    [row["id"] for row in known]))
                 stats["summaries"] += 1
             except asyncio.CancelledError:
                 raise

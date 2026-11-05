@@ -150,6 +150,9 @@ def test_the_diary_summary_is_one_short_line_or_nothing():
                                        "resolved": [3, 99], "asked": [3]}), [3])
     assert parsed["threads"] == [{"text": "下周去面试", "follow_up": "问问面试结果"}]
     assert parsed["resolved"] == [3] and parsed["asked"] == [3]  # unknown ids are ignored
+    bare = parse_summary(json.dumps([{"text": "这周六搬家", "follow_up": "搬家顺利吗"}]))
+    assert bare == {"threads": [{"text": "这周六搬家", "follow_up": "搬家顺利吗"}],
+                    "resolved": [], "asked": []}
 
 
 # ---- SQLite rows ----------------------------------------------------------------------
@@ -318,6 +321,28 @@ def test_a_finished_conversation_becomes_one_named_diary_line(tmp_path):
             await settled(service)
             assert service.day["a"] == []
             assert rows.recent_experiences(service.store, "a", since_ms=0) == []
+        finally:
+            await service.close()
+    asyncio.run(run())
+
+
+def test_a_threads_only_answer_keeps_the_thread_and_the_plain_diary_line(tmp_path):
+    async def run():
+        client = FakeClient({"choice": "neutral", "confidence": .9})
+        summarizer = FakeSummarizer(json.dumps(
+            [{"text": "这周六搬家", "follow_up": "搬家顺利吗"}], ensure_ascii=False))
+        service, clock = service_with(tmp_path, client, summarizer)
+        await service.start()
+        try:
+            for text in ("这周六我们家搬家", "东西还没收拾完", "好累"):
+                service.on_turn("a", chat_id="c1", user_text=text, reply_text="辛苦啦",
+                                input_mode="audio", client=client)
+            clock["now"] += 3 * MINUTE
+            service._close_stretch("a")
+            await settled(service)
+            assert service.day["a"][0]["text"] == "和张三聊了3轮"
+            assert [row["text"] for row in service.threads["a"]] == ["这周六搬家"]
+            assert service.stats["a"]["summary_failures"] == 0
         finally:
             await service.close()
     asyncio.run(run())

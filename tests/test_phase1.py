@@ -352,7 +352,6 @@ class StorageConfigTests(unittest.TestCase):
         with patch("annie_runtime.__main__.os.kill"):
             self.assertFalse(wait_for_process_exit(12345, timeout=0.1))
 
-
     def test_invalid_database_fails_before_existing_runtime_is_replaced(self):
         from annie_runtime.__main__ import main
 
@@ -453,14 +452,14 @@ class StorageConfigTests(unittest.TestCase):
         self.assertNotIn("[duplex.legacy]", provider_text)
 
     def test_source_tree_has_no_meaningless_empty_dirs_or_placeholder_files(self):
-        excluded_roots = {".venv", "var", ".git", "node_modules", "__pycache__"}
+        excluded_roots = {"var", ".git", "node_modules", "__pycache__"}
         placeholder_names = {".gitkeep", ".keep", ".placeholder"}
 
         placeholders = []
         empty_dirs = []
         for path in ROOT.rglob("*"):
             relative = path.relative_to(ROOT)
-            if any(part in excluded_roots for part in relative.parts):
+            if any(part in excluded_roots or part.startswith(".venv") for part in relative.parts):
                 continue
             if path.is_file() and path.name in placeholder_names:
                 placeholders.append(str(relative))

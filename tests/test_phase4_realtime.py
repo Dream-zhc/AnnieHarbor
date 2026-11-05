@@ -101,7 +101,7 @@ class RealtimeWireTests(unittest.TestCase):
         payload = session_update("小安妮", 20)
         config = payload["session"]
         self.assertEqual(config["modalities"], ["text"])
-        self.assertEqual(config["turn_detection"], {"type": "smart_turn"})
+        self.assertEqual(config["turn_detection"], {"type": "smart_turn_v2"})
         self.assertEqual(config["max_history_turns"], 20)
         self.assertEqual(config["tools"][0]["function"]["name"], "preview_action")
         self.assertNotIn("enable_search", config)

@@ -8,6 +8,8 @@ dependencies = [
     "websockets>=15.0.1,<16",
     "numpy>=1.26,<3",
     "sherpa-onnx==1.13.8",
+    # Ships the libonnxruntime that sherpa-onnx loads; the lock does not pull it in by itself.
+    "sherpa-onnx-core==1.13.8",
     "livekit>=1.0,<2",
     "pillow>=11,<13",
 ]

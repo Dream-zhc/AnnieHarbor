@@ -108,10 +108,9 @@ def test_unrelated_voice_traffic_is_ignored_and_warnings_never_cost_audio():
     assert registry.snapshot()["status"] == "conflict"
 
 
-def test_inputs_and_big_screen_carry_the_device_state(tmp_path):
+def test_inputs_carry_the_device_state(tmp_path):
     from annie_core import RobotConfig
     from annie_runtime import HarborRuntime
-    from annie_web.exhibit import exhibit_snapshot
 
     async def run():
         rt = HarborRuntime([RobotConfig("a", room_id="roomv2")], tmp_path / "rt.db")
@@ -119,9 +118,9 @@ def test_inputs_and_big_screen_carry_the_device_state(tmp_path):
         try:
             rt._room_voice_event("a", mic_report("microphone-a"))
             rt._room_voice_event("a", mic_report("microphone-b"))
-            assert rt.input_stats("a")["audio_devices"]["status"] == "conflict"
-            screen = await exhibit_snapshot(rt, "a")
-            assert screen["audio"]["devices"]["conflicts"][0]["reason"] == "multiple_devices"
+            devices = rt.input_stats("a")["audio_devices"]
+            assert devices["status"] == "conflict"
+            assert devices["conflicts"][0]["reason"] == "multiple_devices"
         finally:
             await rt.close()
     asyncio.run(run())

@@ -5,8 +5,10 @@ type Voice={voice_id:string;name:string;model:string;region:string;created_ms:nu
 type Preview={key:string;name:string;ready:boolean;error?:string|null;
   text?:string;instruction?:string;language_hint?:string;rate?:number;pitch?:number};
 type Library={available:boolean;voices:Voice[];active_voice_id:string;default_voice_id:string;
-  robot_voice_id:string;chat_voice_id:string;previews:Preview[]};
-const DEFAULT='__default__';
+  robot_voice_id:string;chat_voice_id:string;persona_voice_id?:string|null;model?:string;previews:Preview[]};
+const DEFAULT='__default__';  // no choice of its own: the personality's voice, else the robot-wide one
+const SYSTEM='__system__';  // the configured default voice, even over the personality's own voice
+const modelName=(model:string)=>model.replace(/^qwen-audio-/,'').replace('-tts','');
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 
 type SpeakerRow={speaker_id:string;name:string;duration_ms:number;created_ms:number;stale?:boolean};
@@ -566,7 +568,8 @@ export function VoiceSettings({robotId,session}:{robotId:string;session:Session|
   };
 
   const activeVoice=data?.voices.find(v=>v.voice_id===data.active_voice_id);
-  const activeVoiceName=activeVoice?.name??(data?.active_voice_id===DEFAULT?'系统默认':'系统默认');
+  const activeVoiceName=activeVoice?.name??'系统默认';
+  const systemActive=!!data&&data.active_voice_id===data.default_voice_id;
   const previewVoice=data?.voices.find(v=>v.voice_id===previewId);
 
   return <section className="voice-settings">
@@ -709,21 +712,26 @@ export function VoiceSettings({robotId,session}:{robotId:string;session:Session|
           </div>
 
           <div className="voice-library">
-            <div className={`voice-library-row voice-default-row ${data.active_voice_id===DEFAULT?'row-active':''}`}>
+            <div className={`voice-library-row voice-default-row ${systemActive?'row-active':''}`}>
               <div className="voice-row-meta">
                 <span className="voice-type-icon" aria-hidden="true">⚙️</span>
                 <div>
                   <div className="voice-row-name-wrap">
                     <strong>系统默认</strong>
                     <span className="voice-pill-tag">官方基础</span>
-                    {data.active_voice_id===DEFAULT&&<span className="voice-pill-active">生效中</span>}
+                    {systemActive&&<span className="voice-pill-active">生效中</span>}
+                    {data.chat_voice_id===SYSTEM&&<span className="voice-pill-chat">Chat 专属</span>}
                   </div>
-                  <small className="voice-subinfo">系统内置默认标准发音人</small>
+                  <small className="voice-subinfo">配置里的默认发音人；在本 Chat 选它会盖过性格自带的声音</small>
                 </div>
               </div>
               <div className="voice-row-actions">
+                <button type="button" className={`action-pill voice-act-pill ${data.chat_voice_id===SYSTEM?'is-current':''}`}
+                  disabled={!session||!!busy}
+                  onClick={()=>void select(SYSTEM,'chat')} title="本 Chat 改用系统默认音色">当前 Chat 使用</button>
                 <button type="button" className="action-pill voice-act-pill" disabled={!session||!!busy}
-                  onClick={()=>void select(DEFAULT,'chat')}>恢复本 Chat 默认</button>
+                  onClick={()=>void select(DEFAULT,'chat')} title="去掉本 Chat 的音色选择">
+                  {data.persona_voice_id?'恢复性格原声':'恢复本 Chat 默认'}</button>
                 <button type="button" className="action-pill voice-act-pill" disabled={!session||!!busy}
                   onClick={()=>void select(DEFAULT,'robot')}>恢复机器人默认</button>
               </div>
@@ -733,6 +741,8 @@ export function VoiceSettings({robotId,session}:{robotId:string;session:Session|
               const isActive=data.active_voice_id===voice.voice_id;
               const isChat=data.chat_voice_id===voice.voice_id;
               const isRobot=data.robot_voice_id===voice.voice_id;
+              const isPersona=data.persona_voice_id===voice.voice_id;
+              const otherModel=data.model&&voice.model!==data.model?data.model:'';
               const isPreviewing=previewId===voice.voice_id;
               return <div key={voice.voice_id} className={`voice-library-row ${isActive?'row-active':''} ${isPreviewing?'row-previewing':''}`}>
                 <div className="voice-row-meta">
@@ -743,6 +753,11 @@ export function VoiceSettings({robotId,session}:{robotId:string;session:Session|
                       {isActive&&<span className="voice-pill-active">生效中</span>}
                       {isChat&&<span className="voice-pill-chat">Chat 专属</span>}
                       {isRobot&&<span className="voice-pill-robot">机器人默认</span>}
+                      {isPersona&&<span className="voice-pill-tag">性格原声</span>}
+                      {data.default_voice_id===voice.voice_id&&<span className="voice-pill-tag">系统默认</span>}
+                      {otherModel&&<span className="voice-pill-tag"
+                        title={`克隆音色只能用创建时的模型合成；系统音色和新克隆用 ${modelName(otherModel)}`}>
+                        {modelName(voice.model)}</span>}
                     </div>
                     <small className="voice-subinfo" title={voice.voice_id}>ID: {voice.voice_id.slice(0,22)}…</small>
                   </div>

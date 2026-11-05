@@ -20,7 +20,11 @@ from annie_adapters.tts import command as tts_command
 from annie_adapters.tts import task_id as new_task_id
 
 MAX_BYTES = 10 * 1024 * 1024
-DEFAULT = "__default__"
+DEFAULT = "__default__"  # no choice of its own: the personality's voice, else the robot-wide one
+SYSTEM = "__system__"  # the configured default voice, even over a personality's own voice
+# 11-05: “换回系统默认” kept the personality's voice; “原来的声音” means that one.
+SYSTEM_NAMES = ("系统默认", "系统音色", "系统声音", "默认音色", "默认声音", "默认")
+OWN_NAMES = ("原来的声音", "原来的音色", "性格原声", "原声")
 VOICE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{4,199}$")
 PRESETS = (
     ("mandarin", "普通话·自然", "你好，我是小安妮。今天来试听一下我的新声音，自然吗？", "请用自然亲切的年轻女性语气表达，不要播音腔。", "zh", 1., 1.),
@@ -335,7 +339,9 @@ class VoiceProfiles:
         return sorted(self.voices.values(), key=lambda row: row["created_ms"], reverse=True)
 
     def match(self, name):
-        if name in {DEFAULT, "默认", "默认音色", "原来的声音", "原声"}:
+        if name in {SYSTEM, *SYSTEM_NAMES}:
+            return SYSTEM
+        if name in {DEFAULT, *OWN_NAMES}:
             return DEFAULT
         matches = [voice_id for voice_id, row in self.voices.items()
                    if name in (voice_id, row["name"])]
@@ -344,8 +350,10 @@ class VoiceProfiles:
         return matches[0]
 
     def label(self, voice_id):
-        return (self.voices[voice_id]["name"] if voice_id in self.voices
-                else "系统默认" if voice_id == self.default_voice else "未知音色")
+        if voice_id in self.voices:
+            return self.voices[voice_id]["name"]
+        return ("系统默认" if voice_id in {SYSTEM, self.default_voice}
+                else "性格原声" if voice_id == DEFAULT else "未知音色")
 
     def resolve_request(self, identity, requested_name, user_text):
         """Resolve user intent, not an arbitrary voice guessed by the LLM.
@@ -354,17 +362,17 @@ class VoiceProfiles:
         one different voice is available. With multiple alternatives the LLM
         must ask; the provider's proposed name is not authorization.
         """
-        defaults = ("默认音色", "原来的声音", "原声", "默认")
-        explicit_default = next((label for label in defaults if label in user_text), None)
+        system = any(word in user_text for word in SYSTEM_NAMES)
+        own = any(word in user_text for word in OWN_NAMES)
         explicit_matches = [
             value for value, row in self.voices.items() if row["name"] in user_text
         ]
-        if explicit_default and explicit_matches:
+        if (system or own) and explicit_matches:
             return None, ["请明确选择默认音色还是克隆音色"]
-        if explicit_default:
-            if requested_name not in (DEFAULT, *defaults):
+        if system or own:
+            if requested_name not in (DEFAULT, SYSTEM, *SYSTEM_NAMES, *OWN_NAMES):
                 raise ValueError("voice choice disagrees with explicitly requested default")
-            return DEFAULT, None
+            return (SYSTEM if system else DEFAULT), None
         if len(explicit_matches) == 1:
             if requested_name not in (explicit_matches[0], self.voices[explicit_matches[0]]["name"]):
                 raise ValueError("voice choice disagrees with user's named voice")
@@ -381,12 +389,12 @@ class VoiceProfiles:
         ):
             return None, [self.label(v["voice_id"]) for v in self.choices()]
         current = self.resolved(identity)
-        alternatives = ([DEFAULT] if current != self.default_voice else [])
-        alternatives.extend(voice_id for voice_id in self.voices if voice_id != current)
+        alternatives = ([SYSTEM] if current != self.default_voice else [])
+        alternatives.extend(voice_id for voice_id in self.voices
+                            if voice_id not in {current, self.default_voice})
         if len(alternatives) == 1:
             return alternatives[0], None
-        return None, [self.label(voice_id) if voice_id != DEFAULT else "系统默认"
-                      for voice_id in alternatives]
+        return None, [self.label(voice_id) for voice_id in alternatives]
 
     def persona_bound(self, identity):
         """The cloned voice the chat's personality is bound to, by name or ID."""
@@ -405,6 +413,8 @@ class VoiceProfiles:
             selected = self.persona_bound(identity)
         if selected is None:
             selected = self.selections.get((robot, "", ""))
+        if selected == SYSTEM:
+            return self.default_voice
         return selected if selected in self.voices else self.default_voice
 
     def snapshot(self, identity):
@@ -425,7 +435,7 @@ class VoiceProfiles:
     async def select(self, identity, voice_id: str, scope="chat"):
         if scope not in {"chat", "robot"}:
             raise ValueError("scope must be chat or robot")
-        if voice_id != DEFAULT and voice_id not in self.voices:
+        if voice_id not in {DEFAULT, SYSTEM} and voice_id not in self.voices:
             raise ValueError("音色不在已克隆列表")
         previous = self.resolved(identity)
         robot = identity["robot_id"]

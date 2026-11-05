@@ -14,6 +14,7 @@ from annie_runtime.voice_profiles import (
     AUTO_PREVIEWS,
     DEFAULT,
     PRESETS,
+    SYSTEM,
     VOICE_ID,
     DashscopeVoiceProvider,
     VoiceCloneError,
@@ -22,6 +23,7 @@ from annie_runtime.voice_profiles import (
     prepare_audio,
 )
 
+from tests.test_decision_model import FakeDecision
 from tests.test_phase7_runtime import ready, result_from_call, runtime
 
 
@@ -239,6 +241,110 @@ def test_realtime_voice_switch_calls_current_chat_and_keeps_tts_task_identity(tm
             other = dict(client.turn_identity)
             other["chat_id"] = "other"
             assert rt.voices.resolved(other) == rt.voices.default_voice
+        finally:
+            await rt.close()
+    asyncio.run(exercise())
+
+
+def test_system_default_beats_the_personality_voice_and_the_original_voice_returns(tmp_path):
+    async def exercise():
+        store = RuntimeStore(tmp_path / "var" / "runtime.db")
+        store.migrate()
+        profiles = VoiceProfiles(store, FakeVoiceProvider(), "original")
+        profiles.bound_voice = lambda _identity: "毒舌女声"
+        identity = {"robot_id": "a", "chat_id": "daily", "persona_id": "annie"}
+        await profiles.start()
+        try:
+            bound = (await profiles.clone("毒舌女声", "voice.wav", wav()))["voice_id"]
+            await profiles.clone("温柔女声", "voice.wav", wav())
+            assert profiles.resolved(identity) == bound
+            assert profiles.resolve_request(identity, "系统默认", "换回系统默认的声音") == (SYSTEM, None)
+            assert (await profiles.select(identity, SYSTEM, "chat"))["voice_name"] == "系统默认"
+            assert profiles.resolved(identity) == "original"
+            assert profiles.snapshot(identity)["chat_voice_id"] == SYSTEM
+            assert profiles.resolve_request(identity, "", "换个声音") == (None, ["毒舌女声", "温柔女声"])
+            assert profiles.resolve_request(identity, "原来的声音", "还是用原来的声音吧") == (DEFAULT, None)
+            await profiles.select(identity, DEFAULT, "chat")
+            assert profiles.resolved(identity) == bound
+            assert profiles.resolve_request(identity, "", "换个声音") == (None, ["系统默认", "温柔女声"])
+            assert profiles.resolve_request(identity, "温柔女声", "系统默认还是温柔女声")[0] is None
+            await profiles.select(identity, SYSTEM, "chat")
+        finally:
+            await profiles.close()
+
+        second = VoiceProfiles(store, FakeVoiceProvider(), "original")
+        second.bound_voice = lambda _identity: "毒舌女声"
+        await second.start()
+        try:
+            assert second.resolved(identity) == "original"
+        finally:
+            await second.close()
+    asyncio.run(exercise())
+
+
+def test_realtime_voice_switch_follows_casual_requests_refusals_and_handed_back_choices(tmp_path):
+    async def exercise():
+        rt = runtime(tmp_path)
+        rt.voices.provider = FakeVoiceProvider()
+        await ready(rt)
+        try:
+            gentle = (await rt.clone_voice("a", "温柔女声", "voice.wav", wav()))["voice_id"]
+            sharp = (await rt.clone_voice("a", "毒舌女声", "voice.wav", wav()))["voice_id"]
+            client = rt.realtime["a"]
+            gentle_call = {"voice_name": "温柔女声", "scope": "chat"}
+
+            client._create_turn("别换声音，这个挺好")
+            refused = (await result_from_call(client, "negated", "select_voice", gentle_call))[0]
+            assert refused["status"] == "rejected" and "问一句" not in refused["instruction"]
+            client._finish("completed")
+
+            client._create_turn("这个声音有点吵")  # no rule places it and no decision model is up
+            asked = (await result_from_call(client, "vague", "select_voice", gentle_call))[0]
+            assert asked["status"] == "rejected" and "问一句" in asked["instruction"]
+            assert set(client._voice_offer["options"]) == {"系统默认", "毒舌女声", "温柔女声"}
+            client._finish("completed")
+
+            client._create_turn("你定吧")
+            picked = (await result_from_call(client, "handed-back", "select_voice", gentle_call))[0]
+            assert picked["status"] == "selected" and picked["effective"] == "this_reply"
+            assert "接下来说的这句已经是「温柔女声」" in picked["instruction"]
+            assert client.speech.voice_provider(client.turn_identity) == gentle
+            assert client._voice_offer is None
+            client._finish("completed")
+
+            client._create_turn("试试毒舌女声")
+            client.speech.turn_id, client.speech.locked_voice = client.turn_id, gentle  # audio already out
+            late = (await result_from_call(client, "late", "select_voice",
+                                           {"voice_name": "毒舌女声", "scope": "chat"}))[0]
+            assert late["status"] == "selected" and late["effective"] == "next_tts_task"
+            assert "下一轮起才是「毒舌女声」" in late["instruction"]
+            assert client.speech.voice_provider(client.turn_identity) == sharp
+            client._finish("completed")
+
+            client._create_turn("不要这个声音了，换成温柔女声")  # turns the current one down, not the switch
+            back = (await result_from_call(client, "not-this-one", "select_voice", gentle_call))[0]
+            assert back["status"] == "selected"
+            assert client.speech.voice_provider(client.turn_identity) == gentle
+        finally:
+            await rt.close()
+    asyncio.run(exercise())
+
+
+def test_decision_model_can_confirm_a_voice_the_words_only_hint_at(tmp_path):
+    async def exercise():
+        rt = runtime(tmp_path)
+        rt.voices.provider = FakeVoiceProvider()
+        await ready(rt)
+        try:
+            gentle = (await rt.clone_voice("a", "温柔女声", "voice.wav", wav()))["voice_id"]
+            client = rt.realtime["a"]
+            client.decision = FakeDecision({"choice": "yes", "confidence": .9})
+            client._create_turn("嗯，温柔一点的那个好听")
+            result = (await result_from_call(client, "hinted", "select_voice",
+                                             {"voice_name": "温柔女声", "scope": "chat"}))[0]
+            assert result["status"] == "selected"
+            assert client.speech.voice_provider(client.turn_identity) == gentle
+            assert len(client.decision.calls) == 1
         finally:
             await rt.close()
     asyncio.run(exercise())

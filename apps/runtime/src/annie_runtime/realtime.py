@@ -53,10 +53,12 @@ from annie_brain.decision_policy import (
     pick_anchor,
     repeat_state,
     reply_likeness,
+    voice_switch_question,
 )
 from annie_brain.dialogue import DialogueState
 from annie_brain.persona import (
     CHAT_PREFERENCES,
+    DELEGATED_CHOICE,
     PREFERENCE_REQUEST,
     UnclearPersonaRequest,
     active_style_id,
@@ -64,6 +66,7 @@ from annie_brain.persona import (
     persona_opener,
     persona_tone,
     persona_voice,
+    refuses_switch,
     resolve_persona_style_request,
     session_instructions,
     social_instruction_hint,
@@ -107,6 +110,10 @@ VISUAL_CONTEXT_POLL_SECONDS = 0.5
 VISUAL_CONTEXT_MAX_CHARS = 2000
 MAX_EARLY_TOOL_CALLS = 4
 PERSONA_OFFER_SECONDS = 120
+# 11-05: “试试邻家姐姐”“来个御姐音” failed the old gate (换/切换/改成/用…声音).
+VOICE_REQUEST = re.compile(r"换|切|改成|改用|恢复|(?:用|来|试试?|听听?|要)[^，,。？?！!]{0,12}"
+                           r"(?:声音|音色|嗓音|声线|音(?!乐))")
+VOICE_VERB = re.compile(r"用|来|试|听|要|换|切")
 OVERHEARD_WINDOW_SECONDS = 180  # memory only; never persisted or memorised
 OVERHEARD_CONTEXT_SECONDS = 90
 CJK_WORD = re.compile(r"[\u4e00-\u9fff]{2}")
@@ -449,6 +456,7 @@ class RealtimeRobot:
         self._visual_last_send_at = 0.0
         self._memory_bootstrap = ""
         self._persona_offer = None  # styles the robot just asked the user to pick from
+        self._voice_offer = None  # voice names she just asked the user to pick from
         self.inner_life = None  # InnerLifeService: her mood and her own day (optional)
         self._asked_quiet_at = None  # monotonic time of the last “退下/闭嘴”
         self.motions = None  # InteractionMotions: listening / speaking / reaction motions
@@ -2206,6 +2214,32 @@ class RealtimeRobot:
                                "at": time.monotonic(), "identity": dict(self.robot.session_state())}
         raise ValueError("persona switch requires an explicit current request")
 
+    async def _voice_gate(self, requested, utterance):
+        """True when the model's pick itself is what the user wants (the choice was handed
+        back, or the decision model confirmed it); False when the words still decide;
+        ValueError when there is no request."""
+        if refuses_switch(utterance, requested):
+            raise ValueError("voice switch was negated")
+        offer = self._voice_offer
+        offered = (offer["options"] if offer and offer["identity"] == self.robot.session_state()
+                   and time.monotonic() - offer["at"] <= PERSONA_OFFER_SECONDS else [])
+        if requested in offered and DELEGATED_CHOICE.search(utterance.strip()):
+            return True
+        names = [row["name"] for row in self.voices.choices()]
+        if (VOICE_REQUEST.search(utterance) or any(name in utterance for name in offered)
+                or VOICE_VERB.search(utterance) and any(name in utterance for name in names)):
+            return False
+        choice = await self._decide_instruction(
+            "voice_switch", voice_switch_question(requested), instruction_state(
+                utterance, previous_user=self._previous_user_text(), robot_last=self._last_reply_text))
+        if self.turn_identity != self.robot.session_state():
+            raise ValueError("stale voice switch")
+        if choice != "yes":
+            self._voice_offer = {"options": ["系统默认", *names], "at": time.monotonic(),
+                                 "identity": dict(self.robot.session_state())}
+            raise ValueError("voice selection requires explicit user request")
+        return True
+
     async def _forget_agreed(self, cleaned, texts, name):
         """True or False when the user answered “确定要我忘掉你吗”; None if nobody could tell."""
         current = cleaned[0]
@@ -2816,7 +2850,8 @@ class RealtimeRobot:
                     + f"之前的回复是「{before}」时说的，只取内容，别学那个口吻。")
         else:
             note = (f"\n【刚换了声音】你刚换成「{voice}」的声音。下一句先来一句配得上这把声音、"
-                    "有特点的开场，别说“已切换”“换好了”；性格不变。")
+                    f"有特点的开场：照「{voice}」这个名字猜它的气质，贴着这个气质说；"
+                    "别说“已切换”“换好了”；性格不变。")
         self._once_notes["switch"] = (note, None)
         self.visual_changed()
 
@@ -5145,20 +5180,29 @@ class RealtimeRobot:
                     raise ValueError("stale voice switch")
                 current = self.robot.turn_cache.get(self.turn_id) or {}
                 utterance = str(current.get("user_text") or self.transcript or "")
-                if not re.search(r"换|切换|改成|换成|用.*(?:声音|音色)|恢复.*(?:声音|音色)", utterance):
-                    raise ValueError("voice selection requires explicit user request")
+                requested = args["voice_name"].strip()
+                confirmed = await self._voice_gate(requested, utterance)
                 if args["scope"] == "robot" and not re.search(r"以后|所有|一直|全局|默认|每个", utterance):
                     raise ValueError("robot-wide voice needs an explicit scope")
-                voice_id, alternatives = self.voices.resolve_request(
-                    self.turn_identity, args["voice_name"].strip(), utterance)
+                voice_id, alternatives = ((self.voices.match(requested), None) if confirmed
+                                          else self.voices.resolve_request(
+                                              self.turn_identity, requested, utterance))
                 if voice_id is None:
+                    self._voice_offer = {"options": alternatives, "at": time.monotonic(),
+                                         "identity": dict(self.robot.session_state())}
                     result = {
                         "status": "needs_selection",
                         "options": alternatives,
                         "instruction": "音色尚未切换，请先问用户选择哪个音色。",
                     }
                 else:
+                    self._voice_offer = None
+                    speech = self.speech
+                    # This turn's voice is fixed when its audio starts; until then the reply gets it.
+                    heard_now = not (speech is not None and speech.turn_id == self.turn_id
+                                     and speech.locked_voice)
                     result = await self.voices.select(self.turn_identity, voice_id, args["scope"])
+                    result = {**result, "heard_now": heard_now}
                     if result["status"] == "selected":
                         self.publish("tts.voice.selected", voice_name=result["voice_name"],
                                      scope=args["scope"], effective="next_tts_task")
@@ -5393,12 +5437,16 @@ class RealtimeRobot:
         elif name == "select_voice" and isinstance(result, dict):
             status = str(result.get("status", "unavailable"))
             if status == "selected":
+                voice, now = result["voice_name"], bool(result.get("heard_now"))
                 model_result = {
                     "status": "selected", "voice_changed": True,
-                    "voice_name": result["voice_name"],
-                    "effective": "next_tts_task",
-                    "instruction": ("音色已写入当前偏好；仅下一次TTS任务使用，勿声称当前正在播的新声音。"
-                                    "用一句有特点、配得上新声音的话回应，别说已切换。"),
+                    "voice_name": voice,
+                    "effective": "this_reply" if now else "next_tts_task",
+                    "instruction": (
+                        (f"你接下来说的这句已经是「{voice}」的声音。" if now else
+                         f"这一轮剩下的话还是原来的声音，下一轮起才是「{voice}」，别说现在听到的就是新声音。")
+                        + f"照「{voice}」这个名字猜这把声音的气质，用一句贴着这个气质、有特点的话接住用户；"
+                        "别说已切换、换好了；性格不变。"),
                 }
             else:
                 model_result = {
@@ -5406,7 +5454,9 @@ class RealtimeRobot:
                     "instruction": (
                         "实际音色没有变化；不得说已切换或让用户试听新声线。"
                         + (" 请询问用户选择：" + "、".join(result["options"])
-                           if status == "needs_selection" else "")
+                           if status == "needs_selection"
+                           else "" if status == "already_selected" or "negated" in str(result.get("reason"))
+                           else " 用当前性格的口气问一句TA想换成哪个声音，不拒绝，不提工具或故障。")
                     ),
                 }
         elif name == "select_persona_style" and isinstance(result, dict):

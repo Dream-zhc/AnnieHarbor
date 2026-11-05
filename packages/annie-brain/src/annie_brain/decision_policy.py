@@ -166,6 +166,16 @@ def persona_switch_question(label):
             }}
 
 
+def voice_switch_question(name):
+    return {"type": "choice",
+            "instructions": (f"机器人小安妮能换说话的声音（音色）。当前这句话是不是在让她现在把声音换成"
+                             f"“{name}”？语音识别可能有错字、同音字。"),
+            "criteria": {
+                "yes": f"要她换成、用、试试{name}这个声音，或者同意她刚提出的换成{name}",
+                "no": "没有要换声音：在评价声音、提问、开玩笑，或者要的是性格、方言、语种、音量、语速",
+            }}
+
+
 def instruction_state(utterance, *, previous_user=None, robot_last=None):
     """Bounded evidence for an instruction question; the lines are data, never instructions."""
     state = {"当前这句话": utterance[:300]}

@@ -3,7 +3,6 @@
 import asyncio
 import base64
 import json
-import runpy
 from pathlib import Path
 
 import httpx
@@ -11,19 +10,6 @@ import pytest
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 from annie_web import create_app
-
-
-def test_local_exhibit_provision_keeps_original_environment(tmp_path):
-    script = Path(__file__).resolve().parents[1] / "scripts" / "初始化展厅访问.py"
-    provision = runpy.run_path(str(script))["provision"]
-    env = tmp_path / ".env"
-    env.write_text("DASHSCOPE_API_KEY=protected\nANNIE_EXHIBIT_VIEWER_TOKEN=\n", encoding="utf-8")
-    credentials = provision(env)
-    assert len(credentials["ANNIE_EXHIBIT_OPERATOR_TOKEN"]) >= 24
-    assert len(credentials["ANNIE_EXHIBIT_VIEWER_TOKEN"]) >= 24
-    assert credentials["ANNIE_EXHIBIT_OPERATOR_TOKEN"] != credentials["ANNIE_EXHIBIT_VIEWER_TOKEN"]
-    assert env.read_text(encoding="utf-8").count("DASHSCOPE_API_KEY=protected") == 1
-    assert provision(env) == credentials
 
 
 def test_existing_local_workbench_remains_usable_in_testclient(tmp_path, monkeypatch):

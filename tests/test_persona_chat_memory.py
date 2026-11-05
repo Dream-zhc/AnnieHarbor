@@ -6,7 +6,7 @@ import time
 
 import pytest
 from annie_adapters import RuntimeStore
-from annie_brain.memory import MemoryService, safe_extracted_scope
+from annie_brain.memory import MemoryService, safe_consolidated_scope
 from annie_brain.persona import session_instructions
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
@@ -14,25 +14,21 @@ from annie_web import create_app
 from fastapi.testclient import TestClient
 
 
-class FakeCloud:
+class FakeChat:
     async def close(self):
         pass
 
-    async def embed(self, _text):
-        return [1., 0.]
-
-    async def extract(self, user, existing):
-        if "别骂" in user:
-            return [{"kind": "chat", "key": "current_tone", "text": "当前聊天不要骂我"}]
-        return []
+    async def complete(self, system, user, *, max_tokens):
+        return '{"ops": []}'
 
 
 def test_temporary_prohibition_is_not_automatically_promoted_to_long_term():
-    assert safe_extracted_scope("persona", "你不能骂我") == "chat"
-    assert safe_extracted_scope("semantic", "不要骂我") == "chat"
-    assert safe_extracted_scope("episodes", "下周有朋友来") == "chat"
-    assert safe_extracted_scope("persona", "我喜欢你") == "persona"
-    assert safe_extracted_scope("semantic", "以后一直不要骂我") == "semantic"
+    assert safe_consolidated_scope("persona", "用户要求小安妮不要骂他") == "chat"
+    assert safe_consolidated_scope("semantic", "用户不喜欢被骂") == "chat"
+    assert safe_consolidated_scope("persona", "用户不希望小安妮毒舌") == "chat"
+    assert safe_consolidated_scope("episodes", "用户说11月10日有朋友来") == "episodes"
+    assert safe_consolidated_scope("persona", "用户喜欢小安妮") == "persona"
+    assert safe_consolidated_scope("semantic", "用户要求以后一直不要骂他") == "semantic"
 
 
 def test_chat_and_long_term_scope_correction_expiry_and_restart(tmp_path):
@@ -40,7 +36,7 @@ def test_chat_and_long_term_scope_correction_expiry_and_restart(tmp_path):
         db = tmp_path / "runtime.db"
         store = RuntimeStore(db)
         store.migrate()
-        memory = MemoryService(store, FakeCloud(), ("a", "b"))
+        memory = MemoryService(store, FakeChat(), ("a", "b"))
         await memory.put("a", "user-role", "persona", "friend", "用户曾说喜欢小安妮")
         await memory.put("a", "user-role", "semantic", "tea", "用户喜欢茶")
         temporary = await memory.chat_put("a", "user-role", "chat-1", "tone", "不要骂我")
@@ -96,7 +92,7 @@ def test_upgrade_from_existing_v6_preserves_long_term_rows(tmp_path):
 
 def test_activation_and_chat_memory_api_are_bound_to_server_session(tmp_path):
     rt = HarborRuntime([RobotConfig("a", room_id="roomv2", fake_delay_ms=0)],
-                       tmp_path / "live.db", memory_model=FakeCloud(),
+                       tmp_path / "live.db", memory_chat=FakeChat(),
                        persona_profiles={"annie": {"label": "自然", "style": "自然说话"},
                                          "annie-lively": {"label": "活泼", "style": "俏皮说话"}})
     with TestClient(create_app(rt, tmp_path)) as client:

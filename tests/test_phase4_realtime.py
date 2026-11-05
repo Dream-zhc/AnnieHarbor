@@ -428,6 +428,43 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(event["type"] == "response.create"
                              for event in client.socket.outbound))
 
+    async def test_turns_leaving_the_provider_window_fold_into_the_recap(self):
+        class Memory:
+            idle_ms = 120_000
+
+            def __init__(self):
+                self.folds = []
+
+            async def bootstrap(self, *_args):
+                return ""
+
+            async def recap(self, _robot, previous, turns):
+                self.folds.append((previous, list(turns)))
+                return f"前情{len(turns)}轮"
+
+            def end_recap(self, _robot):
+                pass
+
+        client = self.runtime.realtime["annie-a"]
+        client.memory = memory = Memory()
+        client.history_turns, client.history_turns_confirmed = 2, None
+        gen = client.robot.generation
+        for number in range(4):
+            await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                                 "transcript": f"第{number}句"}, gen)
+            await client.handle({"type": "response.text.delta", "delta": f"回{number}"}, gen)
+            await client.handle({"type": "response.done", "response": {"status": "completed"}}, gen)
+        for _ in range(100):
+            if client._recap_text:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(memory.folds, [("", [("第0句", "回0"), ("第1句", "回1")])])
+        self.assertEqual(client._recap_turns, [("第2句", "回2"), ("第3句", "回3")])
+        self.assertIn("前情2轮", client._recap_hint())
+        self.assertIn("前情2轮", client._combined_instructions(""))
+        client._recap_last_t -= 1000  # a long pause ends this conversation's recap
+        self.assertEqual(client._recap_hint(), "")
+
     async def test_native_asr_final_does_not_cancel_its_own_early_response(self):
         client = self.runtime.realtime["annie-a"]
         gen = client.robot.generation

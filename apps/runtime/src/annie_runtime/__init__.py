@@ -900,10 +900,10 @@ class HarborRuntime:
         tts_max_chars: int = 48,
         memory_key: str | None = None,
         memory_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        memory_extract_model: str = "qwen3.8-flash",
-        memory_embedding_model: str = "text-embedding-v4",
-        memory_embedding_dimensions: int = 256,
-        memory_model=None,
+        memory_chat_model: str = "qwen3.8-flash",
+        memory_idle_seconds: float = 120,
+        memory_max_turns: int = 24,
+        memory_chat=None,
         action_catalog: Path | None = None,
         actions_enabled: bool = False,
         action_allowlist: tuple[str, ...] = (),
@@ -999,19 +999,20 @@ class HarborRuntime:
         self.recorder = Recorder(self.store.write_batch)
         self.process_probe = ProcessProbe()
         self.ledger = ConversationLedgerWriter(self.store)
-        if memory_key or memory_model:
-            from annie_brain.memory import CloudMemoryModel, MemoryService
+        self.memory = None
+        if memory_key or memory_chat:
+            from annie_adapters.diary_summary import DiarySummarizer
+            from annie_brain.memory import MemoryService
 
-        self.memory = (
-            MemoryService(
+            self.memory = MemoryService(
                 self.store,
-                memory_model or CloudMemoryModel(
-                    memory_key, memory_base_url, memory_extract_model,
-                    memory_embedding_model, memory_embedding_dimensions,
+                memory_chat or DiarySummarizer(
+                    memory_key, model=memory_chat_model, base_url=memory_base_url,
+                    timeout_ms=15000,
                 ),
                 [c.robot_id for c in configs if c.enabled],
-            ) if memory_key or memory_model else None
-        )
+                idle_seconds=memory_idle_seconds, max_turns=memory_max_turns,
+            )
         self.conversation_history_turns = conversation_history_turns
         self.persona_profiles = dict(persona_profiles or {})
         self.robots = {
@@ -2549,6 +2550,22 @@ class HarborRuntime:
             raise RobotUnavailableError("robot memory not enabled")
         return await self.memory.change(robot_id, persona_id, ident, version, text)
 
+    async def memory_restore(self, robot_id, persona_id, ident, version):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return await self.memory.restore(robot_id, persona_id, ident, version)
+
+    def memory_insight(self, robot_id):
+        """Recent recalls, consolidation runs and the recap, for the workbench."""
+        if self.memory is None:
+            return {"status": "not_configured"}
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return {"status": "degraded" if robot_id in self.memory.errors else "ready",
+                **self.memory.insight(robot_id)}
+
     async def chat_memory_list(self, robot_id, include_deleted=False):
         if self.memory is None:
             return {"status": "not_configured", "memories": []}
@@ -2776,9 +2793,9 @@ class HarborRuntime:
                 "configured": self.memory is not None,
                 "running": bool(self.memory and self.memory.running),
                 "errors": dict(self.memory.errors) if self.memory else {},
-                "backend": "sqlite_vec_versioned",
-                "extraction": "langmem_alibaba_cloud" if self.memory else "not_configured",
-                "recall": "on_demand_only",
+                "backend": "sqlite_versioned",
+                "extraction": "consolidate_after_conversation" if self.memory else "not_configured",
+                "recall": "local_bm25_every_turn",
             },
             "actions": {
                 "configured": self.actions is not None,

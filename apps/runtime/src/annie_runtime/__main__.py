@@ -239,6 +239,22 @@ def inner_life_options(inner_life: dict, llm: dict, environ) -> dict:
     }
 
 
+def memory_options(memory: dict, provider: dict, llm: dict, environ) -> dict:
+    """HarborRuntime kwargs for long-term memory: runtime_defaults [memory] and .env.
+
+    ANNIE_MEMORY_ENABLED=0 turns it off. Recall is local; the model only
+    consolidates conversations that went quiet and folds the recap.
+    """
+    enabled = environ.get("ANNIE_MEMORY_ENABLED", "1") != "0"
+    return {
+        "memory_key": (environ.get("DASHSCOPE_API_KEY") or None) if enabled else None,
+        "memory_base_url": environ.get("ANNIE_MEMORY_BASE_URL", llm["base_url"]),
+        "memory_chat_model": provider.get("model", "qwen3.8-flash"),
+        "memory_idle_seconds": float(memory.get("consolidate_idle_seconds", 120)),
+        "memory_max_turns": int(memory.get("consolidate_max_turns", 24)),
+    }
+
+
 def livekit_room_env(robot_id):
     """The .env key naming a robot's LiveKit room."""
     return "ANNIE_EXHIBIT_LIVEKIT_ROOM_" + "".join(
@@ -415,16 +431,8 @@ def main():
         tts_first_chars=provider_defaults["tts"]["first_min_chars"],
         tts_min_chars=provider_defaults["tts"]["sentence_min_chars"],
         tts_max_chars=provider_defaults["tts"]["sentence_max_chars"],
-        memory_key=(
-            os.environ.get("DASHSCOPE_API_KEY") or None
-            if os.environ.get("ANNIE_MEMORY_ENABLED", "1") != "0" else None
-        ),
-        memory_base_url=os.environ.get(
-            "ANNIE_MEMORY_BASE_URL", provider_defaults["llm"]["base_url"],
-        ),
-        memory_extract_model=provider_defaults["memory"]["extract_model"],
-        memory_embedding_model=provider_defaults["memory"]["embedding_model"],
-        memory_embedding_dimensions=provider_defaults["memory"]["embedding_dimensions"],
+        **memory_options(runtime_defaults.get("memory", {}), provider_defaults.get("memory", {}),
+                         provider_defaults["llm"], os.environ),
         action_catalog=root / "config/action_scripts.json",
         idle_model=idle_model,
         continuation_enabled=continuation_enabled,

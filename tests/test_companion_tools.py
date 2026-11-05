@@ -18,12 +18,9 @@ def async_test(function):
     return run
 
 
-class Cloud:
-    async def embed(self, text):
-        return [1., 0.]
-
-    async def extract(self, text, existing):
-        return []
+class Chat:
+    async def complete(self, system, user, *, max_tokens):
+        return '{"ops": []}'
 
     async def close(self):
         pass
@@ -51,7 +48,7 @@ def make_runtime(tmp_path, *, memory=False):
         [RobotConfig("a", room_id="roomv2"), RobotConfig("b", room_id="roomv3")],
         tmp_path / "runtime.db", realtime_key="fake",
         realtime_socket_factory=FakeSocket,
-        memory_model=Cloud() if memory else None,
+        memory_chat=Chat() if memory else None,
     )
 
 
@@ -249,17 +246,12 @@ async def test_queued_unowned_tool_is_not_authorized_by_later_turn(tmp_path):
 
 
 @async_test
-async def test_memory_correction_refreshes_without_cloud_index_delay(tmp_path, monkeypatch):
+async def test_memory_correction_refreshes_instructions_at_once(tmp_path):
     rt = make_runtime(tmp_path, memory=True)
     rt.store.migrate()
     ident, version = await rt.memory.put("a", "annie", "semantic", "drink", "用户喜欢茶")
     await ready(rt)
     c = rt.realtime["a"]
-    async def slow_embed(text):
-        await asyncio.sleep(2)
-        return [1., 0.]
-    monkeypatch.setattr(rt.memory.model, "embed", slow_embed)
-    monkeypatch.setattr("annie_brain.memory.MEMORY_REINDEX_DEADLINE_SEC", .03)
     try:
         started = time.monotonic()
         result = await rt.memory_change("a", "annie", ident, version, "用户喜欢咖啡")
@@ -267,7 +259,6 @@ async def test_memory_correction_refreshes_without_cloud_index_delay(tmp_path, m
         assert result["status"] == "active"
         await wait_until(lambda: "用户喜欢咖啡" in c._combined_instructions(c._fresh_visual()))
         assert "用户喜欢茶" not in c._combined_instructions(c._fresh_visual())
-        assert (await rt.memory.list("a", "annie"))[0]["index_state"] == "failed"
     finally:
         await asyncio.wait_for(rt.close(), 3)
 

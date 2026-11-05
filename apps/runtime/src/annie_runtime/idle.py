@@ -250,15 +250,12 @@ class ShortContinuation:
                     self.runtime.memory is not None):
                 facts = await self.runtime.memory.list(
                     robot_id, identity["persona_id"])
-                plans = [item for item in facts
-                         if item.get("kind") == "episodes" and
-                         item.get("fact_key") == "ongoing_plan_car_viewing" and
-                         item.get("source_valid", True) and
-                         item.get("source_created_ms", 0) >=
-                         time.time_ns() // 1_000_000 - 30 * 86_400_000 and
-                         "进展尚未确认" in item["text"]]
-                if plans:
-                    recent_plan = plans[0]["text"][:100]
+                recent = [item for item in facts
+                          if item.get("kind") == "episodes" and not item.get("faded") and
+                          item.get("source_created_ms", 0) >=
+                          time.time_ns() // 1_000_000 - 30 * 86_400_000]
+                if recent:
+                    recent_plan = max(recent, key=lambda item: item.get("importance", .5))["text"][:100]
             inner = getattr(self.runtime, "inner_life", None)
             result = await asyncio.wait_for(self.graph.ainvoke({
                 "mode": "continuation", "user_text": row["user_text"],

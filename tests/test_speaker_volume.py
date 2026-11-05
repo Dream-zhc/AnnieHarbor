@@ -178,14 +178,13 @@ def test_proactive_lines_are_not_repeated_after_the_user_talks():
 
 
 def test_what_the_user_calls_annie_is_not_remembered_as_their_name():
-    from annie_brain.memory import is_meta_memory, prepare_extracted_fact
+    from annie_brain.memory import is_meta_memory, prepare_consolidated_fact
 
     # From the 10/14 chat: "那行，小bug，我把这勾勾改一改就行了。"
     for text in ("用户称呼当前AI角色为“小bug”。", "用户称呼当前AI角色为“小安妮”。",
                  "用户叫助手小bug。", "用户管机器人叫小bug。"):
         assert is_meta_memory("user_call_ai_xiaobug", text), text
-        assert prepare_extracted_fact({"kind": "persona", "key": "user_call_ai",
-                                       "text": text}, "那行，小bug，我改一改") is None
+        assert prepare_consolidated_fact("persona", text) is None
     # 10/21: a visitor's name is not a robot-wide fact either (the camera names people).
     assert is_meta_memory("user_name", "用户叫张三。")
     assert not is_meta_memory("user_drink", "用户喜欢喝咖啡。")

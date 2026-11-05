@@ -1,63 +1,62 @@
-"""Cross-Chat user-utterance recall must reach the actual Realtime session."""
+"""A consolidated fact about the visitor must reach the actual Realtime session in another Chat."""
 
 import asyncio
-import time
+import json
 
 from annie_adapters import RuntimeStore
-from annie_brain.memory import MemoryService, prepare_extracted_fact
+from annie_brain import memory as memory_module
+from annie_brain.memory import BOOTSTRAP_BYTES, BOOTSTRAP_HEADER, MemoryService, prepare_consolidated_fact
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 
 from tests.test_phase4_realtime import FakeSocket
 
+VISIT = "用户说11月12日有朋友来找他"
+CANCELLED = "用户说朋友不来找他了"
 
-class FakeCloud:
+
+class Chat:
+    def __init__(self, plan=None):
+        self.plan = plan or (lambda payload, alias_of: [])
+
     async def close(self):
         pass
 
-    async def embed(self, _text):
-        return [1.0, 0.0]
-
-    async def extract(self, _text, _existing):
-        return []
-
-
-def add_turn(store, ident, text, persona="annie-lively", chat="测试", age_days=0):
-    now = time.time_ns() // 1_000_000 - age_days * 86_400_000
-    store.create_conversation_turn({
-        "turn_id": ident, "robot_id": "a", "room_id": "roomv2",
-        "chat_id": chat, "persona_id": persona, "persona_revision": 1,
-        "session_epoch": 1, "generation": 1, "user_text": text,
-        "status": "running", "created_ms": now, "updated_ms": now,
-    })
-    store.finish_conversation_turn("a", ident, status="completed", updated_ms=now + 1)
+    async def complete(self, _system, user, *, max_tokens):
+        payload = json.loads(user)
+        if "滑出的对话" in payload:
+            return json.dumps({"recap": ""})
+        alias_of = {item["内容"]: item["编号"] for item in payload["已经记得的事"]}
+        return json.dumps({"ops": self.plan(payload, alias_of)}, ensure_ascii=False)
 
 
-def test_realtime_recovers_visitor_utterance_from_other_chat_without_cloud(tmp_path):
+def visit_plan(payload, alias_of):
+    if "不来" in payload["对话"][-1]["用户"]:
+        return [{"op": "outdated", "id": alias_of[VISIT], "kind": "episodes", "text": CANCELLED}]
+    return [{"op": "add", "kind": "episodes", "text": VISIT, "importance": 0.7}]
+
+
+async def consolidate(memory, said, *, chat="测试", persona="annie-lively"):
+    now = memory_module.now_ms()
+    await memory._consolidate("a", persona, chat, [(now, said, "好呀")],
+                              {"turn_id": f"t{now}", "created_ms": now})
+    return [item["result"] for item in memory.consolidations["a"][0]["results"]]
+
+
+def test_consolidated_visit_reaches_the_realtime_session_of_another_chat(tmp_path):
     async def run():
         database = tmp_path / "runtime.db"
         store = RuntimeStore(database)
         store.migrate()
-        add_turn(store, "friend", "下周我朋友来找我")
-        add_turn(store, "hello", "你好呀")
-        add_turn(store, "question", "下周有人找我吗", chat="测试 a")
-        # Legacy model claims must not contaminate answers when sourced to hello.
-        memory = MemoryService(store, FakeCloud(), ("a",))
-        await memory.put("a", "annie-lively", "episodes", "fake_visit",
-                         "用户提到下周有朋友来找他。", source_turn_id="hello")
-        legacy = await memory.list("a", "annie-lively")
-        assert legacy[0]["source_valid"] is False
-        assert (await memory.recall("a", "annie-lively", "下周朋友"))["evidence"] == []
-        assert prepare_extracted_fact({
-            "kind": "episodes", "key": "fabricated",
-            "text": "用户提到下周有朋友来找他。",
-        }, "你好呀") is None
+        memory = MemoryService(store, Chat(visit_plan), ("a",))
+        assert await consolidate(memory, "下周三我朋友来找我") == ["added"]
+        await memory.close()
 
         FakeSocket.instances.clear()
         rt = HarborRuntime(
             [RobotConfig("a", room_id="roomv2", fake_delay_ms=0)],
             database, realtime_key="fake", realtime_socket_factory=FakeSocket,
-            memory_model=FakeCloud(),
+            memory_chat=Chat(),
         )
         await rt.start()
         try:
@@ -71,10 +70,8 @@ def test_realtime_recovers_visitor_utterance_from_other_chat_without_cloud(tmp_p
                        if e["type"] == "session.update"]
             assert len(updates) == 1
             instructions = updates[0]["session"]["instructions"]
-            assert "下周我朋友来找我" in instructions
-            assert "UTC" in instructions
-            assert "用户提到下周有朋友来找他" not in instructions
-            assert "相对日期相对于原话时间" in instructions
+            assert VISIT in instructions
+            assert BOOTSTRAP_HEADER.strip() in instructions
             assert "recall_memory" in [t["function"]["name"]
                                        for t in updates[0]["session"]["tools"]]
             assert await rt.memory.bootstrap("a", "other-persona", "测试 a") == ""
@@ -84,38 +81,43 @@ def test_realtime_recovers_visitor_utterance_from_other_chat_without_cloud(tmp_p
     asyncio.run(run())
 
 
-def test_historical_visit_is_bounded_and_not_invented_from_questions(tmp_path):
+def test_bootstrap_is_bounded_scoped_to_the_persona_and_skips_questions(tmp_path):
     async def run():
         store = RuntimeStore(tmp_path / "runtime.db")
         store.migrate()
-        add_turn(store, "question", "下周有人找我吗")
-        add_turn(store, "hypothetical", "如果下周朋友来找我怎么办")
-        add_turn(store, "cancelled", "下周朋友不来找我了")
-        add_turn(store, "old", "下周我朋友来找我", age_days=22)
-        memory = MemoryService(store, FakeCloud(), ("a",))
-        assert await memory.bootstrap("a", "annie-lively", "测试 a") == ""
-        add_turn(store, "current", "下周我朋友来找我", chat="测试 a")
-        assert "下周我朋友来找我" in await memory.bootstrap("a", "annie-lively", "测试 a")
-        add_turn(store, "other-role", "明天我朋友来找我", persona="other")
-        assert "明天我朋友来找我" not in await memory.bootstrap("a", "annie-lively", "测试 a")
+        memory = MemoryService(store, Chat(), ("a",))
+        for text in ("用户询问下周有没有人找他", "用户问过如果下周朋友来找他怎么办"):
+            assert prepare_consolidated_fact("episodes", text) is None, text
+        for number in range(40):
+            await memory.put("a", "annie-lively", "episodes", f"trip_{number}",
+                             f"用户去过第{number}个城市旅行，玩得很开心")
+        await memory.put("a", "other", "episodes", "hike", "用户和朋友约好去爬山")
+        opening = await memory.bootstrap("a", "annie-lively", "测试 a")
+        assert len(opening.encode()) <= len(BOOTSTRAP_HEADER.encode()) + BOOTSTRAP_BYTES
+        assert 0 < opening.count("旅行") <= memory_module.BOOTSTRAP_LONG_FACTS
+        assert "爬山" not in opening
         await memory.close()
 
     asyncio.run(run())
 
 
-def test_newer_correction_or_forget_defeats_raw_cross_chat_evidence(tmp_path):
+def test_cancellation_or_forget_takes_the_plan_out_of_the_session(tmp_path):
     async def run():
         store = RuntimeStore(tmp_path / "runtime.db")
         store.migrate()
-        add_turn(store, "friend", "下周我朋友来找我")
-        memory = MemoryService(store, FakeCloud(), ("a",))
-        assert "下周我朋友来找我" in await memory.bootstrap("a", "annie-lively", "new")
-        add_turn(store, "cancel", "下周朋友不来找我了", chat="new")
-        assert await memory.bootstrap("a", "annie-lively", "new") == ""
-        add_turn(store, "again", "下周我朋友来找我", chat="new")
-        assert "下周我朋友来找我" in await memory.bootstrap("a", "annie-lively", "new")
-        add_turn(store, "forget", "忘记下周朋友来找我的事", chat="new")
-        assert await memory.bootstrap("a", "annie-lively", "new") == ""
+        memory = MemoryService(store, Chat(visit_plan), ("a",))
+        assert await consolidate(memory, "下周三我朋友来找我") == ["added"]
+        assert VISIT in await memory.bootstrap("a", "annie-lively", "new")
+        assert await consolidate(memory, "下周三朋友不来找我了", chat="new") == ["outdated"]
+        opening = await memory.bootstrap("a", "annie-lively", "new")
+        assert VISIT not in opening and CANCELLED in opening
+
+        assert await consolidate(memory, "下周三我朋友来找我", persona="annie-calm") == ["added"]
+        row = (await memory.list("a", "annie-calm"))[0]
+        await memory.change("a", "annie-calm", row["id"], row["version"])
+        assert VISIT not in await memory.bootstrap("a", "annie-calm", "new")
+        assert await consolidate(memory, "下周三我朋友来找我", persona="annie-calm") == ["blocked"]
+        assert VISIT not in await memory.bootstrap("a", "annie-calm", "new")
         await memory.close()
 
     asyncio.run(run())

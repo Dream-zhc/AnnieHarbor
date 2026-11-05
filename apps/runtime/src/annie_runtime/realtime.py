@@ -72,6 +72,7 @@ from annie_brain.persona import (
     social_instruction_hint,
     style_named,
 )
+from annie_brain.recap import recap_hint
 from annie_core import RobotUnavailableError
 from annie_core.speech_style import apply_persona_tone
 
@@ -100,6 +101,8 @@ logger = logging.getLogger(__name__)
 AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
 IDLE_SESSION_GAP_SECONDS = 15 * 60
 IDLE_RECV_CHECK_SECONDS = 30
+# Fold turns into the recap two at a time once they leave the provider's window.
+RECAP_FOLD_TURNS = 2
 # Qwen closes a session after 180 s without a reply or input (every 3 min on
 # 10-22). That is routine: reconnect at once instead of after the 1 s backoff,
 # which with the handshake left the microphone deaf for about 1.3 s each time.
@@ -457,6 +460,17 @@ class RealtimeRobot:
         self._visual_confirmed_seq = 0
         self._visual_last_send_at = 0.0
         self._memory_bootstrap = ""
+        self._memory_recall = ""  # old facts the user's latest words pointed at
+        self._recall_key = None
+        self._recall_said = ""
+        self._recall_task = None
+        # Turns that slid out of the provider's window, folded into a few sentences.
+        self._recap_text = ""
+        self._recap_turns = []
+        self._recap_key = None
+        self._recap_epoch = 0
+        self._recap_last_t = 0.0
+        self._recap_task = None
         self._persona_offer = None  # styles the robot just asked the user to pick from
         self._voice_offer = None  # voice names she just asked the user to pick from
         self.inner_life = None  # InnerLifeService: her mood and her own day (optional)
@@ -1307,7 +1321,8 @@ class RealtimeRobot:
         social = {key: value for key, value in self.social_state.items()
                   if value.get("generation", self.robot.generation) == self.robot.generation}
         return visual_instructions(
-            self._visual_base_instructions + self._memory_bootstrap + self._clock_text
+            self._visual_base_instructions + self._memory_bootstrap + self._memory_recall
+            + self._recap_hint() + self._clock_text
             + (self.inner_life.hint(self.robot.config.robot_id) if self.inner_life else "")
             + (WAKE_ADDRESS_INSTRUCTIONS if self.wake else "")
             + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now)
@@ -2049,6 +2064,8 @@ class RealtimeRobot:
             return
         self._memory_revision += 1
         self._memory_bootstrap = ""
+        self._memory_recall = ""
+        self._recall_key = None
         self._memory_expires_at_ms = None
         if not self.ready:
             return  # handshake reconciles this revision before admitting PCM
@@ -2089,12 +2106,105 @@ class RealtimeRobot:
             self._memory_task = None
 
     async def _stop_memory_task(self):
-        task, self._memory_task = self._memory_task, None
-        if task is not None:
+        tasks = [task for task in (self._memory_task, self._recall_task) if task is not None]
+        self._memory_task = self._recall_task = None
+        for task in tasks:
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
         self._memory_bootstrap = ""
+        self._memory_recall = ""
+        self._recall_key = None
         self._memory_expires_at_ms = None
+
+    def _recall_soon(self, turn_id, text):
+        """Look the user's words up in memory; the hits ride along with the next reply."""
+        text = (text or "").strip()
+        if (not hasattr(self.memory, "recall_hint") or not text or self._stopping
+                or (turn_id, text) == self._recall_key):
+            return
+        previous = " ".join(part for part in (self._recall_said, self._last_reply_text) if part)
+        self._recall_key, self._recall_said = (turn_id, text), text
+        if self._recall_task is not None:
+            self._recall_task.cancel()
+        self._recall_task = asyncio.create_task(
+            self._recall(self.robot.session_state(), text, previous),
+            name=f"memory-recall:{self.robot.config.robot_id}",
+        )
+
+    async def _recall(self, identity, text, previous):
+        try:
+            async with asyncio.timeout(2):
+                hint = await self.memory.recall_hint(
+                    self.robot.config.robot_id, identity["persona_id"], text, previous)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("memory.recall.failed", reason=type(exc).__name__)
+            return
+        finally:
+            if self._recall_task is asyncio.current_task():
+                self._recall_task = None
+        if self._stopping or identity != self.robot.session_state() or hint == self._memory_recall:
+            return
+        self._memory_recall = hint
+        self.visual_changed()
+        if hint:
+            self.publish("memory.recalled", chars=len(hint))
+
+    def _recap_gap(self):
+        return getattr(self.memory, "idle_ms", 120_000) / 1000
+
+    def _recap_hint(self):
+        identity = self.robot.session_state()
+        if (not self._recap_text
+                or self._recap_key != (identity.get("persona_id"), identity.get("chat_id"))
+                or time.monotonic() - self._recap_last_t > self._recap_gap()):
+            return ""
+        return recap_hint(self._recap_text)
+
+    def _reset_recap(self, key):
+        if self._recap_task is not None:
+            self._recap_task.cancel()
+            self._recap_task = None
+        self._recap_text, self._recap_turns, self._recap_key = "", [], key
+        self._recap_epoch += 1
+        if hasattr(self.memory, "end_recap"):
+            self.memory.end_recap(self.robot.config.robot_id)
+
+    def _recap_turn(self, identity, turn, reply_text):
+        """A finished turn of this conversation; turns that left the provider's window get folded."""
+        if not hasattr(self.memory, "recap"):
+            return
+        now = time.monotonic()
+        key = (identity.get("persona_id"), identity.get("chat_id"))
+        if key != self._recap_key or now - self._recap_last_t > self._recap_gap():
+            self._reset_recap(key)
+        self._recap_last_t = now
+        # An idle or external prompt rides in user_text but is not the user's words.
+        said = (turn.get("user_text") or "") if turn.get("turn_source") == "user" else ""
+        self._recap_turns.append((said, reply_text))
+        outside = len(self._recap_turns) - (self.history_turns_confirmed or self.history_turns)
+        if outside >= RECAP_FOLD_TURNS and (self._recap_task is None or self._recap_task.done()):
+            self._recap_task = asyncio.create_task(
+                self._fold_recap(self._recap_epoch, self._recap_turns[:outside]),
+                name=f"memory-recap:{self.robot.config.robot_id}",
+            )
+
+    async def _fold_recap(self, epoch, turns):
+        try:
+            async with asyncio.timeout(20):
+                text = await self.memory.recap(self.robot.config.robot_id, self._recap_text, turns)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("memory.recap.failed", reason=type(exc).__name__)
+            return  # the turns stay queued; the next finished turn tries again
+        if epoch != self._recap_epoch or self._stopping:
+            return
+        del self._recap_turns[:len(turns)]
+        self._recap_text = text
+        self.visual_changed()
+        self.publish("memory.recap.changed", chars=len(text), folded=len(turns))
 
     def _queue_tool_call(self, event):
         call_id = event.get("call_id")
@@ -3090,6 +3200,7 @@ class RealtimeRobot:
         self._wake_candidate_pending = False
         await self._cancel_tools()
         await self._stop_memory_task()
+        self._reset_recap(None)
         await self._stop_visual_task()
         self.dialogue = DialogueState()
         self._dialogue_sent_hint = self._dialogue_confirmed_hint = ""
@@ -3319,10 +3430,10 @@ class RealtimeRobot:
                     self._memory_bootstrap = memory_bootstrap
                     self._memory_expires_at_ms = memory_snapshot["expires_at_ms"]
                     tail += (
-                        "\n仅当用户询问此前的偏好/经历而当前对话无证据时，"
-                        "调用recall_memory；无结果、超时或检索故障时不要编造。"
-                        "记忆事实是可更正证据，用户当前更正优先。"
-                        "用户明确要求忘记长期记忆时，先recall_memory拿到准确ID/版本，"
+                        "\n和话题相关的旧事会自动出现在【你记得的相关旧事】里；"
+                        "用户问起以前的事而这里和对话里都没有时，再用recall_memory按关键词查；"
+                        "查不到就说不记得，不要编造。记忆是可更正的旧证据，用户当前的说法优先。"
+                        "用户明确要求忘记某件事时，先recall_memory拿到准确ID/版本，"
                         "再forget_memory；明确改口时可先查再correct_memory。"
                         "不猜ID、不删除原始对话，也不自行替用户清理未明确要求的事实。"
                     )
@@ -3919,6 +4030,7 @@ class RealtimeRobot:
             changed = self.dialogue.observe_user(turn_id, user_text)
             if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                 self._dialogue_changed()
+            self._recall_soon(turn_id, user_text)
         self.began = time.perf_counter()
         logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d "
                     "input_lost_frames=%s asr_text_ms=%s deltas=%s",
@@ -3972,6 +4084,7 @@ class RealtimeRobot:
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
             self._after_reply(turn, earlier)
+            self._recap_turn(self.turn_identity, turn, self.text)
             if self.inner_life is not None and turn.get("turn_source") == "user":
                 self.inner_life.on_turn(
                     self.robot.config.robot_id, chat_id=self.turn_identity.get("chat_id"),
@@ -3988,6 +4101,7 @@ class RealtimeRobot:
                 # The confirmed user spoke; the cancelled assistant did not
                 # necessarily speak. Keep the user input but no assistant text.
                 self.robot._cache_context_turn(turn, allow_generated=False)
+                self._recap_turn(self.turn_identity, turn, "")
             self.robot.snapshot.cancelled += 1
         elif status != "discarded":
             self.robot.snapshot.failures += 1
@@ -4940,6 +5054,7 @@ class RealtimeRobot:
                 changed = self.dialogue.observe_user(target, self.transcript)
                 if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                     self._dialogue_changed()
+                self._recall_soon(target, self.transcript)
             if item_id and target:
                 self.audio_item_turns[item_id] = target
                 if len(self.audio_item_turns) > 128:

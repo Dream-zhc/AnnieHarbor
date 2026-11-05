@@ -1737,8 +1737,16 @@ class RealtimeRobot:
         if hold["recovered"]:
             await self._answer_recovered_call(turn_id, hold["item_id"], question)
             return
+        asked = {"event_id": "annie_looked_" + uuid4().hex, "turn_id": turn_id, "text": question,
+                 "at": time.monotonic()}
+        if self.speech_active and self.speech_started_count != hold["speech_count"]:
+            # The provider refuses response.create while the user is still speaking.
+            self._carry_refused_answer(asked)
+            return
+        self._recovered_create = asked
         self.publish("llm.request_started", turn_id=turn_id)
-        await socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
+        await socket.send({"type": "response.create", "event_id": asked["event_id"],
+                           "response": {"modalities": ["text"]}})
 
     def _stage_filter(self, text, *, final=False):
         """Stage directions like 【眨眼】 are never spoken or shown."""

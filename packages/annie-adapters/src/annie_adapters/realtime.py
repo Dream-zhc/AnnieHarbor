@@ -143,13 +143,15 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "type": "function",
             "function": {
                 "name": "recall_memory",
-                "description": "Look up confirmed long-term user preferences or experiences ONLY when "
-                               "the answer is not already in this conversation. If it returns no "
-                               "evidence, say you don't remember instead of inventing one.",
+                "description": "Search long-term memories about the user ONLY when the answer is "
+                               "neither in this conversation nor in the memories already shown. "
+                               "If it returns no evidence, say you don't remember instead of "
+                               "inventing one.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Short relevant memory query"},
+                        "query": {"type": "string", "description": "Key words the user would have "
+                                  "said, e.g. 吃辣 面试; matching is by words, not meaning"},
                     },
                     "required": ["query"],
                 },

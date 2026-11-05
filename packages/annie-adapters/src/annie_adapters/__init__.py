@@ -751,6 +751,21 @@ class RuntimeStore:
                 GROUP BY robot_id,persona_id""")
             db.execute("""CREATE INDEX IF NOT EXISTS memory_scope_idx
                 ON long_term_memories(robot_id, persona_id, status)""")
+            # Forgetting curve and consolidation (annie_brain.memory); additive,
+            # so user_version stays unchanged and older builds still open the file.
+            memory_columns = {
+                column[1] for column in db.execute("PRAGMA table_info(long_term_memories)")
+            }
+            for name, ddl in (("importance", "REAL NOT NULL DEFAULT 0.5"),
+                              ("hits", "INTEGER NOT NULL DEFAULT 0"),
+                              ("hit_days", "INTEGER NOT NULL DEFAULT 0"),
+                              ("last_hit_ms", "INTEGER"),
+                              ("superseded_by", "TEXT"),
+                              ("origin", "TEXT NOT NULL DEFAULT ''")):
+                if name not in memory_columns:
+                    db.execute(f"ALTER TABLE long_term_memories ADD COLUMN {name} {ddl}")
+            db.execute("""UPDATE long_term_memories SET origin=CASE
+                WHEN source_turn_id IS NULL THEN 'manual' ELSE 'auto' END WHERE origin=''""")
             db.execute("""CREATE TABLE IF NOT EXISTS chat_memories (
                 id TEXT PRIMARY KEY, robot_id TEXT NOT NULL,
                 persona_id TEXT NOT NULL, chat_id TEXT NOT NULL,

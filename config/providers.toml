@@ -72,11 +72,10 @@ timeout_sec = 4.0
 model = "qwen3.8-flash"
 timeout_ms = 8000
 
-# 后台长期记忆：只在有效用户回合结束后抽取，不阻塞Realtime。
+# 长期记忆：一段对话安静下来后整理记忆（新增/合并/标记过时），以及把滑出窗口的几轮压成前情。
+# 都不在回复链路上；每句话的召回在本地做，不调模型，也不再用向量（2026-11-03 改版）。
 [memory]
-extract_model = "qwen3.8-flash"
-embedding_model = "text-embedding-v4"
-embedding_dimensions = 256
+model = "qwen3.8-flash"
 
 [tts]
 provider = "qwen_audio"

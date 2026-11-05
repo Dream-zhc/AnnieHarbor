@@ -1,7 +1,8 @@
-"""One JSON chat completion over DashScope's compatible API: her diary line.
+"""One JSON chat completion over DashScope's compatible API.
 
-The prompt and parsing live in annie_brain.inner_life; this module only sends
-it. It runs after a conversation has ended, never on the reply path.
+Used for her diary line (annie_brain.inner_life), memory consolidation and the
+conversation recap (annie_brain.memory). Prompts and parsing live there; this
+module only sends them. Never on the reply path.
 """
 
 import httpx

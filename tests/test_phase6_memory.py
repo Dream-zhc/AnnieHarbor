@@ -7,33 +7,23 @@ from annie_adapters import RuntimeStore
 from annie_brain.memory import MemoryService
 
 
-class FakeCloud:
+class FakeChat:
     def __init__(self):
-        self.delay = 0
         self.closed = False
 
     async def close(self):
         self.closed = True
 
-    async def embed(self, value):
-        if self.delay:
-            await asyncio.sleep(self.delay)
-        return [1.0, 0.0] if "茶" in value else [0.0, 1.0]
-
-    async def extract(self, user, existing):
-        if "咖啡" in user:
-            return [{"key": "drink_preference", "kind": "semantic", "text": "用户喜欢咖啡"}]
-        if "茶" in user:
-            return [{"key": "drink_preference", "kind": "semantic", "text": "用户喜欢茶"}]
-        return []
+    async def complete(self, _system, _user, *, max_tokens):
+        return '{"ops": []}'
 
 
 def test_crud_corrections_tombstone_and_restart(tmp_path):
     async def exercise():
         store = RuntimeStore(tmp_path / "memory.db")
         store.migrate()
-        cloud = FakeCloud()
-        service = MemoryService(store, cloud, ("annie-a", "annie-b"))
+        chat = FakeChat()
+        service = MemoryService(store, chat, ("annie-a", "annie-b"))
         result = await service.put(
             "annie-a", "warm", "semantic", "drink_preference", "用户喜欢茶",
             source_turn_id="t1", source_created_ms=1000,
@@ -44,7 +34,7 @@ def test_crud_corrections_tombstone_and_restart(tmp_path):
         assert await service.list("annie-b", "warm") == []
         assert len((await service.recall("annie-a", "warm", "茶"))["evidence"]) == 1
         assert await service.list("annie-a", "cold")
-        restarted = MemoryService(store, cloud, ("annie-a", "annie-b"))
+        restarted = MemoryService(store, chat, ("annie-a", "annie-b"))
         assert await service.list("annie-a", "warm") == await restarted.list("annie-a", "warm")
         assert await service.put(
             "annie-a", "warm", "semantic", "drink_preference", "用户喜欢咖啡",
@@ -66,7 +56,7 @@ def test_crud_corrections_tombstone_and_restart(tmp_path):
         ) is None
         assert (await service.list("annie-a", "warm", True))[0]["status"] == "deleted"
         await service.close()
-        assert cloud.closed
+        assert chat.closed
 
     asyncio.run(exercise())
 
@@ -75,7 +65,7 @@ def test_persona_scope_and_no_arbitrary_recall(tmp_path):
     async def exercise():
         store = RuntimeStore(tmp_path / "memory.db")
         store.migrate()
-        service = MemoryService(store, FakeCloud(), ("a", "b"))
+        service = MemoryService(store, FakeChat(), ("a", "b"))
         await service.put("a", "warm", "persona", "style", "喜欢讲笑话")
         await service.put("a", "warm", "episodes", "trip", "用户去过北京")
         assert len(await service.list("a", "warm")) == 2

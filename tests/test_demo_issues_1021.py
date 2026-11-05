@@ -10,7 +10,7 @@ import asyncio
 import time
 from types import SimpleNamespace
 
-from annie_brain.memory import is_meta_memory, prepare_extracted_fact
+from annie_brain.memory import is_meta_memory, prepare_consolidated_fact
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 from annie_runtime.display import build_display_message
@@ -108,8 +108,10 @@ def test_a_self_reported_name_or_a_forget_request_is_not_a_memory():
     assert is_meta_memory("chat_forget", "用户要求当前助手忘记张三。")
     assert is_meta_memory("chat_dismiss", "用户当前要求助手退下。")
     assert is_meta_memory("chat_empty", "无")
-    fact = {"kind": "semantic", "key": "fact_person_zhangsan_name", "text": "用户说自己是张三。"}
-    assert prepare_extracted_fact(fact, "我是张三") is None
+    # Consolidated facts carry no key: the sentence alone must give the name away.
+    assert prepare_consolidated_fact("semantic", "用户说自己是张三。") is None
+    assert prepare_consolidated_fact("semantic", "用户说自己是老师。") == "用户说自己是老师。"
+    assert prepare_consolidated_fact("semantic", "用户介绍自己是杭州人。") == "用户介绍自己是杭州人。"
 
 
 def test_the_big_screen_gets_playback_ignored_speech_and_decisions():

@@ -6,7 +6,7 @@ import pytest
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 from annie_runtime import realtime as realtime_module
-from annie_runtime.presence import canonical_wake_call
+from annie_runtime.presence import DialoguePresence, canonical_wake_call
 from annie_runtime.wakeword import WakeAdmission
 
 from tests.test_decision_model import EchoSocket
@@ -29,6 +29,20 @@ from tests.test_decision_model import EchoSocket
 ])
 def test_only_a_leading_call_is_rewritten(text, kws, expected, raw):
     assert canonical_wake_call(text, kws_confirmed=kws) == (expected, raw)
+
+
+@pytest.mark.parametrize("text", [
+    "小爱你退下", "小爱，你退下。", "小爱退下吧", "小安你别说话了", "晓安妮，闭嘴",
+])
+def test_a_misheard_call_before_a_sleep_command_still_sends_her_to_sleep(text):
+    assert DialoguePresence.is_sleep_command(text)
+    assert DialoguePresence.is_sleep_request(text)
+
+
+@pytest.mark.parametrize("text", ["小爱同学闭嘴", "小阿姨别说了", "小爱你", "小爱你为什么退下"])
+def test_a_call_alone_or_before_other_words_is_not_a_sleep_request(text):
+    assert not DialoguePresence.is_sleep_command(text)
+    assert not DialoguePresence.is_sleep_request(text)
 
 
 class Silent:

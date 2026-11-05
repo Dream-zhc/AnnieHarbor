@@ -51,6 +51,9 @@ _SLEEP_COMMAND = re.compile(
     rf"{_SLEEP_VERB}(?:你?{_SLEEP_VERB})*$"  # "闭嘴，别说话了" is one command said twice
 )
 _STUTTER = re.compile(r"(.)\1+")  # ASR keeps stutters: "你你闭嘴"
+# Sleep text has no punctuation left, so a misheard call ("小爱你退下") has no
+# pause to anchor on as in canonical_wake_call; it is still the call, not a lead.
+_SLEEP_CALL = re.compile(r"^(?:[小晓筱][安爱艾阿][妮尼泥倪妳霓你呢]?)+")
 _SLEEP_CORRECTION = re.compile(r"我?不是.{1,8}?(?:而是|是)(?:[让叫要]你)?(.+)")
 _SLEEP_LEADS = (
     "小安妮", "能不能", "可不可以", "请你", "现在", "马上", "立刻", "赶紧",
@@ -76,8 +79,9 @@ ASR_GRACE_SECONDS = 10.0
 
 
 def _sleep_text(source):
-    """Punctuation and stutters dropped; of "不是让你闭嘴，是让你退下" only the corrected half."""
+    """Punctuation, stutters and a leading call dropped; of "不是让你闭嘴，是让你退下" only the corrected half."""
     normalized = _STUTTER.sub(r"\1", _PUNCTUATION.sub("", source).strip())
+    normalized = _SLEEP_CALL.sub("", normalized, count=1)
     corrected = _SLEEP_CORRECTION.fullmatch(normalized)
     return corrected[1] if corrected else normalized
 

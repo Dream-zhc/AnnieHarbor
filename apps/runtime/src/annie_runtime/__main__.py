@@ -124,6 +124,18 @@ def wait_for_port_free(host: str, port: int, timeout: float = 3.0) -> bool:
     return port_available(host, port)
 
 
+def wait_for_process_exit(pid: int, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
 def replace_existing_runtime(host: str, port: int, project_name: str) -> bool:
     """Stop an existing Annie Harbor on the requested port.
 
@@ -146,7 +158,9 @@ def replace_existing_runtime(host: str, port: int, project_name: str) -> bool:
     except PermissionError as exc:
         raise RuntimeError(f"cannot stop existing Annie Harbor pid={pid}: permission denied") from exc
 
-    if wait_for_port_free(host, port, timeout=3.0):
+    # The port frees as soon as uvicorn stops listening; the old runtime keeps its
+    # robot sessions until the process itself is gone.
+    if wait_for_process_exit(pid, timeout=10.0) and wait_for_port_free(host, port, timeout=3.0):
         print(f"[INFO] old Annie Harbor pid={pid} stopped; starting replacement.")
         return True
 
@@ -155,6 +169,7 @@ def replace_existing_runtime(host: str, port: int, project_name: str) -> bool:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        wait_for_process_exit(pid, timeout=2.0)
         if wait_for_port_free(host, port, timeout=1.5):
             print(f"[WARN] old Annie Harbor pid={pid} required forced termination; starting replacement.")
             return True
@@ -499,6 +514,8 @@ def main():
         create_app(runtime, dashboard),
         host=host,
         port=port,
+        # Open SSE streams would otherwise hold a stopping runtime forever.
+        timeout_graceful_shutdown=5,
     )
 
 

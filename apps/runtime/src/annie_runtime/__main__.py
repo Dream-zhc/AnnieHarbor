@@ -53,6 +53,8 @@ def motion_options(motions: dict, environ) -> dict | None:
     if not 0 <= per_reply <= 6:
         raise ValueError("[motions].per_reply must be between 0 and 6")
     return {"listening": bool(motions.get("listening", True)),
+            "pauses": bool(motions.get("pauses", True)),
+            "waiting": bool(motions.get("waiting", True)),
             "speaking": bool(motions.get("speaking", True)),
             "reactions": bool(motions.get("reactions", True)),
             "per_reply": per_reply}

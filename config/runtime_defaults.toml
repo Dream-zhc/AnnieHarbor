@@ -55,12 +55,16 @@ consolidate_max_turns = 24
 [motions]
 # 实时交互里的身体动作（2026-10-26）。没唤醒时的待机动作由嵌入式自己负责，这里只管醒着、在交流时：
 # listening：用户开口约 0.7 秒后，从倾听组（倾听、点头、侧耳听、轻歪头）选一个；
+# pauses：用户说话中间停顿约 0.4 秒（本地按麦克风音量判断，比云端判停早一秒多），轻点一下头；至少隔 4 秒；
+# waiting：用户说完 1.2 秒她还没出声（多半在查天气这类工具），眼睛往上瞟一下，像在想；
 # speaking：她说的每句话由决策模型选一个动作或不配，等扬声器快播到那句时再发；
 # reactions：一轮对话让她心情明显变化，说完后由决策模型挑一个不出声的小动作。
 # 真动作仍需 .env 的 ANNIE_ACTIONS_ENABLED=1；.env 的 ANNIE_INTERACTION_MOTIONS_ENABLED=1/0 覆盖本项。
 # 2026-10-27 用户确认默认打开；电机声对识别与回声消除的影响、动作时机仍待真机统一测试。
 enabled = true
 listening = true
+pauses = true
+waiting = true
 speaking = true
 reactions = true
 # 每轮回复最多配几个动作（含原有的自发表情）。

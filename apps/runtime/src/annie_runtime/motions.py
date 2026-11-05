@@ -3,6 +3,10 @@
 Idle liveliness belongs to the embedded player. While she is awake and talking:
 
 - listening: once someone has spoken for a moment, one motion from the listening group;
+- pauses: when the speaker pauses mid-turn, a small nod, judged locally from the
+  microphone level long before smart_turn ends the turn, so it also fills that wait;
+- waiting: her turn began but no voice comes (a tool call, a slow answer), so her
+  eyes glance up as if thinking;
 - speaking: the decision model gives each sentence of her reply a gesture or none,
   sent when the speaker's playback is about to reach that sentence, not when its
   text arrives (text runs seconds ahead of audio);
@@ -36,6 +40,8 @@ from annie_brain.decision_policy import (
 )
 from annie_brain.persona import chat_preference
 
+from annie_runtime.ambient import frame_dbfs
+
 log = logging.getLogger(__name__)
 SAMPLE_RATE = 24000
 LISTEN_DELAY_SECONDS = 0.7  # a cough or a one-word reply gets no motion
@@ -50,6 +56,17 @@ CHARS_PER_SECOND = 4.3  # fallback pace of Chinese TTS when no alignment is in y
 PLAYBACK_WAIT_SECONDS = 25
 POLL_SECONDS = 0.05
 MAX_TASKS = 24
+MIC_RATE = 16000
+NOD_MOTION = "agree_micro_nod"
+THINK_MOTION = "eye_glance_up"
+PAUSE_SECONDS = 0.4  # a breath between phrases; smart_turn needs over a second more
+PAUSE_AFTER_WORDS_SECONDS = 1.2  # a nod answers something said, not a cough
+PAUSE_NOD_GAP_SECONDS = 4.0
+NOD_AFTER_LISTEN_SECONDS = 3.2  # the opening listening motion (0.7 s + up to 2.5 s) is over
+VOICE_ABOVE_FLOOR_DB = 10.0
+FLOOR_RISE_DB = 0.02  # per frame: the room floor follows quiet frames down at once, up slowly
+FLOOR_MIN_DBFS = -90.0  # digital silence from a muted input must not become the floor
+WAIT_GLANCE_SECONDS = 1.2  # an answer that starts sooner needs no thinking look
 
 
 def target_sample(speech, char_index):
@@ -79,9 +96,11 @@ def played_sample(speech, now=None):
 
 class InteractionMotions:
     def __init__(self, runtime, *, listening=True, speaking=True, reactions=True,
-                 per_reply=SPEECH_MOTIONS_PER_REPLY):
+                 pauses=True, waiting=True, per_reply=SPEECH_MOTIONS_PER_REPLY):
         self.runtime = runtime
         self.listening = listening
+        self.pauses = pauses
+        self.waiting = waiting
         self.speaking = speaking
         self.reactions = reactions
         self.per_reply = per_reply
@@ -90,9 +109,11 @@ class InteractionMotions:
         self.last_listen = dict.fromkeys(robots, -1e9)
         self.last_listen_script = dict.fromkeys(robots)
         self.last_inner = dict.fromkeys(robots, -1e9)
+        self.last_nod = dict.fromkeys(robots, -1e9)
+        self.ears = {robot_id: {"floor": None, "words": 0.0, "quiet": 0.0} for robot_id in robots}
         self.recent = {robot_id: [] for robot_id in robots}  # last decisions, for the UI
-        self.stats = {robot_id: {"listen": 0, "speech": 0, "inner": 0, "skipped": 0,
-                                 "decision_failures": 0} for robot_id in robots}
+        self.stats = {robot_id: {"listen": 0, "nod": 0, "think": 0, "speech": 0, "inner": 0,
+                                 "skipped": 0, "decision_failures": 0} for robot_id in robots}
         self.tasks = set()
 
     # ---- gates ------------------------------------------------------------------------
@@ -125,7 +146,8 @@ class InteractionMotions:
 
     def snapshot(self, robot_id):
         return {"actions_enabled": self._actions() is not None,
-                "listening": self.listening, "speaking": self.speaking,
+                "listening": self.listening, "pauses": self.pauses, "waiting": self.waiting,
+                "speaking": self.speaking,
                 "reactions": self.reactions, "per_reply": self.per_reply,
                 "groups": {"listen": self._allowed(LISTEN_MOTIONS),
                            "speech": self._allowed(SPEECH_MOTIONS),
@@ -158,6 +180,61 @@ class InteractionMotions:
         script = next((item for item in group if item != last), group[0])
         self.last_listen_script[robot_id] = script
         await self._perform(robot_id, "listen", script, f"listen-{uuid4().hex[:12]}",
+                            generation)
+
+    # ---- pauses and waiting -----------------------------------------------------------
+    def on_audio(self, robot_id, client, pcm):
+        """Each 20 ms microphone frame: a nod when the speaker pauses, as listeners do."""
+        if not self.pauses:
+            return
+        ear = self.ears[robot_id]
+        level = frame_dbfs(pcm)
+        floor = ear["floor"]
+        floor = level if floor is None or level < floor else floor + FLOOR_RISE_DB
+        ear["floor"] = max(FLOOR_MIN_DBFS, floor)
+        if not client.speech_active:
+            ear["words"] = ear["quiet"] = 0.0
+            return
+        seconds = len(pcm) / (2 * MIC_RATE)
+        if level >= ear["floor"] + VOICE_ABOVE_FLOOR_DB:
+            ear["words"] += seconds
+            ear["quiet"] = 0.0
+            return
+        ear["quiet"] += seconds
+        if ear["quiet"] >= PAUSE_SECONDS and ear["words"] >= PAUSE_AFTER_WORDS_SECONDS:
+            ear["words"] = 0.0  # the next nod needs new words
+            self._nod(robot_id, client)
+
+    def _nod(self, robot_id, client):
+        now = time.monotonic()
+        if (now - self.last_nod[robot_id] < PAUSE_NOD_GAP_SECONDS
+                or now - self.last_listen[robot_id] < NOD_AFTER_LISTEN_SECONDS
+                or not self._allowed((NOD_MOTION,)) or not self._awake(client)
+                or not self._wanted(client)):
+            return
+        speech = getattr(client, "speech", None)
+        if speech is not None and speech.output_active():
+            return  # her own voice in the microphone, or a barge-in
+        self.last_nod[robot_id] = now
+        self._spawn(self._perform(robot_id, "nod", NOD_MOTION, f"nod-{uuid4().hex[:12]}",
+                                  client.robot.generation))
+
+    def on_speech_stopped(self, robot_id, client):
+        """smart_turn handed her the turn: if no voice comes soon, she looks like she is thinking."""
+        if not self.waiting or not self._allowed((THINK_MOTION,)):
+            return
+        if not self._awake(client) or not self._wanted(client):
+            return
+        self._spawn(self._think(robot_id, client, client.robot.generation))
+
+    async def _think(self, robot_id, client, generation):
+        await asyncio.sleep(WAIT_GLANCE_SECONDS)
+        speech = getattr(client, "speech", None)
+        answering = client.turn_id or getattr(client, "response_id", None)
+        if (client.robot.generation != generation or client.speech_active or not answering
+                or (speech is not None and speech.output_active())):
+            return
+        await self._perform(robot_id, "think", THINK_MOTION, f"think-{uuid4().hex[:12]}",
                             generation)
 
     # ---- speaking ---------------------------------------------------------------------

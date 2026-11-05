@@ -3862,6 +3862,8 @@ class RealtimeRobot:
                     await self.socket.send(audio_append(chunk))
                 if self.speakers is not None:
                     self.speakers.observe(chunk)
+                if self.motions is not None:
+                    self.motions.on_audio(self.robot.config.robot_id, self, chunk)
                 if self.acoustic:
                     self.acoustic.offer(chunk, identity=self.robot.session_state(),
                         stream_epoch=stream_epoch, source_id=source_id,
@@ -4816,6 +4818,8 @@ class RealtimeRobot:
                 self.last_provider_stopped_ms = time.time_ns() // 1_000_000
                 self._last_provider_stopped_t = time.monotonic()
             self.publish("speech.stopped", invalid=invalid, item_id=event.get("item_id"))
+            if self.motions is not None and not invalid:
+                self.motions.on_speech_stopped(self.robot.config.robot_id, self)
             if self.speakers is not None:
                 await self.speakers.finish(invalid=invalid)
             if (invalid and not self._candidate_confirmed

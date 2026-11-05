@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import math
 import time
+from array import array
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -518,6 +520,68 @@ def test_she_looks_like_she_is_listening_only_while_awake_and_quiet(tmp_path, mo
         client.wake.state = "ACTIVE"
         client.speech_active = False  # a cough: over before the delay
         motions.on_speech_started("a", client)
+        await drain(motions)
+        assert len(publisher.sent) == 1
+    asyncio.run(run())
+
+
+def tone(dbfs, seconds):
+    """20 ms microphone frames of a tone at about this level."""
+    amplitude = 32768 * 10 ** (dbfs / 20) * math.sqrt(2)
+    frame = array("h", (int(amplitude * math.sin(i / 3)) for i in range(320))).tobytes()
+    return [frame] * round(seconds / 0.02)
+
+
+def test_she_nods_when_the_speaker_pauses_but_not_too_often(tmp_path, monkeypatch):
+    async def run():
+        motions, client, publisher = motions_with(tmp_path, monkeypatch)
+
+        def hear(*parts):
+            for part in parts:
+                for frame in part:
+                    motions.on_audio("a", client, frame)
+
+        hear(tone(-60, 1), tone(-30, 0.6), tone(-60, 0.5))  # the room, then a word or two
+        await drain(motions)
+        assert publisher.sent == []
+        hear(tone(-30, 1), tone(-60, 0.3))  # a breath inside a phrase is no pause
+        await drain(motions)
+        assert publisher.sent == []
+        hear(tone(-60, 0.2))
+        await drain(motions)
+        assert [p["data"]["script_id"] for p in publisher.sent] == ["agree_micro_nod"]
+        assert motions.stats["a"]["nod"] == 1
+        hear(tone(-30, 1.5), tone(-60, 0.5))  # a nod at most every 4 s
+        await drain(motions)
+        assert len(publisher.sent) == 1
+        motions.last_nod["a"] = -1e9
+        client.speech.output_active = lambda: True  # her own voice in the microphone
+        hear(tone(-30, 1.5), tone(-60, 0.5))
+        client.speech.output_active = lambda: False
+        client.speech_active = False  # between turns: nothing to nod to
+        hear(tone(-30, 1.5), tone(-60, 0.5))
+        await drain(motions)
+        assert len(publisher.sent) == 1
+    asyncio.run(run())
+
+
+def test_a_slow_answer_gets_a_thinking_glance_and_a_quick_one_does_not(tmp_path, monkeypatch):
+    async def run():
+        monkeypatch.setattr(motions_module, "WAIT_GLANCE_SECONDS", 0.01)
+        motions, client, publisher = motions_with(tmp_path, monkeypatch)
+        client.speech_active = False
+        client.turn_id = "t1"
+        client.speech.output_active = lambda: True  # her voice is already on its way
+        motions.on_speech_stopped("a", client)
+        await drain(motions)
+        assert publisher.sent == []
+        client.speech.output_active = lambda: False  # e.g. still looking up the weather
+        motions.on_speech_stopped("a", client)
+        await drain(motions)
+        assert [p["data"]["script_id"] for p in publisher.sent] == ["eye_glance_up"]
+        assert motions.stats["a"]["think"] == 1
+        client.turn_id = None  # nothing is being answered
+        motions.on_speech_stopped("a", client)
         await drain(motions)
         assert len(publisher.sent) == 1
     asyncio.run(run())

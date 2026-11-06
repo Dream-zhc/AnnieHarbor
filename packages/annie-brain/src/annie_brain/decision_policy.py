@@ -193,6 +193,8 @@ _MOTION_NAMES = (
     ("look_right", _look(r"右(?:边|手边|侧)", toward="右")),
     ("look_up", _look(r"(?:上面|上边|头顶|天花板)", toward="上") + r"|抬头看"),
     ("fast_double_blink", r"眨(?:眨|两下|一下|个)?双?眼|眨两下"),
+    ("listen_turn", r"侧耳(?:听|倾听)?|竖(?:起)?耳朵"),
+    ("sniff_forward", r"嗅闻(?:寻源)?|闻(?:一)?闻|嗅(?:一)?嗅"),
 )
 LOOK_SCRIPTS = ("look_left", "look_right", "look_up")
 # "转头看看" names no side; "旋转头了吗" is a question, not a request.

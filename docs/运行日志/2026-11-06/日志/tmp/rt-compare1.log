@@ -1,0 +1,26 @@
+音色：A qwen-a***，B qwen-a***
+A 第1遍 第1句：{'speech_started': -1837, 'speech_stopped': 1351, 'response_created': 1351, 'first_text': 1352, 'done': 1560, 'first_audio': 2104}  哎哟，这领导今天是不是吃错药了，拿你当出气筒啦。别往心里去，
+B 第1遍 第1句：{'speech_started': -1835, 'speech_stopped': 1643, 'response_created': 1651, 'first_text': 1652, 'first_audio': 1730, 'done': 7121}  哎哟，被领导批评确实挺让人郁闷的，换谁谁心里都不痛快。你先深
+A 第1遍 第2句：{'speech_started': -1479, 'speech_stopped': 1556, 'response_created': 1557, 'first_text': 1558, 'done': 1634, 'first_audio': 2329}  爬山是去给大自然当免费清洁工，睡一天是给身体充个满格电，看你
+B 第1遍 第2句：{'speech_started': -1772, 'speech_stopped': 1472, 'response_created': 1475, 'first_text': 1475, 'first_audio': 1591, 'done': 4340}  爬山是去给大自然交保护费，睡一天是给自己的电量搞快充。要是你
+A 第1遍 第3句：{'speech_started': -136, 'speech_stopped': 1441, 'response_created': 1447, 'first_text': 1447, 'done': 1450, 'first_audio': 2115}  你知道为什么冰箱里的灯一关门就灭了吗？因为它怕黑呀！
+B 第1遍 第3句：{'speech_started': -486, 'speech_stopped': 1439, 'response_created': 1441, 'first_text': 1442, 'first_audio': 1649, 'done': 2265}  你知道为什么北极熊不穿毛衣吗？因为它怕热呀！
+A 第1遍 第4句：{'speech_started': -1053, 'speech_stopped': 1865, 'response_created': 1873, 'first_text': 1873, 'done': 1881, 'first_audio': 2616}  紧张说明你心里有底，要是真没底，估计早就在沙发上躺平刷短视频
+B 第1遍 第4句：{'speech_started': -1817, 'speech_stopped': 1801, 'response_created': 1802, 'first_text': 1804, 'first_audio': 1974, 'done': 8563}  紧张说明你对这事儿上心啦，就像考试前手心出汗一样正常。咱们把
+A 第1遍 第5句：{'speech_started': -1098, 'speech_stopped': 1448, 'response_created': 1459, 'first_text': 1460, 'done': 1488, 'first_audio': 2226}  因为太阳光穿过大气层时，蓝光被散射得最厉害，就像你把一罐蓝莓
+B 第1遍 第5句：{'speech_started': -898, 'speech_stopped': 1425, 'response_created': 1428, 'first_text': 1429, 'first_audio': 1582, 'done': 3529}  因为阳光穿过大气层的时候，蓝光最容易被散射，就像你在人群里穿
+A 第1遍 第6句：{'speech_started': 51, 'speech_stopped': 3668, 'response_created': 3836, 'first_text': 3837, 'done': 4160, 'first_audio': 4681}  那必须的，我可是自带幽默芯片的，笑点低的人跟我聊天，腹肌都能
+B 第1遍 第6句：{'speech_started': -71, 'speech_stopped': 1758, 'response_created': 1759, 'first_text': 1759, 'first_audio': 1828, 'done': 2024}  那必须的，我可是自带笑点发射器。
+A 第2遍 第1句：{'speech_started': -1177, 'speech_stopped': 1362, 'response_created': 1363, 'first_text': 1364, 'done': 1834, 'first_audio': 2533}  哎呀，这领导批评人的功力，简直像夏天的暴雨，说下就下，连个伞
+B 第2遍 第1句：{'speech_started': -1032, 'speech_stopped': 1466, 'response_created': 1467, 'first_text': 1468, 'first_audio': 1593, 'done': 4850}  哎呀，这领导批评人就跟下雨天没带伞一样，淋湿了谁心里都不好受
+A 第2遍 第2句：{'speech_started': -2259, 'speech_stopped': 1348, 'response_created': 1356, 'first_text': 1356, 'done': 2022, 'first_audio': 2462}  爬山是去给大自然交个“体力税”，睡一天是在给自己充个“电量包
+B 第2遍 第2句：{'speech_started': -1198, 'speech_stopped': 1889, 'response_created': 1890, 'first_text': 1891, 'first_audio': 1977, 'done': 4764}  这得看你的电量还剩多少啦。要是你平时像个陀螺一样转个不停，那
+A 第2遍 第3句：{'speech_started': 332, 'speech_stopped': 1332, 'response_created': 1333, 'first_text': 1334, 'done': 1337, 'first_audio': 2010}  你知道为什么北极熊不吃企鹅吗？因为企鹅在南极，北极熊根本点不
+B 第2遍 第3句：{'speech_started': 735, 'speech_stopped': 1852, 'response_created': 1856, 'first_text': 1856, 'first_audio': 1869, 'done': 3046}  你知道为什么企鹅的肚子是白的吗？因为如果它是黑的，它们就分不
+A 第2遍 第4句：{'speech_started': -1648, 'speech_stopped': 1500, 'response_created': 1500, 'first_text': 1500, 'done': 1757, 'first_audio': 2232}  别慌，面试就像相亲，对方也在偷偷紧张呢。你把面试官当成来听你
+B 第2遍 第4句：{'speech_started': -1150, 'speech_stopped': 1466, 'response_created': 1467, 'first_text': 1469, 'first_audio': 1596, 'done': 2633}  面试就像去相亲，对方挑你，你也在挑他们呀。别紧张，深呼吸，把
+A 第2遍 第5句：{'speech_started': -1128, 'speech_stopped': 1440, 'response_created': 1441, 'first_text': 1442, 'done': 1502, 'first_audio': 2164}  知道呀，这得怪阳光太调皮，穿过大气层时被空气里的分子撞得七零
+B 第2遍 第5句：{'speech_started': -530, 'speech_stopped': 1435, 'response_created': 1436, 'first_text': 1436, 'first_audio': 1563, 'done': 3911}  因为阳光穿过大气层时，蓝光最容易被散射开来呀。这就好比你在人
+A 第2遍 第6句：{'speech_started': 1523, 'speech_stopped': 1763, 'response_created': 1764, 'first_text': 1765, 'done': 2036, 'first_audio': 2828}  那可不，我可是桌面喜剧人，主打一个用脑电波给你讲相声。
+B 第2遍 第6句：{'speech_started': -564, 'speech_stopped': 1474, 'response_created': 1474, 'first_text': 1477, 'first_audio': 1727, 'done': 2019}  那必须的，我这脑子转得比电风扇还快呢。
+已写入 /Users/dream/Documents/zhc/python/brainv2/var/tmp/直接出声对比/第一版.md

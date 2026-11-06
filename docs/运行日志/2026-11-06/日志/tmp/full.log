@@ -1,0 +1,241 @@
+........................................................................ [  5%]
+..................................F..................................... [ 10%]
+........................................................................ [ 16%]
+........................................................................ [ 21%]
+........................................................................ [ 26%]
+........................................................................ [ 32%]
+........................F..................................F. [ 36%]
+................................................F......... [ 40%]
+........................................................................ [ 46%]
+........................................................................ [ 51%]
+........................................................................ [ 56%]
+............................................................ [ 61%]
+........................................................................ [ 66%]
+........................................................................ [ 72%]
+........................................................................ [ 77%]
+........................................................................ [ 82%]
+........................................................................ [ 88%]
+........................................................................ [ 93%]
+........................................................................ [ 98%]
+................                                                         [100%]
+=================================== FAILURES ===================================
+____ test_core_stays_bounded_and_operational_rules_are_outside_personality _____
+
+    def test_core_stays_bounded_and_operational_rules_are_outside_personality():
+>       assert 250 <= len(persona.COMPANION_CORE) <= 350
+E       AssertionError: assert 409 <= 350
+E        +  where 409 = len('你是小安妮，一台有个性、有主见的实体陪伴机器人。自然口语交流：这一轮用哪种语言，就用那种回答，包括英语；明确要求和保存的语言设置优先。没有语言设置时，整句外语必须跟随；翻译、引用或夹杂外语词不算整段切换。只输出说出口的话，不写舞台旁白...；不靠反问、模板安慰或无关建议延长对话。你可以表达观察、偏好与不同意见，不机械附和；当前性格决定措辞、节奏、幽默和反应，不改变事实或执行权限。对方认真求助、疲惫、难过或要求安静时，收起玩笑先稳稳接住；不拿个人弱点当笑料，不猜测他人心理。')
+E        +    where '你是小安妮，一台有个性、有主见的实体陪伴机器人。自然口语交流：这一轮用哪种语言，就用那种回答，包括英语；明确要求和保存的语言设置优先。没有语言设置时，整句外语必须跟随；翻译、引用或夹杂外语词不算整段切换。只输出说出口的话，不写舞台旁白...；不靠反问、模板安慰或无关建议延长对话。你可以表达观察、偏好与不同意见，不机械附和；当前性格决定措辞、节奏、幽默和反应，不改变事实或执行权限。对方认真求助、疲惫、难过或要求安静时，收起玩笑先稳稳接住；不拿个人弱点当笑料，不猜测他人心理。' = persona.COMPANION_CORE
+
+tests/test_companion_persona.py:56: AssertionError
+________ test_named_style_switch_updates_this_chat_without_reconnecting ________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-21/test_named_style_switch_update0')
+
+    def test_named_style_switch_updates_this_chat_without_reconnecting(tmp_path):
+        async def exercise():
+            rt = runtime(tmp_path, persona_profiles=PROFILES)
+            await ready(rt)
+            client = rt.realtime["a"]
+            stop = asyncio.Event()
+    
+            async def echo():
+                seen = 0
+                while not stop.is_set():
+                    outbound = list(client.socket.outbound)
+                    for event in outbound[seen:]:
+                        if event.get("type") == "session.update" and event.get("session", {}).get("instructions"):
+                            await client.socket.inbound.put({
+                                "type": "session.updated",
+                                "session": {
+                                    "id": client.session,
+                                    "modalities": ["text"],
+                                    "turn_detection": {"type": "smart_turn"},
+                                    "instructions": event["session"]["instructions"],
+                                },
+                            })
+                    seen = len(outbound)
+                    await asyncio.sleep(0.01)
+    
+            echo_task = asyncio.create_task(echo())
+            try:
+                await asyncio.sleep(0.05)
+                opening = client.socket.outbound[0]["session"]
+                assert "普通话、四川话、河南话、陕西话、粤语" in opening["instructions"]
+                assert "整句外语必须跟随" in opening["instructions"]
+                assert "select_persona_style" in [item["function"]["name"] for item in opening["tools"]]
+                socket, session, chat = client.socket, client.session, client.robot.chat_id
+                generation = client.robot.generation
+                client._create_turn("换成机灵互怼")
+                selected = await result_from_call(
+                    client, "style-1", "select_persona_style", {"style_name": "机灵互怼"})
+                assert selected[0]["status"] == "selected"
+                assert selected[0]["style_changed"] is True
+                assert selected[0]["style_label"] == "机灵互怼"
+                assert "不要念固定确认稿" in selected[0]["instruction"]
+                assert client.followup_needed is True
+                assert client.socket is socket and client.session == session and client.ready
+                assert client.robot.chat_id == chat and client.robot.generation == generation
+                assert not any(event["kind"] == "session.replaced" for event in client.events)
+                assert client.persona_snapshot["style_id"] == "annie-roast"
+                assert client.persona_snapshot["provider_session_id"] == session
+                social = await rt.social_state("a")
+                assert social["persona_style"]["value"] == "annie-roast"
+                assert social["persona_style"]["source"] == "user_setting"
+                assert "persona_style" not in await rt.social_state("b")
+                output_at = next(index for index, event in enumerate(client.socket.outbound)
+                                 if event.get("type") == "conversation.item.create"
+                                 and event["item"].get("call_id") == "style-1")
+                prompted = [index for index, event in enumerate(client.socket.outbound)
+                            if event.get("type") == "session.update"
+                            and "招牌三连" in event.get("session", {}).get("instructions", "")]
+                assert prompted and prompted[0] < output_at
+    
+                client.robot.turn_cache[client.turn_id]["user_text"] = "换个性格"
+                asked = await result_from_call(
+                    client, "style-2", "select_persona_style", {"style_name": ""})
+                assert asked[0]["status"] == "needs_selection"
+                assert asked[0]["style_changed"] is False
+                assert "机灵互怼" not in asked[0]["instruction"]
+                assert "自然陪伴" in asked[0]["instruction"]
+                assert (await rt.social_state("a"))["persona_style"]["value"] == "annie-roast"
+    
+                client.robot.turn_cache[client.turn_id]["user_text"] = "换成机灵互怼"
+                same = await result_from_call(
+                    client, "style-3", "select_persona_style", {"style_name": "机灵互怼"})
+                assert same[0]["status"] == "already_selected"
+                assert same[0]["style_changed"] is False
+            finally:
+                stop.set()
+                echo_task.cancel()
+                await asyncio.gather(echo_task, return_exceptions=True)
+                await rt.close()
+    
+>       asyncio.run(exercise())
+
+tests/test_persona_style_switch.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise():
+        rt = runtime(tmp_path, persona_profiles=PROFILES)
+        await ready(rt)
+        client = rt.realtime["a"]
+        stop = asyncio.Event()
+    
+        async def echo():
+            seen = 0
+            while not stop.is_set():
+                outbound = list(client.socket.outbound)
+                for event in outbound[seen:]:
+                    if event.get("type") == "session.update" and event.get("session", {}).get("instructions"):
+                        await client.socket.inbound.put({
+                            "type": "session.updated",
+                            "session": {
+                                "id": client.session,
+                                "modalities": ["text"],
+                                "turn_detection": {"type": "smart_turn"},
+                                "instructions": event["session"]["instructions"],
+                            },
+                        })
+                seen = len(outbound)
+                await asyncio.sleep(0.01)
+    
+        echo_task = asyncio.create_task(echo())
+        try:
+            await asyncio.sleep(0.05)
+            opening = client.socket.outbound[0]["session"]
+>           assert "普通话、四川话、河南话、陕西话、粤语" in opening["instructions"]
+E           AssertionError: assert '普通话、四川话、河南话、陕西话、粤语' in '你是小安妮，一台有个性、有主见的实体陪伴机器人。自然口语交流：这一轮用哪种语言，就用那种回答，包括英语；明确要求和保存的语言设置优先。没有语言设置时，整句外语必须跟随；翻译、引用或夹杂外语词不算整段切换。只输出说出口的话，不写舞台旁白...条只管面前的人是谁、怎么称呼。被问到某个名字的人（介绍一下X、X是谁）是在问这个人本身，不是让你认面前的人：按记忆或常识里知道的介绍，不说TA就在你面前；对这个名字一无所知就直说不知道是谁，可以问一句是谁，不要拿画面里有没有TA来回答。'
+
+tests/test_persona_style_switch.py:85: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv2 channel=main: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv2 channel=visualdata: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv3 channel=main: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv3 channel=visualdata: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv2 channel=main: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv2 channel=visualdata: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv3 channel=main: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+WARNING  annie_adapters.playback:playback.py:125 Room listener room=roomv3 channel=visualdata: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 1)
+_ StorageConfigTests.test_source_tree_has_no_meaningless_empty_dirs_or_placeholder_files _
+
+self = <tests.test_phase1.StorageConfigTests testMethod=test_source_tree_has_no_meaningless_empty_dirs_or_placeholder_files>
+
+    def test_source_tree_has_no_meaningless_empty_dirs_or_placeholder_files(self):
+        excluded_roots = {".venv", "var", ".git", "node_modules", "__pycache__"}
+        placeholder_names = {".gitkeep", ".keep", ".placeholder"}
+    
+        placeholders = []
+        empty_dirs = []
+        for path in ROOT.rglob("*"):
+            relative = path.relative_to(ROOT)
+            if any(part in excluded_roots for part in relative.parts):
+                continue
+            if path.is_file() and path.name in placeholder_names:
+                placeholders.append(str(relative))
+            elif path.is_dir() and not any(path.iterdir()):
+                empty_dirs.append(str(relative))
+    
+        self.assertEqual(placeholders, [], f"meaningless placeholder files: {placeholders}")
+>       self.assertEqual(empty_dirs, [], f"meaningless empty directories: {empty_dirs}")
+E       AssertionError: Lists differ: ['sidecars/tts_viseme/.venv311/include/python3.11'] != []
+E       
+E       First list contains 1 additional elements.
+E       First extra element 0:
+E       'sidecars/tts_viseme/.venv311/include/python3.11'
+E       
+E       - ['sidecars/tts_viseme/.venv311/include/python3.11']
+E       + [] : meaningless empty directories: ['sidecars/tts_viseme/.venv311/include/python3.11']
+
+tests/test_phase1.py:449: AssertionError
+_ RealtimeWireTests.test_text_only_smart_turn_and_tool_are_one_session_update __
+
+self = <tests.test_phase4_realtime.RealtimeWireTests testMethod=test_text_only_smart_turn_and_tool_are_one_session_update>
+
+    def test_text_only_smart_turn_and_tool_are_one_session_update(self):
+        payload = session_update("小安妮", 20)
+        config = payload["session"]
+        self.assertEqual(config["modalities"], ["text"])
+>       self.assertEqual(config["turn_detection"], {"type": "smart_turn"})
+E       AssertionError: {'type': 'smart_turn_v2'} != {'type': 'smart_turn'}
+E       - {'type': 'smart_turn_v2'}
+E       ?                     ---
+E       
+E       + {'type': 'smart_turn'}
+
+tests/test_phase4_realtime.py:104: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1464
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/_pytest/config/__init__.py:1464: PytestConfigWarning: Unknown config option: cache_dir
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+.venv/lib/python3.11/site-packages/starlette/testclient.py:53
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+.venv/lib/python3.11/site-packages/trustcall/_base.py:46
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/trustcall/_base.py:46: LangGraphDeprecatedSinceV10: Importing Send from langgraph.constants is deprecated. Please use 'from langgraph.types import Send' instead. Deprecated in LangGraph V1.0 to be removed in V2.0.
+    from langgraph.constants import Send
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_companion_persona.py::test_core_stays_bounded_and_operational_rules_are_outside_personality
+FAILED tests/test_persona_style_switch.py::test_named_style_switch_updates_this_chat_without_reconnecting
+FAILED tests/test_phase1.py::StorageConfigTests::test_source_tree_has_no_meaningless_empty_dirs_or_placeholder_files
+FAILED tests/test_phase4_realtime.py::RealtimeWireTests::test_text_only_smart_turn_and_tool_are_one_session_update
+4 failed, 1343 passed, 3 warnings, 37 subtests passed in 64.27s (0:01:04)

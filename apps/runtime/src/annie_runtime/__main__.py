@@ -28,6 +28,7 @@ from annie_runtime import HarborRuntime
 DEFAULT_ACTION_ALLOWLIST = (
     "agree_micro_nod", "shake_head", "look_left", "look_right", "look_up",
     "fast_double_blink", "surprise", "smirk", "proud", "skeptical", "shy",
+    "sniff_forward",
 )
 # 2026-10-26: the listening, speaking and reaction groups the runtime picks while
 # she is awake (decision_policy.LISTEN_MOTIONS / SPEECH_MOTIONS / INNER_MOTIONS).

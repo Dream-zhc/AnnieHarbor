@@ -2067,12 +2067,19 @@ class RealtimeRobot:
         if (script is None or getattr(self.speech, "turn_id", None) != turn_id
                 or self.robot.session_state() != identity or generation != self.robot.generation
                 or (robot_id, turn_id) in self.actions.pending):
+            logger.info("auto_expression_dropped robot=%s turn=%s script=%s speech_turn=%s "
+                        "identity_match=%s generation=%s robot_generation=%s pending=%s",
+                        robot_id, turn_id, script, getattr(self.speech, "turn_id", None),
+                        self.robot.session_state() == identity, generation,
+                        self.robot.generation, (robot_id, turn_id) in self.actions.pending)
             return
         spoken = getattr(self.speech, "generated_text", "") or first
         start = 0 if asked is not None or generic else (
             len(first) if len(spoken) > len(first) + 2 else len(first) // 2)
         anchor, occurrence = pick_anchor(spoken, start)
         if anchor is None and script in EXPRESSION_SCRIPTS:
+            logger.info("auto_expression_dropped robot=%s turn=%s script=%s reason=no_anchor spoken_chars=%s",
+                        robot_id, turn_id, script, len(spoken))
             self.publish("action.auto_rejected", turn_id=turn_id, script=script, reason="no_anchor")
             return
         # Ordinary motions may start with the first audio instead of a word.
@@ -2084,6 +2091,8 @@ class RealtimeRobot:
                 robot_id, f"auto-{turn_id}", turn_id, generation, "action", script,
                 speech=self.speech, user_text=user_text, **anchor_args)
         except ValueError as exc:
+            logger.info("auto_expression_dropped robot=%s turn=%s script=%s reason=request_rejected error=%s",
+                        robot_id, turn_id, script, exc)
             self.publish("action.auto_rejected", turn_id=turn_id, script=script, reason=str(exc))
             return
         self._last_auto_expression_t = time.monotonic()

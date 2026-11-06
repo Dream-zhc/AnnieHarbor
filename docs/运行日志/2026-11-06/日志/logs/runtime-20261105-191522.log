@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/kws.py", line 29, in __init__
+    import sherpa_onnx
+  File "/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/__init__.py", line 1, in <module>
+    from sherpa_onnx.lib._sherpa_onnx import (
+ImportError: dlopen(/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/lib/_sherpa_onnx.cpython-311-darwin.so, 0x0002): Library not loaded: @rpath/libonnxruntime.dylib
+  Referenced from: <F185E865-DA71-36BB-8AB7-70A0A705460C> /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/lib/_sherpa_onnx.cpython-311-darwin.so
+  Reason: tried: '/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/lib/libonnxruntime.dylib' (no such file), '/private/var/folders/d8/hvxvltxn0fl4rmnd52sncbth0000gn/T/build-env-moes6ecm/lib/python3.11/site-packages/libonnxruntime.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/private/var/folders/d8/hvxvltxn0fl4rmnd52sncbth0000gn/T/build-env-moes6ecm/lib/python3.11/site-packages/libonnxruntime.dylib' (no such file), '/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/lib/sherpa_onnx/lib/libonnxruntime.dylib' (no such file), '/Users/runner/work/sherpa-onnx/sherpa-onnx/build/temp.macosx-11.0-arm64-cpython-311/_deps/onnxruntime-src/lib/libonnxruntime.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/Users/runner/work/sherpa-onnx/sherpa-onnx/build/temp.macosx-11.0-arm64-cpython-311/_deps/onnxruntime-src/lib/libonnxruntime.dylib' (no such file), '/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/lib/libonnxruntime.dylib' (no such file), '/private/var/folders/d8/hvxvltxn0fl4rmnd52sncbth0000gn/T/build-env-moes6ecm/lib/python3.11/site-packages/libonnxruntime.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/private/var/folders/d8/hvxvltxn0fl4rmnd52sncbth0000gn/T/build-env-moes6ecm/lib/python3.11/site-packages/libonnxruntime.dylib' (no such file), '/Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/sherpa_onnx/lib/sherpa_onnx/lib/libonnxruntime.dylib' (no such file), '/Users/runner/work/sherpa-onnx/sherpa-onnx/build/temp.macosx-11.0-arm64-cpython-311/_deps/onnxruntime-src/lib/libonnxruntime.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/Users/runner/work/sherpa-onnx/sherpa-onnx/build/temp.macosx-11.0-arm64-cpython-311/_deps/onnxruntime-src/lib/libonnxruntime.dylib' (no such file), '/opt/homebrew/lib/libonnxruntime.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/opt/homebrew/lib/libonnxruntime.dylib' (no such file), '/opt/homebrew/lib/libonnxruntime.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/opt/homebrew/lib/libonnxruntime.dylib' (no such file)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__main__.py", line 532, in <module>
+    main()
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__main__.py", line 332, in main
+    wake_detector = SherpaWakeModel(
+                    ^^^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/packages/annie-adapters/src/annie_adapters/kws.py", line 31, in __init__
+    raise RuntimeError("sherpa wakeword requires installed sherpa-onnx") from exc
+RuntimeError: sherpa wakeword requires installed sherpa-onnx

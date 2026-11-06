@@ -1,0 +1,16 @@
+default_v48#0            {"dur": 4.93, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -12.7, "flat48": 0.146}
+default_v48#1            {"dur": 4.93, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -12.7, "flat48": 0.146}
+annie_full_v48#0         {"dur": 4.5, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -13.4, "flat48": 0.204}
+annie_full_v48#1         {"error": "Throttling.RateQuota Requests rate limit exceeded, please try again later."}
+calm_full_v48#0          {"error": "Throttling.RateQuota Requests rate limit exceeded, please try again later."}
+calm_full_v48#1          {"dur": 6.66, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -13.0, "flat48": 0.115}
+savage_oneshot_v48#0     {"dur": 5.26, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -14.8, "flat48": 0.256}
+savage_oneshot_v48#1     {"dur": 5.56, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -14.3, "flat48": 0.228}
+DONE
+x_default_v48#0          {"dur": 7.89, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -11.8, "flat48": 0.136}
+x_default_v48#1          {"dur": 8.21, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -11.7, "flat48": 0.133}
+x_annie_full_v48#0       {"dur": 7.52, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -13.4, "flat48": 0.192}
+x_annie_full_v48#1       {"dur": 7.97, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -13.3, "flat48": 0.127}
+x_savage_full_v48#0      {"dur": 6.57, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -13.7, "flat48": 0.252}
+x_savage_full_v48#1      {"dur": 7.16, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -14.6, "flat48": 0.28}
+DONE

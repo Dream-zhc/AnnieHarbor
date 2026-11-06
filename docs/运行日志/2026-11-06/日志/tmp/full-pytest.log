@@ -1,0 +1,312 @@
+........................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 25%]
+........................................................................ [ 30%]
+........................................................................ [ 35%]
+............................................... [ 38%]
+................................................................... [ 43%]
+.......................................................................F [ 48%]
+..F.F.F................................................................. [ 53%]
+........................................................................ [ 58%]
+............................................................ [ 62%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+........................................................................ [ 77%]
+........................................................................ [ 82%]
+........................................................................ [ 87%]
+........................................................................ [ 92%]
+........................................................................ [ 98%]
+............................                                             [100%]
+=================================== FAILURES ===================================
+_________ test_embedding_failure_visible_without_hiding_canonical_fact _________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-128/test_embedding_failure_visible0')
+
+    def test_embedding_failure_visible_without_hiding_canonical_fact(tmp_path):
+        async def exercise():
+            store = RuntimeStore(tmp_path / "memory.db")
+            store.migrate()
+            service = MemoryService(store, Cloud(), ("a",))
+            await service.put("a", "warm", "semantic", "drink", "用户喜欢茶")
+            rows = await service.list("a", "warm")
+            assert rows[0]["index_state"] == "failed"
+            assert service.errors["a"] == "embedding_failed"
+            assert len((await service.recall("a", "warm", "喜欢茶"))["evidence"]) == 1
+    
+>       asyncio.run(exercise())
+
+tests/test_phase6_failures.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise():
+        store = RuntimeStore(tmp_path / "memory.db")
+        store.migrate()
+        service = MemoryService(store, Cloud(), ("a",))
+        await service.put("a", "warm", "semantic", "drink", "用户喜欢茶")
+        rows = await service.list("a", "warm")
+>       assert rows[0]["index_state"] == "failed"
+E       AssertionError: assert 'not_required' == 'failed'
+E         
+E         - failed
+E         + not_required
+
+tests/test_phase6_failures.py:49: AssertionError
+_________________ test_crud_corrections_tombstone_and_restart __________________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-128/test_crud_corrections_tombston0')
+
+    def test_crud_corrections_tombstone_and_restart(tmp_path):
+        async def exercise():
+            store = RuntimeStore(tmp_path / "memory.db")
+            store.migrate()
+            cloud = FakeCloud()
+            service = MemoryService(store, cloud, ("annie-a", "annie-b"))
+            result = await service.put(
+                "annie-a", "warm", "semantic", "drink_preference", "用户喜欢茶",
+                source_turn_id="t1", source_created_ms=1000,
+            )
+            ident, version = result
+            assert version == 1
+            assert len(await service.list("annie-a", "warm")) == 1
+            assert await service.list("annie-b", "warm") == []
+            assert len((await service.recall("annie-a", "warm", "茶"))["evidence"]) == 1
+            assert await service.list("annie-a", "cold")
+            restarted = MemoryService(store, cloud, ("annie-a", "annie-b"))
+            assert await service.list("annie-a", "warm") == await restarted.list("annie-a", "warm")
+            assert await service.put(
+                "annie-a", "warm", "semantic", "drink_preference", "用户喜欢咖啡",
+                source_turn_id="t2", source_created_ms=2000,
+            ) == (ident, 2)
+            assert await service.put(
+                "annie-a", "warm", "semantic", "drink_preference", "用户喜欢茶",
+                source_turn_id="t1", source_created_ms=1000,
+            ) is None
+            with pytest.raises(ValueError, match="version conflict"):
+                await service.change("annie-a", "warm", ident, 1, "旧版本")
+            forgotten = await service.change("annie-a", "warm", ident, 2)
+            assert forgotten["conversation_history_deleted"] is False
+            assert await service.list("annie-a", "warm") == []
+            assert (await service.recall("annie-a", "warm", "咖啡"))["evidence"] == []
+            assert await service.put(
+                "annie-a", "warm", "semantic", "drink_preference", "用户喜欢茶",
+                source_turn_id="t1", source_created_ms=1000,
+            ) is None
+            assert (await service.list("annie-a", "warm", True))[0]["status"] == "deleted"
+            await service.close()
+            assert cloud.closed
+    
+>       asyncio.run(exercise())
+
+tests/test_phase6_memory.py:71: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def exercise():
+        store = RuntimeStore(tmp_path / "memory.db")
+        store.migrate()
+        cloud = FakeCloud()
+        service = MemoryService(store, cloud, ("annie-a", "annie-b"))
+        result = await service.put(
+            "annie-a", "warm", "semantic", "drink_preference", "用户喜欢茶",
+            source_turn_id="t1", source_created_ms=1000,
+        )
+        ident, version = result
+        assert version == 1
+        assert len(await service.list("annie-a", "warm")) == 1
+        assert await service.list("annie-b", "warm") == []
+>       assert len((await service.recall("annie-a", "warm", "茶"))["evidence"]) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_phase6_memory.py:45: AssertionError
+_________ test_completed_turn_background_extraction_and_restart_cursor _________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-128/test_completed_turn_background0')
+
+    def test_completed_turn_background_extraction_and_restart_cursor(tmp_path):
+        async def run():
+            store = RuntimeStore(tmp_path / "memory.db")
+            store.migrate()
+            memory = MemoryService(store, FakeCloud(), ("a",))
+            await memory.start()
+            try:
+                # Establish the first-boot cursor before a new turn enters the ledger.
+                await asyncio.sleep(0.15)
+                now = time.time_ns() // 1_000_000
+                store.create_conversation_turn({
+                    "turn_id": "turn1", "robot_id": "a", "room_id": "roomv2",
+                    "chat_id": "chat-old", "persona_id": "warm", "persona_revision": 1,
+                    "session_epoch": 1, "generation": 1,
+                    "user_text": "我喜欢茶", "status": "running",
+                    "created_ms": now, "updated_ms": now,
+                })
+                store.finish_conversation_turn("a", "turn1", status="completed", updated_ms=now + 1)
+                for _ in range(30):
+                    if await memory.list("a", "warm"):
+                        break
+                    await asyncio.sleep(0.1)
+                items = await memory.list("a", "warm")
+                assert len(items) == 1
+                assert items[0]["source_turn_id"] == "turn1"
+            finally:
+                await memory.close()
+            restarted = MemoryService(store, FakeCloud(), ("a",))
+            await restarted.start()
+            try:
+                assert len(await restarted.list("a", "other-chat-persona")) == 1
+                assert store.get_conversation_turn("a", "turn1")["user_text"] == "我喜欢茶"
+            finally:
+                await restarted.close()
+    
+>       asyncio.run(run())
+
+tests/test_phase6_worker.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        store = RuntimeStore(tmp_path / "memory.db")
+        store.migrate()
+        memory = MemoryService(store, FakeCloud(), ("a",))
+        await memory.start()
+        try:
+            # Establish the first-boot cursor before a new turn enters the ledger.
+            await asyncio.sleep(0.15)
+            now = time.time_ns() // 1_000_000
+            store.create_conversation_turn({
+                "turn_id": "turn1", "robot_id": "a", "room_id": "roomv2",
+                "chat_id": "chat-old", "persona_id": "warm", "persona_revision": 1,
+                "session_epoch": 1, "generation": 1,
+                "user_text": "我喜欢茶", "status": "running",
+                "created_ms": now, "updated_ms": now,
+            })
+            store.finish_conversation_turn("a", "turn1", status="completed", updated_ms=now + 1)
+            for _ in range(30):
+                if await memory.list("a", "warm"):
+                    break
+                await asyncio.sleep(0.1)
+            items = await memory.list("a", "warm")
+>           assert len(items) == 1
+E           assert 0 == 1
+E            +  where 0 = len([])
+
+tests/test_phase6_worker.py:44: AssertionError
+___________ test_external_event_does_not_block_next_real_user_memory ___________
+
+tmp_path = PosixPath('/private/var/folders/7b/q9lmn8bj0sn0wmwgp2lgmrt40000gn/T/pytest-of-dream/pytest-128/test_external_event_does_not_b0')
+
+    def test_external_event_does_not_block_next_real_user_memory(tmp_path):
+        async def run():
+            store = RuntimeStore(tmp_path / "memory.db")
+            store.migrate()
+            memory = MemoryService(store, FakeCloud(), ("a",))
+            await memory.start()
+            try:
+                await asyncio.sleep(.15)
+                now = time.time_ns() // 1_000_000
+                for turn_id, source, user, prompt in (
+                    ("internal", "external", "", "【真实到期的单次提醒】喝茶"),
+                    ("real", "user", "我喜欢茶", None),
+                ):
+                    store.create_conversation_turn({
+                        "turn_id": turn_id, "robot_id": "a", "room_id": "roomv2",
+                        "chat_id": "chat", "persona_id": "warm", "persona_revision": 1,
+                        "session_epoch": 1, "generation": 1, "user_text": user,
+                        "turn_source": source, "external_prompt": prompt,
+                        "status": "completed", "created_ms": now, "updated_ms": now,
+                    })
+                for _ in range(30):
+                    if await memory.list("a", "warm"):
+                        break
+                    await asyncio.sleep(.1)
+                items = await memory.list("a", "warm")
+                assert len(items) == 1 and items[0]["source_turn_id"] == "real"
+            finally:
+                await memory.close()
+    
+>       asyncio.run(run())
+
+tests/test_phase6_worker.py:115: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.16/Frameworks/Python.framework/Versions/3.11/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def run():
+        store = RuntimeStore(tmp_path / "memory.db")
+        store.migrate()
+        memory = MemoryService(store, FakeCloud(), ("a",))
+        await memory.start()
+        try:
+            await asyncio.sleep(.15)
+            now = time.time_ns() // 1_000_000
+            for turn_id, source, user, prompt in (
+                ("internal", "external", "", "【真实到期的单次提醒】喝茶"),
+                ("real", "user", "我喜欢茶", None),
+            ):
+                store.create_conversation_turn({
+                    "turn_id": turn_id, "robot_id": "a", "room_id": "roomv2",
+                    "chat_id": "chat", "persona_id": "warm", "persona_revision": 1,
+                    "session_epoch": 1, "generation": 1, "user_text": user,
+                    "turn_source": source, "external_prompt": prompt,
+                    "status": "completed", "created_ms": now, "updated_ms": now,
+                })
+            for _ in range(30):
+                if await memory.list("a", "warm"):
+                    break
+                await asyncio.sleep(.1)
+            items = await memory.list("a", "warm")
+>           assert len(items) == 1 and items[0]["source_turn_id"] == "real"
+E           assert (0 == 1)
+E            +  where 0 = len([])
+
+tests/test_phase6_worker.py:111: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/starlette/testclient.py:53
+  /Users/dream/Documents/zhc/python/brainv2/.venv/lib/python3.11/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_phase6_failures.py::test_embedding_failure_visible_without_hiding_canonical_fact
+FAILED tests/test_phase6_memory.py::test_crud_corrections_tombstone_and_restart
+FAILED tests/test_phase6_worker.py::test_completed_turn_background_extraction_and_restart_cursor
+FAILED tests/test_phase6_worker.py::test_external_event_does_not_block_next_real_user_memory
+4 failed, 1422 passed, 1 warning, 42 subtests passed in 65.11s (0:01:05)

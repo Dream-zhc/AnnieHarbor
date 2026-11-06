@@ -1,0 +1,2 @@
+{"robot_id": "annie-a", "valence": 0.8214, "energy": 0.5445, "tone": "startled", "reason": "有人突然凑得很近", "reason_ms": 1793961180201, "last_interaction_ms": 1793961338671, "updated_ms": 1793961338671}
+{"robot_id": "annie-b", "valence": 0.15, "energy": 0.3367, "tone": "neutral", "reason": "", "reason_ms": null, "last_interaction_ms": 1793880766698, "updated_ms": 1793880766698}

@@ -1,0 +1,14 @@
+default_plain          {"dur": 4.93, "peak": -0.0, "clip": 487, "speech_db": -12.4, "floor_db": -270.3, "hf7k": 0.0073, "jumps": 7454}
+annie_plain            {"dur": 8.21, "peak": -0.0, "clip": 27, "speech_db": -14.3, "floor_db": -270.3, "hf7k": 0.0001, "jumps": 80}
+annie_full             {"dur": 5.86, "peak": 0.0, "clip": 113, "speech_db": -13.1, "floor_db": -270.3, "hf7k": 0.0001, "jumps": 101}
+calm_plain             {"error": "Throttling.RateQuota Requests rate limit exceeded, please try again later."}
+calm_full              {"error": "Throttling.RateQuota Requests rate limit exceeded, please try again later."}
+deadpan_plain          {"error": "Throttling.RateQuota Requests rate limit exceeded, please try again later."}
+EXC ConnectionClosedError received 1007 (invalid frame payload data) Requests rate limit exceeded, please try again later.; then sent 1007 (invali
+savage_plain           {"dur": 6.45, "peak": -0.0, "clip": 433, "speech_db": -12.3, "floor_db": -270.3, "hf7k": 0.0027, "jumps": 3067}
+savage_full            {"dur": 5.98, "peak": 0.0, "clip": 280, "speech_db": -12.9, "floor_db": -270.3, "hf7k": 0.0035, "jumps": 2699}
+savage_instr           {"dur": 5.73, "peak": -0.0, "clip": 408, "speech_db": -13.4, "floor_db": -270.3, "hf7k": 0.0019, "jumps": 2824}
+savage_ratepitch       {"dur": 5.46, "peak": -0.0, "clip": 213, "speech_db": -13.0, "floor_db": -270.3, "hf7k": 0.0028, "jumps": 2015}
+savage_vol             {"dur": 5.89, "peak": 0.0, "clip": 543, "speech_db": -12.1, "floor_db": -270.3, "hf7k": 0.0035, "jumps": 3648}
+savage_full_oneshot    {"dur": 5.33, "peak": 0.0, "clip": 1224, "speech_db": -11.9, "floor_db": -270.3, "hf7k": 0.0025, "jumps": 3621}
+DONE

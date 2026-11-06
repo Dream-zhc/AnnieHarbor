@@ -114,6 +114,13 @@ def test_verdicts_need_confidence_and_concrete_choices():
     assert explicit_motion("做个害羞的表情", allowed) == "shy"
     assert explicit_motion("别点头了", allowed) is None
     assert explicit_motion("摇个头", allowed) is None  # not enabled
+    named = allowed + ("listen_turn", "sniff_forward")
+    assert explicit_motion("做一个侧耳听", named) == "listen_turn"
+    assert explicit_motion("那来个侧耳听", named) == "listen_turn"
+    assert explicit_motion("做一个嗅闻寻源动作", named) == "sniff_forward"
+    assert explicit_motion("闻一闻", named) == "sniff_forward"
+    assert explicit_motion("做一个侧耳听", allowed) is None  # not enabled
+    assert explicit_motion("做一个嗅闻寻源动作", allowed) is None  # not enabled
     state = addressee_state(utterance="x" * 900, recent_lines=[str(i) for i in range(20)],
                             seconds_since_reply=3.7, robot_asked=True)
     assert len(state["当前这句话"]) == 300 and len(state["最近对话"]) == 6

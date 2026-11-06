@@ -1,0 +1,23 @@
+default_v50#0            {"dur": 6.13, "clip": 716, "runs3": 17, "longest": 9, "clipfr%": 45.2, "speech_db": -11.4}
+default_v50#1            {"dur": 6.13, "clip": 716, "runs3": 17, "longest": 9, "clipfr%": 45.2, "speech_db": -11.4}
+default_v40#0            {"dur": 5.49, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -13.6}
+default_v40#1            {"dur": 5.33, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -12.7}
+annie_full#0             {"dur": 5.03, "clip": 155, "runs3": 28, "longest": 6, "clipfr%": 11.1, "speech_db": -11.7}
+annie_full#1             {"dur": 4.96, "clip": 152, "runs3": 23, "longest": 5, "clipfr%": 8.9, "speech_db": -12.3}
+annie_full_v42#0         {"dur": 5.48, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -14.8}
+annie_full_v42#1         {"dur": 5.48, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -14.8}
+calm_full#0              {"dur": 7.88, "clip": 326, "runs3": 55, "longest": 13, "clipfr%": 12.9, "speech_db": -12.2}
+calm_full#1              {"dur": 6.66, "clip": 324, "runs3": 45, "longest": 13, "clipfr%": 13.3, "speech_db": -12.6}
+deadpan_full#0           {"dur": 11.84, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -19.7}
+deadpan_full#1           {"dur": 9.9, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -19.0}
+savage_full#0            {"dur": 5.68, "clip": 515, "runs3": 100, "longest": 6, "clipfr%": 14.7, "speech_db": -13.3}
+savage_full#1            {"dur": 5.53, "clip": 667, "runs3": 119, "longest": 7, "clipfr%": 13.8, "speech_db": -13.0}
+savage_full_v45#0        {"dur": 5.31, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -14.4}
+savage_full_v45#1        {"dur": 5.68, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -15.1}
+savage_full_v40#0        {"dur": 5.68, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -15.8}
+savage_full_v40#1        {"dur": 5.31, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -15.4}
+savage_oneshot#0         {"dur": 5.93, "clip": 462, "runs3": 78, "longest": 7, "clipfr%": 14.8, "speech_db": -13.2}
+savage_oneshot#1         {"dur": 5.7, "clip": 223, "runs3": 31, "longest": 6, "clipfr%": 13.2, "speech_db": -12.6}
+savage_oneshot_v40#0     {"dur": 5.56, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -16.0}
+savage_oneshot_v40#1     {"dur": 5.26, "clip": 0, "runs3": 0, "longest": 0, "clipfr%": 0.0, "speech_db": -15.4}
+DONE

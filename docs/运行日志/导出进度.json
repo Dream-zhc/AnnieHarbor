@@ -288,12 +288,29 @@
     "tmp/tts-diagnose/run4.log": 1782,
     "tmp/voice-migrate/compare1.log": 1429,
     "tmp/voice-migrate/compare2.log": 4417,
-    "tmp/voice-migrate/latency.log": 405
+    "tmp/voice-migrate/latency.log": 405,
+    "logs/runtime-20261106-184858.log": 87121,
+    "logs/runtime-20261106-185331.log": 198650,
+    "logs/runtime-20261106-190156.log": 180635,
+    "logs/runtime-20261106-191159.log": 72825,
+    "logs/runtime-20261106-191421.log": 11252,
+    "logs/runtime-20261107-212050.log": 30851520,
+    "logs/runtime-20261109-202701.log": 205052,
+    "logs/runtime-20261109-203207.log": 96076,
+    "logs/runtime-20261109-203422.log": 1729385,
+    "logs/runtime-20261109-211521.log": 1044463,
+    "logs/runtime-20261110-095509.log": 651188,
+    "logs/runtime-20261110-134025.log": 1247074,
+    "logs/runtime-20261110-142916.log": 252465,
+    "logs/runtime-20261110-154908.log": 234733,
+    "logs/runtime-20261110-174438.log": 646050,
+    "logs/runtime-20261111-143424.log": 597076,
+    "logs/runtime-20261111-150128.log": 711344
   },
   "table_cursors": {
-    "conversation_turns": 1824,
-    "runtime_events": 117911,
-    "action_requests": 1793961342653
+    "conversation_turns": 2080,
+    "runtime_events": 118107,
+    "action_requests": 1794380498130
   },
-  "last_export": "2026-11-06T18:42:10"
+  "last_export": "2026-11-12T16:38:33"
 }

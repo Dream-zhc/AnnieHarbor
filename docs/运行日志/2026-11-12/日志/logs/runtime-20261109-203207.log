@@ -1,0 +1,943 @@
+2026-11-09 20:32:08,308 INFO annie_runtime vision_intent_config robots=annie-a,annie-b route=cloud deadline_ms=3500 tts=True
+2026-11-09 20:32:08,308 INFO annie_runtime vision_look_decision_config scope=cue timeout_ms=700 image=True frames=annie-a:robot-test
+INFO:     Started server process [62602]
+INFO:     Waiting for application startup.
+2026-11-09 20:32:08,367 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-09 20:32:08,373 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-09 20:32:08,437 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8780 (Press CTRL+C to quit)
+2026-11-09 20:32:08,525 INFO annie_adapters room_pcm connected room=roomv2 url=ws://192.168.1.47:8090/robot/roomv2/reb_mic
+2026-11-09 20:32:08,525 INFO annie_runtime.cloud_aec cloud_aec status=idle_no_tts processed=0 bypassed=1 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+2026-11-09 20:32:08,526 INFO annie_runtime runtime_event robot=annie-a kind=pcm_stream_started request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=None
+2026-11-09 20:32:08,527 INFO annie_adapters room_pcm connected room=roomv3 url=ws://192.168.1.47:8090/robot/roomv3/reb_mic
+2026-11-09 20:32:08,625 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     192.168.1.47:62903 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:08,654 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+INFO:     192.168.1.47:62903 - "GET /api/robots/annie-a/realtime/stream?after=18911 HTTP/1.1" 200 OK
+2026-11-09 20:32:08,709 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:08,710 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-09 20:32:08,710 INFO annie_runtime.decision_route d3_decision status=down model=d3-NVFP4 error=HTTP 404
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-11-09 20:32:08,821 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=313 history_turns=8 instructions_chars=4759 tools=16 tool_schema_chars=9911 restored_turns=3 memory_bootstrap_chars=0
+2026-11-09 20:32:08,841 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:08,845 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:08,845 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:08,845 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+2026-11-09 20:32:08,942 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=433 history_turns=8 instructions_chars=5725 tools=18 tool_schema_chars=11725 restored_turns=8 memory_bootstrap_chars=404
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-11-09 20:32:09,718 INFO annie_runtime runtime_event robot=annie-a kind=robot_head_online request_id=None source=room_audio elapsed_ms=None queue_wait_ms=None error=None
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:10,441 INFO annie_runtime 嘴型服务在线 robot=annie-a room=roomv2 heartbeat_age_ms=1663
+2026-11-09 20:32:10,441 INFO annie_runtime 嘴型服务在线 robot=annie-b room=roomv3 heartbeat_age_ms=58
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49460 - "GET /api/robots/annie-a/realtime/stream?after=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49464 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49464 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49464 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49464 - "GET / HTTP/1.1" 304 Not Modified
+2026-11-09 20:32:13,845 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:13,865 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:13,865 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:13,869 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:13,869 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:13,869 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49464 - "GET /assets/index-Cx_APpiR.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49442 - "GET /assets/index-C3hi2g2G.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49442 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49464 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49464 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/conversations/%E6%93%A6%E6%8B%AD%E6%89%93%E7%AE%97?persona_id=annie-lively&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49476 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:32:18,870 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:18,912 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:18,914 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:18,919 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:18,920 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:18,921 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:23,928 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:23,945 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:23,945 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:23,947 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:23,947 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:23,947 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49474 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63108 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63108 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:32:28,947 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:28,966 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:28,966 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:28,967 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:28,967 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:28,967 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63108 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63108 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63108 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63108 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51272 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:64313 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49475 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:33,968 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:33,987 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:33,987 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:33,991 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:33,992 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:33,992 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49508 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:32:38,808 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-09 20:32:38,890 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-09 20:32:38,993 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:32:39,007 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:39,010 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:39,013 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:39,013 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:39,013 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:49541 - "GET /assets/index-C3hi2g2G.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /assets/index-Cx_APpiR.js HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/conversations/%E6%93%A6%E6%8B%AD%E6%89%93%E7%AE%97?persona_id=annie-lively&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49540 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49541 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49567 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49568 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49567 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:44,014 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:44,039 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:44,039 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:44,042 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:44,042 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:44,042 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49537 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:49,043 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:49,062 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:49,062 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:49,065 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:49,065 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:49,065 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-11-09 20:32:54,067 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:54,085 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:54,085 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:54,087 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:54,087 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:54,087 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49601 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:32:59,088 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:32:59,107 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:32:59,108 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:32:59,108 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:32:59,108 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:32:59,108 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49627 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:04,109 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:04,125 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:04,126 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:04,127 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:04,127 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:04,128 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:54789 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:33:08,973 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:09,058 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:09,129 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:09,148 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:09,149 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:09,149 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:09,149 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:09,149 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:50946 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:14,150 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:14,168 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:14,169 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:14,170 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:14,170 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:14,170 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:19,171 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:19,189 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:19,189 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:19,190 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:19,190 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:19,190 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61691 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:24,192 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:24,207 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:24,207 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:24,209 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:24,209 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:24,209 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49628 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51702 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51702 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51702 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:33:29,210 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:29,228 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:29,229 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:29,232 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:29,232 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:29,232 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51702 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49684 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49684 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49684 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49684 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49684 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51702 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:51702 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /health HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     192.168.1.47:55657 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     192.168.1.47:63720 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:34,233 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:34,251 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:34,252 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:34,254 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:34,254 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:34,254 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49628 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49709 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:39,142 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-09 20:33:39,230 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-09 20:33:39,256 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:39,273 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:39,274 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:39,275 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:39,275 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:39,275 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:61755 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49710 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49720 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-11-09 20:33:44,275 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:44,294 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:44,294 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:44,296 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:44,296 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:44,296 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53866 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49721 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-09 20:33:49,297 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:49,316 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:49,316 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:49,318 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:49,318 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+2026-11-09 20:33:49,319 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /health HTTP/1.1" 200 OK
+2026-11-09 20:33:54,319 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-11-09 20:33:54,337 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:54,338 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49741 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+2026-11-09 20:33:54,340 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:54,340 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:54,340 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49741 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49741 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:49756 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:33:59,341 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:33:59,360 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:33:59,361 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:33:59,363 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:33:59,363 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:33:59,363 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49731 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-11-09 20:34:04,365 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:34:04,383 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:34:04,383 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:34:04,385 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:34:04,385 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:34:04,385 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49748 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+2026-11-09 20:34:09,309 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-09 20:34:09,386 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:34:09,402 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-09 20:34:09,405 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:34:09,406 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:34:09,406 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+2026-11-09 20:34:09,406 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:34:09,406 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49747 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+2026-11-09 20:34:14,407 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:34:14,426 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:34:14,427 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:34:14,428 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:34:14,429 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:34:14,429 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     192.168.1.47:53144 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49792 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49796 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+2026-11-09 20:34:19,430 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+2026-11-09 20:34:19,446 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-09 20:34:19,447 WARNING livekit livekit_signaling:583:livekit_signaling - signal connection failed on v1 path: Handshake { status: 401 }
+2026-11-09 20:34:19,448 WARNING livekit livekit::rtc_engine:559:livekit::rtc_engine - authentication rejected during connect (signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet); not retrying
+2026-11-09 20:34:19,448 ERROR livekit livekit_ffi::room_apis::server::room:355:livekit_ffi::room_apis::server::room - error while connecting to a room: engine: signal failure: client error: 401 Unauthorized - invalid authorization token: token has invalid claims: token is not valid yet
+2026-11-09 20:34:19,449 INFO annie_adapters.livekit_frames livekit_frames status=down robot=annie-a room=robot-test source=camera-a error=ConnectError
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     192.168.1.47:58361 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK

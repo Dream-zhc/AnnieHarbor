@@ -100,7 +100,7 @@ test('reply language choices cover auto follow and every TTS language',async()=>
   const {REPLY_LANGUAGE_CHOICES,replyLanguageValue,replyLanguageSelection,replyLanguageLabel}=
     await import('../src/speech-expression-state.ts');
   assert.deepEqual(REPLY_LANGUAGE_CHOICES[0],{value:'auto',label:'自动跟随'});
-  for(const label of ['普通话','四川话','河南话','陕西话','东北话','上海话','重庆话','宁夏话','粤语','英语','俄语','马来语','菲律宾语'])
+  for(const label of ['普通话','四川话','河南话','陕西话','粤语','英语','俄语','马来语','菲律宾语'])
     assert.ok(REPLY_LANGUAGE_CHOICES.some(item=>item.label===label),label);
   assert.equal(replyLanguageValue(null),'auto');
   assert.equal(replyLanguageValue({language:'ru',dialect:'unknown'}),'ru:unknown');

@@ -15,22 +15,6 @@ _NAME_GROUPS = {
     ('zh', 'sichuan'): '四川话 四川方言 川话 成都话',
     ('zh', 'henan'): '河南话 河南方言 郑州话',
     ('zh', 'shaanxi'): '陕西话 陕西方言 西安话 关中话',
-    ('zh', 'chongqing'): '重庆话 重庆方言',
-    ('zh', 'dongbei'): '东北话 东北方言 东北口音',
-    ('zh', 'shanghai'): '上海话 上海方言 沪语',
-    ('zh', 'yunnan'): '云南话 云南方言 昆明话',
-    ('zh', 'guizhou'): '贵州话 贵州方言 贵阳话',
-    ('zh', 'hubei'): '湖北话 湖北方言 武汉话',
-    ('zh', 'hunan'): '湖南话 湖南方言 长沙话',
-    ('zh', 'jiangxi'): '江西话 江西方言 南昌话',
-    ('zh', 'zhejiang'): '浙江话 浙江方言 杭州话',
-    ('zh', 'ningbo'): '宁波话 宁波方言',
-    ('zh', 'shandong'): '山东话 山东方言 济南话',
-    ('zh', 'qingdao'): '青岛话 青岛方言',
-    ('zh', 'hebei'): '河北话 河北方言',
-    ('zh', 'shanxi'): '山西话 山西方言 太原话',
-    ('zh', 'gansu'): '甘肃话 甘肃方言 兰州话',
-    ('zh', 'ningxia'): '宁夏话 宁夏方言 银川话',
     ('yue', 'cantonese'): '粤语 广东话 广州话 香港话',
     ('en', 'unknown'): '英语 英文',
     ('ja', 'unknown'): '日语 日文 日本话',
@@ -68,8 +52,7 @@ _ENGLISH_NAMES = {
 }
 # What a model writes instead of the schema value: 11-05 it sent "northeast".
 DIALECT_ALIASES = {
-    'northeast': 'dongbei', 'northeastern': 'dongbei', 'northeast_mandarin': 'dongbei',
-    'shanghainese': 'shanghai', 'sichuanese': 'sichuan', 'szechuan': 'sichuan',
+    'sichuanese': 'sichuan', 'szechuan': 'sichuan',
     'szechuanese': 'sichuan', 'putonghua': 'mandarin', 'standard': 'mandarin', 'yue': 'cantonese',
 }
 IDENTITY_KEYS = ('robot_id', 'room_id', 'chat_id', 'persona_id', 'generation', 'session_epoch')

@@ -2714,7 +2714,8 @@ class RealtimeRobot:
                         "identity_match=%s generation=%s robot_generation=%s pending=%s",
                         robot_id, turn_id, script, getattr(self.speech, "turn_id", None),
                         self.robot.session_state() == identity, generation,
-                        self.robot.generation, (robot_id, turn_id) in self.actions.pending)
+                        self.robot.generation,
+                        self.actions is not None and (robot_id, turn_id) in self.actions.pending)
             return
         spoken = getattr(self.speech, "generated_text", "") or first
         start = 0 if asked is not None or generic else (

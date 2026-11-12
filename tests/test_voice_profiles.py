@@ -69,8 +69,8 @@ class FakeVoiceProvider:
 
 
 def test_invalid_audio_is_rejected_before_provider(tmp_path):
-    assert len(PRESETS) == 15
-    assert len(AUTO_PREVIEWS) == 15
+    assert len(PRESETS) == 13
+    assert len(AUTO_PREVIEWS) == 13
     for filename, content in (("bad.exe", wav()), ("bad.wav", b"garbage"*200),
                               ("bad.mp3", b"garbage"*200), ("bad.m4a", b"garbage"*200),
                               ("short.wav", wav(2))):

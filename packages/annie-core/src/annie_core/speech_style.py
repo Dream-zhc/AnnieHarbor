@@ -5,14 +5,9 @@ from dataclasses import dataclass, replace
 
 LANGUAGES = frozenset({"zh", "yue", "en", "fr", "de", "ja", "ko", "ru", "pt", "th",
                        "id", "vi", "es", "it", "ms", "fil", "ar", "hi", "tr", "uk"})
-# Chinese dialects a cloned Qwen-Audio voice speaks on instruction: the voice-cloning
-# language list (help.aliyun.com/zh/model-studio/voice-cloning-user-guide, 11-05).
+# Chinese dialects offered for the 3.0-flash voices (the wider list is 3.1-tts-plus only, kept on dev).
 CHINESE_DIALECTS = {
     "mandarin": "普通话", "sichuan": "四川话", "henan": "河南话", "shaanxi": "陕西话",
-    "dongbei": "东北话", "shanghai": "上海话", "chongqing": "重庆话", "yunnan": "云南话",
-    "guizhou": "贵州话", "hubei": "湖北话", "hunan": "湖南话", "jiangxi": "江西话",
-    "zhejiang": "浙江话", "ningbo": "宁波话", "shandong": "山东话", "qingdao": "青岛话",
-    "hebei": "河北话", "shanxi": "山西话", "gansu": "甘肃话", "ningxia": "宁夏话",
 }
 DIALECTS = frozenset({"unknown", "cantonese", *CHINESE_DIALECTS})
 EMOTIONS = frozenset({"neutral", "warm", "playful", "sarcastic", "curious", "serious",

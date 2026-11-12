@@ -11,7 +11,7 @@ from websockets.protocol import State
 
 from annie_adapters.net import cloud_proxy, room_connect
 
-MODEL = "qwen-audio-3.1-tts-plus"
+MODEL = "qwen-audio-3.0-tts-flash"
 # One wire protocol for all four. A cloned voice only works with the model it
 # was cloned for, whose name begins its ID; system voices take the configured one.
 MODELS = ("qwen-audio-3.1-tts-plus", "qwen-audio-3.1-tts-flash",

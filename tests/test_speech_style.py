@@ -337,9 +337,9 @@ def test_every_dialect_a_cloned_voice_speaks_has_an_instruction():
 
 def test_a_dialect_request_keeps_the_personality_and_names_it():
     tone = PersonaTone(instruction="语气里满是不屑和嘲讽。", label="毒舌")
-    asked = choose_speech_style(dialect="dongbei", source="explicit_user", delivery="contextual")
+    asked = choose_speech_style(dialect="henan", source="explicit_user", delivery="contextual")
     style = apply_persona_tone(asked, tone)
-    assert style.instruction.startswith("请使用自然东北话。语气里满是不屑和嘲讽。")
+    assert style.instruction.startswith("请使用自然河南话。语气里满是不屑和嘲讽。")
     assert style.tone == "毒舌"
     warm = choose_speech_style(emotion="warm", source="explicit_user", delivery="contextual")
     assert apply_persona_tone(warm, tone) == warm  # a tone the user asked for still wins
@@ -350,6 +350,6 @@ def test_a_cloned_voice_keeps_the_model_it_was_cloned_for():
     assert old["payload"]["model"] == "qwen-audio-3.0-tts-flash"
     system = command("run-task", "t", voice="longanhuan_v3.1", model="qwen-audio-3.1-tts-plus")
     assert system["payload"]["model"] == "qwen-audio-3.1-tts-plus"
-    assert command("run-task", "t", voice="longanhuan_v3.1")["payload"]["model"] == "qwen-audio-3.1-tts-plus"
+    assert command("run-task", "t", voice="longanhuan_v3.1")["payload"]["model"] == "qwen-audio-3.0-tts-flash"
     with pytest.raises(ValueError):
         command("run-task", "t", voice="longanhuan_v3.1", model="qwen-tts-latest")

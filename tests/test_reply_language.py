@@ -245,20 +245,19 @@ def test_saved_preferences_keep_only_the_first_follow():
 
 
 @pytest.mark.parametrize(("text", "dialect"), [
-    ("用东北话骂我两句", "dongbei"), ("用上海话说", "shanghai"), ("重庆话来一段", "chongqing"),
-    ("用沪语讲讲", "shanghai"), ("用四川话说", "sichuan"),
+    ("用河南话骂我两句", "henan"), ("用陕西话说", "shaanxi"), ("用四川话说", "sichuan"),
 ])
 def test_every_tts_dialect_is_understood_by_name(text, dialect):
     assert explicit_language_request(text)["dialect"] == dialect
 
 
 def test_loose_dialect_names_from_the_model_are_normalized():
-    assert normalize_dialect("northeast") == "dongbei"
-    assert normalize_dialect("东北话") == "dongbei"
+    assert normalize_dialect("putonghua") == "mandarin"
+    assert normalize_dialect("河南话") == "henan"
     assert normalize_dialect("Sichuanese") == "sichuan"
     assert normalize_dialect("klingon") == "klingon"
     state = ReplyLanguageState()
-    state.reply_intent(language="zh", dialect="northeast", transcript="用东北话骂我两句")
-    assert state.intent["dialect"] == "dongbei"
+    state.reply_intent(language="zh", dialect="szechuan", transcript="用四川话骂我两句")
+    assert state.intent["dialect"] == "sichuan"
     with pytest.raises(ValueError):
-        state.reply_intent(language="zh", dialect="klingon", transcript="用东北话骂我两句")
+        state.reply_intent(language="zh", dialect="klingon", transcript="用四川话骂我两句")

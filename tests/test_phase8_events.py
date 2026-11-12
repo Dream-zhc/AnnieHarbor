@@ -164,7 +164,7 @@ def test_radar_too_close_replies_once_then_cools_down(tmp_path):
             prompt = client.robot.cached_turn(client.turn_id)["external_prompt"]
             assert "靠得很近" in prompt
             assert "当前的性格" in prompt
-            assert "正在进行的对话" in prompt
+            assert "正在进行的对话" not in prompt and "不要借机把话题拉回" in prompt
             assert "固定套话" in prompt
             assert "请对方稍微退开" not in prompt
             assert "非用户发言" in prompt

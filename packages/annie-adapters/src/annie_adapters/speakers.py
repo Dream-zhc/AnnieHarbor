@@ -10,6 +10,7 @@ import numpy as np
 MODEL_FILE = "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"
 MODEL_ID = "3dspeaker-campplus-zh-cn-16k"
 SAMPLE_RATE = 16000
+MIN_EMBED_SECONDS = 1.0
 MAX_SPEAKERS = 24
 _BAD_NAME = set("【】/\\\n\r\t")
 
@@ -192,7 +193,7 @@ class SpeakerEmbedder:
 
     def embed(self, samples):
         audio = np.ascontiguousarray(samples, dtype=np.float32).reshape(-1)
-        if audio.size < SAMPLE_RATE:
+        if audio.size < int(MIN_EMBED_SECONDS * SAMPLE_RATE):
             raise ValueError("声纹音频太短")
         with self._lock:
             stream = self._extractor.create_stream()

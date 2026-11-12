@@ -4,16 +4,33 @@ import re
 import time
 from collections import OrderedDict
 
+from annie_core.speech_style import CHINESE_DIALECTS, DIALECTS
+
 LANGUAGES = frozenset('zh yue en ja de ko ru fr pt ar it es hi id th tr uk vi ms fil'.split())
-DIALECTS = frozenset('unknown mandarin sichuan henan shaanxi cantonese'.split())
 # Every language/dialect the TTS can speak (annie_core.speech_style), by the
 # names people actually say. 白话 is left out: “说白话” means “speak plainly”.
 _NAME_GROUPS = {
     ('zh', 'mandarin'): '普通话 国语',
     ('zh', 'unknown'): '中文 汉语 华语',
-    ('zh', 'sichuan'): '四川话 四川方言 川话 成都话 重庆话',
+    ('zh', 'sichuan'): '四川话 四川方言 川话 成都话',
     ('zh', 'henan'): '河南话 河南方言 郑州话',
     ('zh', 'shaanxi'): '陕西话 陕西方言 西安话 关中话',
+    ('zh', 'chongqing'): '重庆话 重庆方言',
+    ('zh', 'dongbei'): '东北话 东北方言 东北口音',
+    ('zh', 'shanghai'): '上海话 上海方言 沪语',
+    ('zh', 'yunnan'): '云南话 云南方言 昆明话',
+    ('zh', 'guizhou'): '贵州话 贵州方言 贵阳话',
+    ('zh', 'hubei'): '湖北话 湖北方言 武汉话',
+    ('zh', 'hunan'): '湖南话 湖南方言 长沙话',
+    ('zh', 'jiangxi'): '江西话 江西方言 南昌话',
+    ('zh', 'zhejiang'): '浙江话 浙江方言 杭州话',
+    ('zh', 'ningbo'): '宁波话 宁波方言',
+    ('zh', 'shandong'): '山东话 山东方言 济南话',
+    ('zh', 'qingdao'): '青岛话 青岛方言',
+    ('zh', 'hebei'): '河北话 河北方言',
+    ('zh', 'shanxi'): '山西话 山西方言 太原话',
+    ('zh', 'gansu'): '甘肃话 甘肃方言 兰州话',
+    ('zh', 'ningxia'): '宁夏话 宁夏方言 银川话',
     ('yue', 'cantonese'): '粤语 广东话 广州话 香港话',
     ('en', 'unknown'): '英语 英文',
     ('ja', 'unknown'): '日语 日文 日本话',
@@ -49,7 +66,23 @@ _ENGLISH_NAMES = {
     'vietnamese': ('vi', 'unknown'), 'malay': ('ms', 'unknown'),
     'filipino': ('fil', 'unknown'),
 }
+# What a model writes instead of the schema value: 11-05 it sent "northeast".
+DIALECT_ALIASES = {
+    'northeast': 'dongbei', 'northeastern': 'dongbei', 'northeast_mandarin': 'dongbei',
+    'shanghainese': 'shanghai', 'sichuanese': 'sichuan', 'szechuan': 'sichuan',
+    'szechuanese': 'sichuan', 'putonghua': 'mandarin', 'standard': 'mandarin', 'yue': 'cantonese',
+}
 IDENTITY_KEYS = ('robot_id', 'room_id', 'chat_id', 'persona_id', 'generation', 'session_epoch')
+
+
+def normalize_dialect(dialect):
+    """The schema value of a dialect a model named loosely ("northeast", "东北话")."""
+    if not isinstance(dialect, str):
+        return dialect
+    key = dialect.strip().lower().replace(' ', '_').replace('-', '_')
+    if key in DIALECTS:
+        return key
+    return DIALECT_ALIASES.get(key) or NAMES.get(dialect.strip(), (None, dialect))[1]
 
 
 def typed_text_language(text):
@@ -116,7 +149,7 @@ def dialect_marker(text):
 def validate_language(language, dialect):
     if language not in LANGUAGES or dialect not in DIALECTS:
         raise ValueError('invalid language or dialect')
-    if (dialect in {'mandarin', 'sichuan', 'henan', 'shaanxi'} and language != 'zh'
+    if (dialect in CHINESE_DIALECTS and language != 'zh'
             or dialect == 'cantonese' and language != 'yue'):
         raise ValueError('language and dialect mismatch')
 
@@ -164,7 +197,7 @@ def unplaced_language_mention(text):
 def stop_covers(stop, language, dialect):
     """Whether a “别说X了” (stop pair, ('zh', '*') for any dialect) covers this language."""
     return ((language, dialect) == stop
-            or stop == ('zh', '*') and dialect in {'sichuan', 'henan', 'shaanxi', 'cantonese'})
+            or stop == ('zh', '*') and dialect not in {'unknown', 'mandarin'})
 
 
 def explicit_language_stop(text):
@@ -461,6 +494,9 @@ class ReplyLanguageState:
     def reply_intent(self, *, language, dialect='unknown', evidence='', emotion='neutral', reason='',
                      transcript='', confirmed=False):
         """confirmed: the decision model judged the current utterance a request for it."""
+        dialect = normalize_dialect(dialect)
+        if dialect == 'cantonese' and language == 'zh':
+            language = 'yue'
         validate_language(language, dialect)
         requested = explicit_language_request(transcript)
         if (dialect not in {'unknown', 'mandarin', 'cantonese'} and not confirmed

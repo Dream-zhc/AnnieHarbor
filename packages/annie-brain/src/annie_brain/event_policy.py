@@ -20,10 +20,12 @@ PRESS_WORDS = {1: "轻轻碰了", 2: "轻轻按了", 3: "按了", 4: "重重按�
 PAT_WORDS = {1: "轻轻拍了", 2: "拍了", 3: "拍了", 4: "重重拍了", 5: "很用力拍了"}
 # Persona first: the 10-22 replies were a bare interjection plus a restatement
 # of the stimulus, identical across personas. No example lines here: the model
-# copies them verbatim (see config/personas.toml).
+# copies them verbatim (see config/personas.toml). 11-02: “可以顺着正在进行的话题”
+# pulled four touches in a row back to an old topic, so an event is answered on its own.
 _IN_CHARACTER = (
     "这不是用户说的话，也不是要你照念的台词；这一轮没有人开口，没有原话可接。"
-    "用你当前性格平时说话的招牌手法、口味和立场来接，可以顺着正在进行的话题，"
+    "用你当前性格平时说话的招牌手法、口味和立场来接，只回应这件事本身，"
+    "不要借机把话题拉回之前聊过的内容，"
     "要让人一听就知道是你，而不是谁都会说的通用反应。"
     "说给面前的人听，一两句口语，说完就收；只说出口的话，不写自己的动作、神态或心理过程。"
     "如果刚才已经对同一件事反应过，这次换个角度，不要再说一遍“又……了”。"
@@ -136,8 +138,8 @@ class EventPolicy:
                 decision = "need_response"
                 prompt = (
                     "现场情况：有人靠得很近。这不是用户说的话，也不是要你照念的台词。"
-                    "按你当前的性格，并结合正在进行的对话，自己组织一句自然的口头回应。"
-                    "可以接住刚才的话题，也可以就这次靠近做出符合你性格的反应。"
+                    "按你当前的性格，就这次靠近自己组织一句自然的口头回应，"
+                    "不要借机把话题拉回之前聊过的内容。"
                     "不要使用固定套话，不要复述这段说明，不要提及传感器、雷达或具体数字，不要执行物理动作。"
                 )
                 self.cooldown[key] = now_ms + 15_000

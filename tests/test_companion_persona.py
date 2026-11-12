@@ -61,11 +61,23 @@ def test_core_stays_bounded_and_operational_rules_are_outside_personality():
     for marker in ("退下由Runtime", "perform_action", "preview_action", "recall_memory", "get_weather"):
         assert marker not in persona.COMPANION_CORE
     text, _ = persona.session_instructions("annie", PROFILES, {}, physical_actions=True)
-    assert "普通话、四川话、河南话、陕西话、粤语" in text
-    assert "不要声称会未列出的方言" in text
+    assert "支持的中文方言：普通话、广东话（粤语）" in text
+    assert "不要声称会未列出的语言或方言" in text
     assert text.index("当前表达风格") < text.index("【工具边界】")
     assert "不调用任何工具" not in text
     assert "已授权的语境动作可按当前工具规则选择" in text
+
+
+def test_every_style_knows_its_body_but_senses_only_what_arrives():
+    for style_id in PROFILES:
+        text, _ = persona.session_instructions(style_id, PROFILES, {})
+        assert text.count(persona.EMBODIMENT) == 1
+        assert text.index("当前表达风格") < text.index("【你的身体和能力】") < text.index("【语言能力】")
+    for fact in ("桌面", "半身", "不能走动", "触觉和压力传感器", "分不出是什么味", "嘴型舵机", "表情"):
+        assert fact in persona.EMBODIMENT
+    assert "平时不主动介绍自己" in persona.EMBODIMENT
+    assert "没收到就不说自己看到、摸到或闻到了什么" in persona.EMBODIMENT
+    assert "以当前工具和动作清单为准" in persona.EMBODIMENT
 
 
 @pytest.mark.parametrize(("key", "value", "phrase"), [

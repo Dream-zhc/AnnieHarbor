@@ -5,6 +5,7 @@ import json
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from annie_core.speech_style import CHINESE_DIALECTS
 from websockets.asyncio.client import connect
 
 from annie_adapters.net import cloud_proxy
@@ -86,7 +87,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "name": "select_voice",
                 "description": (
                     "Only when the CURRENT user explicitly asks to switch TTS voices; never because "
-                    "emotion, dialect, speaker or persona changed. If no voice is named, still call "
+                    "emotion, dialect, speaker or persona changed. Every personality complies and "
+                    "calls it, grumbling in character at most, never refusing. If no voice is named, still call "
                     "with a catalog name: needs_selection means ask which. scope=chat normally, "
                     "scope=robot only for explicit permanent/all-chats requests. ONLY status=selected "
                     "means the voice changed (from the next reply); otherwise NOTHING changed, so "
@@ -107,7 +109,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 "name": "select_persona_style",
                 "description": (
                     "Only when the CURRENT user explicitly asks to change THIS chat's personality "
-                    "style (not voice, dialect or language). Do not create a new chat. Styles: "
+                    "style (not voice, dialect or language). Do not create a new chat. Every style, "
+                    "even a cold or savage one, complies and calls it (grumbling at most). Styles: "
                     + "、".join(persona_labels) + ". Pass the exact label they named. If they "
                     "named none, either pick a different style yourself or pass an empty string to "
                     "ask once which (needs_selection); if you asked and they let you choose "
@@ -140,13 +143,15 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "type": "function",
             "function": {
                 "name": "recall_memory",
-                "description": "Look up confirmed long-term user preferences or experiences ONLY when "
-                               "the answer is not already in this conversation. If it returns no "
-                               "evidence, say you don't remember instead of inventing one.",
+                "description": "Search long-term memories about the user ONLY when the answer is "
+                               "neither in this conversation nor in the memories already shown. "
+                               "If it returns no evidence, say you don't remember instead of "
+                               "inventing one.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Short relevant memory query"},
+                        "query": {"type": "string", "description": "Key words the user would have "
+                                  "said, e.g. 吃辣 面试; matching is by words, not meaning"},
                     },
                     "required": ["query"],
                 },
@@ -298,13 +303,13 @@ def session_update(instructions: str, history_turns: int = 20, *,
              {'scope': {'type': 'string', 'enum': ['chat', 'robot']}}, ['scope']),
             ('select_reply_style',
              'Sets how the voice sounds; not saved. Call it first when you START answering in '
-             'a dialect the user is speaking (zh + sichuan/henan/shaanxi, or yue), so the voice '
+             'a dialect the user is speaking or asked for (zh + a listed dialect, or yue + '
+             'cantonese), so the voice '
              'pronounces it; not again while the dialect continues. Dialect evidence = an EXACT '
              'phrase the user said, never a place name. Otherwise optional; a late call affects '
              'the next reply only.',
              {'language': {'type': 'string'},
-              'dialect': {'type': 'string', 'enum': ['unknown', 'mandarin', 'sichuan', 'henan',
-                                                     'shaanxi', 'cantonese']},
+              'dialect': {'type': 'string', 'enum': ['unknown', *CHINESE_DIALECTS, 'cantonese']},
               'emotion': {'type': 'string', 'enum': ['neutral','warm','playful','sarcastic',
                                                     'curious','serious','sad','excited','calm']},
               'evidence': {'type': 'string'}, 'reason': {'type': 'string'}},
@@ -412,8 +417,14 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "to know them, in any wording: 我叫小明、我是小明、叫我小明、记住我我叫小明、"
                     "认识一下我是小明, or a name answering your 你叫什么 (this turn or the one "
                     "before). Call it right away with their own name. Records the face you are "
-                    "looking at. If they gave no name, ask for it first; never invent or guess "
-                    "one, and never call it when they introduce someone else. Only "
+                    "looking at, only if you do not know it yet: a face the picture already "
+                    "knows keeps that name, and a wrong name is fixed only by forgetting the "
+                    "face first and recording it again. "
+                    "If they gave no name, ask for it first; never invent or guess "
+                    "one. Never call it for someone else (他叫小红、这是我朋友小红、记住她): "
+                    "only the person themself can ask. A refused call covers only that sentence: "
+                    "call it again the next time someone introduces themself, even if not yet "
+                    "recognised in view. Only "
                     "status=started means it began; you will be told when it is done, so do not "
                     "say you remember yet."
                 ),
@@ -421,7 +432,10 @@ def session_update(instructions: str, history_turns: int = 20, *,
                     "type": "object",
                     "properties": {"name": {
                         "type": "string",
-                        "description": "The name exactly as the user said it, e.g. 小明"}},
+                        "description": (
+                            "The name the user said, e.g. 小明. Speech recognition often writes a "
+                            "name with other characters: if it sounds like a name you see in view "
+                            "or one said earlier, write it that way.")}},
                     "required": ["name"],
                     "additionalProperties": False,
                 },
@@ -431,10 +445,12 @@ def session_update(instructions: str, history_turns: int = 20, *,
             "function": {
                 "name": "forget_face",
                 "description": (
-                    "When the CURRENT user asks you to forget their face / stop recognising them "
-                    "(忘掉我的脸、别再认我、不要记住我是谁). Not for forgetting things that were "
-                    "said. Ask once to confirm before calling. name is the name you know them by "
-                    "in front of you now."
+                    "When the CURRENT user asks you to forget their face / stop recognising them, "
+                    "in any wording (忘了我、忘掉我的脸、别再认我、把我删了). Not for forgetting "
+                    "things that were said. Call it right away: the first call only has you ask "
+                    "them once to confirm; call it again as soon as their next words agree "
+                    "(嗯、对、确定、忘吧), never when they decline. name is the name you know them "
+                    "by in front of you now."
                 ),
                 "parameters": {
                     "type": "object",

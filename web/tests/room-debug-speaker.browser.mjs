@@ -49,6 +49,7 @@ try{
   await page.goto(process.env.ANNIE_BROWSER_TEST_URL??'http://127.0.0.1:8780/?view=workbench',{
     waitUntil:'domcontentloaded',
   });
+  await page.locator('details.audio-debug-panel > summary').click();
   await page.getByRole('button',{name:'开启网页调试扬声器'}).click();
   await page.getByText(/已订阅 roomv2 \/ reb_tts，等待新语音/).waitFor();
   const result=await page.evaluate(()=>{
@@ -113,6 +114,7 @@ try{
   await page.getByRole('button',{name:'开启网页调试扬声器'}).waitFor();
   assert.equal(await page.evaluate(()=>window.__ttsSockets.at(-1).closed&&window.__voiceSockets.at(-1).closed),true);
   await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('details.audio-debug-panel > summary').click();
   await page.getByRole('button',{name:'开启网页调试扬声器'}).waitFor();
   assert.deepEqual(errors,[]);
   console.log('PASS Chromium AudioWorklet Room player: 20ms & 800ms coalesced PCM, drained cursor, oversize guard, 1440x900/390x844, dedup, stop, restart, robot switch');

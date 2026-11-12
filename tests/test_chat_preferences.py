@@ -102,6 +102,29 @@ def test_spoken_preferences_apply_live_and_need_an_explicit_request(tmp_path):
     run_live(tmp_path, body)
 
 
+def test_turn_voice_takes_the_chat_personality_tone(tmp_path):
+    async def body(rt, client):
+        identity = client.robot.session_state()
+        lively = PROFILES["annie"]["tts"]
+        default = client.turn_speech_style("tone-1", identity)
+        assert default.instruction.startswith(lively["instruction"])
+        assert (default.rate, default.volume) == (lively["rate"], lively["volume"])
+        client.social_state = {"persona_style": {"source": "user_setting", "value": "annie-calm"}}
+        gentle = client.turn_speech_style("tone-2", identity)
+        assert "轻柔" in gentle.instruction and gentle.rate < default.rate
+        assert client.persona_voice() == PROFILES["annie-calm"]["tts"]["voice"]
+        client.persona_profiles = {**client.persona_profiles, "annie-calm": {
+            **PROFILES["annie-calm"], "tts": {**PROFILES["annie-calm"]["tts"], "voice": "温柔女声"}}}
+        assert client.persona_voice() == "温柔女声"
+        # A spoken speed preference for the chat still beats the personality's pace.
+        slow = await say(client, "说慢一点", "rate", "update_chat_preference",
+                         {"setting": "speech_rate", "value": "slower"})
+        assert slow["status"] == "set"
+        style = client.turn_speech_style(client.turn_id, client.robot.session_state())
+        assert style.rate == pytest.approx(.92)
+    run_live(tmp_path, body)
+
+
 def test_motions_off_blocks_unprompted_expressions_but_not_explicit_ones(tmp_path):
     async def body(rt, client):
         off = await say(client, "别老做表情动作了", "off", "update_chat_preference",

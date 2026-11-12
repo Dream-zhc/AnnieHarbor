@@ -15,7 +15,7 @@ import time
 import tomllib
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -326,10 +326,31 @@ class StorageConfigTests(unittest.TestCase):
             "annie_runtime.__main__.probe_existing_runtime",
             return_value={"project": "Annie Harbor", "pid": 12345},
         ), patch("annie_runtime.__main__.os.kill") as kill, patch(
-            "annie_runtime.__main__.wait_for_port_free", return_value=True
-        ):
+            "annie_runtime.__main__.wait_for_process_exit", return_value=True
+        ), patch("annie_runtime.__main__.wait_for_port_free", return_value=True):
             self.assertTrue(replace_existing_runtime("127.0.0.1", 8780, "Annie Harbor"))
             kill.assert_called_once_with(12345, signal.SIGTERM)
+
+    def test_replace_existing_runtime_kills_a_runtime_that_outlives_graceful_shutdown(self):
+        from annie_runtime.__main__ import replace_existing_runtime
+
+        with patch(
+            "annie_runtime.__main__.probe_existing_runtime",
+            return_value={"project": "Annie Harbor", "pid": 12345},
+        ), patch("annie_runtime.__main__.os.kill") as kill, patch(
+            "annie_runtime.__main__.wait_for_process_exit", side_effect=[False, True]
+        ), patch("annie_runtime.__main__.wait_for_port_free", return_value=True):
+            self.assertTrue(replace_existing_runtime("127.0.0.1", 8780, "Annie Harbor"))
+        self.assertEqual(kill.call_args_list, [call(12345, signal.SIGTERM), call(12345, signal.SIGKILL)])
+
+    def test_waiting_for_exit_polls_until_the_pid_is_gone(self):
+        from annie_runtime.__main__ import wait_for_process_exit
+
+        with patch("annie_runtime.__main__.os.kill", side_effect=[None, ProcessLookupError]) as kill:
+            self.assertTrue(wait_for_process_exit(12345, timeout=1.0))
+        self.assertEqual(kill.call_args_list, [call(12345, 0), call(12345, 0)])
+        with patch("annie_runtime.__main__.os.kill"):
+            self.assertFalse(wait_for_process_exit(12345, timeout=0.1))
 
     def test_invalid_database_fails_before_existing_runtime_is_replaced(self):
         from annie_runtime.__main__ import main
@@ -431,14 +452,14 @@ class StorageConfigTests(unittest.TestCase):
         self.assertNotIn("[duplex.legacy]", provider_text)
 
     def test_source_tree_has_no_meaningless_empty_dirs_or_placeholder_files(self):
-        excluded_roots = {".venv", "var", ".git", "node_modules", "__pycache__"}
+        excluded_roots = {"var", ".git", "node_modules", "__pycache__"}
         placeholder_names = {".gitkeep", ".keep", ".placeholder"}
 
         placeholders = []
         empty_dirs = []
         for path in ROOT.rglob("*"):
             relative = path.relative_to(ROOT)
-            if any(part in excluded_roots for part in relative.parts):
+            if any(part in excluded_roots or part.startswith(".venv") for part in relative.parts):
                 continue
             if path.is_file() and path.name in placeholder_names:
                 placeholders.append(str(relative))

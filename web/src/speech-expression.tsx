@@ -89,10 +89,10 @@ export function RoleLanguagePreference({robotId,session}:{robotId:string;session
 
 /** Diagnostics only. Does not alter model/sidecar state or persist preferences. */
 export function SpeechExpressionPanel({robotId,session}:{robotId:string;session:Session|null}){
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(true);
   const {data,status}=useExpression(robotId,session,open,2000);
   const view=data?speechExpressionView(data):null;
-  return <details className="hud-section inspector-panel speech-expression-panel"
+  return <details className="hud-section inspector-panel speech-expression-panel" open={open}
     onToggle={event=>setOpen(event.currentTarget.open)}>
     <summary className="speech-exp-summary">
       <span className="speech-summary-title">语音状态 · 语种 / TTS</span>
@@ -109,7 +109,7 @@ export function SpeechExpressionPanel({robotId,session}:{robotId:string;session:
         </div>}
         <section className="speech-subcard" aria-label="核心声学状态">
           <div className="speech-kv-list">
-            <p className="speech-kv-line"><span className="speech-k">输入识别</span><span className="speech-v">{view.inputLanguage} · {view.inputSource}</span></p>
+            <p className="speech-kv-line"><span className="speech-k">输入识别</span><span className="speech-v">{view.typedInput?'打字输入（没有语音可识别）':`${view.inputLanguage} · ${view.inputSource}`}</span></p>
             <p className="speech-kv-line"><span className="speech-k">输出语种</span><span className="speech-v">{view.ttsLanguage}</span></p>
             <p className="speech-kv-line"><span className="speech-k">整轮情绪</span><span className="speech-v">{view.ttsEmotion}</span></p>
             <p className="speech-kv-line"><span className="speech-k">表达模式</span><span className="speech-v">{view.ttsDelivery}</span></p>

@@ -34,6 +34,7 @@ class FaceRegistry:
         self.client = client or httpx.AsyncClient(
             timeout=timeout_ms / 1000,
             limits=httpx.Limits(max_connections=2, max_keepalive_connections=2),
+            trust_env=False,
         )
         self.owns_client = client is None
 

@@ -125,6 +125,18 @@ def wait_for_port_free(host: str, port: int, timeout: float = 3.0) -> bool:
     return port_available(host, port)
 
 
+def wait_for_process_exit(pid: int, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
 def replace_existing_runtime(host: str, port: int, project_name: str) -> bool:
     """Stop an existing Annie Harbor on the requested port.
 
@@ -147,7 +159,9 @@ def replace_existing_runtime(host: str, port: int, project_name: str) -> bool:
     except PermissionError as exc:
         raise RuntimeError(f"cannot stop existing Annie Harbor pid={pid}: permission denied") from exc
 
-    if wait_for_port_free(host, port, timeout=3.0):
+    # The port frees as soon as uvicorn stops listening; the old runtime keeps its
+    # robot sessions until the process itself is gone.
+    if wait_for_process_exit(pid, timeout=10.0) and wait_for_port_free(host, port, timeout=3.0):
         print(f"[INFO] old Annie Harbor pid={pid} stopped; starting replacement.")
         return True
 
@@ -156,6 +170,7 @@ def replace_existing_runtime(host: str, port: int, project_name: str) -> bool:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        wait_for_process_exit(pid, timeout=2.0)
         if wait_for_port_free(host, port, timeout=1.5):
             print(f"[WARN] old Annie Harbor pid={pid} required forced termination; starting replacement.")
             return True
@@ -225,17 +240,61 @@ def inner_life_options(inner_life: dict, llm: dict, environ) -> dict:
     }
 
 
-def vision_intent_options(vision: dict, environ) -> dict:
+def memory_options(memory: dict, provider: dict, llm: dict, environ) -> dict:
+    """HarborRuntime kwargs for long-term memory: runtime_defaults [memory] and .env.
+
+    ANNIE_MEMORY_ENABLED=0 turns it off. Recall is local; the model only
+    consolidates conversations that went quiet and folds the recap.
+    """
+    enabled = environ.get("ANNIE_MEMORY_ENABLED", "1") != "0"
+    return {
+        "memory_key": (environ.get("DASHSCOPE_API_KEY") or None) if enabled else None,
+        "memory_base_url": environ.get("ANNIE_MEMORY_BASE_URL", llm["base_url"]),
+        "memory_chat_model": provider.get("model", "qwen3.8-flash"),
+        "memory_idle_seconds": float(memory.get("consolidate_idle_seconds", 120)),
+        "memory_max_turns": int(memory.get("consolidate_max_turns", 24)),
+    }
+
+
+def livekit_room_env(robot_id):
+    """The .env key naming a robot's LiveKit room."""
+    return "ANNIE_EXHIBIT_LIVEKIT_ROOM_" + "".join(
+        char if char.isalnum() else "_" for char in robot_id.upper())
+
+
+def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
     """HarborRuntime kwargs for looking before answering: runtime_defaults [vision.intent]
     and .env. ANNIE_VISION_INTENT_ENABLED=0/1 overrides the file; keep it off until the
-    robot's vision service answers vision.intent (docs/规范/视觉意图协议.md)."""
+    robot's vision service answers vision.intent (docs/规范/视觉意图协议.md).
+
+    [vision.intent.decision] has the decision model judge looks the phrase rules miss
+    (ANNIE_VISION_LOOK_DECISION_ENABLED=0/1 overrides). Its picture comes from the
+    robot's LiveKit camera, configured by ANNIE_EXHIBIT_LIVEKIT_* (deployed .env
+    files use these names, so they keep the old prefix)."""
     intent = vision.get("intent", {})
+    decision = intent.get("decision", {})
+    url = environ.get("ANNIE_EXHIBIT_LIVEKIT_URL", "").strip()
+    key = environ.get("ANNIE_EXHIBIT_LIVEKIT_API_KEY", "").strip()
+    secret = environ.get("ANNIE_EXHIBIT_LIVEKIT_API_SECRET", "").strip()
+    rooms = {robot_id: environ.get(livekit_room_env(robot_id), "").strip()
+             for robot_id in robot_ids}
+    rooms = {robot_id: room for robot_id, room in rooms.items() if room}
     return {
         "vision_intent_enabled": environ.get(
             "ANNIE_VISION_INTENT_ENABLED", "1" if intent.get("enabled", False) else "0") == "1",
         "vision_intent_route": str(intent.get("route", "cloud")),
         "vision_intent_deadline_ms": int(intent.get("deadline_ms", 3500)),
         "vision_intent_action_extra_ms": int(intent.get("action_receipt_extra_ms", 1200)),
+        "vision_look_decision": {
+            "enabled": environ.get("ANNIE_VISION_LOOK_DECISION_ENABLED",
+                                   "1" if decision.get("enabled", False) else "0") == "1",
+            "scope": decision.get("scope", "cue"),
+            "timeout_ms": int(decision.get("timeout_ms", 700)),
+            "image": decision.get("image", True),
+        },
+        "livekit": ({"url": url, "api_key": key, "api_secret": secret, "rooms": rooms,
+                     "source": environ.get("ANNIE_EXHIBIT_LIVEKIT_SOURCE", "").strip() or "camera-a"}
+                    if url and key and secret and rooms else None),
     }
 
 
@@ -325,8 +384,9 @@ def main():
         args.database or os.environ.get("ANNIE_DATABASE") or config["storage"]["database"],
     )
     motions = motion_options(runtime_defaults.get("motions", {}), os.environ)
+    robots = load_robots(root / "config/robots.toml")
     runtime = HarborRuntime(
-        load_robots(root / "config/robots.toml"),
+        robots,
         database,
         load_room_server(root / "config/rooms.toml"),
         conversation_history_turns=runtime_defaults["conversation"]["history_turns"],
@@ -364,20 +424,16 @@ def main():
             provider_defaults["tts"]["qwen_audio"]["voice"]
             if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
         ),
+        tts_model=(
+            provider_defaults["tts"]["qwen_audio"].get("model")
+            if os.environ.get("ANNIE_TTS_ENABLED") == "1" else None
+        ),
         tts_url=os.environ.get("ANNIE_TTS_URL") or None,
         tts_first_chars=provider_defaults["tts"]["first_min_chars"],
         tts_min_chars=provider_defaults["tts"]["sentence_min_chars"],
         tts_max_chars=provider_defaults["tts"]["sentence_max_chars"],
-        memory_key=(
-            os.environ.get("DASHSCOPE_API_KEY") or None
-            if os.environ.get("ANNIE_MEMORY_ENABLED", "1") != "0" else None
-        ),
-        memory_base_url=os.environ.get(
-            "ANNIE_MEMORY_BASE_URL", provider_defaults["llm"]["base_url"],
-        ),
-        memory_extract_model=provider_defaults["memory"]["extract_model"],
-        memory_embedding_model=provider_defaults["memory"]["embedding_model"],
-        memory_embedding_dimensions=provider_defaults["memory"]["embedding_dimensions"],
+        **memory_options(runtime_defaults.get("memory", {}), provider_defaults.get("memory", {}),
+                         provider_defaults["llm"], os.environ),
         action_catalog=root / "config/action_scripts.json",
         idle_model=idle_model,
         continuation_enabled=continuation_enabled,
@@ -409,7 +465,8 @@ def main():
         motion_options=motions,
         **inner_life_options(runtime_defaults.get("inner_life", {}),
                              provider_defaults["llm"], os.environ),
-        **vision_intent_options(runtime_defaults["vision"], os.environ),
+        **vision_intent_options(runtime_defaults["vision"], os.environ,
+                                [robot.robot_id for robot in robots]),
     )
     try:
         runtime.preflight()
@@ -467,6 +524,8 @@ def main():
         create_app(runtime, dashboard),
         host=host,
         port=port,
+        # Open SSE streams would otherwise hold a stopping runtime forever.
+        timeout_graceful_shutdown=5,
     )
 
 

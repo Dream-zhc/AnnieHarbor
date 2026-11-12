@@ -263,6 +263,7 @@ class AcousticSidecarTests(unittest.IsolatedAsyncioTestCase):
         sidecar = self.create()
         self.offer(sidecar)
         old = await self.connected(sidecar)
+        await asyncio.sleep(0.01)
         self.offer(sidecar, sample=9600)
         await eventually(lambda: len(FakeSocket.instances) == 2 and old.closed)
         self.assertTrue(old.aborted)

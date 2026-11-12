@@ -404,6 +404,49 @@ def test_new_speech_while_she_looks_replaces_the_question(tmp_path):
     scenario(tmp_path, body)
 
 
+async def looked(rt, client, item):
+    await ask_held(client, item, "你看看左边有什么")
+    turn_id = client.turn_id
+    await until(lambda: triggers(rt))
+    rt._room_playback_receipt("a", {"type": "action.finished", "data": {
+        "script_id": "look_left", "conversation_id": turn_id}})
+    await until(lambda: intents(rt))
+    return turn_id
+
+
+def test_speech_begun_before_the_view_arrives_defers_the_answer(tmp_path):
+    """11-04: the look's response.create met speech the provider was still hearing."""
+    async def body(rt, client):
+        turn_id = await looked(rt, client, "u7")
+        await client.handle({"type": "input_audio_buffer.speech_started", "item_id": "u8"},
+                            client.robot.generation)
+        assert client.turn_id == turn_id  # no words yet: the look still owns the turn
+        rt._room_playback_receipt("a", answer(intents(rt)[0], status="ok",
+                                              description="左边是一面白墙。"))
+        await until(lambda: kinds(client, "turn.recovery_deferred"))
+        assert sent(client, "response.create") == []
+        assert client._invalid_recovery["prefix"] == "你看看左边有什么"
+        assert client.ready
+    scenario(tmp_path, body)
+
+
+def test_a_look_answer_refused_while_the_user_speaks_keeps_the_session(tmp_path):
+    async def body(rt, client):
+        await looked(rt, client, "u9")
+        rt._room_playback_receipt("a", answer(intents(rt)[0], status="ok",
+                                              description="左边是一面白墙。"))
+        await until(lambda: sent(client, "response.create"))
+        create = sent(client, "response.create")[0]
+        await client.handle({"type": "error", "error": {
+            "type": "invalid_request_error", "code": "invalid_value",
+            "message": "Cannot create response while user is speaking.",
+            "event_id": create["event_id"]}}, client.robot.generation)
+        assert kinds(client, "turn.recovery_deferred")
+        assert client._invalid_recovery["prefix"] == "你看看左边有什么"
+        assert client.ready
+    scenario(tmp_path, body)
+
+
 def test_a_call_smart_turn_dropped_is_looked_at_and_asked_again(tmp_path, monkeypatch):
     monkeypatch.setattr(realtime_module, "RECOVERY_SETTLE_SECONDS", 0.05)
 

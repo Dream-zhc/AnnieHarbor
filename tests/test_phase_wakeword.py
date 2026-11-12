@@ -4,10 +4,8 @@ import unittest
 
 from annie_runtime.presence import DialoguePresence
 from annie_runtime.wakeword import (
-    FOLLOWUP_SECONDS,
     FRAME_BYTES,
     PRE_ROLL_BYTES,
-    WAKE_WAIT_SECONDS,
     WINDOW_BYTES,
     WakeAdmission,
 )
@@ -71,7 +69,7 @@ class WakeAdmissionTests(unittest.IsolatedAsyncioTestCase):
         packet = await self._prime(gate, detector)
         self.assertEqual(gate.wakes, 1)
         self.assertEqual(await gate.frames(packet), (packet,))
-        clock.now += WAKE_WAIT_SECONDS + 0.001
+        clock.now += gate.presence.wake_wait_seconds + 0.001
         detector.trigger = False
         self.assertEqual(await gate.frames(packet), ())
         self.assertEqual(gate.snapshot()["state"], "SLEEP")
@@ -92,7 +90,7 @@ class WakeAdmissionTests(unittest.IsolatedAsyncioTestCase):
         gate.authorized_turn_id = "turn1"
         gate.speaker_drained("turn1")
         self.assertEqual(gate.state, "FOLLOWUP")
-        clock.now += FOLLOWUP_SECONDS - 0.1
+        clock.now += gate.presence.followup_seconds - 0.1
         gate.speech_started("u2")
         clock.now += 35
         self.assertEqual(await gate.frames(packet), (packet,))

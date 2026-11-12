@@ -246,7 +246,9 @@ def test_look_closely_tool_and_the_rules_against_following_the_user(tmp_path):
         assert result["status"] == "ok" and "不附和" in result["instruction"]
         assert result["people"][0]["recognized"] is False
         instructions = client._combined_instructions("【眼前画面】你正看着一位朋友。")
-        assert "不能用对话里有人自称或别人说的名字叫TA" in instructions
+        assert "不管是用户自称的还是别人说的，都不能用来称呼人" in instructions
+        assert "说话的人不一定是你正看着的那位" in instructions
+        assert "最多说" not in instructions  # 11-02: “你说你叫X” read misheard names back
         client._finish("completed")
         client.visual_details = lambda: None
         client._create_turn("你看看我")

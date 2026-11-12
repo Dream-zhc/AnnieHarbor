@@ -22,7 +22,7 @@ from annie_adapters import (
 from annie_adapters.playback import PLAYBACK_EVENTS as PLAYBACK_RECEIPTS
 from annie_adapters.playback import playback_receipt
 from annie_brain import FakeBrain
-from annie_brain.persona import CHAT_PREFERENCES
+from annie_brain.persona import CHAT_PREFERENCES, active_style_id
 from annie_core import (
     AudioFormat,
     InputRejectedError,
@@ -891,6 +891,7 @@ class HarborRuntime:
         cloud_aec_sync_offset_ms: int = 80,
         cloud_aec_delay_ms: int = 0,
         tts_voice: str | None = None,
+        tts_model: str | None = None,
         tts_url: str | None = None,
         tts_socket_factory=None,
         room_tts_factory=None,
@@ -899,10 +900,10 @@ class HarborRuntime:
         tts_max_chars: int = 48,
         memory_key: str | None = None,
         memory_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        memory_extract_model: str = "qwen3.8-flash",
-        memory_embedding_model: str = "text-embedding-v4",
-        memory_embedding_dimensions: int = 256,
-        memory_model=None,
+        memory_chat_model: str = "qwen3.8-flash",
+        memory_idle_seconds: float = 120,
+        memory_max_turns: int = 24,
+        memory_chat=None,
         action_catalog: Path | None = None,
         actions_enabled: bool = False,
         action_allowlist: tuple[str, ...] = (),
@@ -945,12 +946,23 @@ class HarborRuntime:
         vision_intent_route: str = "cloud",
         vision_intent_deadline_ms: int = 3500,
         vision_intent_action_extra_ms: int = 1200,
+        vision_look_decision: dict | None = None,
+        camera_frames: dict | None = None,
+        livekit: dict | None = None,
     ):
         if not configs or len({c.robot_id for c in configs}) != len(configs):
             raise ValueError("at least one config and unique robot_id values required")
         if (type(vision_intent_action_extra_ms) is not int
                 or not 0 <= vision_intent_action_extra_ms <= 10000):
             raise ValueError("vision_intent_action_extra_ms must be an integer between 0 and 10000")
+        look_decision = {"enabled": False, "scope": "cue", "timeout_ms": 700, "image": True,
+                         **(vision_look_decision or {})}
+        if (type(look_decision["enabled"]) is not bool or type(look_decision["image"]) is not bool
+                or look_decision["scope"] not in {"cue", "all"}
+                or type(look_decision["timeout_ms"]) is not int
+                or not 100 <= look_decision["timeout_ms"] <= 3000):
+            raise ValueError("vision look decision needs boolean enabled/image, scope cue or all "
+                             "and timeout_ms between 100 and 3000")
         if type(conversation_history_turns) is not int or not 1 <= conversation_history_turns <= 100:
             raise ValueError("conversation_history_turns must be an integer between 1 and 100")
         if type(realtime_history_turns) is not int or not 1 <= realtime_history_turns <= 50:
@@ -980,24 +992,27 @@ class HarborRuntime:
             from annie_adapters.tts import DEFAULT_URL as TTS_DEFAULT_URL
 
             from annie_runtime.voice_profiles import DashscopeVoiceProvider, VoiceProfiles
-            provider = DashscopeVoiceProvider(realtime_key, tts_url or TTS_DEFAULT_URL)
+            provider = DashscopeVoiceProvider(realtime_key, tts_url or TTS_DEFAULT_URL,
+                                              **({"model": tts_model} if tts_model else {}))
             self.voices = VoiceProfiles(self.store, provider, tts_voice)
+            self.voices.bound_voice = self._persona_voice
         self.recorder = Recorder(self.store.write_batch)
         self.process_probe = ProcessProbe()
         self.ledger = ConversationLedgerWriter(self.store)
-        if memory_key or memory_model:
-            from annie_brain.memory import CloudMemoryModel, MemoryService
+        self.memory = None
+        if memory_key or memory_chat:
+            from annie_adapters.diary_summary import DiarySummarizer
+            from annie_brain.memory import MemoryService
 
-        self.memory = (
-            MemoryService(
+            self.memory = MemoryService(
                 self.store,
-                memory_model or CloudMemoryModel(
-                    memory_key, memory_base_url, memory_extract_model,
-                    memory_embedding_model, memory_embedding_dimensions,
+                memory_chat or DiarySummarizer(
+                    memory_key, model=memory_chat_model, base_url=memory_base_url,
+                    timeout_ms=15000,
                 ),
                 [c.robot_id for c in configs if c.enabled],
-            ) if memory_key or memory_model else None
-        )
+                idle_seconds=memory_idle_seconds, max_turns=memory_max_turns,
+            )
         self.conversation_history_turns = conversation_history_turns
         self.persona_profiles = dict(persona_profiles or {})
         self.robots = {
@@ -1218,7 +1233,7 @@ class HarborRuntime:
                     first_chars=tts_first_chars, min_chars=tts_min_chars, max_chars=tts_max_chars,
                     event=client.publish,
                     style_provider=client.turn_speech_style,
-                    mixed_enabled=tts_mixed_mode_enabled,
+                    mixed_enabled=tts_mixed_mode_enabled, model=tts_model,
                     voice_provider=(lambda identity: self.voices.resolved(identity))
                     if self.voices is not None else None,
                     voice_publisher=self.voice_publishers.get(robot_id),
@@ -1327,6 +1342,8 @@ class HarborRuntime:
 
             client.event_activity = wake_external
         self.vision_intents = None
+        self.vision_look_decision = None
+        self.camera_frames = {}  # robot_id -> LiveKitFrames for the look decision's picture
         if room_server is not None:
             from annie_adapters.playback import RoomEventListener
 
@@ -1394,12 +1411,38 @@ class HarborRuntime:
                 for robot_id in cameras:
                     self.realtime[robot_id].vision_intents = self.vision_intents
                     self.realtime[robot_id].vision_action_extra_ms = vision_intent_action_extra_ms
+                # “有戴眼镜的人吗”: what the phrase rules miss goes to the decision model, with
+                # the newest LiveKit camera frame when d3 answers (user decision 11-03).
+                if look_decision["enabled"] and (self.d3 is not None or self.decision is not None):
+                    self.vision_look_decision = look_decision
+                    frames = dict(camera_frames or {}) if look_decision["image"] else {}
+                    rooms = (livekit or {}).get("rooms") or {}
+                    if look_decision["image"] and self.d3 is not None and livekit:
+                        from annie_adapters.livekit_frames import LiveKitFrames
+
+                        for robot_id in cameras:
+                            if robot_id not in frames and rooms.get(robot_id):
+                                frames[robot_id] = LiveKitFrames(
+                                    livekit["url"], livekit["api_key"], livekit["api_secret"],
+                                    rooms[robot_id], livekit["source"], label=robot_id)
+                    self.camera_frames = {robot_id: frames[robot_id] for robot_id in cameras
+                                          if robot_id in frames}
+                    for robot_id in cameras:
+                        self.realtime[robot_id].look_decision = look_decision
+                        self.realtime[robot_id].camera_frames = self.camera_frames.get(robot_id)
             if vision_intent_enabled:
                 # Exported logs carry no /health: say at startup who looks before answering.
                 logger.info("vision_intent_config robots=%s route=%s deadline_ms=%s tts=%s",
                             ",".join(sorted(self.vision_intents.publishers))
                             if self.vision_intents else "none",
                             vision_intent_route, vision_intent_deadline_ms, bool(tts_voice))
+            if self.vision_look_decision is not None:
+                logger.info("vision_look_decision_config scope=%s timeout_ms=%s image=%s frames=%s",
+                            look_decision["scope"], look_decision["timeout_ms"],
+                            look_decision["image"],
+                            ",".join(f"{robot_id}:{getattr(item, 'room_name', '?')}"
+                                     for robot_id, item in sorted(self.camera_frames.items()))
+                            or "none")
             live_configs = [c for c in configs if c.enabled and c.listen_enabled]
             room_ids = [c.room_id for c in live_configs]
             if len(set(room_ids)) != len(room_ids):
@@ -1525,24 +1568,6 @@ class HarborRuntime:
             robot.audio.reset_source(source_id)
             robot.record("input_reconnected", source=source_id)
         return targets
-
-    async def ingest_legacy_asr(
-        self, source_id: str, message: dict, *, target_robot_id=None, broadcast=False
-    ):
-        event = normalize_room_event(message)
-        if event is None or event.kind != "legacy_asr":
-            raise InputRejectedError("invalid_legacy_asr")
-        targets = self._input_targets(
-            source_id, target_robot_id=target_robot_id, broadcast=broadcast
-        )
-        if any(self.robots[robot_id].audio.source_id == source_id for robot_id in targets):
-            raise InputRejectedError("pcm_stream_active")
-        results = await asyncio.gather(
-            *(self.submit(robot_id, event.payload["text"]) for robot_id in targets)
-        )
-        for robot_id in targets:
-            self.robots[robot_id].snapshot.last_input_source = source_id
-        return dict(zip(targets, results, strict=True))
 
     def dispatch_room_event(
         self, source_id: str, message: dict, *, target_robot_id=None, broadcast=False
@@ -1991,6 +2016,8 @@ class HarborRuntime:
             self._decision_warm = asyncio.create_task(self._warm_decision())
         if self.d3 is not None and self._owns_d3:
             self.d3.start()
+        for frames in self.camera_frames.values():
+            frames.start()
         for connection in self.room_connections.values():
             connection.start()
         for connections in self.playback_listeners.values():
@@ -2080,6 +2107,8 @@ class HarborRuntime:
                 await self.actions.close()
             if self.vision_intents is not None:
                 await self.vision_intents.close()
+            for frames in self.camera_frames.values():
+                await frames.close()
             if self.weather is not None:
                 await self.weather.close()
             if self.faces is not None:
@@ -2127,11 +2156,16 @@ class HarborRuntime:
             return {"available": False, "voices": [], "previews": []}
         return {"available": True, **self.voices.snapshot(identity)}
 
+    def _persona_voice(self, identity):
+        # Only the live chat's personality is known without a store read.
+        client = self.realtime.get(identity.get("robot_id"))
+        if client is None or identity != client.robot.session_state():
+            return None
+        return client.persona_voice()
+
     async def clone_voice(self, robot_id, name, filename, audio, language="zh"):
         if self.voices is None:
             raise ValueError("TTS voice cloning is not configured")
-        from annie_runtime.voice_profiles import check_audio
-        check_audio(filename, audio)
         result = await self.voices.clone(name, filename, audio, language=language)
         for client in self.realtime.values():
             client.visual_changed()
@@ -2166,6 +2200,9 @@ class HarborRuntime:
         if client:
             client.publish("tts.voice.selected", voice_id=result["active_voice_id"],
                            scope=scope, effective="next_tts_task")
+            if result.get("status") == "selected":
+                client.note_switch(voice=self.voices.label(result["active_voice_id"]))
+                client.open_after_switch()
             client.visual_changed()
         return {**result, **self.voice_library(robot_id)}
 
@@ -2399,6 +2436,9 @@ class HarborRuntime:
         if source != "user_setting" and ttl_ms is None:
             ttl_ms = 120_000  # observed interaction cues are not permanent user preferences
         expires_at_ms = None if ttl_ms is None else now_ms + ttl_ms
+        live = self.realtime.get(robot_id)
+        before_style = (active_style_id(robot.persona_id, self.persona_profiles, live.social_state)
+                        if live is not None and "persona_style" in fields else None)
         for key, value in fields.items():
             await asyncio.to_thread(
                 self.store.upsert_social_state,
@@ -2424,7 +2464,15 @@ class HarborRuntime:
         if source == "user_setting" and robot_id in self.realtime:
             # User-initiated setting, not a per-turn SocialState update. Apply
             # on a newly created Session without injecting full Persona midturn.
+            after_style = fields.get("persona_style")
+            switched = bool(before_style and after_style and after_style != before_style)
+            if switched:
+                label = {key: profile["label"] for key, profile in self.persona_profiles.items()}
+                self.realtime[robot_id].note_switch(
+                    persona=(label.get(before_style, before_style), label[after_style]))
             await self.realtime[robot_id].restart()
+            if switched:
+                self.realtime[robot_id].open_after_switch()
         return await self.social_state(robot_id)
 
     async def social_state(self, robot_id: str):
@@ -2501,6 +2549,22 @@ class HarborRuntime:
         if robot_id not in self.memory.robot_ids:
             raise RobotUnavailableError("robot memory not enabled")
         return await self.memory.change(robot_id, persona_id, ident, version, text)
+
+    async def memory_restore(self, robot_id, persona_id, ident, version):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return await self.memory.restore(robot_id, persona_id, ident, version)
+
+    def memory_insight(self, robot_id):
+        """Recent recalls, consolidation runs and the recap, for the workbench."""
+        if self.memory is None:
+            return {"status": "not_configured"}
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return {"status": "degraded" if robot_id in self.memory.errors else "ready",
+                **self.memory.insight(robot_id)}
 
     async def chat_memory_list(self, robot_id, include_deleted=False):
         if self.memory is None:
@@ -2729,9 +2793,9 @@ class HarborRuntime:
                 "configured": self.memory is not None,
                 "running": bool(self.memory and self.memory.running),
                 "errors": dict(self.memory.errors) if self.memory else {},
-                "backend": "sqlite_vec_versioned",
-                "extraction": "langmem_alibaba_cloud" if self.memory else "not_configured",
-                "recall": "on_demand_only",
+                "backend": "sqlite_versioned",
+                "extraction": "consolidate_after_conversation" if self.memory else "not_configured",
+                "recall": "local_bm25_every_turn",
             },
             "actions": {
                 "configured": self.actions is not None,
@@ -2747,6 +2811,11 @@ class HarborRuntime:
                 "configured_robots": (sorted(self.vision_intents.publishers)
                                       if self.vision_intents else []),
                 "route": self.vision_intents.route if self.vision_intents else None,
+            },
+            "vision_look_decision": {
+                **(self.vision_look_decision or {"enabled": False}),
+                "camera_frames": {robot_id: frames.snapshot()
+                                  for robot_id, frames in sorted(self.camera_frames.items())},
             },
             "room_gateway": {
                 "configured": room_required,

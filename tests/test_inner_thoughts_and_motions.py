@@ -623,8 +623,9 @@ def test_the_live_client_listens_and_gestures_through_the_room(tmp_path, monkeyp
         try:
             await client.handle({"type": "input_audio_buffer.speech_started", "item_id": "i1"},
                                 client.robot.generation)
+            # The counter moves only after perform_now returns, a beat after the publish.
             for _ in range(100):
-                if main.messages:
+                if main.messages and rt.motions.snapshot("a")["stats"]["listen"]:
                     break
                 await asyncio.sleep(.01)
             assert main.messages[0]["data"]["script_id"] == "listen_tilt"

@@ -5,13 +5,14 @@ import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
 import {api,robotPath,eventBelongsToSession,type Health,type Session,type RealtimeEvent,type RealtimeEvents,type RealtimeDiagnostics,type PersonaProfile} from './api';
 import {MicrophoneControls,RoomSpeakerPanel} from './audio-panels';
-import {LatencyHud} from './latency-hud';
+import {LatencyTag} from './latency-hud';
 import {RoleLanguagePreference,SpeechExpressionPanel} from './speech-expression';
 import {InnerLifePanel} from './inner-life';
 import {ActionPanel} from './action-panel';
 import {ExternalEventsDialog} from './external-events';
 import {MemoryPanel} from './memory-panel';
 import {splitReplyBubbles} from './reply-bubbles';
+import {personaMark} from './persona-marks';
 import {RoomObservationsBar} from './room-observations';
 import {decisionEntry,decisionSource,formatDecision,isProviderAmbient,parseDecision,type DecisionEntry} from './decision-log';
 import {audioDevices,conflictMessages,handoverEventMessage,handoverMessage,headLabel} from './audio-devices';
@@ -22,11 +23,12 @@ import {WakeIndicator} from './wake-indicator';
 import {VoiceSettings} from './voice-settings';
 import {AnnieStatePod} from './annie-state-pod';
 import {isPodStatusEvent} from './annie-pod-refresh';
+import {isVisionEvent,turnVision,visionBadge,type TurnVision} from './vision-badge';
 
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
 type PersonaInstance={persona_id:string;display_name:string;created_ms:number;updated_ms:number};
-type Turn={id:number;turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string;created_ms?:number;updated_ms?:number};
+type Turn={id:number;turn_id:string;user_text:string;turn_source?:'user'|'external';external_prompt?:string|null;assistant_generated_text?:string|null;assistant_published_text?:string|null;assistant_spoken_text?:string|null;status:string;cancelled?:boolean;playback_evidence_status?:string;created_ms?:number;updated_ms?:number;persona_style?:string|null};
 type History={turns:Turn[];robot_id:string;chat_id:string;persona_id:string;has_more?:boolean;next_before_id?:number|null};
 const HISTORY_PAGE_SIZE=80;
 type SocialState=Record<string,{value:unknown;source:string;expires_at_ms:number|null}>;
@@ -143,6 +145,14 @@ function getTurnActions(
   return Array.from(map.values());
 }
 
+function VisionBadge({vision}:{vision:TurnVision}){
+  const badge=visionBadge(vision);
+  return <span className={'turn-vision-badge '+badge.tone} title={badge.title} aria-label={badge.title}>
+    <span className="turn-action-icon" aria-hidden="true">{badge.icon}</span>
+    <span className="turn-action-label">{badge.label}</span>
+  </span>;
+}
+
 function DecisionItem({ entry, isExpanded, seqLabel }: { entry: DecisionEntry; isExpanded?: boolean; seqLabel?: string }){
   const parsed = parseDecision(entry);
   if (!isExpanded) {
@@ -206,7 +216,7 @@ function DecisionItem({ entry, isExpanded, seqLabel }: { entry: DecisionEntry; i
   );
 }
 
-export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 'workbench') => void } = {}){
+export function Workbench(){
   const root=useRef<HTMLDivElement>(null);
   useGSAP(()=>{
     const media=gsap.matchMedia();
@@ -551,11 +561,13 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
           setPodStatusRevision(previous=>previous+1);
         if(scoped.length){
           // Audio/diagnostic events should not diff the whole conversation
-          // while the diagnostics drawer is closed. Keep only playback controls
-          // and bounded event-policy updates; retain the full stream when inspected.
+          // while the diagnostics drawer is closed. Keep only playback controls,
+          // bounded event-policy updates and the vision events behind the turn
+          // badges; retain the full stream when inspected.
           const controls=scoped.filter(item=>item.kind==='playback.hold_requested'||
             item.kind==='playback.resume_requested'||item.kind==='event.policy'||
-            item.kind==='task.status'||item.kind==='action.state'||item.kind==='tool.call');
+            item.kind==='task.status'||item.kind==='action.state'||item.kind==='tool.call'||
+            isVisionEvent(item.kind));
           if(developerOpenRef.current||controls.length)
             setRealtimeEvents(prev=>[...prev,...(developerOpenRef.current?scoped:controls)].slice(-100));
           for(const item of scoped){
@@ -836,6 +848,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
 
   const lastUserText=history?.turns?.at(-1)?.user_text;
   const lastAssistantReply=history?.turns?.at(-1)?.assistant_spoken_text||history?.turns?.at(-1)?.assistant_generated_text;
+  const liveVision=liveTurn?turnVision(liveTurn.turnId,realtimeEvents,diagnostics):null;
 
   return <div className="app-shell cockpit-shell" ref={root}>
     <ParticleCanvas theme={theme} palette={palette} micActive={micActive}
@@ -853,11 +866,6 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
         {!health?.robots.length&&<span className="empty-copy">无可用机器人</span>}
       </div>
       <div className="topbar-right">
-        {onSwitchMode && (
-          <button className="action-pill" type="button" onClick={() => onSwitchMode('cockpit')} title="切回全息态势大屏" style={{ color: 'var(--neon-cyan, #00f0ff)', fontWeight: 600 }}>
-            🌌 态势大屏
-          </button>
-        )}
         <button className="action-pill theme-toggle-btn" type="button"
           onClick={()=>setTheme(t=>t==='dark'?'light':'dark')}
           aria-label={theme==='dark'?'切换至日间模式':'切换至夜间模式'}
@@ -962,14 +970,16 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                 </button>)}
               {!conversations.length&&<p className="empty-copy">暂无会话</p>}
             </div>
+            <button type="button" className="quiet-button danger-text delete-chat" onClick={()=>setDeleteOpen(true)} disabled={!session||pending}>删除当前会话</button>
           </aside>
 
           <div className="stage-header">
             <div className="stage-header-left">
-              <span className="eyebrow" title="Qwen 全双工实时语音会话通道">实时对讲</span>
               <h1>{session?.chat_id??'实时对话'}</h1>
-              {session&&<span className="room-tag" title="当前机器人唯一的实时会话">已激活 · {instances.find(role=>role.persona_id===session.persona_id)?.display_name??session.persona_id}</span>}
-              <span className="room-tag" title="绑定的声学房间通道">{selectedRobot?.room_id??route?.room_id??session?.room_id??'—'}</span>
+              <span className="room-tag" title={session?'当前角色 · 绑定的声学房间通道':'绑定的声学房间通道'}>
+                {session&&<>{instances.find(role=>role.persona_id===session.persona_id)?.display_name??session.persona_id} · </>}
+                {selectedRobot?.room_id??route?.room_id??session?.room_id??'—'}
+              </span>
               {currentHead&&(
                 <div className="head-pill-wrap" ref={headPopoverRef} role="status">
                   <button
@@ -1028,6 +1038,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                   robotId={robotId} generation={session?.generation}
                   ready={!!realtime?.ready} initial={realtime?.wakeword}/>
               </div>
+              <LatencyTag realtime={realtime} speech={speech}/>
             </div>
             <div className="stage-header-tools">
               <label className="persona-live-switch">当前性格
@@ -1042,8 +1053,6 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
               <RoleLanguagePreference robotId={robotId} session={session}/>
               {!styleApplied&&session&&<span role="status" className="quality-note">性格待生效</span>}
               <button className="quiet-button" type="button" onClick={()=>setHistoryOpen(o=>!o)}>{historyOpen?'收起会话':'会话列表'}</button>
-              <button className="quiet-button" type="button" onClick={openCreate} disabled={!robotId}>＋ 新建</button>
-              <button className="quiet-button danger-text" type="button" onClick={()=>setDeleteOpen(true)} disabled={!session||pending}>删除</button>
             </div>
           </div>
 
@@ -1054,18 +1063,15 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
           <div className="live-cockpit-cards">
             <div className="live-cockpit-card">
               <div className="card-label">
-                <span>ASR 增量</span>
+                <span>你说的话</span>
                 <span className={'status-dot '+(previewTranscript?'dot-good':'')}/>
               </div>
               <div className={'card-body '+(previewTranscript?'partial':'')}>
-                {previewTranscript||'点击麦克风直接说话'}
+                {previewTranscript||finalTranscript?.text||lastUserText||'—'}
               </div>
-            </div>
-            <div className="live-cockpit-card">
-              <div className="card-label"><span>你的最终文本</span></div>
-              <div className="card-body">
-                {finalTranscript?.text||lastUserText||'—'}
-              </div>
+              {ambient.length>0&&<div className="card-foot" title={ambient.join('\n')}>
+                忽略的环境音：{ambient.slice(-3).join(' / ')}
+              </div>}
             </div>
             <div className="live-cockpit-card decision-card" ref={decisionCardRef} aria-label="对话决策">
               <div className="card-label">
@@ -1141,17 +1147,11 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
             </div>
             <div className="live-cockpit-card">
               <div className="card-label">
-                <span>AI 流式回答</span>
+                <span>她的回答</span>
                 <span className={'status-dot '+(liveText?'dot-good':'')}/>
               </div>
               <div className="card-body assistant">
                 {liveText||lastAssistantReply||'—'}
-              </div>
-            </div>
-            <div className="live-cockpit-card">
-              <div className="card-label"><span>smart_turn 忽略的环境音</span></div>
-              <div className="card-body ambient">
-                {ambient.length>0?ambient.slice(-4).join(' / '):'—'}
               </div>
             </div>
           </div>
@@ -1191,19 +1191,23 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                   if(history.turns.length>visibleHistoryCount)setVisibleHistoryCount(count=>count+HISTORY_PAGE_SIZE);
                   else void loadOlder();
                 }}>{olderLoading?'读取历史中…':'加载更早对话'}</button>}
-              {history?.turns.slice(-visibleHistoryCount).map(turn=>{
+              {history?.turns.slice(-visibleHistoryCount).map((turn,index,shown)=>{
                 const streaming=liveTurn?.turnId===turn.turn_id&&turn.status==='running';
+                const persona=personaMark(turn,index?shown[index-1]:null,profiles);
                 const reply=streaming?(liveText||turn.assistant_generated_text):
                   (turn.assistant_spoken_text||turn.assistant_generated_text);
                 const user=turn.user_text||(
                   finalTranscript?.turnId===turn.turn_id?finalTranscript.text:
                     liveTurn?.turnId===turn.turn_id?previewTranscript||liveTurn.userText:''
                 );
+                const vision=turnVision(turn.turn_id,realtimeEvents,diagnostics);
                 return <div className="exchange" key={turn.turn_id}>
+                  {persona.switched&&<div className="persona-divider" role="separator"><span>切换为「{persona.label}」</span></div>}
                   {turn.turn_source!=='external'&&<div className="message-row me"><div className="message-content"><span className="message-author">你{turn.updated_ms&&<time className="message-timestamp"> · {formatTimestamp(turn.updated_ms)}</time>}</span><div className="bubble me-bubble">{user||'语音转写中…'}</div></div></div>}
-                  {(reply||(turn.turn_source!=='external'&&turn.status!=='running'))&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
+                  {(reply||vision?.state==='looking'||(turn.turn_source!=='external'&&turn.status!=='running'))&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
                     <span className="message-author">
                       小安妮
+                      {persona.label&&<span className="persona-tag" title="说这句时的性格">{persona.label}</span>}
                       {getTurnActions(turn.turn_id,actionRequests,realtimeEvents,diagnostics).map(act=>{
                         const label=ACTION_SCRIPT_NAMES[act.value]??act.value;
                         const statusText=actionStatusLabel[act.status]??act.status;
@@ -1216,6 +1220,7 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                           <span className="turn-action-label">{label}</span>
                         </button>;
                       })}
+                      {vision&&<VisionBadge vision={vision}/>}
                       {turn.updated_ms&&<time className="message-timestamp"> · {formatTimestamp(turn.updated_ms)}</time>}
                     </span>
                     {reply&&(streaming?[reply]:splitReplyBubbles(reply)).map((part,index)=>
@@ -1223,14 +1228,15 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                         key={index}>{part}</div>)}
                     <span className="message-foot">
                       {streaming&&<i className="streaming-pulse-dot" aria-hidden="true"/>}
-                      {streaming?'正在生成':playbackLabel(turn,speech?.state==='not_configured')}
+                      {vision?.state==='looking'&&!reply?'正在看画面…':
+                        streaming?'正在生成':playbackLabel(turn,speech?.state==='not_configured')}
                     </span>
                   </div></div>}
                 </div>;
               })}
               {liveTurn&&!history?.turns.some(turn=>turn.turn_id===liveTurn.turnId)&&<div className="exchange" aria-live="polite">
                 {liveTurn.source!=='external'&&<div className="message-row me"><div className="message-content"><span className="message-author">你</span><div className="bubble me-bubble">{finalTranscript?.turnId===liveTurn.turnId?finalTranscript.text:previewTranscript||liveTurn.userText||'语音转写中…'}</div></div></div>}
-                {liveText&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
+                {(liveText||liveVision?.state==='looking')&&<div className="message-row agent"><span className="agent-avatar">A</span><div className="message-content">
                   <span className="message-author">
                     小安妮
                     {getTurnActions(liveTurn.turnId,actionRequests,realtimeEvents,diagnostics).map(act=>{
@@ -1245,8 +1251,9 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
                         <span className="turn-action-label">{label}</span>
                       </button>;
                     })}
+                    {liveVision&&<VisionBadge vision={liveVision}/>}
                   </span>
-                  <div className="bubble agent-bubble">{liveText}</div><span className="message-foot"><i className="streaming-pulse-dot" aria-hidden="true"/>实时回复，等待入账</span>
+                  {liveText&&<div className="bubble agent-bubble">{liveText}</div>}<span className="message-foot"><i className="streaming-pulse-dot" aria-hidden="true"/>{liveText?'实时回复，等待入账':'正在看画面…'}</span>
                 </div></div>}
               </div>}
               {(previewTranscript||pendingAsr)&&!liveTurn&&<div className="message-row me" aria-live="polite"><div className="message-content"><span className="message-author">你 · {pendingAsr?'最终转写':'语音转写中'}</span><div className="bubble me-bubble">{pendingAsr||previewTranscript}</div></div></div>}
@@ -1278,16 +1285,21 @@ export function Workbench({ onSwitchMode }: { onSwitchMode?: (mode: 'cockpit' | 
           </section>
         </div>
 
-        <aside className="inspector cockpit-hud" aria-label="声学与延迟仪表盘">
-          <LatencyHud realtime={realtime} speech={speech}/>
+        <aside className="inspector cockpit-hud" aria-label="内心与语音状态">
           <InnerLifePanel key={'inner:'+robotId} robotId={robotId}/>
           <SpeechExpressionPanel key={JSON.stringify([robotId,session?.chat_id,session?.persona_id,session?.session_epoch,session?.generation])} robotId={robotId} session={session}/>
-          <MicrophoneControls key={robotId+'\u0000'+(route?.room_id??'')}
-            route={realtime?.ready?route:undefined} onActive={setMicActive}/>
-          <RoomSpeakerPanel key={'speaker:'+robotId+'\u0000'+(route?.room_id??'')}
-            url={route?.urls?.tts} voiceUrl={route?.urls?.voice} roomId={route?.room_id}
-            command={playbackCommand} onActive={setAuditionActive}
-            available={!!speech&&speech.state!=='not_configured'} voiceMode={voiceMode}/>
+          <details className="hud-section inspector-panel audio-debug-panel">
+            <summary className="speech-exp-summary">
+              <span className="speech-summary-title">网页麦克风 / 试听</span>
+              <span className="speech-summary-badge">{micActive||auditionActive?'使用中':'调试'}</span>
+            </summary>
+            <MicrophoneControls key={robotId+'\u0000'+(route?.room_id??'')}
+              route={realtime?.ready?route:undefined} onActive={setMicActive}/>
+            <RoomSpeakerPanel key={'speaker:'+robotId+'\u0000'+(route?.room_id??'')}
+              url={route?.urls?.tts} voiceUrl={route?.urls?.voice} roomId={route?.room_id}
+              command={playbackCommand} onActive={setAuditionActive}
+              available={!!speech&&speech.state!=='not_configured'} voiceMode={voiceMode}/>
+          </details>
         </aside>
       </div>
     </main>

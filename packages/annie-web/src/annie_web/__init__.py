@@ -12,9 +12,6 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from annie_web.exhibit import exhibit_snapshot
-from annie_web.exhibit_video import ExhibitLiveKit
-
 logger = logging.getLogger(__name__)
 
 
@@ -166,6 +163,11 @@ class MemoryForget(BaseModel):
     version: int = Field(ge=1)
 
 
+class MemoryRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+
+
 def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
@@ -176,7 +178,6 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
             await runtime.close()
 
     app = FastAPI(title="Annie Harbor — Phase 3 Session Control", lifespan=lifespan)
-    exhibit_video = ExhibitLiveKit()
 
     @app.middleware("http")
     async def same_origin_mutations(request: Request, call_next):
@@ -186,29 +187,6 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
             if origin and origin != str(request.base_url).rstrip("/"):
                 return JSONResponse({"detail": "origin_mismatch"}, status_code=403)
         return await call_next(request)
-
-    @app.get("/api/exhibit/session")
-    async def exhibit_session():
-        # Keep the response compatible with already-open older front-end tabs.
-        return {"configured": True, "role": "operator", "access_mode": "intranet"}
-
-    @app.get("/api/exhibit/robots")
-    async def exhibit_robots():
-        return [{"robot_id": k, "room_id": v.config.room_id}
-                for k, v in runtime.robots.items()]
-
-    @app.get("/api/exhibit/robots/{robot_id}/snapshot")
-    async def exhibit_robot_snapshot(robot_id: str):
-        require_robot(robot_id)
-        return await exhibit_snapshot(runtime, robot_id)
-
-    @app.get("/api/exhibit/robots/{robot_id}/video-config")
-    async def exhibit_video_config(robot_id: str):
-        require_robot(robot_id)
-        result = exhibit_video.config(robot_id)
-        if result is None:
-            raise HTTPException(503, "livekit_not_configured")
-        return result
 
     def require_robot(robot_id: str):
         if robot_id not in runtime.robots:
@@ -364,7 +342,7 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
     async def clone_voice(robot_id: str, request: Request, name: str, filename: str,
                           language: str = "zh"):
         require_robot(robot_id)
-        from annie_runtime.voice_profiles import MAX_BYTES
+        from annie_runtime.voice_profiles import MAX_BYTES, VoiceCloneError
         size = request.headers.get("content-length")
         if size and size.isdecimal() and int(size) > MAX_BYTES:
             raise HTTPException(413, "音色参考音频不可超过10MB")
@@ -377,6 +355,9 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
             return await runtime.clone_voice(robot_id, name, filename, bytes(content), language)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        except VoiceCloneError as exc:
+            logger.warning("voice_clone failed robot=%s %s", robot_id, exc)
+            raise HTTPException(502, exc.reason) from exc
         except Exception as exc:
             logger.warning("voice_clone failed robot=%s error=%s", robot_id, type(exc).__name__)
             raise HTTPException(502, "云端音色复刻失败，请检查模型权限和服务器日志") from exc
@@ -684,6 +665,25 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "memory not found") from exc
         except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/robots/{robot_id}/memories/{memory_id}/restore")
+    async def memory_restore(robot_id: str, memory_id: str, body: MemoryRestore):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_restore(robot_id, persona, memory_id, body.version)
+        except KeyError as exc:
+            raise HTTPException(404, "memory not found") from exc
+        except (RobotUnavailableError, ValueError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/robots/{robot_id}/memory-insight")
+    async def memory_insight(robot_id: str):
+        require_robot(robot_id)
+        try:
+            return runtime.memory_insight(robot_id)
+        except RobotUnavailableError as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @app.get("/api/robots/{robot_id}/conversations/{chat_id}")

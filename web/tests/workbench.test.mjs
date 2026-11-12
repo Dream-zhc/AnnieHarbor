@@ -32,11 +32,14 @@ test('memory panel separates public, persona-only and current-chat records',asyn
   assert.match(source,/长期通用/);
   assert.match(source,/当前角色/);
   assert.match(source,/本次会话/);
-  assert.match(source,/visibleMemory\(item,scope,Date\.now\(\)\)/);
+  assert.match(source,/visibleMemory\(item,scope,now,withOutdated&&scope!=='chat'\)/);
   assert.match(source,/scope==='chat'\?'\/chat-memories':'\/memories'/);
-  assert.match(source,/creating&&<div className="memory-create-backdrop"/);
+  assert.match(source,/creating&&listing&&<div className="memory-create-backdrop"/);
   assert.match(source,/scope==='persona'&&<div className="memory-form-row">/);
-  assert.match(source,/activeCount=valid\.length/);
+  assert.match(source,/activeCount=valid\.filter\(item=>item\.status==='active'\)\.length/);
+  assert.match(source,/想起与整理/);
+  assert.match(source,/'\/memory-insight'/);
+  assert.match(source,/'\/restore','POST',\{version:item\.version\}/);
   assert.doesNotMatch(source,/memory-key-badge/);
 });
 
@@ -214,7 +217,7 @@ test('React build is the only production page and serves local assets',async()=>
   assert.doesNotMatch(source,/type View=|'overview','chat','robots','developer'/);
   assert.match(source,/className="developer-drawer"/);
   assert.match(source,/historyOpen\?'history-open':'history-closed'/);
-  assert.match(latencyHud,/aria-label="延迟瀑布图"/);
+  assert.match(latencyHud,/className="room-tag latency-tag"/);
   assert.match(audioPanels,/onLevel=\{setLevel\}/);
   assert.match(audioPanels,/onBuffer=\{setBrowserBuffer\}/);
   assert.doesNotMatch(source,/setMicLevel|setBrowserBuffer|setMicDiagnostics/);
@@ -239,6 +242,29 @@ test('React build is the only production page and serves local assets',async()=>
   assert.match(source,/followLatest/);
   assert.match(source,/role="dialog"/);
   assert.doesNotMatch(source,/\.innerHTML\s*=/);
+});
+
+test('the cockpit header is one row of tags and the side panel leads with her mood and voice',async()=>{
+  const workbench=await readFile(path.join(web,'src/workbench.tsx'),'utf8');
+  const between=(from,to)=>workbench.slice(workbench.indexOf(from),workbench.indexOf(to));
+  const sidebar=between('<aside className="chat-sidebar">','<div className="stage-header">');
+  const header=between('<div className="stage-header">','<div className="live-cockpit-cards">');
+  const cards=between('<div className="live-cockpit-cards">','<section className="conversation"');
+  const hud=workbench.slice(workbench.indexOf('<aside className="inspector cockpit-hud"'));
+  assert.match(header,/<LatencyTag realtime=\{realtime\} speech=\{speech\}\/>/);
+  assert.doesNotMatch(workbench,/<LatencyHud/);
+  assert.doesNotMatch(header,/实时对讲|已激活 · |openCreate|setDeleteOpen/);
+  assert.match(sidebar,/onClick=\{openCreate\}/);
+  assert.match(sidebar,/onClick=\{\(\)=>setDeleteOpen\(true\)\}[^>]*>删除当前会话</);
+  assert.equal((cards.match(/className="live-cockpit-card[ "]/g)??[]).length,3);
+  assert.match(cards,/previewTranscript\|\|finalTranscript\?\.text\|\|lastUserText/);
+  assert.match(cards,/className="card-foot"[\s\S]{0,80}ambient\.slice\(-3\)/);
+  assert.match(hud,/<details className="hud-section inspector-panel audio-debug-panel">[\s\S]*<MicrophoneControls[\s\S]*<RoomSpeakerPanel[\s\S]*<\/details>/);
+  assert.ok(hud.indexOf('<InnerLifePanel')<hud.indexOf('<SpeechExpressionPanel'));
+  assert.ok(hud.indexOf('<SpeechExpressionPanel')<hud.indexOf('audio-debug-panel'));
+  assert.match(await readFile(path.join(web,'src/inner-life.tsx'),'utf8'),/inner-life-panel" open>/);
+  assert.match(await readFile(path.join(web,'src/speech-expression.tsx'),'utf8'),
+    /useState\(true\);[\s\S]*speech-expression-panel" open=\{open\}/);
 });
 
 test('production drawer has no obsolete phase test links',async()=>{

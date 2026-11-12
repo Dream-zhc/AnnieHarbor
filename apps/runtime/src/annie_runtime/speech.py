@@ -10,7 +10,7 @@ from collections import deque
 from dataclasses import asdict, replace
 from hashlib import sha256
 
-from annie_adapters.tts import TTS_LANGUAGE_HINTS, QwenTtsSocket, command, task_id
+from annie_adapters.tts import TTS_LANGUAGE_HINTS, QwenTtsSocket, command, task_id, validate_model
 from annie_core.speech_style import SpeechStyle
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class SpeechOutput:
     def __init__(self, robot, publisher, *, url, key, voice, socket_factory=QwenTtsSocket,
                  first_chars=10, min_chars=None, max_chars=48, first_wait_ms=360, event=None,
                  voice_publisher=None, style_provider=None, voice_provider=None,
-                 mixed_enabled=False):
+                 mixed_enabled=False, model=None):
         min_chars = first_chars if min_chars is None else min_chars
         if any(type(value) is not int or value <= 0
                for value in (first_chars, min_chars, max_chars)):
@@ -140,6 +140,7 @@ class SpeechOutput:
         self.url = url
         self.key = key
         self.voice = voice
+        self.model = None if model is None else validate_model(model)
         self.voice_provider = voice_provider
         self.locked_voice = None
         self.socket_factory = socket_factory
@@ -1024,7 +1025,7 @@ class SpeechOutput:
                     await socket.open()
                 task = task_id()
                 run = command("run-task", task, voice=self.locked_voice or self.voice,
-                              style=style, one_shot=True)
+                              style=style, one_shot=True, model=self.model)
                 await socket.send(run)
                 self._emit("tts.run_task", task_id=task, segment_id=segment_id,
                            streaming=run["header"]["streaming"],
@@ -1122,7 +1123,7 @@ class SpeechOutput:
             if not isinstance(selected_voice, str) or not selected_voice:
                 raise ValueError("invalid selected TTS voice")
             self.locked_voice = selected_voice
-            run_command = command("run-task", task, voice=selected_voice, style=style)
+            run_command = command("run-task", task, voice=selected_voice, style=style, model=self.model)
             if origin == "fresh":
                 await socket.send(run_command)
             else:

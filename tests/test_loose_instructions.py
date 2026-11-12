@@ -104,6 +104,15 @@ def test_persona_follows_requests_but_keeps_who_she_is():
     assert '拿不准按这次聊天都这样办' in text and '不再当小安妮' in text
 
 
+def test_prompt_request_examples_match_the_runtime_scope():
+    one_off = ['用粤语骂两句', '用英语说一下这句', '用四川话讲个笑话']
+    lasting = ['说粤语', '用东北话跟我聊', '以后都说英语']
+    assert all(f'“{text}”' in persona.USER_REQUESTS for text in one_off + lasting)
+    assert '下一句就回到原来的说法' in persona.USER_REQUESTS
+    assert [explicit_language_request(text)['scope'] for text in one_off] == ['turn'] * 3
+    assert [explicit_language_request(text)['scope'] for text in lasting] == ['chat', 'chat', 'robot']
+
+
 # ---- runtime ------------------------------------------------------------------------
 def live(tmp_path, body, *, decision=None, registry=None, socket_factory=EchoSocket):
     async def run():
@@ -245,7 +254,7 @@ def test_any_self_introduction_registers_and_the_rest_is_judged(tmp_path):
     live(tmp_path, body, decision=decision, registry=registry)
 
 
-def test_a_face_known_by_another_name_is_asked_about_once(tmp_path):
+def test_a_face_known_by_another_name_keeps_the_picture_s_name(tmp_path):
     registry = FakeRegistry(people=('张三',))
 
     async def body(rt, client):
@@ -254,7 +263,7 @@ def test_a_face_known_by_another_name_is_asked_about_once(tmp_path):
         assert first['status'] == 'known_as_other' and first['known_as'] == '张三'
         assert registry.calls == []
         again = await say(client, '对，我就叫李四，记住我', 'k2', 'remember_face', {'name': '李四'})
-        assert again['status'] == 'started' and registry.calls == [('register', '李四', 18)]
+        assert again['status'] == 'known_as_other' and registry.calls == []  # 11-03: never renamed
 
     live(tmp_path, body, registry=registry)
 

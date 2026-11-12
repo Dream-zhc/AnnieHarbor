@@ -246,8 +246,11 @@ class AcousticSidecar:
             state["samples"] += len(frame.pcm) // 2
             self._sent += 1
             self._failures = 0
+            # Not wait_for: on 3.11 it swallows the retire cancel once get() has already
+            # taken the next stream's first frame, and that frame is lost.
             try:
-                frame = await asyncio.wait_for(self._queue.get(), self._idle_timeout)
+                async with asyncio.timeout(self._idle_timeout):
+                    frame = await self._queue.get()
             except TimeoutError:
                 return
 

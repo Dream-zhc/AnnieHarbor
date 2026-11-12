@@ -33,6 +33,8 @@ export type RealtimeEvent={
   script?:string|null;style_id?:string;style_label?:string;setting?:string;value?:string;
   from_name?:string;from_address?:string;to_name?:string;to_address?:string;
   saved?:number;target_samples?:number;previous?:number;volume?:number;
+  image?:boolean;judge?:string|null;model?:string|null;frame_age_ms?:number|null;
+  route?:string|null;chars?:number;total_ms?:number|null;
 };
 export type RealtimeEvents={events:RealtimeEvent[];gap:boolean;latest:number};
 export const robotPath = (id:string) => `/api/robots/${encodeURIComponent(id)}`;
@@ -51,7 +53,7 @@ export const eventBelongsToSession = (
   event.persona_id===session.persona_id&&event.session_epoch===session.session_epoch&&
   event.generation===session.generation;
 
-export type SpeechStyle={delivery?:'natural'|'contextual'|'expressive';language:string;dialect:string;emotion:string;instruction:string;rate:number;pitch:number;volume:number;source:string};
+export type SpeechStyle={delivery?:'natural'|'contextual'|'expressive';language:string;dialect:string;emotion:string;instruction:string;rate:number;pitch:number;volume:number;source:string;tone?:string};
 export type LanguageSelection={language:string;dialect:string;source?:string};
 export type LanguagePreference=LanguageSelection&{scope?:'chat'|'robot';revision?:number};
 export type SpeechExpression=Session&{

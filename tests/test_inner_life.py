@@ -15,13 +15,13 @@ from annie_brain.inner_life import (
     LONELY_AFTER_MS,
     Mood,
     appraisal_feeling,
-    diary_hint,
     diary_lines,
     event_feeling,
     feel,
     mood_hint,
     mood_label,
     mood_text,
+    my_day,
     parse_summary,
     public_day,
     repeats,
@@ -124,15 +124,16 @@ def test_her_day_is_today_only_in_order_and_strangers_hear_no_names_or_talk():
            row("touch", "昨天的事", -24 * 60)]
     assert diary_lines(day, MORNING + 40 * MINUTE) == [
         "10:10 张三来了", "10:20 有人轻轻按了你的额头（共3次）", "10:30 和张三聊了周末去爬山"]
-    hint = diary_hint(day, MORNING + 40 * MINUTE)
-    assert "只能讲这些，不要编别的" in hint
+    stranger = my_day(day, MORNING + 40 * MINUTE)
+    assert "不要编别的经历" in stranger["instruction"]
     # Someone else's talk: others only learn that it happened (2026-10-26 replay).
-    assert "10:30 和张三聊了一会儿" in hint and "爬山" not in hint
-    own = diary_hint(day, MORNING + 40 * MINUTE, "张三")
-    assert "10:30 和张三聊了周末去爬山" in own and "眼前跟你说话的就是张三" in own
+    assert "10:30 和张三聊了一会儿" in stranger["today"]
+    assert not any("爬山" in line for line in stranger["today"])
+    own = my_day(day, MORNING + 40 * MINUTE, "张三")
+    assert "10:30 和张三聊了周末去爬山" in own["today"] and "眼前跟你说话的就是张三" in own["instruction"]
     public = public_day(day, MORNING + 40 * MINUTE)
     assert public == ["10:20 有人轻轻按了你的额头（共3次）", "今天有认识的人来看过你"]
-    assert diary_hint([], MORNING) == ""
+    assert my_day([], MORNING)["status"] == "empty"
     assert repeats(day[1], "touch", "有人轻轻按了你的额头", MORNING + 25 * MINUTE)
     assert not repeats(day[1], "touch", "有人轻轻按了你的额头", MORNING + 40 * MINUTE)
     assert not repeats(day[0], "chat", day[0]["text"], MORNING + 31 * MINUTE)
@@ -149,6 +150,9 @@ def test_the_diary_summary_is_one_short_line_or_nothing():
                                        "resolved": [3, 99], "asked": [3]}), [3])
     assert parsed["threads"] == [{"text": "下周去面试", "follow_up": "问问面试结果"}]
     assert parsed["resolved"] == [3] and parsed["asked"] == [3]  # unknown ids are ignored
+    bare = parse_summary(json.dumps([{"text": "这周六搬家", "follow_up": "搬家顺利吗"}]))
+    assert bare == {"threads": [{"text": "这周六搬家", "follow_up": "搬家顺利吗"}],
+                    "resolved": [], "asked": []}
 
 
 # ---- SQLite rows ----------------------------------------------------------------------
@@ -317,6 +321,28 @@ def test_a_finished_conversation_becomes_one_named_diary_line(tmp_path):
             await settled(service)
             assert service.day["a"] == []
             assert rows.recent_experiences(service.store, "a", since_ms=0) == []
+        finally:
+            await service.close()
+    asyncio.run(run())
+
+
+def test_a_threads_only_answer_keeps_the_thread_and_the_plain_diary_line(tmp_path):
+    async def run():
+        client = FakeClient({"choice": "neutral", "confidence": .9})
+        summarizer = FakeSummarizer(json.dumps(
+            [{"text": "这周六搬家", "follow_up": "搬家顺利吗"}], ensure_ascii=False))
+        service, clock = service_with(tmp_path, client, summarizer)
+        await service.start()
+        try:
+            for text in ("这周六我们家搬家", "东西还没收拾完", "好累"):
+                service.on_turn("a", chat_id="c1", user_text=text, reply_text="辛苦啦",
+                                input_mode="audio", client=client)
+            clock["now"] += 3 * MINUTE
+            service._close_stretch("a")
+            await settled(service)
+            assert service.day["a"][0]["text"] == "和张三聊了3轮"
+            assert [row["text"] for row in service.threads["a"]] == ["这周六搬家"]
+            assert service.stats["a"]["summary_failures"] == 0
         finally:
             await service.close()
     asyncio.run(run())

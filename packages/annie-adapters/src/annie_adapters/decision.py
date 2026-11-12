@@ -73,16 +73,26 @@ class DecisionClient:
         )
         self._owns_client = client is None
 
-    async def ask(self, state, questions: dict, *, timeout: float | None = None) -> dict:
-        """Return ``answers`` keyed like ``questions``; raise on any failure."""
+    async def ask(self, state, questions: dict, *, timeout: float | None = None,
+                  images: list[str] | None = None) -> dict:
+        """Return ``answers`` keyed like ``questions``; raise on any failure.
+
+        ``images`` are data URLs (``data:image/jpeg;base64,...``). d3 reads a
+        picture only from this top-level field: a bare base64 string is a 400,
+        and one put inside ``state`` is silently read as text (2026-11-03).
+        """
         if not isinstance(questions, dict) or not questions or len(questions) > 16:
             raise ValueError("ask 1..16 questions")
         for question in questions.values():
             if not isinstance(question, dict) or question.get("type") not in QUESTION_TYPES:
                 raise ValueError("unsupported decision question")
-        response = await self._client.post(self.url, json={
-            "model": self.model, "state": state, "questions": questions,
-        }, timeout=timeout or self.timeout)
+        body = {"model": self.model, "state": state, "questions": questions}
+        if images:
+            if len(images) > 4 or not all(isinstance(image, str) and image.startswith("data:image/")
+                                          for image in images):
+                raise ValueError("images must be 1..4 data:image/... URLs")
+            body["images"] = list(images)
+        response = await self._client.post(self.url, json=body, timeout=timeout or self.timeout)
         response.raise_for_status()
         answers = response.json().get("answers")
         if not isinstance(answers, dict) or set(answers) != set(questions):

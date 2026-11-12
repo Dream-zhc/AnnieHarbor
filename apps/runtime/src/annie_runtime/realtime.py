@@ -1,6 +1,7 @@
 """Per-robot duplex Session: Qwen-Audio hears, reasons and calls tools."""
 
 import asyncio
+import base64
 import copy
 import json
 import logging
@@ -21,12 +22,15 @@ from annie_brain.context import (
     select_restorable_context,
 )
 from annie_brain.decision_policy import (
+    ABSENT_PERSON_QUESTION,
     ADDRESSEE_FOLLOWUP_QUESTION,
     ADDRESSEE_QUESTION,
     EXPRESSION_SCRIPTS,
     GENERIC_MOTION,
     LANGUAGE_REQUEST_SCOPES,
+    LOOK_DIRECTIONS,
     LOOK_SCRIPTS,
+    REPEAT_QUESTION,
     WAKE_NAME,
     addressee_prompt,
     addressee_state,
@@ -35,27 +39,45 @@ from annie_brain.decision_policy import (
     explicit_motion,
     expression_choice,
     expression_question,
+    face_forget_confirm_question,
+    face_forget_question,
     face_request_question,
     head_turn_motion,
     instruction_state,
     language_request_question,
+    look_cue,
+    look_question,
+    look_state,
     motion_question,
+    persona_switch_question,
     pick_anchor,
+    repeat_state,
+    reply_likeness,
+    voice_switch_question,
 )
 from annie_brain.dialogue import DialogueState
 from annie_brain.persona import (
     CHAT_PREFERENCES,
+    DELEGATED_CHOICE,
     PREFERENCE_REQUEST,
+    UnclearPersonaRequest,
     active_style_id,
     chat_preference,
+    persona_opener,
+    persona_tone,
+    persona_voice,
+    refuses_switch,
     resolve_persona_style_request,
     session_instructions,
     social_instruction_hint,
+    style_named,
 )
+from annie_brain.recap import recap_hint
 from annie_core import RobotUnavailableError
+from annie_core.speech_style import apply_persona_tone
 
 from annie_runtime.display import DISPLAY_NOTIFY_KINDS
-from annie_runtime.faces import face_name
+from annie_runtime.faces import FORGET_CONFIRM_SECONDS, face_name, heard_name, same_person
 from annie_runtime.language import (
     ROBOT_SCOPE,
     SPOKEN_NAMES,
@@ -64,10 +86,13 @@ from annie_runtime.language import (
     explicit_language_request,
     explicit_language_stop,
     named_languages,
+    normalize_dialect,
     stop_covers,
     unplaced_language_mention,
 )
+from annie_runtime.name_guard import PAST_PERSON, NameGuard
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
+from annie_runtime.repeat_guard import RepeatGuard, asked_again
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
 from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
 from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
@@ -76,6 +101,8 @@ logger = logging.getLogger(__name__)
 AMBIENT_FILLER = re.compile(r"^[\s嗯啊呃哦唔诶额哎呀哈呵噢,.，。!?！？~～…]+$")
 IDLE_SESSION_GAP_SECONDS = 15 * 60
 IDLE_RECV_CHECK_SECONDS = 30
+# Fold turns into the recap two at a time once they leave the provider's window.
+RECAP_FOLD_TURNS = 2
 # Qwen closes a session after 180 s without a reply or input (every 3 min on
 # 10-22). That is routine: reconnect at once instead of after the 1 s backoff,
 # which with the handshake left the microphone deaf for about 1.3 s each time.
@@ -87,6 +114,10 @@ VISUAL_CONTEXT_POLL_SECONDS = 0.5
 VISUAL_CONTEXT_MAX_CHARS = 2000
 MAX_EARLY_TOOL_CALLS = 4
 PERSONA_OFFER_SECONDS = 120
+# 11-05: “试试邻家姐姐”“来个御姐音” failed the old gate (换/切换/改成/用…声音).
+VOICE_REQUEST = re.compile(r"换|切|改成|改用|恢复|(?:用|来|试试?|听听?|要)[^，,。？?！!]{0,12}"
+                           r"(?:声音|音色|嗓音|声线|音(?!乐))")
+VOICE_VERB = re.compile(r"用|来|试|听|要|换|切")
 OVERHEARD_WINDOW_SECONDS = 180  # memory only; never persisted or memorised
 OVERHEARD_CONTEXT_SECONDS = 90
 CJK_WORD = re.compile(r"[\u4e00-\u9fff]{2}")
@@ -110,15 +141,51 @@ EXPLICIT_MOTION = re.compile(
     r"动作|表情|点头|点个头|摇头|眨|歪头|转头|看左|看右|往上看|惊讶|坏笑|得意|害羞|怀疑|做个|来个|演示")
 SLEEP_AFTER_REPLY_SECONDS = 20.0
 WEATHER_QUERY = re.compile(r"天气|气温|温度|下雨|下雪|刮风|冷不冷|热不热|带伞|穿什么|weather", re.I)
+REPEAT_REQUEST = re.compile(r"再说一[遍次下]|再讲一[遍次下]|重复一[下遍次]|刚才说(?:了)?(?:什么|啥)|没听[清见到]")
+# A reply this alike to a recent one repeats it; from REPEAT_ASK_RATIO the decision model judges.
+REPEAT_RATIO = 0.85
+REPEAT_ASK_RATIO = 0.4
+KNOWN_PEOPLE_SECONDS = 60
+SWITCH_OPENER_SETTLE_SECONDS = 1.5
+SWITCH_OPENER_READY_SECONDS = 10.0
+SWITCH_OPENER_PROMPT = ("【内部切换展示，非用户发言】你刚在工作台换了性格或声音，现在没人在说话。"
+                        "照【刚换了性格】或【刚换了声音】那条主动开口，来一两句；可以接刚才的话题或眼前的事，"
+                        "别编新事，别提工作台，别说已切换，不调用工具。")
+NAME_NOTE = ("\n【称呼】你刚才的回复提到了眼前没认出的人，已替你隐去。画面里没认出、也没在说话的人，"
+             "不叫名字、不说TA在场；用户问起时再提。")
+
+
+def held_response_id(event):
+    if event.get("type") in {"response.created", "response.done"}:
+        return (event.get("response") or {}).get("id")
+    return event.get("response_id")
+
+
+# 11-02: “请TA说‘记住我，我叫……’” came back as “得跟我说‘记住我，我叫康兴’才行”: a
+# scripted phrase for the user and a name read out that the camera never saw.
+# Its bare “不要重试” also stayed in the history: the next three self-introductions
+# (19:03:52–19:04:09) got no call at all, so a refusal covers only this sentence.
 REJECTED_RULES = {
-    "remember_face": "没有开始记脸：对方没有明确要你记住TA。不要用这个名字称呼TA，不要说你认识TA；"
-                     "TA想让你记住，就请TA说“记住我，我叫……”。不要重试，不提工具或故障。",
+    "remember_face": "没有开始记脸：这句话不是在请你记住说话的人。不要用这个名字称呼谁，也不要复述它，"
+                     "不要说你认识TA；按普通对话自然回应，不提工具或故障。这一句不要再调用；"
+                     "之后有人自己报名字或要你记住TA，照常调用remember_face。",
     "update_chat_preference": "设置没有变：这句话不是明确的修改要求。不要重试，不提工具或故障，"
                               "按普通对话回应；想确认就问一句TA要不要调。",
     "set_speaker_volume": "音量没有变：这句话不是明确的调音量要求。不要重试，不提工具或故障。",
 }
+FACE_NAME_NOT_HEARD = "face name must be the one the user said"
+FACE_FOR_OTHER = "face request is for someone else"
+REJECTED_REASONS = {
+    FACE_NAME_NOT_HEARD: "没有开始记脸：TA刚才的话里没有这个名字。TA说了名字，就用TA原话里的名字再调用一次；"
+                         "没说或听不清，就问一句TA叫什么。不要复述你猜的名字，不提工具或故障。",
+    FACE_FOR_OTHER: "没有开始记脸：只记亲口要你记住自己的人，不替别人记。用一句话告诉对方，要记的人得自己来跟你说；"
+                    "不要用这个名字称呼谁，也不要复述它，不提工具或故障。"
+                    "本人之后自己来说时，照常调用remember_face。",
+}
 LOOK_RULES = ("以这份结果为准：who 是 recognized=true 时才是名字，否则就是还不认识的人，"
-              "不能用对话里的名字称呼；穿着长相只按 scene 写到的说，没写就说看不清；"
+              "不能用对话里的名字称呼；对方报的名字和某个认出的 who 读音相同就是TA，按 who 的写法叫。"
+              "looking_at_you=true 的是你正看着的那位，说话的人不一定是TA。"
+              "穿着长相只按 scene 写到的说，没写就说看不清；"
               "用户说的和这里不一致时，礼貌说出你看到的，不附和。")
 REMEMBER_FACE = re.compile(r"记住|记下|记一下|认识一下|认识我|认一下|认得我|记得我")
 # “我叫小明”“我是小明”alone also ask her to remember (user decision 10-22).
@@ -129,13 +196,58 @@ SELF_INTRO_END = r"(?:$|[^一-鿿]|[呀啊哦哈啦嘛呢哟喔噢])"
 
 def self_introduced(text, name):
     return bool(re.search(SELF_INTRO + re.escape(name) + SELF_INTRO_END, text))
+
+
+# “你记住他叫玉箫”: only the person themself may ask to be remembered (user decision 11-03).
+OTHER_PERSON = (r"(?:他|她|ta|这位|那位|这个人|那个人|这人|那人|旁边的?|我(?:的)?(?:朋友|同事|同学|"
+                r"老板|领导|老师|学生|客户|家人|爱人|老婆|老公|媳妇|对象|男朋友|女朋友|妈妈|爸爸|妈|爸|"
+                r"儿子|女儿|孩子|哥哥|姐姐|弟弟|妹妹|哥|姐|弟|妹|爷爷|奶奶|外公|外婆))")
+REMEMBER_OTHER = re.compile(r"(?:记住|记下|记一下|认识一下|认一下|记得)" + OTHER_PERSON)
+# ASR scatters spaces and punctuation through a request (“忘，了我”): phrase rules read the words.
+_ASR_NOISE = re.compile(r"[\s\u3000，。！？、,.!?…~～；;：:“”\"'‘’（）()【】\[\]《》<>·—_-]+")
+
+
+def clean_utterance(text):
+    return _ASR_NOISE.sub("", str(text or "")).lower()
+
+
+def introduces_other(text, name):
+    """“他叫玉箫”“这是我朋友玉箫”“记住她”: about someone else, not the speaker."""
+    text, name = clean_utterance(text), re.escape(clean_utterance(name))
+    return bool(re.search(OTHER_PERSON + r"(?:的名字)?(?:叫做?|是|名叫)?" + name, text)
+                or re.search(r"[这那](?:位|个)?(?:是|叫)" + name, text)
+                or REMEMBER_OTHER.search(text))
+
+
 VOLUME_REQUEST = re.compile(
     r"大声|小声|大点声|小点声|响一?点|轻一?点|音量|声音.{0,6}(?:大|小|高|低|轻|响|调)|"
     r"太吵|吵死|听不(?:清|见|到)")
 # "调到50" right after "小安妮，声音。" (smart_turn split it into two turns, 10/20 19:19).
 VOLUME_FOLLOWUP = re.compile(r"调(?:到|成|为)?\s*(?:百分之)?\d+|调大|调小|大一?点|小一?点|最大|最小|一半")
 VOLUME_TOPIC = re.compile(r"声音|音量|大声|小声")
-FORGET_FACE = re.compile(r"忘掉|忘了我|忘记我|别再认|不要再认|别认|别记|不要记|删掉|删除")
+FORGET_FACE = re.compile(r"忘掉|忘了我|忘记我|把我忘|别再认|不要再认|别认|不要认|别记|不要记|不用记|"
+                         r"删掉|删除|删了|去掉|清除|移除|抹掉|把.{1,10}忘(?:了|掉|记)")
+NOT_FORGET = re.compile(r"(?:不要|别|不许|不能|不准|不会|可别|没)(?:把我)?(?:忘|删)")  # “不要忘了我”
+# Forgetting is confirmed once (user decision 11-03): a short yes, or the request again.
+FORGET_AGREE = re.compile(
+    r"(?:小?安妮)?(?:(?:嗯|对|是|好|行|可以|确定|确认|没错|当然|要|肯定|真的|同意|没问题|ok|okay|yes|"
+    r"忘|删)(?:的|吧|啊|呀|哦|啦|了|掉)*)+")
+FORGET_DECLINE = re.compile(r"算了|不要了|不用了|先不|先别|再想想|想一想|等等|等一下|取消|还是不|"
+                            r"^(?:小?安妮)?(?:不(?!错)|别|没(?!问题|错))")
+FORGET_ASKED = re.compile(r"(?:确定|真的|确认|肯定).{0,10}(?:忘|删)|(?:忘|删)(?:掉|了|记)?(?:你|您|他|她)|"
+                          r"把(?:你|您|他|她).{0,6}(?:忘|删)")
+
+
+def forget_requested(text):
+    """A cleaned utterance asks her to forget a face: “忘了我吧”, not “不要忘了我”."""
+    return bool(FORGET_FACE.search(text)) and not NOT_FORGET.search(text)
+
+
+def asked_to_confirm_forget(reply):
+    """Her own “确定要我忘掉你吗？”, said before she called forget_face."""
+    return bool(FORGET_ASKED.search(reply or "") and re.search(r"[吗么嘛？?]", reply))
+
+
 LATENCY_LOG_EVENTS = frozenset({"turn.done", "tts.first_published", "tts.playback.started",
                                 "tool.result", "tool.followup"})
 BEIJING = timezone(timedelta(hours=8))
@@ -156,12 +268,20 @@ def clock_instructions(now_ms):
 # from an old memory while the camera showed nothing.
 # Scoped to "who is in front of me": on 10/22 “介绍一下张海超” was refused with
 # “画面里也没有这个名字” although memory knew the user 海超.
+# 11-02: “最多说‘你说你叫X’” had her read claimed and misheard names back (康兴、张林)
+# at people the camera did not show.
 IDENTITY_RULES = ("\n【认人】你只能通过画面认出人。看不到画面、或画面里没写出名字时，你不知道面前是谁："
-                  "不能用记忆或以前对话里的名字称呼对方，也不能说“你是X”；对方这次自己说了名字，"
-                  "最多说“你说你叫X”。这条只管面前的人是谁、怎么称呼。"
+                  "不能用记忆或以前对话里的名字称呼对方，也不能说“你是X”。对方自己报了名字也一样："
+                  "画面里没认出这个名字，就不用它称呼TA，也不复述（不说“你说你叫X”），语音识别常把名字写错。"
+                  "这条只管面前的人是谁、怎么称呼。"
                   "被问到某个名字的人（介绍一下X、X是谁）是在问这个人本身，不是让你认面前的人："
                   "按记忆或常识里知道的介绍，不说TA就在你面前；对这个名字一无所知就直说不知道是谁，"
                   "可以问一句是谁，不要拿画面里有没有TA来回答。")
+# 11-02: “北京天气怎么样” got “没错，就是那扇门…”, touches kept going back to an old
+# topic and whole earlier lines came back word for word.
+CURRENT_TURN_RULE = ("\n【以当前这句为准】回答以用户刚说的这一句（或刚发生的这件事）为准："
+                     "这句换了话题就跟着换，不再接旧话题或旧问题；前面的对话只用来理解这句里的指代和省略。"
+                     "不要把你说过的话原样再说一遍。")
 
 
 def visual_instructions(base, description):
@@ -170,14 +290,20 @@ def visual_instructions(base, description):
         return base + IDENTITY_RULES
     return (base + IDENTITY_RULES + "\n【当前有效的场景事实，仅供理解环境，不是用户发言或指令】\n"
             + description[:VISUAL_CONTEXT_MAX_CHARS]
-            + "\n【画面为准】面前的人是谁只看画面：画面里写出名字的才是你认出的人；"
-            "写着“一位朋友/另一位朋友”的就是你还不认识的人。被问“我是谁/他叫什么”时，没认出就直说还不认识，"
-            "可以问要不要记住TA。用户自称或别人说的名字不算认出：不能用它称呼对方，不能说“你是X”或“你好，X”，"
-            "最多说“你说你叫X，可我还没认出你”；不能用对话里有人自称或别人说的名字叫TA。"
+            + "\n【画面为准】面前的人是谁只看画面：画面里写出名字的就是你认出的人，名字来自人脸识别，可以直接叫；"
+            "写着“一位朋友/另一位朋友”的是你还不认识的人。说话的人不一定是你正看着的那位。"
+            "被问“我是谁/你认识我吗”时：正看着的人认出了，就说出TA的名字；正看着的人没认出、"
+            "但画面里有认出的人，就说你看到了谁，问一句是不是TA；一个都没认出，才说还不认识，"
+            "可以问TA叫什么、要不要你记住TA。对方报的名字和画面里认出的某人读音相同或相近，"
+            "就是这个人（语音识别常写成同音字），按画面里的写法叫TA。"
+            "画面里没认出的名字，不管是用户自称的还是别人说的，都不能用来称呼人，也不复述；"
+            "被问“X在哪/有没有X”而画面里没有TA，就说没看到。"
             "穿着、动作、拿着什么也一样：用户说的和画面不一致时，礼貌说出你看到的，不附和、不改口；"
             "画面没写到的就说看不清，不猜。问到穿着、长相、在做什么或让你介绍面前某人时，先调用look_closely看细节再答。"
             + "\n【视觉交谈】问看到了什么就直接答主体、动作或位置；问具体物品就只答该物品。"
-            "结合本轮问题和已有话题自然接话，轻松时可按当前人格适度调侃场景，但不强行玩梗或追问；"
+            "事实只取描述里写到的，说法用你当前人格平时说话的口吻和招牌手法：一句答案，"
+            "再带半句你自己的态度或反应；不照念描述里的句子，也不要换哪个人格都一样的播报腔。"
+            "围绕本轮问题接话，不强行玩梗或追问；"
             "无关时不提视觉，不复述整份描述，不自发播报。"
             "不要主动解释自己是机器人、摄像头或系统如何传图，也不要主动引入偷窥等辩解；"
             "只有被明确问到能力、来源或隐私时才按事实解释。"
@@ -234,6 +360,13 @@ class RealtimeRobot:
         self.expression = None
         self._expression_raw = ""
         self._stage = StageDirections()
+        self._names = NameGuard()
+        self._repeats = None
+        self._seen_names = set()  # recognised in view during this run
+        self._known_people = (float("-inf"), frozenset())  # (loaded at, filed face names)
+        self._absent_asked = {}  # turn_id -> asks about someone not here; None while judged
+        self._once_notes = {}  # kind -> (instruction note, turn that set it) until her next reply
+        self._opener = None
         self._last_expression = None
         self._last_expression_identity = None
         self.socket = None
@@ -327,7 +460,19 @@ class RealtimeRobot:
         self._visual_confirmed_seq = 0
         self._visual_last_send_at = 0.0
         self._memory_bootstrap = ""
+        self._memory_recall = ""  # old facts the user's latest words pointed at
+        self._recall_key = None
+        self._recall_said = ""
+        self._recall_task = None
+        # Turns that slid out of the provider's window, folded into a few sentences.
+        self._recap_text = ""
+        self._recap_turns = []
+        self._recap_key = None
+        self._recap_epoch = 0
+        self._recap_last_t = 0.0
+        self._recap_task = None
         self._persona_offer = None  # styles the robot just asked the user to pick from
+        self._voice_offer = None  # voice names she just asked the user to pick from
         self.inner_life = None  # InnerLifeService: her mood and her own day (optional)
         self._asked_quiet_at = None  # monotonic time of the last “退下/闭嘴”
         self.motions = None  # InteractionMotions: listening / speaking / reaction motions
@@ -348,8 +493,8 @@ class RealtimeRobot:
         self._last_reply_t = None
         self._last_reply_text = ""
         self.decision_stats = {"addressee_checks": 0, "declined": 0, "expression_checks": 0,
-                               "instruction_checks": 0, "auto_actions": 0, "failures": 0,
-                               "last_ms": None}
+                               "instruction_checks": 0, "look_checks": 0, "auto_actions": 0,
+                               "failures": 0, "last_ms": None}
         self._language_decision = None  # (turn_id, pair, task) for one named language
         self._utterance_started_t = None
         self._clock_text = ""
@@ -361,6 +506,7 @@ class RealtimeRobot:
         self.actions = None  # physical dispatch only if operator explicitly enables it
         self.weather = None
         self.faces = None  # face registration on the robot's vision service, if configured
+        self._forget_asked = None  # (name, monotonic, turn_id) she asked to confirm forgetting
         self.speaker_volume = None  # board speaker volume over reb_voice, if a Room has one
         self.visual_details = None  # look_closely: the full current view, if a camera exists
         self.vision_intents = None  # ask the camera's vision service to look now, if enabled
@@ -368,6 +514,11 @@ class RealtimeRobot:
         self._vision_hold = None  # the turn whose reply waits for a look and a fresh view
         self._vision_fresh = None  # that view, kept briefly in the prompt
         self._vision_task = None
+        # The decision model judges looks the phrase rules miss: {enabled, scope,
+        # timeout_ms, image}. camera_frames (LiveKitFrames) gives it the newest frame.
+        self.look_decision = None
+        self.camera_frames = None
+        self._look_deciding = None  # the turn whose provider reply waits for that answer
         self._stopping = False
         self._opening = False
         self._open_done = asyncio.Event()
@@ -839,11 +990,20 @@ class RealtimeRobot:
             "latency_window": self._latency_window(),
         }
 
+    def active_persona_profile(self):
+        return self.persona_profiles.get(
+            active_style_id(self.robot.persona_id, self.persona_profiles, self.social_state))
+
+    def persona_voice(self):
+        return persona_voice(self.active_persona_profile())
+
     def turn_speech_style(self, turn_id, identity):
         if identity != self.robot.session_state():
             return None
         style = self.language.style_for(turn_id)
         self.language.locked_turns.add(turn_id)
+        if style is not None:
+            style = apply_persona_tone(style, persona_tone(self.active_persona_profile()))
         rate = SPEECH_RATE.get(chat_preference(self.social_state, "speech_rate"))
         volume = SPEECH_VOLUME.get(chat_preference(self.social_state, "speech_volume"))
         if style is not None and style.source != "explicit_user" and (rate or volume):
@@ -1028,6 +1188,10 @@ class RealtimeRobot:
         text = str(cached.get('user_text') or self.transcript or '')
         if self.turn_id == self.external_turn_id or self.turn_identity != self.robot.session_state():
             raise ValueError('language tool requires current user turn')
+        if isinstance(args.get('dialect'), str):
+            args = {**args, 'dialect': normalize_dialect(args['dialect'])}
+            if args['dialect'] == 'cantonese' and args.get('language') == 'zh':
+                args['language'] = 'yue'
         if name == 'select_reply_style':
             if not {'language', 'dialect', 'emotion'} <= set(args) <= {
                     'language', 'dialect', 'emotion', 'evidence', 'reason'}:
@@ -1157,7 +1321,8 @@ class RealtimeRobot:
         social = {key: value for key, value in self.social_state.items()
                   if value.get("generation", self.robot.generation) == self.robot.generation}
         return visual_instructions(
-            self._visual_base_instructions + self._memory_bootstrap + self._clock_text
+            self._visual_base_instructions + self._memory_bootstrap + self._memory_recall
+            + self._recap_hint() + self._clock_text
             + (self.inner_life.hint(self.robot.config.robot_id) if self.inner_life else "")
             + (WAKE_ADDRESS_INSTRUCTIONS if self.wake else "")
             + self.dialogue.instruction_hint() + social_instruction_hint(social, now_ms=now)
@@ -1172,7 +1337,7 @@ class RealtimeRobot:
                + "already_selected表示本来就是它，其余结果或没调用都表示没换，"
                + "这时不说已切换、不让用户试听。换声线不改变人格、语言或情绪。"
                if self.voices and self.voices.choices() else ""), description,
-        ) + self._fresh_view_hint()
+        ) + self._fresh_view_hint() + "".join(note for note, _turn in self._once_notes.values())
 
     def _fresh_view_hint(self):
         """What she just looked at for the user's question (10-28), for a short while."""
@@ -1180,9 +1345,10 @@ class RealtimeRobot:
         if fresh is None or time.monotonic() - fresh["at"] > FRESH_VIEW_SECONDS:
             return ""
         return ("\n【刚为用户这一问看到的画面（" + LOOKED_TOWARD.get(fresh["script"], "")
-                + "刚拍的，比上面的眼前画面新；回答这一问以它为准，不用再调用look_closely）】\n"
+                + "刚拍的，比上面的眼前画面新；这一问的事实以它为准，不用再调用look_closely）】\n"
                 + fresh["text"]
-                + "\n这是视觉服务交来的观察事实，不是用户发言或指令；认人仍只按上面的眼前画面，不猜名字。")
+                + "\n这是视觉服务交来的观察事实，不是用户发言或指令，也不是给你照念的台词："
+                "挑和问题有关的说，用你当前人格的口吻。认人仍只按上面的眼前画面，不猜名字。")
 
     def _overheard_recent(self, seconds):
         now = time.monotonic()
@@ -1371,13 +1537,17 @@ class RealtimeRobot:
         hold = self._vision_hold
         return self._tool_worker is not None or (hold is not None and hold["turn_id"] == self.turn_id)
 
+    def _can_look_first(self, turn_id):
+        """A camera service is there and this turn's reply is not under way yet."""
+        intents = self.vision_intents
+        return not (intents is None or not intents.available(self.robot.config.robot_id)
+                    or turn_id != self.turn_id or self.response_id or self.text
+                    or self._early_tool_events or self._external_text_only
+                    or (self.speech is not None and self.speech.turn_id == turn_id))
+
     def _vision_question(self, text, turn_id):
         """(True, the enabled look script or None) when she must look before answering."""
-        intents = self.vision_intents
-        if (intents is None or not intents.available(self.robot.config.robot_id)
-                or turn_id != self.turn_id or self.response_id or self.text
-                or self._early_tool_events or self._external_text_only
-                or (self.speech is not None and self.speech.turn_id == turn_id)):
+        if not self._can_look_first(turn_id):
             return False, None  # no camera service, or her reply is already under way
         previous = [turn.get("user_text") for turn in self.robot.recent_context()[-3:]]
         if not asks_to_look(text, previous):
@@ -1387,6 +1557,84 @@ class RealtimeRobot:
             allowed = [name for name in LOOK_SCRIPTS if name in self.actions.allowlist]
             script = explicit_motion(text, allowed) or head_turn_motion(text, previous, allowed)
         return True, script
+
+    async def _camera_image(self):
+        """([data URL], age ms) of the newest LiveKit frame, or ([], None): no picture is no error."""
+        frames = self.camera_frames
+        if frames is None:
+            return [], None
+        try:
+            frame = await frames.latest_jpeg()
+        except Exception as exc:
+            logger.warning("camera_frame_error robot=%s error=%s", self.robot.config.robot_id,
+                           type(exc).__name__)
+            return [], None
+        if frame is None:
+            return [], None
+        jpeg, age_ms = frame
+        return ["data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")], age_ms
+
+    async def _look_decided(self, text, turn_id):
+        """(look, script) from the decision model for a line the phrase rules missed
+        (11-03: 有戴眼镜的人吗、水桶在哪里). It only says whether and where she looks;
+        what she then says still comes from the vision service. (False, None) on any doubt.
+
+        Awaited inline and bounded by timeout_ms: the provider's early reply stays
+        held meanwhile (wake gate or _look_deciding) and is dropped if she looks."""
+        config = self.look_decision or {}
+        if (not config.get("enabled") or not self._can_look_first(turn_id)
+                or (config.get("scope") != "all" and not look_cue(text))):
+            return False, None
+        judge, client, model = self._decision_model()
+        if client is None:
+            return False, None
+        previous = [turn.get("user_text") for turn in self.robot.recent_context()[-3:]
+                    if turn.get("turn_id") != turn_id]
+        spoken, started = self.speech_started_count, time.perf_counter()
+        images, frame_age_ms, question = [], None, None
+        choice = confidence = error = None
+        self.decision_stats["look_checks"] += 1
+        self._look_deciding = turn_id
+        try:
+            async with asyncio.timeout(config.get("timeout_ms", 700) / 1000):
+                if judge == "d3" and config.get("image"):
+                    images, frame_age_ms = await self._camera_image()
+                question = look_question(image=bool(images))
+                answers = await client.ask(look_state(text, previous), {"look": question},
+                                           **({"images": images} if images else {}))
+            answer = answers.get("look") if isinstance(answers, dict) else None
+            if isinstance(answer, dict) and answer.get("choice") in question["criteria"]:
+                choice, confidence = answer["choice"], answer.get("confidence")
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            error = "timeout"  # slow is not down: the next line still asks d3
+        except Exception as exc:
+            error = error_kind(exc)
+            self.decision_stats["failures"] += 1
+            if judge == "d3":
+                self.d3.failed(error)
+        finally:
+            if self._look_deciding == turn_id:
+                self._look_deciding = None
+        script = LOOK_DIRECTIONS.get(choice)
+        if script is not None and not (self.actions is not None and self.actions.enabled
+                                       and script in self.actions.allowlist):
+            script = None  # no head turn: she looks at what is in front
+        look = choice in LOOK_DIRECTIONS
+        # Someone spoke again, or her reply began, while the model thought.
+        stale = look and (spoken != self.speech_started_count or not self._can_look_first(turn_id))
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        self.publish("vision.intent.decided", turn_id=turn_id, choice=choice,
+                     confidence=confidence, script=script, judge=judge, model=model,
+                     image=bool(images), frame_age_ms=frame_age_ms, latency_ms=latency_ms,
+                     error=error, stale=stale, text=text[:80])
+        logger.info("vision_intent_decision robot=%s turn=%s judge=%s model=%s choice=%s "
+                    "confidence=%s script=%s image=%s frame_age_ms=%s latency_ms=%s error=%s "
+                    "stale=%s text=%r", self.robot.config.robot_id, turn_id, judge, model, choice,
+                    confidence, script, bool(images), frame_age_ms, latency_ms, error, stale,
+                    text[:30])
+        return (True, script) if look and not stale else (False, None)
 
     async def _begin_vision_turn(self, turn_id, item_id, question, script, generation, *,
                                  recovered):
@@ -1545,16 +1793,39 @@ class RealtimeRobot:
         if hold["recovered"]:
             await self._answer_recovered_call(turn_id, hold["item_id"], question)
             return
+        asked = {"event_id": "annie_looked_" + uuid4().hex, "turn_id": turn_id, "text": question,
+                 "at": time.monotonic()}
+        if self.speech_active and self.speech_started_count != hold["speech_count"]:
+            # The provider refuses response.create while the user is still speaking.
+            self._carry_refused_answer(asked)
+            return
+        self._recovered_create = asked
         self.publish("llm.request_started", turn_id=turn_id)
-        await socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
+        await socket.send({"type": "response.create", "event_id": asked["event_id"],
+                           "response": {"modalities": ["text"]}})
 
     def _stage_filter(self, text, *, final=False):
-        """Stage directions like 【眨眼】 are never spoken or shown."""
+        """Stage directions like 【眨眼】 are never spoken or shown, nor the names
+        of people who are not here (name_guard), nor what she just said (repeat_guard)."""
         before = len(self._stage.dropped)
         cleaned = self._stage.feed(text) + (self._stage.finish() if final else "")
         if len(self._stage.dropped) != before and self.turn_id:
             self.publish("speech.stage_direction.dropped", turn_id=self.turn_id,
                          text=self._stage.dropped[-1][:24])
+        withheld = len(self._names.withheld)
+        cleaned = self._names.feed(cleaned, final=final)
+        if len(self._names.withheld) != withheld and self.turn_id:
+            self._name_withheld()
+        if self._repeats is None and self.turn_id:
+            self._repeats = self._repeat_guard()
+        if self._repeats is not None:
+            dropped = len(self._repeats.dropped)
+            cleaned = self._repeats.feed(cleaned, final=final)
+            if len(self._repeats.dropped) != dropped:
+                sentence = self._repeats.dropped[-1][:24]
+                self.publish("reply.sentence_repeat_dropped", turn_id=self.turn_id, text=sentence)
+                logger.info("reply_sentence_repeat_dropped robot=%s turn=%s text=%r",
+                            self.robot.config.robot_id, self.turn_id, sentence)
         return cleaned
 
     def _faces_available(self):
@@ -1576,6 +1847,30 @@ class RealtimeRobot:
             return None
         return lost_since(self._utterance_started_t - INPUT_LOSS_LOOKBACK_SECONDS)
 
+    def _recent_replies(self, limit=3):
+        """Her last few replies, oldest first."""
+        said = [str(turn.get("assistant_context_text") or "").strip()
+                for turn in self.robot.recent_context()]
+        return [line for line in said if line][-limit:]
+
+    def _repeat_guard(self):
+        """Her last replies stay out of this one unless the user asked to hear it again
+        (再说一遍) or asked the same thing again."""
+        current = self.robot.turn_cache.get(self.turn_id) or {}
+        heard = str(current.get("user_text") or self.transcript or "")
+        asked = [str(turn.get("user_text") or "") for turn in self.robot.recent_context()][-3:]
+        if REPEAT_REQUEST.search(heard) or asked_again(heard, asked):
+            return RepeatGuard()
+        return RepeatGuard(self._recent_replies())
+
+    def _not_again_hint(self):
+        """10-30–11-02: one smell event got the same sentence three times."""
+        said = self._recent_replies()
+        if not said:
+            return ""
+        return ("\n你最近说过：" + "".join(f"「{line[:60]}」" for line in said)
+                + "。这次换个说法，不要重复这些话。")
+
     def _recent_user_texts(self):
         """This turn's words and the user turn before: a name often comes one turn later."""
         current = self.robot.turn_cache.get(self.turn_id) or {}
@@ -1585,6 +1880,159 @@ class RealtimeRobot:
                 texts.append(str(turn.get("user_text") or ""))
                 break
         return texts
+
+    def _background(self, coroutine, name):
+        try:
+            task = asyncio.get_running_loop().create_task(
+                coroutine, name=f"{name}:{self.robot.config.robot_id}")
+        except RuntimeError:
+            coroutine.close()
+            return None
+        self._decision_tasks.add(task)
+        task.add_done_callback(self._decision_tasks.discard)
+        return task
+
+    def _seen_in_view(self):
+        """Names recognised in view now; each stays known as someone she has seen."""
+        view = self.faces.in_view(self.robot.config.robot_id) if self._faces_available() else None
+        here = {name for name in (*(view or {}).get("names", ()), (view or {}).get("gaze_name")) if name}
+        self._seen_names |= here
+        return here
+
+    def _refresh_known_people(self):
+        """Filed face names, reloaded in the background at most once a minute."""
+        if (not self._faces_available()
+                or time.monotonic() - self._known_people[0] < KNOWN_PEOPLE_SECONDS):
+            return
+        self._known_people = (time.monotonic(), self._known_people[1])
+        robot_id = self.robot.config.robot_id
+
+        async def load():
+            try:
+                known = await self.faces.registries[robot_id].people()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("known_people_failed robot=%s error=%s", robot_id, type(exc).__name__)
+                return
+            if known.get("ok"):
+                self._known_people = (time.monotonic(), frozenset(
+                    person["name"] for person in known["people"] if person.get("name")))
+
+        self._background(load(), "known-people")
+
+    def _absent_candidates(self, turn_id):
+        """Names she may know of people neither in view nor speaking now: filed faces,
+        enrolled voices and anyone recognised in view during this run (11-04 18:59)."""
+        here = self._seen_in_view()
+        self._refresh_known_people()
+        speaker = self.speakers.public() if self.speakers is not None else {}
+        if speaker.get("name") and speaker.get("status") != "ambiguous":
+            here.add(speaker["name"])
+        voices, service = set(), getattr(self.speakers, "service", None)
+        if service is not None:
+            voices = {row["name"] for row in service.catalog()["speakers"]}
+        known = (self._known_people[1] | self._seen_names | voices) - here
+        candidates = sorted(name for name in known if name and name not in {WAKE_NAME, "安妮", "小安妮"})
+        logger.info("turn_people robot=%s turn=%s here=%d speaker=%s candidates=%d",
+                    self.robot.config.robot_id, turn_id, len(here), speaker.get("status"),
+                    len(candidates))
+        return candidates
+
+    def _may_name(self, turn_id, name):
+        """May her reply in this turn say the name of someone not here? None: not known yet."""
+        turn = self.robot.turn_cache.get(turn_id) or {}
+        if turn.get("turn_source", "user") != "user":
+            return name in str(turn.get("external_prompt") or "")
+        texts = self._recent_user_texts()
+        if not texts[0].strip():
+            return None
+        if any(name in text for text in texts):
+            return True
+        asked = self._absent_asked.get(turn_id)
+        return bool(PAST_PERSON.search(texts[0])) if asked is None else asked
+
+    def _ask_absent(self, turn_id, text):
+        """Is the user asking about someone not here (刚才那个人是谁)? The decision model
+        answers while her reply streams; until then name_guard.PAST_PERSON decides."""
+        text = str(text or "").strip()
+        if (not text or not self._names.names or turn_id in self._absent_asked
+                or not self._has_decision()):
+            return
+        self._absent_asked[turn_id] = None
+        while len(self._absent_asked) > 32:
+            self._absent_asked.pop(next(iter(self._absent_asked)))
+        before = (self._recent_user_texts() + [""])[1]
+        state = instruction_state(text, previous_user=before or None, robot_last=self._last_reply_text)
+
+        async def decide():
+            started = time.perf_counter()
+            try:
+                answers, model = await self.ask_decision(state, {"absent": ABSENT_PERSON_QUESTION})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("absent_person_check robot=%s turn=%s error=%s",
+                            self.robot.config.robot_id, turn_id, error_kind(exc))
+                return
+            answer = answers.get("absent") or {}
+            if answer.get("choice") in ABSENT_PERSON_QUESTION["criteria"] and turn_id in self._absent_asked:
+                self._absent_asked[turn_id] = answer["choice"] == "absent"
+            logger.info("absent_person_check robot=%s turn=%s choice=%s confidence=%s model=%s ms=%.0f",
+                        self.robot.config.robot_id, turn_id, answer.get("choice"),
+                        answer.get("confidence"), model, (time.perf_counter() - started) * 1000)
+
+        self._background(decide(), "absent-person")
+
+    def _name_withheld(self):
+        """11-04 18:59: she named someone the vision service no longer saw."""
+        count = len(self._names.withheld)
+        self.publish("reply.name_withheld", turn_id=self.turn_id, count=count)
+        logger.info("reply_name_withheld robot=%s turn=%s count=%d",
+                    self.robot.config.robot_id, self.turn_id, count)
+        self._once_notes["names"] = (NAME_NOTE, self.turn_id)
+
+    def _after_reply(self, turn, earlier):
+        """Notes meant for this reply are spent; whether it repeats is checked meanwhile."""
+        spent = [kind for kind, (_note, by) in self._once_notes.items() if by != self.turn_id]
+        for kind in spent:
+            del self._once_notes[kind]
+        if spent:
+            self.visual_changed()
+        heard = str(turn.get("user_text") or "")
+        if earlier and len(self.text) >= 6 and not REPEAT_REQUEST.search(heard):
+            self._background(self._check_repeat(self.turn_id, self.text, earlier, heard), "reply-repeat")
+
+    async def _check_repeat(self, turn_id, reply, earlier, heard):
+        """11-04: two answers about Trump said the same. A reply saying a recent line again
+        turns the next one to something new; it was heard already, so nothing waits on this."""
+        ratio, line = max((reply_likeness(reply, said), said) for said in earlier)
+        verdict = model = confidence = None
+        if ratio >= REPEAT_RATIO:
+            verdict, model = "repeat", "rule"
+        elif ratio >= REPEAT_ASK_RATIO and self._has_decision():
+            try:
+                answers, model = await self.ask_decision(
+                    repeat_state(reply, earlier, utterance=heard or None), {"repeat": REPEAT_QUESTION})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.info("reply_repeat_check robot=%s turn=%s ratio=%.2f error=%s",
+                            self.robot.config.robot_id, turn_id, ratio, error_kind(exc))
+                return
+            answer = answers.get("repeat") or {}
+            verdict, confidence = answer.get("choice"), answer.get("confidence")
+        if verdict is None:
+            return
+        logger.info("reply_repeat_check robot=%s turn=%s ratio=%.2f verdict=%s confidence=%s model=%s",
+                    self.robot.config.robot_id, turn_id, ratio, verdict, confidence, model)
+        if verdict != "repeat":
+            return
+        self.publish("reply.repeated", turn_id=turn_id, ratio=round(ratio, 2), model=model)
+        self._once_notes["repeat"] = (
+            f"\n【别复读】你刚说的「{reply[:60]}」和之前说过的「{line[:60]}」差不多。"
+            "下一句换个角度、给点新东西或者换种说法，别再绕回这个意思。", turn_id)
+        self.visual_changed()
 
     def _overhearing(self):
         """Side talk is kept by ambient listening or by declined utterances.
@@ -1616,6 +2064,8 @@ class RealtimeRobot:
             return
         self._memory_revision += 1
         self._memory_bootstrap = ""
+        self._memory_recall = ""
+        self._recall_key = None
         self._memory_expires_at_ms = None
         if not self.ready:
             return  # handshake reconciles this revision before admitting PCM
@@ -1656,12 +2106,105 @@ class RealtimeRobot:
             self._memory_task = None
 
     async def _stop_memory_task(self):
-        task, self._memory_task = self._memory_task, None
-        if task is not None:
+        tasks = [task for task in (self._memory_task, self._recall_task) if task is not None]
+        self._memory_task = self._recall_task = None
+        for task in tasks:
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
         self._memory_bootstrap = ""
+        self._memory_recall = ""
+        self._recall_key = None
         self._memory_expires_at_ms = None
+
+    def _recall_soon(self, turn_id, text):
+        """Look the user's words up in memory; the hits ride along with the next reply."""
+        text = (text or "").strip()
+        if (not hasattr(self.memory, "recall_hint") or not text or self._stopping
+                or (turn_id, text) == self._recall_key):
+            return
+        previous = " ".join(part for part in (self._recall_said, self._last_reply_text) if part)
+        self._recall_key, self._recall_said = (turn_id, text), text
+        if self._recall_task is not None:
+            self._recall_task.cancel()
+        self._recall_task = asyncio.create_task(
+            self._recall(self.robot.session_state(), text, previous),
+            name=f"memory-recall:{self.robot.config.robot_id}",
+        )
+
+    async def _recall(self, identity, text, previous):
+        try:
+            async with asyncio.timeout(2):
+                hint = await self.memory.recall_hint(
+                    self.robot.config.robot_id, identity["persona_id"], text, previous)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("memory.recall.failed", reason=type(exc).__name__)
+            return
+        finally:
+            if self._recall_task is asyncio.current_task():
+                self._recall_task = None
+        if self._stopping or identity != self.robot.session_state() or hint == self._memory_recall:
+            return
+        self._memory_recall = hint
+        self.visual_changed()
+        if hint:
+            self.publish("memory.recalled", chars=len(hint))
+
+    def _recap_gap(self):
+        return getattr(self.memory, "idle_ms", 120_000) / 1000
+
+    def _recap_hint(self):
+        identity = self.robot.session_state()
+        if (not self._recap_text
+                or self._recap_key != (identity.get("persona_id"), identity.get("chat_id"))
+                or time.monotonic() - self._recap_last_t > self._recap_gap()):
+            return ""
+        return recap_hint(self._recap_text)
+
+    def _reset_recap(self, key):
+        if self._recap_task is not None:
+            self._recap_task.cancel()
+            self._recap_task = None
+        self._recap_text, self._recap_turns, self._recap_key = "", [], key
+        self._recap_epoch += 1
+        if hasattr(self.memory, "end_recap"):
+            self.memory.end_recap(self.robot.config.robot_id)
+
+    def _recap_turn(self, identity, turn, reply_text):
+        """A finished turn of this conversation; turns that left the provider's window get folded."""
+        if not hasattr(self.memory, "recap"):
+            return
+        now = time.monotonic()
+        key = (identity.get("persona_id"), identity.get("chat_id"))
+        if key != self._recap_key or now - self._recap_last_t > self._recap_gap():
+            self._reset_recap(key)
+        self._recap_last_t = now
+        # An idle or external prompt rides in user_text but is not the user's words.
+        said = (turn.get("user_text") or "") if turn.get("turn_source") == "user" else ""
+        self._recap_turns.append((said, reply_text))
+        outside = len(self._recap_turns) - (self.history_turns_confirmed or self.history_turns)
+        if outside >= RECAP_FOLD_TURNS and (self._recap_task is None or self._recap_task.done()):
+            self._recap_task = asyncio.create_task(
+                self._fold_recap(self._recap_epoch, self._recap_turns[:outside]),
+                name=f"memory-recap:{self.robot.config.robot_id}",
+            )
+
+    async def _fold_recap(self, epoch, turns):
+        try:
+            async with asyncio.timeout(20):
+                text = await self.memory.recap(self.robot.config.robot_id, self._recap_text, turns)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("memory.recap.failed", reason=type(exc).__name__)
+            return  # the turns stay queued; the next finished turn tries again
+        if epoch != self._recap_epoch or self._stopping:
+            return
+        del self._recap_turns[:len(turns)]
+        self._recap_text = text
+        self.visual_changed()
+        self.publish("memory.recap.changed", chars=len(text), folded=len(turns))
 
     def _queue_tool_call(self, event):
         call_id = event.get("call_id")
@@ -1768,6 +2311,106 @@ class RealtimeRobot:
                     "latency_ms=%s error=%s text=%r", self.robot.config.robot_id, kind, model,
                     choice, confidence, latency_ms, error, state.get("当前这句话", "")[:30])
         return choice
+
+    async def _face_request_decided(self, kind, question, texts):
+        """A face request no phrase rule placed goes to the decision model; ValueError unless yes."""
+        choice = await self._decide_instruction(kind, question, instruction_state(
+            texts[0], previous_user=texts[1] if len(texts) > 1 else None,
+            robot_last=self._last_reply_text))
+        if choice == "other":
+            raise ValueError(FACE_FOR_OTHER)
+        if choice != "yes":
+            raise ValueError("face request requires the user's explicit request")
+        if self.turn_identity != self.robot.session_state():
+            raise ValueError("stale face request")
+
+    def _previous_user_text(self):
+        previous = [turn.get("user_text") for turn in self.robot.recent_context()
+                    if turn.get("turn_id") != self.turn_id and turn.get("user_text")]
+        return previous[-1] if previous else None
+
+    async def _persona_switch_decided(self, requested, utterance, active):
+        """The style a phrasing the rules missed asked for, when the decision model says
+        so (11-05: “切换温柔性格” was refused). Otherwise she asks which one."""
+        style_id = style_named(self.persona_profiles, requested)
+        if style_id is not None and style_id != active:
+            choice = await self._decide_instruction(
+                "persona_switch", persona_switch_question(self.persona_profiles[style_id]["label"]),
+                instruction_state(utterance, previous_user=self._previous_user_text(),
+                                  robot_last=self._last_reply_text))
+            if self.turn_identity != self.robot.session_state():
+                raise ValueError("stale persona style switch")
+            if choice == "yes":
+                return style_id
+        self._persona_offer = {"options": [key for key in self.persona_profiles if key != active],
+                               "at": time.monotonic(), "identity": dict(self.robot.session_state())}
+        raise ValueError("persona switch requires an explicit current request")
+
+    async def _voice_gate(self, requested, utterance):
+        """True when the model's pick itself is what the user wants (the choice was handed
+        back, or the decision model confirmed it); False when the words still decide;
+        ValueError when there is no request."""
+        if refuses_switch(utterance, requested):
+            raise ValueError("voice switch was negated")
+        offer = self._voice_offer
+        offered = (offer["options"] if offer and offer["identity"] == self.robot.session_state()
+                   and time.monotonic() - offer["at"] <= PERSONA_OFFER_SECONDS else [])
+        if requested in offered and DELEGATED_CHOICE.search(utterance.strip()):
+            return True
+        names = [row["name"] for row in self.voices.choices()]
+        if (VOICE_REQUEST.search(utterance) or any(name in utterance for name in offered)
+                or VOICE_VERB.search(utterance) and any(name in utterance for name in names)):
+            return False
+        choice = await self._decide_instruction(
+            "voice_switch", voice_switch_question(requested), instruction_state(
+                utterance, previous_user=self._previous_user_text(), robot_last=self._last_reply_text))
+        if self.turn_identity != self.robot.session_state():
+            raise ValueError("stale voice switch")
+        if choice != "yes":
+            self._voice_offer = {"options": ["系统默认", *names], "at": time.monotonic(),
+                                 "identity": dict(self.robot.session_state())}
+            raise ValueError("voice selection requires explicit user request")
+        return True
+
+    async def _forget_agreed(self, cleaned, texts, name):
+        """True or False when the user answered “确定要我忘掉你吗”; None if nobody could tell."""
+        current = cleaned[0]
+        if forget_requested(current):
+            return True
+        if FORGET_DECLINE.search(current):
+            return False
+        if FORGET_AGREE.fullmatch(current):
+            return True
+        choice = await self._decide_instruction(
+            "face_forget_confirm", face_forget_confirm_question(name), instruction_state(
+                texts[0], previous_user=texts[1] if len(texts) > 1 else None,
+                robot_last=self._last_reply_text))
+        if self.turn_identity != self.robot.session_state():
+            raise ValueError("stale face request")
+        return {"yes": True, "no": False}.get(choice)
+
+    async def _forget_face(self, robot_id, name, cleaned, texts):
+        """“忘掉我”: she asks once, and a yes in a later turn forgets (user decision 11-03)."""
+        asked, self._forget_asked = self._forget_asked, None
+        answering = (asked is not None and asked[2] != self.turn_id
+                     and time.monotonic() - asked[1] <= FORGET_CONFIRM_SECONDS
+                     and same_person(name, [asked[0]]) is not None)
+        if not answering and not any(forget_requested(text) for text in cleaned):
+            # “把我的脸弄掉吧”, or ASR's “王掉我”: the decision model judges the wording.
+            await self._face_request_decided("face_forget", face_forget_question(name), texts)
+        if answering or asked_to_confirm_forget(self._last_reply_text):
+            agreed = await self._forget_agreed(cleaned, texts, asked[0] if answering else name)
+            if agreed is False:
+                return {"status": "kept",
+                        "instruction": "TA没有答应，不忘。按普通对话自然接话，不提工具。"}
+            if agreed:
+                if answering:
+                    return await self.faces.delete(robot_id, asked[0])
+                return await self.faces.forget(robot_id, name)
+        result = await self.faces.forget(robot_id, name, confirmed=False)
+        if result["status"] == "confirm":
+            self._forget_asked = (result["name"], time.monotonic(), self.turn_id)
+        return result
 
     def _addressee_hold_active(self):
         return (self.addressee_enabled and not self.wake
@@ -2335,6 +2978,55 @@ class RealtimeRobot:
         self.publish("persona.style.selected", style_id=style_id,
                      style_label=snapshot.get("label"), effective="next_reply")
 
+    def note_switch(self, *, persona=None, voice=None):
+        """11-05: the first line after a switch made in the workbench shows off the new
+        personality or voice instead of announcing it; spent after that reply."""
+        if persona:
+            before, after = persona
+            opener = persona_opener(next((profile for profile in (self.persona_profiles or {}).values()
+                                          if profile.get("label") == after), None))
+            note = (f"\n【刚换了性格】你刚从「{before}」换成「{after}」。下一句先用「{after}」"
+                    "来一句最有这个性格味道的开场，像本来就是这样，别说“已切换”“换好了”；"
+                    + (f"开场手法：{opener}；" if opener else "")
+                    + f"之前的回复是「{before}」时说的，只取内容，别学那个口吻。")
+        else:
+            note = (f"\n【刚换了声音】你刚换成「{voice}」的声音。下一句先来一句配得上这把声音、"
+                    f"有特点的开场：照「{voice}」这个名字猜它的气质，贴着这个气质说；"
+                    "别说“已切换”“换好了”；性格不变。")
+        self._once_notes["switch"] = (note, None)
+        self.visual_changed()
+
+    def open_after_switch(self):
+        """11-05: a switch made in the workbench is heard at once; clicking through several
+        opens once, for the last. Someone talking leaves the note for the next reply."""
+        if self._opener is not None:
+            self._opener.cancel()
+        self._opener = self._background(self._switch_opener(), "switch-opener")
+
+    async def _switch_opener(self):
+        await asyncio.sleep(SWITCH_OPENER_SETTLE_SECONDS)
+        waited = 0.0
+        while not self.ready or self.socket is None:
+            if waited >= SWITCH_OPENER_READY_SECONDS:
+                return self._opener_done("skipped", "not_ready")
+            await asyncio.sleep(.2)
+            waited += .2
+        if "switch" not in self._once_notes:
+            return self._opener_done("skipped", "already_shown")
+        if (self.speech_active or self.turn_id or self.response_id
+                or (self.speech is not None and self.speech.turn_id is not None)):
+            return self._opener_done("skipped", "busy")
+        try:
+            result = await self.submit_text(SWITCH_OPENER_PROMPT, source="external")
+        except RobotUnavailableError:
+            return self._opener_done("skipped", "busy")
+        self._opener_done("spoken", None, turn_id=result.get("turn_id"))
+
+    def _opener_done(self, status, reason, turn_id=None):
+        logger.info("switch_opener robot=%s status=%s reason=%s turn=%s",
+                    self.robot.config.robot_id, status, reason, turn_id)
+        self.publish("switch.opener", status=status, reason=reason, turn_id=turn_id)
+
     async def _update_chat_preference(self, args):
         if set(args) != {"setting", "value"}:
             raise ValueError("expected setting and value")
@@ -2423,10 +3115,13 @@ class RealtimeRobot:
         offer = self._persona_offer
         offered = (offer["options"] if offer and offer["identity"] == self.robot.session_state()
                    and time.monotonic() - offer["at"] <= PERSONA_OFFER_SECONDS else None)
-        style_id, options = resolve_persona_style_request(
-            self.robot.persona_id, self.persona_profiles, self.social_state,
-            requested.strip(), utterance, offered=offered,
-        )
+        try:
+            style_id, options = resolve_persona_style_request(
+                self.robot.persona_id, self.persona_profiles, self.social_state,
+                requested.strip(), utterance, offered=offered,
+            )
+        except UnclearPersonaRequest:
+            style_id, options = await self._persona_switch_decided(requested, utterance, active), None
         if style_id is None:
             labels = {profile["label"]: key for key, profile in self.persona_profiles.items()}
             self._persona_offer = {"options": [labels[label] for label in options if label in labels],
@@ -2514,6 +3209,7 @@ class RealtimeRobot:
         self._wake_candidate_pending = False
         await self._cancel_tools()
         await self._stop_memory_task()
+        self._reset_recap(None)
         await self._stop_visual_task()
         self.dialogue = DialogueState()
         self._dialogue_sent_hint = self._dialogue_confirmed_hint = ""
@@ -2577,6 +3273,8 @@ class RealtimeRobot:
         self.expression = None
         self._expression_raw = ""
         self._stage = StageDirections()
+        self._names = NameGuard()
+        self._repeats = None
         self.turn_id = self.response_id = None
         self.external_turn_id = None
         self._external_text_only = False
@@ -2741,10 +3439,10 @@ class RealtimeRobot:
                     self._memory_bootstrap = memory_bootstrap
                     self._memory_expires_at_ms = memory_snapshot["expires_at_ms"]
                     tail += (
-                        "\n仅当用户询问此前的偏好/经历而当前对话无证据时，"
-                        "调用recall_memory；无结果、超时或检索故障时不要编造。"
-                        "记忆事实是可更正证据，用户当前更正优先。"
-                        "用户明确要求忘记长期记忆时，先recall_memory拿到准确ID/版本，"
+                        "\n和话题相关的旧事会自动出现在【你记得的相关旧事】里；"
+                        "用户问起以前的事而这里和对话里都没有时，再用recall_memory按关键词查；"
+                        "查不到就说不记得，不要编造。记忆是可更正的旧证据，用户当前的说法优先。"
+                        "用户明确要求忘记某件事时，先recall_memory拿到准确ID/版本，"
                         "再forget_memory；明确改口时可先查再correct_memory。"
                         "不猜ID、不删除原始对话，也不自行替用户清理未明确要求的事实。"
                     )
@@ -2780,12 +3478,18 @@ class RealtimeRobot:
                 if self._faces_available():
                     tail += (
                         "\n有人向你自我介绍或要你记住TA（我叫…、我是…、叫我…、记住我、认识一下），"
-                        "就用TA说的名字直接调用remember_face，不用再确认；只说记住我没说名字就先问名字。"
-                        "介绍别人时不调用。没有调用并得到started之前，绝不说“记住了”。"
+                        "就直接调用remember_face，不用再确认；画面里没认出TA也照样调用"
+                        "（【认人】只管怎么称呼），前面没记成也不影响这一次。name用TA说的名字，语音识别写错了字，"
+                        "可以按画面或上文改成同音的写法；只说记住我没说名字就先问名字。"
+                        "名字以画面为准：只记画面里还不认识的脸，画面认出TA是谁就照画面的名字叫，"
+                        "TA报的名字和画面不一样也不改口、不附和；已记的名字错了只能先忘掉再重新记，不能当场改名。"
+                        "只记亲口要你记住自己的人：介绍别人或要你记住别人（他叫…、这是我朋友…）时不调用，"
+                        "告诉对方得TA本人来说。没有调用并得到started之前，绝不说“记住了”。"
                         "开始后请TA正对着你，记好或没记住时会有现场情况告诉你，那时再告诉TA。"
-                        "对话里有人自称叫什么，不等于你认得面前的人：认人只看画面。"
-                        "有人要你忘掉TA的脸时，先确认一次再调用forget_face。"
-                        "不要主动提出记人脸，除非在介绍还不认识的人。"
+                        "有人要你忘掉TA的脸（忘了我、别再认我、把我删了，怎么说都算）时直接调用forget_face，"
+                        "它会先让你问TA确认一次；TA下一句答应（嗯、对、确定、忘吧，或再说一遍要忘）"
+                        "就马上再调用一次，不答应就不忘。"
+                        "不要主动提出记人脸，除非被问到认不认识TA，或在介绍还不认识的人。"
                     )
                 if self.weather is not None:
                     tail += (
@@ -2814,6 +3518,7 @@ class RealtimeRobot:
                         "用一句很短的口语答应并调用enter_sleep（聆听开关，不是动作）；"
                         "accepted后不追问、不解释。问句、否定、转述时不调用。"
                     )
+                tail += CURRENT_TURN_RULE
                 self._instruction_tail = tail
                 self._refresh_clock()
                 instructions = persona_text + tail
@@ -3110,6 +3815,16 @@ class RealtimeRobot:
             if used + len(note) <= self.restore_char_budget:
                 turn["provider_user_text"] = note + turn["user_text"]
                 used += len(note)
+        # 11-04: what she said in another personality is history, not a voice to keep using.
+        active = active_style_id(self.robot.persona_id, self.persona_profiles, self.social_state)
+        for turn in reversed(packet["turns"]):
+            style = turn.get("persona_style")
+            if not style or style == active or style not in self.persona_profiles:
+                continue
+            note = f"【这轮你还是「{self.persona_profiles[style]['label']}」性格，回复只参考内容，别学那个口吻】"
+            if used + len(note) <= self.restore_char_budget:
+                turn["provider_user_text"] = note + turn.get("provider_user_text", turn["user_text"])
+                used += len(note)
         packet["chars_used"] = used
         for turn in packet["turns"]:
             if not turn["assistant_text"]:
@@ -3293,6 +4008,8 @@ class RealtimeRobot:
                   "turn_source": source,
                   "input_mode": "external" if source == "external" else "audio" if audio else "text",
                   "external_prompt": user_text if source == "external" else None,
+                  "persona_style": active_style_id(
+                      self.robot.persona_id, self.persona_profiles, self.social_state),
                   "status": "running", "created_ms": now, "updated_ms": now}
         self.robot.ledger.enqueue("create_conversation_turn", fields)
         self.robot._remember_turn({
@@ -3303,6 +4020,11 @@ class RealtimeRobot:
         })
         self.turn_id = turn_id
         self._stage = StageDirections()
+        self._names = NameGuard(self._absent_candidates(turn_id),
+                                lambda name: self._may_name(turn_id, name))
+        self._repeats = None
+        if source == "user":
+            self._ask_absent(turn_id, user_text)
         if self.expression_enabled:
             self.expression = ExpressionStream()
             self._expression_raw = ""
@@ -3317,6 +4039,7 @@ class RealtimeRobot:
             changed = self.dialogue.observe_user(turn_id, user_text)
             if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                 self._dialogue_changed()
+            self._recall_soon(turn_id, user_text)
         self.began = time.perf_counter()
         logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d "
                     "input_lost_frames=%s asr_text_ms=%s deltas=%s",
@@ -3360,6 +4083,7 @@ class RealtimeRobot:
                         assistant_planned_text=self.text or None, updated_ms=now,
                         cancelled=interrupted, interrupted=interrupted, cancel_source=cancel_source)
         if status == "completed" and turn is not None and self.turn_identity == self.robot.session_state():
+            earlier = self._recent_replies(limit=6)
             # A completed typed reply is already visible text; an audio reply
             # still requires a genuine speaker receipt before restoration.
             self.robot._cache_context_turn(
@@ -3368,6 +4092,8 @@ class RealtimeRobot:
                                        or self._external_text_only))
             self.robot.snapshot.completed += 1
             self.robot.snapshot.last_reply = self.text
+            self._after_reply(turn, earlier)
+            self._recap_turn(self.turn_identity, turn, self.text)
             if self.inner_life is not None and turn.get("turn_source") == "user":
                 self.inner_life.on_turn(
                     self.robot.config.robot_id, chat_id=self.turn_identity.get("chat_id"),
@@ -3384,6 +4110,7 @@ class RealtimeRobot:
                 # The confirmed user spoke; the cancelled assistant did not
                 # necessarily speak. Keep the user input but no assistant text.
                 self.robot._cache_context_turn(turn, allow_generated=False)
+                self._recap_turn(self.turn_identity, turn, "")
             self.robot.snapshot.cancelled += 1
         elif status != "discarded":
             self.robot.snapshot.failures += 1
@@ -3495,6 +4222,7 @@ class RealtimeRobot:
                     or self.speech_active or speech_at != self._last_provider_speech_started_t):
                 raise RobotUnavailableError("text submission cancelled or preempted")
         self.external_turn_id = self.turn_id if source == "external" else None
+        prompt = text + (self._not_again_hint() if source == "external" and not text_only else "")
         try:
             if source == "user":
                 await self._send_instruction_update(owned_socket, self.robot.generation)
@@ -3502,7 +4230,7 @@ class RealtimeRobot:
             await owned_socket.send({
                 "type": "conversation.item.create",
                 "item": {"type": "message", "role": "user",
-                         "content": [{"type": "input_text", "text": text}]},
+                         "content": [{"type": "input_text", "text": prompt}]},
             })
             ensure_owned()
             if expected_identity is not None and any(
@@ -3515,6 +4243,9 @@ class RealtimeRobot:
                 raise RobotUnavailableError("external response preempted by speech")
             look, script = (self._vision_question(text.strip(), owned_turn)
                             if source == "user" else (False, None))
+            if source == "user" and not look:
+                look, script = await self._look_decided(text.strip(), owned_turn)
+                ensure_owned()
             if look:
                 # Typed "你看看左边有什么" looks first too (10-28 evening: the workbench
                 # answered at once and turned her head only with the reply).
@@ -3734,17 +4465,89 @@ class RealtimeRobot:
         self.publish("wakeword.response_rejected", reason=reason, count=len(events))
 
     async def _release_wake_response(self, generation, *, background_tools=False):
+        """Replay the held reply; True when it was withdrawn and asked for again."""
         events, self._wake_held_events = self._wake_held_events, []
         self._wake_candidate_pending = False
+        responses = [held_response_id(item) for item in events
+                     if item.get("type") == "response.created"]
         if events:
             logger.info("wake_response_released robot=%s events=%d responses=%s turn=%s",
-                        self.robot.config.robot_id, len(events),
-                        [(item.get("response") or {}).get("id") for item in events
-                         if item.get("type") == "response.created"], self.turn_id)
+                        self.robot.config.robot_id, len(events), responses, self.turn_id)
+        if len(responses) > 1:
+            # 11-02 16:46:16: the answer to her own echo went out first and closed the
+            # turn; the real answer's weather call then had no turn and was refused.
+            events = await self._drop_held(events, keep=responses[-1], reason="superseded")
+        repeated = self._held_repeat(events)
+        if repeated is not None:
+            await self._drop_held(events, keep=None, reason="repeated")
+            return await self._answer_without_repeat(repeated)
         for buffered in events:
             if generation != self.robot.generation or (self.wake and not self.wake.reply_allowed()):
-                return
+                return False
             await self.handle(buffered, generation, background_tools=background_tools)
+        return False
+
+    async def _drop_held(self, events, *, keep, reason):
+        """Retire held responses other than `keep`; their output leaves the provider context."""
+        kept, dropped, items = [], set(), set()
+        for event in events:
+            response_id = held_response_id(event)
+            if response_id is None or response_id == keep:
+                kept.append(event)
+                continue
+            dropped.add(response_id)
+            item = event.get("item") or {}
+            if event.get("type") == "response.output_item.added" and item.get("id"):
+                items.add(item["id"])
+        for response_id in dropped:
+            self._cancelled_response_ids.add(response_id)
+            if len(self._cancelled_response_ids) > 128:
+                self._cancelled_response_ids.pop()
+        logger.info("wake_response_dropped robot=%s reason=%s dropped=%s kept=%s items=%d",
+                    self.robot.config.robot_id, reason, sorted(dropped), keep, len(items))
+        if items and self.socket and self.ready:
+            await self._delete_unheard_items(items)
+        return kept
+
+    def _held_repeat(self, events):
+        """The text of a finished held reply that (nearly) repeats one of her recent lines."""
+        heard = (self.transcript or "").strip()
+        if not events or not heard or REPEAT_REQUEST.search(heard):
+            return None
+        finished = any(event.get("type") == "response.done"
+                       and (event.get("response") or {}).get("status", "completed") == "completed"
+                       for event in events)
+        if not finished or any(event.get("type") == "response.function_call_arguments.done"
+                               for event in events):
+            return None
+        text = "".join(str(event.get("delta") or "") for event in events
+                       if event.get("type") == "response.text.delta")
+        if len(re.sub(r"[\W_]+", "", text)) < 4:
+            return None
+        recent = self._recent_replies(limit=6)
+        return text if any(reply_likeness(text, line) >= REPEAT_RATIO for line in recent) else None
+
+    async def _answer_without_repeat(self, repeated):
+        """11-02 18:56:39: a held reply said her previous greeting again to an unrelated line."""
+        turn_id = self.turn_id
+        if not (turn_id and self.socket and self.ready) or self.response_id:
+            return False
+        heard = (self.transcript or "").strip()
+        await self.socket.send({
+            "type": "conversation.item.create",
+            "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": (
+                f"【内部提示，非用户发言】你准备说的「{repeated[:60]}」和你之前说过的话几乎一样，已经撤回。"
+                f"换个说法，直接回应用户刚才这句：「{heard[:120]}」。")}]},
+        })
+        # A refusal while the user speaks again carries their words, not this note.
+        event_id = "annie_unrepeated_" + uuid4().hex
+        self._recovered_create = {"event_id": event_id, "turn_id": turn_id, "text": heard,
+                                  "at": time.monotonic()}
+        await self.socket.send({"type": "response.create", "event_id": event_id,
+                                "response": {"modalities": ["text"]}})
+        logger.info("repeated_reply_regenerated robot=%s turn=%s chars=%d",
+                    self.robot.config.robot_id, turn_id, len(repeated))
+        return True
 
     async def handle(self, event, generation, *, background_tools=False):
         if generation != self.robot.generation:
@@ -3797,10 +4600,13 @@ class RealtimeRobot:
             ) > 32768:
                 await self._reject_wake_response("buffer_limit")
             return
-        if (isinstance(kind, str) and kind.startswith("response.") and self._addressee_hold_active()
+        if (isinstance(kind, str) and kind.startswith("response.")
+                and (self._addressee_hold_active()
+                     or (self._look_deciding is not None and self._look_deciding == self.turn_id))
                 and not (self.turn_id and self.audio_turn_id != self.turn_id)):
             # No wake gate: hold a reply that smart_turn started before we know
-            # whether this utterance was said to the robot at all.
+            # whether this utterance was said to the robot at all, or whether she
+            # has to look before answering it.
             self._wake_held_events.append(event)
             if len(self._wake_held_events) > 128 or sum(
                 len(str(item)) for item in self._wake_held_events
@@ -4246,6 +5052,8 @@ class RealtimeRobot:
                         "set_conversation_turn_user_text",
                         self.robot.config.robot_id, target, self.transcript, now,
                     )
+            if target and target == self.turn_id:
+                self._ask_absent(target, self.transcript)
             if self.language.user_request(self.transcript):
                 self.visual_changed()
             if target:
@@ -4255,22 +5063,28 @@ class RealtimeRobot:
                 changed = self.dialogue.observe_user(target, self.transcript)
                 if changed or self._dialogue_sent_hint != self.dialogue.instruction_hint():
                     self._dialogue_changed()
+                self._recall_soon(target, self.transcript)
             if item_id and target:
                 self.audio_item_turns[item_id] = target
                 if len(self.audio_item_turns) > 128:
                     self.audio_item_turns.pop(next(iter(self.audio_item_turns)))
-            look, script = (self._vision_question(self.transcript.strip(), target)
-                            if target else (False, None))
+            asked = self.transcript.strip()
+            look, script = self._vision_question(asked, target) if target else (False, None)
+            if target and not look:
+                look, script = await self._look_decided(asked, target)
             if look:
                 # "你看看左边有什么": turn, wait for the receipt and a fresh view, then answer.
-                await self._begin_vision_turn(target, item_id, self.transcript.strip(), script,
+                await self._begin_vision_turn(target, item_id, asked, script,
                                               generation, recovered=recovering)
                 return
             await self._release_early_tools(confirmed=bool(target), generation=generation,
                                             item_id=item_id)
+            asked_again = False
             if self.wake or self._wake_held_events:
-                await self._release_wake_response(generation, background_tools=background_tools)
-            if recovering and target and target == self.turn_id and not self.response_id:
+                asked_again = await self._release_wake_response(
+                    generation, background_tools=background_tools)
+            if (recovering and target and target == self.turn_id and not self.response_id
+                    and not asked_again):
                 await self._answer_recovered_call(target, item_id)
         elif kind == "response.created":
             self._recovered_create = None  # the request a refusal could answer was taken
@@ -4348,9 +5162,16 @@ class RealtimeRobot:
                 complete = self.text
             else:
                 # The full text replaces the streamed one: the same cleanup.
+                tail = self._stage_filter("", final=True)
+                if tail and self.text:
+                    self.text += tail
+                    self.publish("text.delta", turn_id=self.turn_id, delta=tail, text=self.text)
+                    if self.speech and not self._external_text_only:
+                        await self.speech.feed(self.turn_id, self.turn_identity, tail)
                 whole = StageDirections()
-                complete = whole.feed(complete) + whole.finish()
+                complete = self._names.fresh().feed(whole.feed(complete) + whole.finish(), final=True)
                 self._stage = StageDirections()
+                self._names = self._names.fresh()
             if (self.speech and not self._external_text_only
                     and not self.text and complete and self.turn_id):
                 await self.speech.feed(self.turn_id, self.turn_identity, complete)
@@ -4507,20 +5328,29 @@ class RealtimeRobot:
                     raise ValueError("stale voice switch")
                 current = self.robot.turn_cache.get(self.turn_id) or {}
                 utterance = str(current.get("user_text") or self.transcript or "")
-                if not re.search(r"换|切换|改成|换成|用.*(?:声音|音色)|恢复.*(?:声音|音色)", utterance):
-                    raise ValueError("voice selection requires explicit user request")
+                requested = args["voice_name"].strip()
+                confirmed = await self._voice_gate(requested, utterance)
                 if args["scope"] == "robot" and not re.search(r"以后|所有|一直|全局|默认|每个", utterance):
                     raise ValueError("robot-wide voice needs an explicit scope")
-                voice_id, alternatives = self.voices.resolve_request(
-                    self.turn_identity, args["voice_name"].strip(), utterance)
+                voice_id, alternatives = ((self.voices.match(requested), None) if confirmed
+                                          else self.voices.resolve_request(
+                                              self.turn_identity, requested, utterance))
                 if voice_id is None:
+                    self._voice_offer = {"options": alternatives, "at": time.monotonic(),
+                                         "identity": dict(self.robot.session_state())}
                     result = {
                         "status": "needs_selection",
                         "options": alternatives,
                         "instruction": "音色尚未切换，请先问用户选择哪个音色。",
                     }
                 else:
+                    self._voice_offer = None
+                    speech = self.speech
+                    # This turn's voice is fixed when its audio starts; until then the reply gets it.
+                    heard_now = not (speech is not None and speech.turn_id == self.turn_id
+                                     and speech.locked_voice)
                     result = await self.voices.select(self.turn_identity, voice_id, args["scope"])
+                    result = {**result, "heard_now": heard_now}
                     if result["status"] == "selected":
                         self.publish("tts.voice.selected", voice_name=result["voice_name"],
                                      scope=args["scope"], effective="next_tts_task")
@@ -4620,27 +5450,30 @@ class RealtimeRobot:
                 if face is None:
                     raise ValueError("invalid face name")
                 texts = [re.sub(r"\s+", "", text) for text in self._recent_user_texts()]
+                cleaned = [clean_utterance(text) for text in texts]
                 robot_id = self.robot.config.robot_id
                 if name == "remember_face":
-                    if not any(face in text for text in texts):
-                        raise ValueError("face name must be the one the user said")
-                    if not any(REMEMBER_FACE.search(text) or self_introduced(text, face)
-                               for text in texts):
+                    # The model writes what ASR heard the way the camera or the chat
+                    # spells it: “我叫康星” came as 康兴 on 11-02 and was refused.
+                    earlier = [re.sub(r"\s+", "", str(turn.get("user_text") or ""))
+                               for turn in self.robot.recent_context()[-6:]]
+                    heard = heard_name(face, texts, earlier)
+                    if heard is None:
+                        asked = (any(REMEMBER_FACE.search(text) for text in cleaned)
+                                 or any(re.search(SELF_INTRO, text) for text in texts))
+                        raise ValueError(FACE_NAME_NOT_HEARD if asked
+                                         else "face request requires the user's explicit request")
+                    mine = any(self_introduced(text, heard) for text in texts)
+                    if not mine and any(introduces_other(text, heard) for text in texts):
+                        raise ValueError(FACE_FOR_OTHER)
+                    if not (mine or any(REMEMBER_FACE.search(text) for text in cleaned)):
                         # Other wordings (“这是我，张三”, a bare name answering her
                         # “你叫什么”) go to the decision model.
-                        choice = await self._decide_instruction(
-                            "face", face_request_question(face), instruction_state(
-                                texts[0], previous_user=texts[1] if len(texts) > 1 else None,
-                                robot_last=self._last_reply_text))
-                        if choice != "yes":
-                            raise ValueError("face request requires the user's explicit request")
-                        if self.turn_identity != self.robot.session_state():
-                            raise ValueError("stale face request")
+                        await self._face_request_decided("face", face_request_question(heard),
+                                                         texts)
                     result = await self.faces.remember(robot_id, face)
                 else:
-                    if not any(FORGET_FACE.search(text) for text in texts):
-                        raise ValueError("face request requires the user's explicit request")
-                    result = await self.faces.forget(robot_id, face)
+                    result = await self._forget_face(robot_id, face, cleaned, texts)
             elif name == "recall_overheard" and self._overhearing():
                 if args:
                     raise ValueError("expected no arguments")
@@ -4752,11 +5585,16 @@ class RealtimeRobot:
         elif name == "select_voice" and isinstance(result, dict):
             status = str(result.get("status", "unavailable"))
             if status == "selected":
+                voice, now = result["voice_name"], bool(result.get("heard_now"))
                 model_result = {
                     "status": "selected", "voice_changed": True,
-                    "voice_name": result["voice_name"],
-                    "effective": "next_tts_task",
-                    "instruction": "音色已写入当前偏好；仅下一次TTS任务使用，勿声称当前正在播的新声音。",
+                    "voice_name": voice,
+                    "effective": "this_reply" if now else "next_tts_task",
+                    "instruction": (
+                        (f"你接下来说的这句已经是「{voice}」的声音。" if now else
+                         f"这一轮剩下的话还是原来的声音，下一轮起才是「{voice}」，别说现在听到的就是新声音。")
+                        + f"照「{voice}」这个名字猜这把声音的气质，用一句贴着这个气质、有特点的话接住用户；"
+                        "别说已切换、换好了；性格不变。"),
                 }
             else:
                 model_result = {
@@ -4764,19 +5602,24 @@ class RealtimeRobot:
                     "instruction": (
                         "实际音色没有变化；不得说已切换或让用户试听新声线。"
                         + (" 请询问用户选择：" + "、".join(result["options"])
-                           if status == "needs_selection" else "")
+                           if status == "needs_selection"
+                           else "" if status == "already_selected" or "negated" in str(result.get("reason"))
+                           else " 用当前性格的口气问一句TA想换成哪个声音，不拒绝，不提工具或故障。")
                     ),
                 }
         elif name == "select_persona_style" and isinstance(result, dict):
             status = str(result.get("status", "unavailable"))
             if status == "selected":
+                opener = persona_opener((self.persona_profiles or {}).get(result.get("style_id")))
                 model_result = {
                     "status": "selected", "style_changed": True,
                     "style_label": result["style_label"], "effective": "next_reply",
                     "instruction": (
                         f"当前会话性格已是「{result['style_label']}」，没有新建会话。"
-                        "用这个性格自然说一句，接住用户刚才的话；"
-                        "不要念固定确认稿，不要复述风格规则。"
+                        "马上用这个性格来一句最有它味道的话，接住用户刚才的话，像本来就是这样；"
+                        + (f"开场手法：{opener}；" if opener else "")
+                        + "别说已切换、换好了，不要念固定确认稿，不要复述风格规则；"
+                        "之前的回复是旧性格说的，只取内容，别学那个口吻。"
                     ),
                 }
             elif status == "needs_selection":
@@ -4794,14 +5637,17 @@ class RealtimeRobot:
             else:
                 model_result = {
                     "status": status, "style_changed": False,
-                    "instruction": "性格没有变化，不要说已经换成新性格，也不要换个名称重复调用；"
-                                   "直接用一句话问用户想要哪一种。",
+                    "instruction": ("性格没有变：用户不想换，按普通对话回应，不要再调用本工具。"
+                                    if "negated" in str(result.get("reason")) else
+                                    "性格没有变化，不要说已经换成新性格，也不要换个名称重复调用；"
+                                    "直接用一句话问用户想要哪一种。"),
                 }
         if (isinstance(model_result, dict) and model_result.get("status") == "rejected"
                 and "instruction" not in model_result):
             # Seen live 10/21: an English reason made the model retry the same
             # call seven times, then complain to the user that the tool broke.
-            model_result = {**model_result, "instruction": REJECTED_RULES.get(
+            model_result = {**model_result, "instruction": REJECTED_REASONS.get(
+                model_result.get("reason")) or REJECTED_RULES.get(
                 name, "这次没有执行，不是故障。不要重试，也不要提工具、系统或故障；当作普通对话自然回应。")}
         await self.socket.send({
             "type": "conversation.item.create",

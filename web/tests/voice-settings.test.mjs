@@ -16,6 +16,9 @@ test('settings integrates voice cloning, persistent Chat selection and preview p
   assert.match(source,/15组试听/);
   assert.match(source,/<audio controls preload="none"/);
   assert.match(source,/恢复本 Chat 默认/);
+  assert.match(source,/select\(SYSTEM,'chat'\)/);
+  assert.match(source,/恢复性格原声/);
+  assert.match(source,/active_voice_id===data\.default_voice_id/);
   assert.match(source,/设为机器人默认/);
   assert.match(source,/声纹注册/);
   assert.match(source,/\/api\/speakers/);

@@ -33,6 +33,27 @@ test('her mood, energy and day show only what the runtime reported', () => {
   assert.equal(view.failures, '');
 });
 
+test('the mood card gets a face, bars and a short reason from the same report', () => {
+  const view = innerLifeView(sample, '已同步');
+  assert.equal(view.face, '😊');
+  assert.equal(view.tone, 'happy');
+  assert.equal(view.moodLabel, '心情不错');
+  assert.equal(view.moodNote, '有人轻轻按了你的额头 · 10:20');
+  assert.equal(view.energyPct, 62);
+  assert.equal(view.valencePct, 67);
+  assert.equal(view.valenceText, '+0.33');
+  assert.equal(view.talk, '进行中 · 2 轮');
+  assert.equal(view.partnerName, '');
+  const calm = innerLifeView({...sample, mood: {...sample.mood, tone: 'neutral', reason: '', reason_ms: null,
+    valence: -3}}, '已同步');
+  assert.equal(calm.moodNote, '');
+  assert.equal(calm.valencePct, 0);
+  const off = innerLifeView({robot_id: 'annie-a', enabled: false}, '已同步');
+  assert.equal(off.moodLabel, '未启用');
+  assert.match(off.moodNote, /ANNIE_INNER_LIFE_ENABLED/);
+  assert.equal(off.energyPct, null);
+});
+
 test('missing, disabled and failing states are told apart', () => {
   assert.equal(innerLifeView(null, '读取失败').badge, '读取失败');
   const off = innerLifeView({robot_id: 'annie-a', enabled: false}, '已同步');
@@ -65,6 +86,9 @@ test('threads, impressions, her wish to speak and motions are shown as reported'
   assert.deepEqual(view.threads, ['张三：下周去面试 · 问过 1 次 · 暂不提']);
   assert.equal(view.impression, '在准备面试');
   assert.equal(view.lately, '你最近挺爱被摸头（2026-10-26 的回顾）');
+  assert.equal(view.latelyText, '你最近挺爱被摸头');
+  assert.equal(view.latelyDay, '2026-10-26');
+  assert.equal(view.partnerName, '张三');
   assert.equal(view.thought, '离上次主动开口不到 5 分钟 · 这一小时已主动说 2 次');
   assert.equal(view.motions, '倾听 3 · 说话 2 · 内心 1 · 跳过 4');
   assert.deepEqual(view.motionLines, ['10:20 倾听：倾听 · conflict_or_cooldown',

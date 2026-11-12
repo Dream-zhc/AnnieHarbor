@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import numpy as np
 from annie_adapters import RuntimeStore
-from annie_adapters.speakers import match_gallery, unit_vector
+from annie_adapters.speakers import MIN_EMBED_SECONDS, match_gallery, unit_vector
 from annie_runtime.realtime import RealtimeRobot
 from annie_runtime.speakers import SpeakerService, SpeakerTracker, wav_to_enrollment
 from annie_web import create_app
@@ -150,6 +150,33 @@ def test_tracker_names_the_current_utterance_and_carries_only_a_short_followup(t
         assert tracker.instruction_hint() == ""
 
     asyncio.run(exercise())
+
+
+def test_a_followup_too_short_for_the_model_is_carried_without_an_error(tmp_path, caplog):
+    class StrictEmbedder(BucketEmbedder):
+        def embed(self, samples):
+            if samples.size < int(MIN_EMBED_SECONDS * 16000):
+                raise ValueError("声纹音频太短")
+            return super().embed(samples)
+
+    async def exercise():
+        book = service(tmp_path, StrictEmbedder())
+        book.enroll("小明", tone_wav(16000, 3.2, 0.22))
+        assert book.identify(pcm_from_amplitude(0.22, 0.8)) == {"status": "short"}
+        tracker = SpeakerTracker(book, None)
+        tracker.begin()
+        tracker.observe(pcm_from_amplitude(0.22, 1.2))
+        await tracker.finish()
+        assert tracker.public()["status"] == "matched"
+        # A short “嗯” plus the preroll is still under the model's one second.
+        tracker.begin()
+        tracker.observe(pcm_from_amplitude(0.22, 0.6))
+        await tracker.finish()
+        assert tracker.public()["status"] == "carried"
+        assert tracker.public()["name"] == "小明"
+
+    asyncio.run(exercise())
+    assert "speaker identify failed" not in caplog.text
 
 
 def test_prompt_update_uses_the_matched_name_before_the_reply(tmp_path):

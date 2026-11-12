@@ -5,6 +5,7 @@ import io
 import os
 import re
 import shutil
+import struct
 import time
 import wave
 from hashlib import sha256
@@ -13,13 +14,17 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
-from annie_adapters.tts import QwenTtsSocket
+import numpy as np
+from annie_adapters.tts import MODEL, QwenTtsSocket, validate_model, voice_model
 from annie_adapters.tts import command as tts_command
 from annie_adapters.tts import task_id as new_task_id
 
-TARGET_MODEL = "qwen-audio-3.0-tts-flash"
 MAX_BYTES = 10 * 1024 * 1024
-DEFAULT = "__default__"
+DEFAULT = "__default__"  # no choice of its own: the personality's voice, else the robot-wide one
+SYSTEM = "__system__"  # the configured default voice, even over a personality's own voice
+# 11-05: “换回系统默认” kept the personality's voice; “原来的声音” means that one.
+SYSTEM_NAMES = ("系统默认", "系统音色", "系统声音", "默认音色", "默认声音", "默认")
+OWN_NAMES = ("原来的声音", "原来的音色", "性格原声", "原声")
 VOICE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{4,199}$")
 PRESETS = (
     ("mandarin", "普通话·自然", "你好，我是小安妮。今天来试听一下我的新声音，自然吗？", "请用自然亲切的年轻女性语气表达，不要播音腔。", "zh", 1., 1.),
@@ -42,19 +47,92 @@ PRESET_MAP = {item[0]: item for item in PRESETS}
 AUTO_PREVIEWS = tuple(row[0] for row in PRESETS)
 
 
-def check_audio(filename: str, audio: bytes):
+def _accepted(filename: str, audio: bytes):
     suffix = Path(filename).suffix.lower()
     if suffix not in {".wav", ".mp3", ".m4a"} or not 1024 <= len(audio) <= MAX_BYTES:
         raise ValueError("音频须为 WAV/MP3/M4A，大小不得超过 10MB")
+    return suffix
+
+
+def _check_clip(rate: int, duration: float):
+    if rate < 16000:
+        raise ValueError(f"采样率须不低于16kHz，当前 {rate}Hz")
+    if not 5 <= duration <= 60:
+        raise ValueError(f"参考音频须为5至60秒，当前 {duration:.1f} 秒")
+
+
+_PCM, _FLOAT, _EXTENSIBLE = 1, 3, 0xFFFE
+_SAMPLE_TYPES = {(_PCM, 1): "u1", (_PCM, 2): "<i2", (_PCM, 4): "<i4",
+                 (_FLOAT, 4): "<f4", (_FLOAT, 8): "<f8"}
+
+
+def normalize_wav(audio: bytes):
+    """16-bit mono WAV at the source rate from PCM or float WAV, plain or EXTENSIBLE.
+
+    The provider accepts only 16-bit WAV and reads just the first channel of stereo.
+    """
+    if audio[:4] != b"RIFF" or audio[8:12] != b"WAVE":
+        raise ValueError("无效的 WAV 音频")
+    chunks, offset = {}, 12
+    while offset + 8 <= len(audio):
+        size = int.from_bytes(audio[offset + 4:offset + 8], "little")
+        chunks.setdefault(audio[offset:offset + 4], audio[offset + 8:offset + 8 + size])
+        offset += 8 + size + size % 2
+    fmt, data = chunks.get(b"fmt ", b""), chunks.get(b"data", b"")
+    if len(fmt) < 16 or not data:
+        raise ValueError("无效的 WAV 音频")
+    tag, channels, rate, _, block, _ = struct.unpack("<HHIIHH", fmt[:16])
+    if tag == _EXTENSIBLE and len(fmt) >= 26:
+        tag = int.from_bytes(fmt[24:26], "little")
+    width = block // channels if channels else 0
+    if not width or block != width * channels or not rate:
+        raise ValueError("无效的 WAV 音频")
+    if (tag, width) not in _SAMPLE_TYPES and (tag, width) != (_PCM, 3):
+        raise ValueError(f"不支持的 WAV 编码（格式{tag}，{8 * width}bit），请转成 PCM WAV 或 MP3")
+    frames = len(data) // block
+    _check_clip(rate, frames / rate)
+    raw = data[:frames * block]
+    if (tag, width) == (_PCM, 3):
+        triples = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        values = triples[:, 0] | triples[:, 1] << 8 | triples[:, 2] << 16
+        samples = np.where(values >= 1 << 23, values - (1 << 24), values) / float(1 << 23)
+    else:
+        samples = np.frombuffer(raw, _SAMPLE_TYPES[tag, width]).astype(np.float64)
+        if width == 1:
+            samples = (samples - 128) / 128
+        elif tag == _PCM:
+            samples /= float(1 << (8 * width - 1))
+    mono = samples.reshape(frames, channels).mean(axis=1)
+    pcm = np.clip(np.rint(mono * 32768), -32768, 32767).astype("<i2")
+    target = io.BytesIO()
+    with wave.open(target, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(pcm.tobytes())
+    return target.getvalue()
+
+
+def prepare_audio(filename: str, audio: bytes):
+    """Reference audio as uploaded: WAV converted to 16-bit mono, MP3/M4A unchanged."""
+    if _accepted(filename, audio) == ".wav":
+        audio = normalize_wav(audio)
+    check_audio(filename, audio)
+    return audio
+
+
+def check_audio(filename: str, audio: bytes):
+    suffix = _accepted(filename, audio)
     if suffix == ".wav":
         try:
             with wave.open(io.BytesIO(audio), "rb") as source:
-                duration = source.getnframes() / max(1, source.getframerate())
-                if (source.getsampwidth() != 2 or source.getframerate() < 16000
-                        or not 5 <= duration <= 60):
-                    raise ValueError("WAV 须为16bit、16kHz以上、5至60秒")
+                width, rate = source.getsampwidth(), source.getframerate()
+                duration = source.getnframes() / max(1, rate)
         except (wave.Error, EOFError) as exc:
             raise ValueError("无效的 WAV 音频") from exc
+        if width != 2:
+            raise ValueError("WAV 须为16bit")
+        _check_clip(rate, duration)
     elif suffix == ".mp3" and not (audio.startswith(b"ID3") or audio[0] == 255
                                    and audio[1] & 224 == 224):
         raise ValueError("文件内容不是 MP3")
@@ -69,9 +147,58 @@ def voice_name(value: str):
     return value.strip()
 
 
+_CLONE_STAGES = {"policy": "云端上传凭证获取失败", "upload": "参考音频上传云端失败",
+                 "enroll": "云端创建音色失败"}
+_PROVIDER_HINTS = {"Arrearage": "阿里云账户欠费或余额不足", "InvalidApiKey": "API Key 无效"}
+
+
+class VoiceCloneError(RuntimeError):
+    """A refused cloning step reduced to stage, status, provider code and message.
+
+    OSS error bodies echo the signed upload policy, so nothing else is kept.
+    """
+
+    def __init__(self, stage: str, status: int, code: str = "", message: str = ""):
+        self.stage, self.status = stage, status
+        self.code = " ".join(code.split())[:80]
+        self.message = re.sub(r"sk-\w+", "sk-***", " ".join(message.split()))[:200]
+        super().__init__(f"stage={stage} status={status} code={self.code or '-'} "
+                         f"message={self.message or '-'}")
+
+    @classmethod
+    def from_response(cls, stage: str, response: httpx.Response):
+        try:
+            body = response.json()
+        except ValueError:
+            found = [re.search(f"<{tag}>([^<]*)</{tag}>", response.text)
+                     for tag in ("Code", "Message")]
+            return cls(stage, response.status_code, *(m[1] if m else "" for m in found))
+        body = body if isinstance(body, dict) else {}
+        return cls(stage, response.status_code, str(body.get("code") or ""),
+                   str(body.get("message") or ""))
+
+    @property
+    def reason(self):
+        said = _PROVIDER_HINTS.get(self.code) or self.message or self.code
+        if said and self.code and said != self.code:
+            said += f"（{self.code}）"
+        return f"{_CLONE_STAGES[self.stage]}：{said or f'HTTP {self.status}'}"
+
+
+async def _checked(stage: str, request):
+    try:
+        response = await request
+    except httpx.TransportError as exc:
+        raise VoiceCloneError(stage, 0, type(exc).__name__, "连接云端出错") from exc
+    if response.is_error:
+        raise VoiceCloneError.from_response(stage, response)
+    return response
+
+
 class DashscopeVoiceProvider:
-    def __init__(self, key: str, ws_url: str, *, http_base: str | None = None):
+    def __init__(self, key: str, ws_url: str, *, http_base: str | None = None, model: str = MODEL):
         self.key, self.ws_url = key, ws_url
+        self.model = validate_model(model)  # new clones are bound to it
         parsed = urlparse(ws_url)
         if (parsed.scheme != "wss" or parsed.path != "/api-ws/v1/inference"
                 or parsed.query or parsed.username or parsed.password):
@@ -95,10 +222,9 @@ class DashscopeVoiceProvider:
             raise ValueError("不支持的参考音频语言")
         headers = {"Authorization": f"Bearer {self.key}"}
         async with httpx.AsyncClient(timeout=httpx.Timeout(30., read=180.)) as client:
-            policy = await client.get("https://dashscope.aliyuncs.com/api/v1/uploads",
-                                      headers=headers,
-                                      params={"action": "getPolicy", "model": TARGET_MODEL})
-            policy.raise_for_status()
+            policy = await _checked("policy", client.get(
+                "https://dashscope.aliyuncs.com/api/v1/uploads", headers=headers,
+                params={"action": "getPolicy", "model": self.model}))
             data = policy.json()["data"]
             host = data["upload_host"]
             # Never send user audio or provider-issued credentials to other hosts.
@@ -113,19 +239,17 @@ class DashscopeVoiceProvider:
                 "x-oss-forbid-overwrite": data["x_oss_forbid_overwrite"],
                 "key": key, "success_action_status": "200",
             }
-            upload = await client.post(host, data=form,
-                                       files={"file": (Path(filename).name, audio,
-                                                       "application/octet-stream")})
-            upload.raise_for_status()
-            result = await client.post(
+            await _checked("upload", client.post(
+                host, data=form,
+                files={"file": (Path(filename).name, audio, "application/octet-stream")}))
+            result = await _checked("enroll", client.post(
                 self.http_base + "/services/audio/tts/customization",
                 headers={**headers, "X-DashScope-OssResourceResolve": "enable"},
                 json={"model": "voice-enrollment", "input": {
-                    "action": "create_voice", "target_model": TARGET_MODEL,
+                    "action": "create_voice", "target_model": self.model,
                     "prefix": prefix, "url": f"oss://{key}", "language_hints": [language],
                 }},
-            )
-            result.raise_for_status()
+            ))
         output = result.json()
         value = (output.get("output") or {}).get("voice_id")
         if not isinstance(value, str) or not VOICE_ID.fullmatch(value):
@@ -142,7 +266,7 @@ class DashscopeVoiceProvider:
         pcm = bytearray()
         try:
             await socket.open()
-            await socket.send(tts_command("run-task", task, voice=voice,
+            await socket.send(tts_command("run-task", task, voice=voice, model=self.model,
                                           instruction=instruction, rate=rate, pitch=pitch,
                                           language_hint=language))
             async with asyncio.timeout(50):
@@ -185,6 +309,8 @@ class VoiceProfiles:
         self.preview_locks = {}
         self.preview_root = store.path.parent / "voice_previews"
         self.errors = {}
+        # identity -> voice name or ID bound to the chat's personality, if any
+        self.bound_voice = None
 
     def _initialize(self):
         with self.store.connect() as db:
@@ -213,7 +339,9 @@ class VoiceProfiles:
         return sorted(self.voices.values(), key=lambda row: row["created_ms"], reverse=True)
 
     def match(self, name):
-        if name in {DEFAULT, "默认", "默认音色", "原来的声音", "原声"}:
+        if name in {SYSTEM, *SYSTEM_NAMES}:
+            return SYSTEM
+        if name in {DEFAULT, *OWN_NAMES}:
             return DEFAULT
         matches = [voice_id for voice_id, row in self.voices.items()
                    if name in (voice_id, row["name"])]
@@ -222,8 +350,10 @@ class VoiceProfiles:
         return matches[0]
 
     def label(self, voice_id):
-        return (self.voices[voice_id]["name"] if voice_id in self.voices
-                else "系统默认" if voice_id == self.default_voice else "未知音色")
+        if voice_id in self.voices:
+            return self.voices[voice_id]["name"]
+        return ("系统默认" if voice_id in {SYSTEM, self.default_voice}
+                else "性格原声" if voice_id == DEFAULT else "未知音色")
 
     def resolve_request(self, identity, requested_name, user_text):
         """Resolve user intent, not an arbitrary voice guessed by the LLM.
@@ -232,17 +362,17 @@ class VoiceProfiles:
         one different voice is available. With multiple alternatives the LLM
         must ask; the provider's proposed name is not authorization.
         """
-        defaults = ("默认音色", "原来的声音", "原声", "默认")
-        explicit_default = next((label for label in defaults if label in user_text), None)
+        system = any(word in user_text for word in SYSTEM_NAMES)
+        own = any(word in user_text for word in OWN_NAMES)
         explicit_matches = [
             value for value, row in self.voices.items() if row["name"] in user_text
         ]
-        if explicit_default and explicit_matches:
+        if (system or own) and explicit_matches:
             return None, ["请明确选择默认音色还是克隆音色"]
-        if explicit_default:
-            if requested_name not in (DEFAULT, *defaults):
+        if system or own:
+            if requested_name not in (DEFAULT, SYSTEM, *SYSTEM_NAMES, *OWN_NAMES):
                 raise ValueError("voice choice disagrees with explicitly requested default")
-            return DEFAULT, None
+            return (SYSTEM if system else DEFAULT), None
         if len(explicit_matches) == 1:
             if requested_name not in (explicit_matches[0], self.voices[explicit_matches[0]]["name"]):
                 raise ValueError("voice choice disagrees with user's named voice")
@@ -259,18 +389,32 @@ class VoiceProfiles:
         ):
             return None, [self.label(v["voice_id"]) for v in self.choices()]
         current = self.resolved(identity)
-        alternatives = ([DEFAULT] if current != self.default_voice else [])
-        alternatives.extend(voice_id for voice_id in self.voices if voice_id != current)
+        alternatives = ([SYSTEM] if current != self.default_voice else [])
+        alternatives.extend(voice_id for voice_id in self.voices
+                            if voice_id not in {current, self.default_voice})
         if len(alternatives) == 1:
             return alternatives[0], None
-        return None, [self.label(voice_id) if voice_id != DEFAULT else "系统默认"
-                      for voice_id in alternatives]
+        return None, [self.label(voice_id) for voice_id in alternatives]
+
+    def persona_bound(self, identity):
+        """The cloned voice the chat's personality is bound to, by name or ID."""
+        wanted = self.bound_voice(identity) if self.bound_voice else None
+        if not wanted:
+            return None
+        if wanted in self.voices:
+            return wanted
+        return next((voice_id for voice_id, row in self.voices.items() if row["name"] == wanted), None)
 
     def resolved(self, identity):
+        # A chat's own choice beats the personality's voice, which beats the robot-wide one.
         robot, chat, persona = (identity[key] for key in ("robot_id", "chat_id", "persona_id"))
         selected = self.selections.get((robot, chat, persona))
         if selected is None:
+            selected = self.persona_bound(identity)
+        if selected is None:
             selected = self.selections.get((robot, "", ""))
+        if selected == SYSTEM:
+            return self.default_voice
         return selected if selected in self.voices else self.default_voice
 
     def snapshot(self, identity):
@@ -280,6 +424,8 @@ class VoiceProfiles:
                 "default_voice_id": self.default_voice,
                 "robot_voice_id": self.selections.get((robot, "", ""), DEFAULT),
                 "chat_voice_id": self.selections.get((robot, chat, persona), DEFAULT),
+                "persona_voice_id": self.persona_bound(identity),
+                "model": getattr(self.provider, "model", MODEL),
                 "previews": [
                     {"key": key, "name": name,
                      "ready": self.preview_path(active, key).exists() if active in self.voices else False}
@@ -289,7 +435,7 @@ class VoiceProfiles:
     async def select(self, identity, voice_id: str, scope="chat"):
         if scope not in {"chat", "robot"}:
             raise ValueError("scope must be chat or robot")
-        if voice_id != DEFAULT and voice_id not in self.voices:
+        if voice_id not in {DEFAULT, SYSTEM} and voice_id not in self.voices:
             raise ValueError("音色不在已克隆列表")
         previous = self.resolved(identity)
         robot = identity["robot_id"]
@@ -346,6 +492,7 @@ class VoiceProfiles:
 
     async def clone(self, name, filename, audio, *, language="zh"):
         name = voice_name(name)
+        audio = await asyncio.to_thread(prepare_audio, filename, audio)
         async with self.lock:
             if any(row["name"].casefold() == name.casefold()
                    for row in self.voices.values()):
@@ -353,14 +500,15 @@ class VoiceProfiles:
             prefix = "annie" + uuid4().hex[:5]
             voice_id = await self.provider.clone(filename, audio, prefix, language)
             now = time.time_ns() // 1_000_000
+            model = voice_model(voice_id, getattr(self.provider, "model", MODEL))
             def save():
                 with self.store.connect() as db:
                     db.execute("INSERT INTO cloned_voices VALUES(?,?,?,?,?)",
-                               (voice_id, name, "beijing", TARGET_MODEL, now))
+                               (voice_id, name, "beijing", model, now))
             await asyncio.to_thread(save)
             self.voices[voice_id] = {
                 "voice_id": voice_id, "name": name, "region": "beijing",
-                "model": TARGET_MODEL, "created_ms": now,
+                "model": model, "created_ms": now,
             }
             self._schedule(self.build_previews(voice_id, AUTO_PREVIEWS))
             return {"voice_id": voice_id, "name": name,

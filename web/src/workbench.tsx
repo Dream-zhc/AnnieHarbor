@@ -24,6 +24,7 @@ import {VoiceSettings} from './voice-settings';
 import {AnnieStatePod} from './annie-state-pod';
 import {isPodStatusEvent} from './annie-pod-refresh';
 import {isVisionEvent,turnVision,visionBadge,type TurnVision} from './vision-badge';
+import {cameOnline,latestOnline,robotName,robotPresence} from './robot-presence';
 
 type RoomRoute={robot_id:string;room_id:string;mic_url:string;connected:boolean;accepted:number;frames_received:number;last_error:string|null;urls:Record<string,string>};
 type Conversation={chat_id:string;persona_id:string;persona_revision?:number;turn_count?:number;updated_ms?:number};
@@ -418,7 +419,8 @@ export function Workbench(){
     try{
       const result=await api<Health>('/health','GET',undefined,undefined,[503]);
       setHealth(result);
-      setRobotId(old=>result.robots.some(item=>item.robot_id===old)?old:result.robots[0]?.robot_id??'');
+      setRobotId(old=>result.robots.some(item=>item.robot_id===old)?old:
+        (latestOnline(result.robots)??result.robots[0])?.robot_id??'');
     }catch(error){setHealth(null);notify('Runtime 无法连接：'+errorText(error),'error');}
   },[notify]);
 
@@ -728,6 +730,18 @@ export function Workbench(){
     setLiveText('');setRealtimeEvents([]);dismissError();setCreateOpen(false);setDeleteOpen(false);setMemoryOpen(false);
   }
 
+  const presence=useMemo(()=>robotPresence(health?.robots??[],Date.now()),[health]);
+  // Only a board coming online moves the view; going back by hand or a conversation elsewhere does not.
+  const seenHeads=useRef<ReadonlySet<string>|null>(null);
+  useEffect(()=>{
+    if(!health)return;
+    const {seen,robot}=cameOnline(seenHeads.current,health.robots);
+    seenHeads.current=seen;
+    if(!robot||robot.robot_id===robotId)return;
+    choose(robot.robot_id);
+    notify(`${robotName(robot)}后上线，已切到${robotName(robot)}`,'info');
+  },[health]);
+
   async function switchSession(item:Conversation){
     if(!robotId||pending)return;
     const id=robotId,ticket=selection.current;
@@ -859,10 +873,14 @@ export function Workbench(){
         <div><strong>小安妮</strong></div>
       </div>
       <div className="top-robot-switch" role="group" aria-label="切换机器人">
-        {health?.robots.map(robot=><button key={robot.robot_id} type="button"
-          className={'robot-pill '+(robotId===robot.robot_id?'selected':'')}
+        {health?.robots.map(robot=>{const state=presence.get(robot.robot_id);return <button key={robot.robot_id} type="button"
+          className={'robot-pill '+(robotId===robot.robot_id?'selected':'')} title={state?.title}
           aria-pressed={robotId===robot.robot_id} onClick={()=>choose(robot.robot_id)}>
-          {robot.robot_id}</button>)}
+          <span className={'status-dot '+(state?.online?'dot-good':'')} role="img"
+            aria-label={state?.online?'板子在线':'板子离线'}/>
+          {robot.robot_id}
+          {state?.talking&&<span className="robot-pill-tag talking">对话中</span>}
+          {state?.latest&&<span className="robot-pill-tag latest">后上线</span>}</button>;})}
         {!health?.robots.length&&<span className="empty-copy">无可用机器人</span>}
       </div>
       <div className="topbar-right">

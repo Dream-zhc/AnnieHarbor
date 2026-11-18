@@ -31,7 +31,7 @@ const stateLabel=(value:string|undefined)=>{
   if(!value)return '未接入';
   const names:Record<string,string>={
     connected:'已连接',ready:'已就绪',room_gateway_ready:'已就绪',ledger_ready:'已就绪',
-    not_connected:'未接入',not_started:'未接入',not_configured:'未配置',
+    not_connected:'未接入',not_started:'未接入',not_configured:'未配置',disabled:'已关闭',
     configured:'已配置',unknown:'未确认（unknown）',idle:'空闲',
     disconnected:'连接断开',error:'异常',failed:'失败',running:'运行中',
     hold_requested:'已请求暂停，等待设备回执',held_confirmed:'设备已报告暂停',

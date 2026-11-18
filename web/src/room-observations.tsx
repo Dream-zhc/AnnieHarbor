@@ -15,7 +15,7 @@ export type RoomObservations={
 
 const visemeLabel:Record<string,string>={
   online:'在线',waiting:'等待心跳',offline:'离线',disconnected:'房间断开',
-  degraded:'服务异常',not_configured:'未接入',
+  degraded:'服务异常',not_configured:'未接入',disabled:'已关闭',
 };
 const visualLabel:Record<string,string>={
   online:'更新中',waiting:'等待画面',stale:'画面未更新',
@@ -62,7 +62,7 @@ export function RoomObservationsBar({robotId}:{robotId:string}){
   return <div className="room-observations" aria-label="房间实时观测">
     <div className="room-observation-wrap">
       <div className="room-observation-pill" tabIndex={0} aria-describedby={popoverId}>
-        <span className={'status-dot '+(viseme?.state==='online'?'dot-good':viseme?.state==='offline'||viseme?.state==='disconnected'||error?'dot-bad':'dot-warn')}/>
+        <span className={'status-dot '+(viseme?.state==='disabled'?'':viseme?.state==='online'?'dot-good':viseme?.state==='offline'||viseme?.state==='disconnected'||error?'dot-bad':'dot-warn')}/>
         <span>嘴型 · {visemeStatus}</span>
       </div>
       <div className="mouth-popover" role="tooltip" id={popoverId}>

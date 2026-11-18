@@ -113,7 +113,8 @@ def test_roomv2_subscriptions_and_http_do_not_leak_to_roomv3(tmp_path):
                           for name, channel in channels.items()},
         )
         runtime = HarborRuntime(
-            [RobotConfig("a", room_id="roomv2"), RobotConfig("b", room_id="roomv3")],
+            [RobotConfig("a", room_id="roomv2"),
+             RobotConfig("b", room_id="roomv3", camera_enabled=False)],
             tmp_path / "room.db", room, realtime_key="fake",
             realtime_socket_factory=FakeSocket,
         )

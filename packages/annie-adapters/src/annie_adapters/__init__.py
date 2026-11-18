@@ -540,9 +540,17 @@ def match_cancel_identity(active: dict, candidate: dict) -> tuple[bool, str]:
 
 def load_robots(path: Path) -> list[RobotConfig]:
     with path.open("rb") as file:
-        configs = [RobotConfig(**row) for row in tomllib.load(file)["robots"]]
-    if not configs or len({c.robot_id for c in configs}) != len(configs):
+        rows = tomllib.load(file)["robots"]
+    configs = []
+    for row in rows:
+        if isinstance(row.get("actions"), list):
+            row = {**row, "actions": tuple(row["actions"])}
+        configs.append(RobotConfig(**row))
+    robot_ids = {c.robot_id for c in configs}
+    if not configs or len(robot_ids) != len(configs):
         raise ValueError("robots must have unique robot_id values")
+    if any(c.livekit_room_of and c.livekit_room_of not in robot_ids for c in configs):
+        raise ValueError("livekit_room_of must name a robot in the same file")
     return configs
 
 

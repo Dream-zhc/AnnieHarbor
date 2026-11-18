@@ -100,9 +100,9 @@ class InteractionMotions:
         actions = getattr(self.runtime, "actions", None)
         return actions if actions is not None and actions.enabled else None
 
-    def _allowed(self, group):
+    def _allowed(self, robot_id, group):
         actions = self._actions()
-        return [script for script in group if actions and script in actions.allowlist]
+        return [script for script in group if actions and script in actions.allowed(robot_id)]
 
     @staticmethod
     def _awake(client):
@@ -127,15 +127,15 @@ class InteractionMotions:
         return {"actions_enabled": self._actions() is not None,
                 "listening": self.listening, "speaking": self.speaking,
                 "reactions": self.reactions, "per_reply": self.per_reply,
-                "groups": {"listen": self._allowed(LISTEN_MOTIONS),
-                           "speech": self._allowed(SPEECH_MOTIONS),
-                           "inner": self._allowed(INNER_MOTIONS)},
+                "groups": {"listen": self._allowed(robot_id, LISTEN_MOTIONS),
+                           "speech": self._allowed(robot_id, SPEECH_MOTIONS),
+                           "inner": self._allowed(robot_id, INNER_MOTIONS)},
                 "recent": list(self.recent[robot_id]), "stats": dict(self.stats[robot_id])}
 
     # ---- listening --------------------------------------------------------------------
     def on_speech_started(self, robot_id, client):
         """Someone started talking to her: look like she is listening."""
-        if not self.listening or not self._allowed(LISTEN_MOTIONS):
+        if not self.listening or not self._allowed(robot_id, LISTEN_MOTIONS):
             return
         if not self._awake(client) or not self._wanted(client):
             return
@@ -152,7 +152,7 @@ class InteractionMotions:
         if not client.speech_active or client.robot.generation != generation:
             self.stats[robot_id]["skipped"] += 1
             return
-        group = self._allowed(LISTEN_MOTIONS)
+        group = self._allowed(robot_id, LISTEN_MOTIONS)
         # Mostly the plain listening tilt, never the same one twice in a row.
         last = self.last_listen_script[robot_id]
         script = next((item for item in group if item != last), group[0])
@@ -163,7 +163,7 @@ class InteractionMotions:
     # ---- speaking ---------------------------------------------------------------------
     def on_reply_text(self, robot_id, client):
         """Her reply grew: each newly finished sentence may get a gesture."""
-        if not self.speaking or not self._allowed(SPEECH_MOTIONS):
+        if not self.speaking or not self._allowed(robot_id, SPEECH_MOTIONS):
             return
         speech = getattr(client, "speech", None)
         turn_id = client.turn_id
@@ -180,7 +180,7 @@ class InteractionMotions:
         cached = client.robot.turn_cache.get(turn_id) or {}
         user_text = str(cached.get("user_text") or client.transcript or "")
         if not reply["seen"] and (
-                explicit_motion(user_text, self.runtime.actions.allowlist)
+                explicit_motion(user_text, self.runtime.actions.allowed(robot_id))
                 or explicit_expression(user_text) or GENERIC_MOTION.search(user_text)):
             # The user named the motion: that one runs (auto-expression path);
             # a gesture of her own on “行，我摇头了” would contradict it (d3 replay 10-27).
@@ -197,7 +197,7 @@ class InteractionMotions:
 
     async def _gesture(self, robot_id, client, speech, turn_id, epoch, generation, user_text,
                        sentence, char_index):
-        allowed = self._allowed(SPEECH_MOTIONS)
+        allowed = self._allowed(robot_id, SPEECH_MOTIONS)
         descriptions = {script: SPEECH_MOTION_CRITERIA[script] for script in allowed}
         inner = getattr(self.runtime, "inner_life", None)
         state = {"用户": user_text[:200], "小安妮这句话": sentence[:120]}
@@ -237,7 +237,7 @@ class InteractionMotions:
     # ---- her own reaction -------------------------------------------------------------
     def on_feeling(self, robot_id, tone, reason):
         """The last exchange moved her mood: maybe a wordless motion once she has spoken."""
-        if not self.reactions or not self._allowed(INNER_MOTIONS) or not reason:
+        if not self.reactions or not self._allowed(robot_id, INNER_MOTIONS) or not reason:
             return
         client = self.runtime.realtime.get(robot_id)
         if client is None or not self._awake(client) or not self._wanted(client):
@@ -256,7 +256,7 @@ class InteractionMotions:
                 or not self._awake(client)):
             self.stats[robot_id]["skipped"] += 1
             return
-        allowed = self._allowed(INNER_MOTIONS)
+        allowed = self._allowed(robot_id, INNER_MOTIONS)
         descriptions = {script: INNER_MOTION_CRITERIA[script] for script in allowed}
         inner = getattr(self.runtime, "inner_life", None)
         mood = inner.idle_material(robot_id, public=False)["mood"] if inner else ""

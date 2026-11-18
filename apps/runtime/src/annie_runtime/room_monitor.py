@@ -246,8 +246,9 @@ class PeopleSmoother:
 
 
 class RoomMonitor:
-    def __init__(self, room_id, *, clock=None):
+    def __init__(self, room_id, *, clock=None, mouth_enabled=True):
         self.room_id = room_id
+        self.mouth_enabled = mouth_enabled
         # Looked up per call, so patching room_monitor.time.monotonic still works.
         self.clock = clock or (lambda: time.monotonic())
         self.started = self.clock()
@@ -495,7 +496,8 @@ class RoomMonitor:
         return {
             "room_id": self.room_id,
             "viseme": {
-                "state": state if sam_connected is not None else "not_configured",
+                "state": ("disabled" if not self.mouth_enabled else
+                          state if sam_connected is not None else "not_configured"),
                 "heartbeat_age_ms": None if age is None else round(age * 1000),
                 "reason": self.health.get("reason") if self.health else None,
                 "mouth_count": self.mouth_count,

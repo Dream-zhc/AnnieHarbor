@@ -257,7 +257,7 @@ class StorageConfigTests(unittest.TestCase):
         from annie_adapters import load_robots, resolve_database
 
         configs = load_robots(ROOT / "config/robots.toml")
-        self.assertEqual([c.robot_id for c in configs], ["annie-a", "annie-b"])
+        self.assertEqual([c.robot_id for c in configs], ["annie-a", "annie-b", "annie-small"])
         self.assertTrue(all(c.listen_enabled and not c.publish_enabled for c in configs))
         self.assertTrue(all(c.audio_queue_capacity == 25 and c.audio_max_age_ms == 500 for c in configs))
         self.assertTrue(self.Config("phase2-input", listen_enabled=True).listen_enabled)

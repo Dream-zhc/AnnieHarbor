@@ -1554,7 +1554,7 @@ class RealtimeRobot:
             return False, None
         script = None
         if self.actions is not None and self.actions.enabled:
-            allowed = [name for name in LOOK_SCRIPTS if name in self.actions.allowlist]
+            allowed = [name for name in LOOK_SCRIPTS if name in self.action_scripts]
             script = explicit_motion(text, allowed) or head_turn_motion(text, previous, allowed)
         return True, script
 
@@ -1619,7 +1619,7 @@ class RealtimeRobot:
                 self._look_deciding = None
         script = LOOK_DIRECTIONS.get(choice)
         if script is not None and not (self.actions is not None and self.actions.enabled
-                                       and script in self.actions.allowlist):
+                                       and script in self.action_scripts):
             script = None  # no head turn: she looks at what is in front
         look = choice in LOOK_DIRECTIONS
         # Someone spoke again, or her reply began, while the model thought.
@@ -2441,9 +2441,14 @@ class RealtimeRobot:
         actions = self.actions
         return bool(actions is not None and actions.enabled and self._asked_motion(text))
 
+    @property
+    def action_scripts(self):
+        """The scripts this robot's own body can run."""
+        return self.actions.allowed(self.robot.config.robot_id)
+
     def _asked_motion(self, text):
         """The enabled motion this names, or the side a bare "转头看看" was just pointed at."""
-        allowed = self.actions.allowlist
+        allowed = self.action_scripts
         return explicit_motion(text, allowed) or head_turn_motion(
             text, [turn.get("user_text") for turn in self.robot.recent_context()[-3:]], allowed)
 
@@ -2648,7 +2653,7 @@ class RealtimeRobot:
         self._auto_expression_turn = self.turn_id
         first = text[:end + 1] if end is not None else text
         robot_id = self.robot.config.robot_id
-        allowed = [script for script in EXPRESSION_SCRIPTS if script in self.actions.allowlist]
+        allowed = [script for script in EXPRESSION_SCRIPTS if script in self.action_scripts]
         if (robot_id, self.turn_id) in self.actions.pending:
             return
         if asked is None and not generic and (
@@ -2656,7 +2661,7 @@ class RealtimeRobot:
                 or time.monotonic() - self._last_auto_expression_t < AUTO_EXPRESSION_COOLDOWN_SECONDS):
             return
         if generic:
-            allowed = list(self.actions.allowlist)
+            allowed = list(self.action_scripts)
         task = asyncio.create_task(self._auto_expression(
             self.turn_id, dict(self.turn_identity), self.robot.generation,
             user_text, first, allowed, asked, generic=generic),
@@ -3453,7 +3458,7 @@ class RealtimeRobot:
                     # shake_head off the allowlist, and nothing moved.
                     names = "、".join(dict.fromkeys(
                         re.sub(r"（.*?）", "", self.actions.catalog[script]["name"])
-                        for script in self.actions.allowlist if script in self.actions.catalog))
+                        for script in self.action_scripts if script in self.actions.catalog))
                     tail += (
                         f"\n【实体动作】你能做的动作和表情只有：{names}。"
                         "动作与表情由系统根据对话自动执行。用户要你做其中一个时，动作已经在做了，"
@@ -3530,7 +3535,7 @@ class RealtimeRobot:
                 # With the decision model on, the runtime performs every action and
                 # face itself: no tool-first round trip delays the spoken reply.
                 auto_motion = self.auto_expression_enabled and self._has_decision()
-                llm_actions = self.actions.allowlist if physical and not auto_motion else ()
+                llm_actions = self.action_scripts if physical and not auto_motion else ()
                 update = session_update(
                     configured_instructions,
                     self.history_turns,

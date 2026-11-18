@@ -1054,7 +1054,7 @@ class HarborRuntime:
         self.voice_tasks = set()
         self.display_outboxes = {}
         self.room_monitors = {
-            robot_id: RoomMonitor(robot.config.room_id)
+            robot_id: RoomMonitor(robot.config.room_id, mouth_enabled=robot.config.mouth_enabled)
             for robot_id, robot in self.robots.items() if robot.config.enabled
         }
         self.smallbrain_links = {}
@@ -1074,7 +1074,7 @@ class HarborRuntime:
                     restore_char_budget=realtime_restore_char_budget,
                     persona_profiles=self.persona_profiles,
                     socket_factory=realtime_socket_factory or QwenRealtimeSocket,
-                    wake_detector=wake_detector,
+                    wake_detector=wake_detector if robot.config.wake_enabled else None,
                     wake_wait_ms=wake_wait_ms,
                     wake_followup_ms=wake_followup_ms,
                     side_talk_listen_ms=side_talk_listen_ms,
@@ -1254,7 +1254,11 @@ class HarborRuntime:
             if actions_enabled and (not self.realtime or room_server is None or not tts_voice):
                 raise ValueError("real action delivery requires Realtime, Room and TTS anchor")
             catalog = load_action_catalog(action_catalog)
-            for script in action_allowlist:
+            robot_allowlists = {
+                robot_id: robot.config.actions
+                for robot_id, robot in self.robots.items() if robot.config.actions
+            }
+            for script in (*action_allowlist, *(s for scripts in robot_allowlists.values() for s in scripts)):
                 resolve_action(catalog, script)
             if len(set(action_allowlist)) != len(action_allowlist):
                 raise ValueError("duplicate action allowlist entry")
@@ -1274,6 +1278,7 @@ class HarborRuntime:
                 lambda robot_id, kind, **fields: self.realtime[robot_id].publish(kind, **fields),
                 enabled=actions_enabled,
                 allowlist=action_allowlist,
+                robot_allowlists=robot_allowlists,
             )
             for client in self.realtime.values():
                 client.actions = self.actions
@@ -1358,11 +1363,12 @@ class HarborRuntime:
                         lambda message, robot_id=config.robot_id:
                         self._room_voice_event(robot_id, message),
                     ))
-                listeners.append(RoomEventListener(
-                    room_server, room, "sam",
-                    lambda message, robot_id=config.robot_id: self._room_sam_event(
-                        robot_id, message),
-                ))
+                if config.mouth_enabled:
+                    listeners.append(RoomEventListener(
+                        room_server, room, "sam",
+                        lambda message, robot_id=config.robot_id: self._room_sam_event(
+                            robot_id, message),
+                    ))
                 if config.robot_id in self.realtime:
                     for channel in ("main", "visualdata"):
                         self.bind_input_source(f"room:{room}:{channel}-event", [config.robot_id])
@@ -1377,11 +1383,10 @@ class HarborRuntime:
                         lambda message, robot_id=config.robot_id: self._room_external_event(
                             robot_id, "visualdata", message),
                     ))
-                # Preserve the existing roomv2 listener; 8C needs independent
-                # visual evidence for every enabled robot's own Room.
-                if ((room == "roomv2" or
-                     idle_model is not None and config.robot_id in self.realtime)
-                        and "visualllm" in room_server.channels):
+                # Every robot with a camera reads its own Room's descriptions (8C needs
+                # independent visual evidence per Room); roomv2 keeps it without Realtime.
+                if (config.camera_enabled and "visualllm" in room_server.channels
+                        and (room == "roomv2" or config.robot_id in self.realtime)):
                     listeners.append(RoomEventListener(
                         room_server, room, "visualllm",
                         lambda message, robot_id=config.robot_id: self._room_visual_event(
@@ -1420,11 +1425,15 @@ class HarborRuntime:
                     if look_decision["image"] and self.d3 is not None and livekit:
                         from annie_adapters.livekit_frames import LiveKitFrames
 
+                        by_room = {}  # robots sharing a camera room share one subscription
                         for robot_id in cameras:
-                            if robot_id not in frames and rooms.get(robot_id):
-                                frames[robot_id] = LiveKitFrames(
-                                    livekit["url"], livekit["api_key"], livekit["api_secret"],
-                                    rooms[robot_id], livekit["source"], label=robot_id)
+                            room_name = rooms.get(robot_id)
+                            if robot_id not in frames and room_name:
+                                if room_name not in by_room:
+                                    by_room[room_name] = LiveKitFrames(
+                                        livekit["url"], livekit["api_key"], livekit["api_secret"],
+                                        room_name, livekit["source"], label=robot_id)
+                                frames[robot_id] = by_room[room_name]
                     self.camera_frames = {robot_id: frames[robot_id] for robot_id in cameras
                                           if robot_id in frames}
                     for robot_id in cameras:
@@ -2051,7 +2060,7 @@ class HarborRuntime:
                 break
             await asyncio.sleep(interval)
         for robot_id, item in status.items():
-            if item["state"] == "not_configured":
+            if item["state"] in ("not_configured", "disabled"):
                 continue
             if item["state"] == "online":
                 logger.info("嘴型服务在线 robot=%s room=%s heartbeat_age_ms=%s",
@@ -2723,6 +2732,19 @@ class HarborRuntime:
     async def reminder_change(self, robot_id, task_id, action):
         return await self.reminders.change(robot_id, task_id, action)
 
+    def _robot_switches(self, robot_id):
+        """robots.toml switches as they took effect for this robot (wake needs Realtime, AEC
+        the machine's ANNIE_CLOUD_AEC_ENABLED)."""
+        config = self.robots[robot_id].config
+        client = self.realtime.get(robot_id)
+        return {
+            "wake": client is not None and client.wake is not None,
+            "aec": robot_id in self.cloud_aec_robots,
+            "mouth": config.mouth_enabled,
+            "camera": config.camera_enabled,
+            "actions": list(self.actions.allowed(robot_id) if self.actions else config.actions),
+        }
+
     def health(self):
         snapshots = []
         for robot in self.robots.values():
@@ -2775,6 +2797,8 @@ class HarborRuntime:
                         if item["robot_id"] in self.realtime
                         else {"ready": False, "state": "not_configured"}
                     ),
+                    "switches": self._robot_switches(item["robot_id"]),
+                    "head": self.audio_devices[item["robot_id"]].snapshot()["head"]["current"],
                 }
                 for item in snapshots
             ],
@@ -2801,6 +2825,9 @@ class HarborRuntime:
                 "configured": self.actions is not None,
                 "enabled": bool(self.actions and self.actions.enabled),
                 "allowlist": list(self.actions.allowlist) if self.actions else [],
+                "robot_allowlists": ({robot_id: list(scripts) for robot_id, scripts
+                                      in self.actions.robot_allowlists.items()}
+                                     if self.actions else {}),
                 "device_completion": "embedded_receipts_v1",
                 "receipts": dict(self.actions.receipts) if self.actions else {},
                 "transport_errors": dict(self.actions.connection_errors) if self.actions else {},
@@ -2843,7 +2870,8 @@ class HarborRuntime:
                     ) else "external_online" if any(
                         item["state"] == "online" for item in visemes.values()
                     ) else "external_offline" if any(
-                        item["state"] != "not_configured" for item in visemes.values()
+                        item["state"] not in ("not_configured", "disabled")
+                        for item in visemes.values()
                     ) else "not_connected"
                 ),
                 "llm": (

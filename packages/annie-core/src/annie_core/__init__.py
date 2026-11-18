@@ -67,12 +67,31 @@ class RobotConfig:
     fake_delay_ms: int = 100
     audio_queue_capacity: int = 25
     audio_max_age_ms: int = 500
+    # wake_enabled=False: no wake word, Room PCM goes straight to full-duplex Realtime.
+    # aec_enabled also needs ANNIE_CLOUD_AEC_ENABLED=1 on this machine.
+    wake_enabled: bool = True
+    aec_enabled: bool = False
+    mouth_enabled: bool = True
+    camera_enabled: bool = True
+    actions: tuple[str, ...] = ()  # empty: the runtime's shared allowlist
+    # Another robot whose LiveKit camera room this one reuses when its own
+    # ANNIE_EXHIBIT_LIVEKIT_ROOM_* is unset.
+    livekit_room_of: str = ""
 
     def __post_init__(self):
         if not all(isinstance(s, str) and s.strip() for s in (self.robot_id, self.room_id, self.persona_id)):
             raise ValueError("robot_id/room_id/persona_id must be non-empty strings")
         if any(type(value) is not bool for value in (self.enabled, self.listen_enabled, self.publish_enabled)):
             raise ValueError("enabled/listen_enabled/publish_enabled must be booleans")
+        if any(type(value) is not bool for value in (
+                self.wake_enabled, self.aec_enabled, self.mouth_enabled, self.camera_enabled)):
+            raise ValueError("wake_enabled/aec_enabled/mouth_enabled/camera_enabled must be booleans")
+        if (not isinstance(self.actions, tuple)
+                or not all(isinstance(s, str) and s.strip() for s in self.actions)
+                or len(set(self.actions)) != len(self.actions)):
+            raise ValueError("actions must be a tuple of unique non-empty script ids")
+        if not isinstance(self.livekit_room_of, str) or self.livekit_room_of == self.robot_id:
+            raise ValueError("livekit_room_of must name another robot")
         if type(self.queue_capacity) is not int or self.queue_capacity < 1:
             raise ValueError("queue_capacity must be a positive integer")
         if type(self.fake_delay_ms) is not int or not 0 <= self.fake_delay_ms <= 60000:

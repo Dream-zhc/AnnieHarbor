@@ -262,7 +262,21 @@ def livekit_room_env(robot_id):
         char if char.isalnum() else "_" for char in robot_id.upper())
 
 
-def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
+def cloud_aec_robots(robots, environ):
+    """Robots whose Room audio goes through cloud AEC: robots.toml aec_enabled, with
+    ANNIE_CLOUD_AEC_ENABLED=1 as this machine's master switch."""
+    if environ.get("ANNIE_CLOUD_AEC_ENABLED") != "1":
+        return ()
+    chosen = tuple(robot.robot_id for robot in robots if robot.enabled and robot.aec_enabled)
+    legacy = environ.get("ANNIE_CLOUD_AEC_ROBOTS")
+    if legacy is not None and {item.strip() for item in legacy.split(",") if item.strip()} != set(chosen):
+        logging.getLogger("annie_runtime").warning(
+            "ANNIE_CLOUD_AEC_ROBOTS=%s is ignored; robots.toml aec_enabled selects %s",
+            legacy, ",".join(chosen) or "none")
+    return chosen
+
+
+def vision_intent_options(vision: dict, environ, robot_ids=(), room_of=None) -> dict:
     """HarborRuntime kwargs for looking before answering: runtime_defaults [vision.intent]
     and .env. ANNIE_VISION_INTENT_ENABLED=0/1 overrides the file; keep it off until the
     robot's vision service answers vision.intent (docs/规范/视觉意图协议.md).
@@ -270,13 +284,16 @@ def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
     [vision.intent.decision] has the decision model judge looks the phrase rules miss
     (ANNIE_VISION_LOOK_DECISION_ENABLED=0/1 overrides). Its picture comes from the
     robot's LiveKit camera, configured by ANNIE_EXHIBIT_LIVEKIT_* (deployed .env
-    files use these names, so they keep the old prefix)."""
+    files use these names, so they keep the old prefix). room_of maps a robot to the
+    robot whose LiveKit room it reuses (robots.toml livekit_room_of)."""
     intent = vision.get("intent", {})
     decision = intent.get("decision", {})
     url = environ.get("ANNIE_EXHIBIT_LIVEKIT_URL", "").strip()
     key = environ.get("ANNIE_EXHIBIT_LIVEKIT_API_KEY", "").strip()
     secret = environ.get("ANNIE_EXHIBIT_LIVEKIT_API_SECRET", "").strip()
-    rooms = {robot_id: environ.get(livekit_room_env(robot_id), "").strip()
+    room_of = room_of or {}
+    rooms = {robot_id: (environ.get(livekit_room_env(robot_id), "").strip()
+                        or environ.get(livekit_room_env(room_of.get(robot_id, robot_id)), "").strip())
              for robot_id in robot_ids}
     rooms = {robot_id: room for robot_id, room in rooms.items() if room}
     return {
@@ -408,9 +425,7 @@ def main():
             runtime_defaults["vision"].get("greet_known_cooldown_minutes", 30)),
         face_api_urls=dict(runtime_defaults["vision"].get("face", {}).get("api_urls", {})),
         face_samples=int(runtime_defaults["vision"].get("face", {}).get("samples", 18)),
-        cloud_aec_robots=(tuple(item.strip() for item in os.environ.get(
-            "ANNIE_CLOUD_AEC_ROBOTS", "annie-a").split(",") if item.strip())
-            if os.environ.get("ANNIE_CLOUD_AEC_ENABLED") == "1" else ()),
+        cloud_aec_robots=cloud_aec_robots(robots, os.environ),
         cloud_aec_sync_offset_ms=int(os.environ.get("ANNIE_CLOUD_AEC_SYNC_OFFSET_MS", "80")),
         cloud_aec_delay_ms=int(os.environ.get("ANNIE_CLOUD_AEC_DELAY_MS", "0")),
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
@@ -466,7 +481,9 @@ def main():
         **inner_life_options(runtime_defaults.get("inner_life", {}),
                              provider_defaults["llm"], os.environ),
         **vision_intent_options(runtime_defaults["vision"], os.environ,
-                                [robot.robot_id for robot in robots]),
+                                [robot.robot_id for robot in robots],
+                                {robot.robot_id: robot.livekit_room_of
+                                 for robot in robots if robot.livekit_room_of}),
     )
     try:
         runtime.preflight()

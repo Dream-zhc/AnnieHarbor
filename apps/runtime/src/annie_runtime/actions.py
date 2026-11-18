@@ -55,7 +55,7 @@ def current_action_not_vetoed(text):
 
 class ActionCoordinator:
     def __init__(self, store, catalog, robots, main_publishers, emit, *,
-                 enabled=False, allowlist=()):
+                 enabled=False, allowlist=(), robot_allowlists=None):
         self.store = store
         self.catalog = catalog
         self.robots = robots
@@ -63,6 +63,8 @@ class ActionCoordinator:
         self.emit = emit
         self.enabled = enabled
         self.allowlist = tuple(allowlist)
+        self.robot_allowlists = {robot_id: tuple(scripts)
+                                 for robot_id, scripts in (robot_allowlists or {}).items() if scripts}
         self.pending = {}  # (robot_id,turn_id) -> (call_id,session identity)
         self.word_anchors = {}  # same key -> bounded, current speech/word identity
         self.word_sends = {}  # (robot_id,call_id) -> (turn_id, cancellable anchor)
@@ -73,6 +75,10 @@ class ActionCoordinator:
         self.connection_errors = {}
         self.receipts = {"applied": 0, "ignored": 0, "unmatched": 0, "invalid": 0}
         self.locks = {robot_id: asyncio.Lock() for robot_id in robots}
+
+    def allowed(self, robot_id):
+        """Scripts this robot's body can run: its robots.toml actions, else the shared allowlist."""
+        return self.robot_allowlists.get(robot_id, self.allowlist)
 
     async def start(self):
         await asyncio.to_thread(self.store.recover_actions)
@@ -179,7 +185,7 @@ class ActionCoordinator:
         if not current_action_not_vetoed(user_text):
             raise ValueError("physical action vetoed by current user")
         if kind == "action":
-            if value not in self.allowlist:
+            if value not in self.allowed(robot_id):
                 raise ValueError("action is not enabled for physical execution")
             action = resolve_action(self.catalog, value)
             cooldown = action["duration_ms"]
@@ -559,7 +565,7 @@ class ActionCoordinator:
         there is one."""
         if not self.enabled or robot_id not in self.main_publishers:
             return {"status": "not_configured", "real_device_executed": False}
-        if script not in self.allowlist:
+        if script not in self.allowed(robot_id):
             raise ValueError("action is not enabled for physical execution")
         if user_text is not None and not current_action_not_vetoed(user_text):
             raise ValueError("physical action vetoed by current user")

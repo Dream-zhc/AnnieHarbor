@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VAR = ROOT / "var"
 OUT_ROOT = ROOT / "docs" / "运行日志"
 STATE = OUT_ROOT / "导出进度.json"
-SKIP_DIRS = {"uv-cache", "uv-python", "models", "node_modules", "pytest", "ruff"}
+SKIP_DIRS = {"uv-cache", "uv-python", "models", "node_modules", "pytest", "ruff", "tmp"}
 
 # 只增不改的表按游标增量导出
 APPEND_TABLES = {

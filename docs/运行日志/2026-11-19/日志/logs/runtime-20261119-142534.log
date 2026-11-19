@@ -1,0 +1,1952 @@
+2026-11-19 14:25:35,870 WARNING annie_runtime ANNIE_CLOUD_AEC_ROBOTS=annie-a is ignored; robots.toml aec_enabled selects annie-a,annie-small
+2026-11-19 14:25:36,468 INFO annie_runtime vision_intent_config robots=annie-a,annie-b,annie-small route=cloud deadline_ms=3500 tts=True
+2026-11-19 14:25:36,468 INFO annie_runtime vision_look_decision_config scope=cue timeout_ms=700 image=True frames=annie-a:robot-test,annie-small:robot-test
+INFO:     Started server process [10061]
+INFO:     Waiting for application startup.
+2026-11-19 14:25:36,584 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:36,591 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:36,603 INFO annie_runtime runtime_event robot=annie-small kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:36,674 INFO annie_adapters.livekit_frames livekit_frames status=connecting robot=annie-a room=robot-test source=camera-a error=None
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8780 (Press CTRL+C to quit)
+2026-11-19 14:25:36,762 INFO annie_adapters room_pcm connected room=roomv2 url=ws://192.168.1.47:8090/robot/roomv2/reb_mic
+2026-11-19 14:25:36,763 INFO annie_adapters room_pcm connected room=roomv4 url=ws://192.168.1.47:8090/robot/roomv4/reb_mic
+2026-11-19 14:25:36,763 INFO annie_adapters room_pcm connected room=roomv3 url=ws://192.168.1.47:8090/robot/roomv3/reb_mic
+2026-11-19 14:25:36,763 INFO annie_runtime.cloud_aec cloud_aec status=idle_no_tts processed=0 bypassed=1 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+2026-11-19 14:25:36,763 INFO annie_runtime runtime_event robot=annie-small kind=pcm_stream_started request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:36,763 INFO annie_runtime.cloud_aec cloud_aec status=idle_no_tts processed=0 bypassed=1 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+2026-11-19 14:25:36,764 INFO annie_runtime runtime_event robot=annie-a kind=pcm_stream_started request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:36,979 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:25:36,982 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:25:37,029 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=308 history_turns=8 instructions_chars=5480 tools=18 tool_schema_chars=11725 restored_turns=8 memory_bootstrap_chars=277
+2026-11-19 14:25:37,041 INFO annie_runtime.realtime realtime_ready robot=annie-small model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=320 history_turns=8 instructions_chars=3988 tools=14 tool_schema_chars=8937 restored_turns=0 memory_bootstrap_chars=0
+2026-11-19 14:25:37,060 INFO livekit livekit_signaling::signal_stream:63:livekit_signaling::signal_stream - connecting to ws://192.168.1.13:7880/rtc/v1
+2026-11-19 14:25:37,063 INFO httpx HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+2026-11-19 14:25:37,069 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:25:37,070 INFO annie_runtime.decision_route d3_decision status=down model=d3-NVFP4 error=HTTP 404
+2026-11-19 14:25:37,132 INFO annie_runtime runtime_event robot=annie-small kind=robot_head_online request_id=None source=room_audio elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:37,255 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=534 history_turns=8 instructions_chars=4765 tools=16 tool_schema_chars=9911 restored_turns=3 memory_bootstrap_chars=0
+2026-11-19 14:25:37,440 INFO livekit livekit::rtc_engine::rtc_session:2409:livekit::rtc_engine::rtc_session - connection setup took 417 ms
+2026-11-19 14:25:37,446 INFO annie_adapters.livekit_frames livekit_frames status=waiting_track robot=annie-a room=robot-test source=camera-a error=None
+INFO:     127.0.0.1:53341 - "GET /health HTTP/1.1" 200 OK
+2026-11-19 14:25:38,327 INFO annie_runtime runtime_event robot=annie-a kind=robot_head_online request_id=None source=room_audio elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:25:38,686 INFO annie_runtime 嘴型服务在线 robot=annie-a room=roomv2 heartbeat_age_ms=315
+2026-11-19 14:25:38,686 INFO annie_runtime 嘴型服务在线 robot=annie-b room=roomv3 heartbeat_age_ms=1096
+INFO:     127.0.0.1:53378 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53402 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53403 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+2026-11-19 14:26:07,177 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:26:07,320 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:26:30,438 INFO annie_runtime.realtime turn_people robot=annie-small turn=8929855f256341b48e8c173913e7e79d here=0 speaker=idle candidates=2
+2026-11-19 14:26:30,440 INFO annie_runtime.realtime turn_started robot=annie-small turn=8929855f256341b48e8c173913e7e79d input=text source=user cause=submit item=None chars=21 input_lost_frames=None asr_text_ms=None deltas=None
+INFO:     127.0.0.1:53466 - "POST /api/robots/annie-small/realtime/text HTTP/1.1" 200 OK
+2026-11-19 14:26:30,554 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:26:30,554 INFO annie_runtime.realtime absent_person_check robot=annie-small turn=8929855f256341b48e8c173913e7e79d choice=present confidence=0.02 model=decision-model-preview ms=104
+2026-11-19 14:26:30,565 INFO annie_runtime.speech tts_prewarm robot=annie-small connect_ms=115.6
+2026-11-19 14:26:31,031 INFO annie_runtime.realtime turn_latency robot=annie-small model=qwen-audio-3.1-realtime-plus turn=8929855f256341b48e8c173913e7e79d input=text status=completed endpoint_to_asr_final_ms=None endpoint_to_first_text_ms=None asr_final_to_first_text_ms=None llm_request_to_first_text_ms=472.37 tool_calls=0 reply_chars=8
+2026-11-19 14:26:31,100 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:26:31,213 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:26:31,613 INFO annie_runtime.realtime tts_latency robot=annie-small turn=8929855f256341b48e8c173913e7e79d connection=prewarmed connect_ms=0.0 tts_submit_to_pcm_ms=647.91 run_to_first_pcm_ms=671.65 first_text_to_room_ms=691.95 endpoint_to_room_ms=None
+2026-11-19 14:26:31,623 INFO annie_runtime.cloud_aec cloud_aec status=speaker_inactive processed=0 bypassed=2744 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+2026-11-19 14:26:31,682 INFO annie_runtime.realtime speaker_latency robot=annie-small turn=8929855f256341b48e8c173913e7e79d endpoint_to_speaker_start_ms=None room_to_speaker_start_ms=68.55
+2026-11-19 14:26:33,627 INFO annie_runtime.cloud_aec cloud_aec status=reference_aligned processed=84 bypassed=2748 missing_reference=2 receipts=18 drops=0 errors=0 receipt_age_ms=91
+2026-11-19 14:26:35,637 INFO annie_runtime.cloud_aec cloud_aec status=speaker_inactive processed=92 bypassed=2849 missing_reference=11 receipts=20 drops=0 errors=0 receipt_age_ms=None
+2026-11-19 14:26:37,408 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:26:37,493 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:26:54,600 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,600 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,601 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:26:54,602 WARNING annie_runtime runtime_event robot=annie-small kind=room_pcm_rejected request_id=None source=room:roomv4:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+INFO:     127.0.0.1:53647 - "GET /api/robots/annie-small/turns/8929855f256341b48e8c173913e7e79d HTTP/1.1" 200 OK
+2026-11-19 14:27:07,618 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:27:07,655 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 502 Bad Gateway"
+2026-11-19 14:27:37,686 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 502 Bad Gateway"
+2026-11-19 14:28:07,774 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:28:07,914 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:28:37,126 WARNING annie_runtime.realtime Realtime robot=annie-a disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:28:37,126 INFO annie_runtime.realtime realtime_cleanup robot=annie-a begin
+2026-11-19 14:28:37,133 INFO annie_runtime.realtime realtime_cleanup robot=annie-a audio_done
+2026-11-19 14:28:37,135 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_begin
+2026-11-19 14:28:37,135 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_done
+2026-11-19 14:28:37,274 WARNING annie_runtime.realtime Realtime robot=annie-b disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:28:37,274 INFO annie_runtime.realtime realtime_cleanup robot=annie-b begin
+2026-11-19 14:28:37,275 INFO annie_runtime.realtime realtime_cleanup robot=annie-b audio_done
+2026-11-19 14:28:37,275 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_begin
+2026-11-19 14:28:37,275 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_done
+2026-11-19 14:28:37,301 INFO httpx HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+2026-11-19 14:28:37,361 INFO httpx HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+2026-11-19 14:28:37,461 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=184 history_turns=8 instructions_chars=4765 tools=16 tool_schema_chars=9911 restored_turns=3 memory_bootstrap_chars=0
+2026-11-19 14:28:37,594 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=452 history_turns=8 instructions_chars=5480 tools=18 tool_schema_chars=11725 restored_turns=8 memory_bootstrap_chars=277
+2026-11-19 14:28:37,996 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:28:38,088 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:29:08,207 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:29:08,235 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 502 Bad Gateway"
+2026-11-19 14:29:31,039 WARNING annie_runtime.realtime Realtime robot=annie-small disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:29:31,041 INFO annie_runtime.realtime realtime_cleanup robot=annie-small begin
+2026-11-19 14:29:31,042 INFO annie_runtime.realtime realtime_cleanup robot=annie-small audio_done
+2026-11-19 14:29:31,042 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_begin
+2026-11-19 14:29:31,043 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_done
+2026-11-19 14:29:31,289 INFO annie_runtime.realtime realtime_ready robot=annie-small model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=243 history_turns=8 instructions_chars=3988 tools=14 tool_schema_chars=8937 restored_turns=1 memory_bootstrap_chars=0
+2026-11-19 14:29:38,326 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:29:38,416 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:30:08,575 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:30:08,668 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54168 - "GET /health HTTP/1.1" 200 OK
+2026-11-19 14:30:23,490 INFO annie_runtime.realtime turn_people robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 here=0 speaker=idle candidates=2
+2026-11-19 14:30:23,490 INFO annie_runtime.realtime turn_started robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 input=text source=user cause=submit item=None chars=21 input_lost_frames=None asr_text_ms=None deltas=None
+INFO:     127.0.0.1:54210 - "POST /api/robots/annie-a/realtime/text HTTP/1.1" 200 OK
+2026-11-19 14:30:23,544 INFO httpx HTTP Request: GET http://192.168.1.13:8766/api/face/people "HTTP/1.0 200 OK"
+2026-11-19 14:30:23,572 INFO annie_runtime.speech tts_prewarm robot=annie-a connect_ms=80.4
+2026-11-19 14:30:23,597 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:30:23,597 INFO annie_runtime.realtime absent_person_check robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 choice=present confidence=0.36 model=decision-model-preview ms=105
+2026-11-19 14:30:24,378 INFO annie_runtime.realtime turn_latency robot=annie-a model=qwen-audio-3.1-realtime-plus turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 input=text status=completed endpoint_to_asr_final_ms=None endpoint_to_first_text_ms=None asr_final_to_first_text_ms=None llm_request_to_first_text_ms=572.28 tool_calls=0 reply_chars=6
+2026-11-19 14:30:24,436 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:30:24,436 INFO annie_runtime.realtime auto_expression robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 choice=skeptical confidence=0.24 accepted=False source=decision_model model=decision-model-preview latency_ms=83.5
+2026-11-19 14:30:24,437 INFO annie_runtime.realtime auto_expression_dropped robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 script=None speech_turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 identity_match=True generation=326 robot_generation=326 pending=False
+2026-11-19 14:30:24,461 INFO httpx HTTP Request: POST https://<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone "HTTP/1.1 200 OK"
+2026-11-19 14:30:24,821 INFO annie_runtime.realtime tts_latency robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 connection=prewarmed connect_ms=0.0 tts_submit_to_pcm_ms=668.67 run_to_first_pcm_ms=710.08 first_text_to_room_ms=757.35 endpoint_to_room_ms=None
+2026-11-19 14:30:24,838 INFO annie_runtime.cloud_aec cloud_aec status=speaker_inactive processed=0 bypassed=14406 missing_reference=0 receipts=0 drops=0 errors=0 receipt_age_ms=None
+2026-11-19 14:30:24,903 INFO annie_runtime.realtime speaker_latency robot=annie-a turn=efc4ae6b4eba4414b902ad5d5b1ecaa4 endpoint_to_speaker_start_ms=None room_to_speaker_start_ms=81.92
+2026-11-19 14:30:26,852 INFO annie_runtime.cloud_aec cloud_aec status=reference_aligned processed=93 bypassed=14410 missing_reference=2 receipts=20 drops=0 errors=0 receipt_age_ms=0
+2026-11-19 14:30:28,944 INFO annie_runtime.cloud_aec cloud_aec status=speaker_inactive processed=100 bypassed=14507 missing_reference=2 receipts=22 drops=0 errors=0 receipt_age_ms=None
+2026-11-19 14:30:38,748 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:30:38,907 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+2026-11-19 14:30:46,711 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,713 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,713 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,713 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,713 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,713 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+2026-11-19 14:30:46,714 WARNING annie_runtime runtime_event robot=annie-a kind=room_pcm_rejected request_id=None source=room:roomv2:reb_mic elapsed_ms=None queue_wait_ms=None error=stale_audio
+INFO:     127.0.0.1:54311 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /assets/index-BeHyZsNS.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /assets/index-D3akiz19.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54313 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54314 - "GET /apple-touch-icon.png HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/personas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54319 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54320 - "GET /apple-touch-icon.png HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54322 - "GET /api/robots/annie-small/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54322 - "GET /api/robots/annie-small/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:31:00,248 INFO annie_runtime.realtime realtime_shutdown robot=annie-small opening=False ready=True
+2026-11-19 14:31:00,248 INFO annie_runtime.realtime realtime_shutdown robot=annie-small awaiting_tasks
+2026-11-19 14:31:00,253 INFO annie_runtime.realtime realtime_cleanup robot=annie-small begin
+2026-11-19 14:31:00,255 INFO annie_runtime.realtime realtime_cleanup robot=annie-small audio_done
+2026-11-19 14:31:00,256 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_begin
+2026-11-19 14:31:00,256 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_done
+2026-11-19 14:31:00,257 INFO annie_runtime.realtime realtime_shutdown robot=annie-small complete
+INFO:     127.0.0.1:54311 - "POST /api/robots/annie-small/cancel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/actions HTTP/1.1" 200 OK
+2026-11-19 14:31:00,611 INFO annie_runtime.realtime realtime_ready robot=annie-small model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=343 history_turns=8 instructions_chars=3988 tools=14 tool_schema_chars=8937 restored_turns=1 memory_bootstrap_chars=0
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:31:08,988 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:31:09,076 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/conversations/%E6%B5%8B%E8%AF%95%E9%98%B6?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54311 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/conversations/%E6%B5%8B%E8%AF%95%E9%98%B6?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /api/robots/annie-small/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54355 - "GET /api/robots/annie-small/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54389 - "GET /api/robots/annie-small/turns/8929855f256341b48e8c173913e7e79d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54390 - "GET /api/robots/annie-a/turns/efc4ae6b4eba4414b902ad5d5b1ecaa4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:31:37,449 WARNING annie_runtime.realtime Realtime robot=annie-b disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:31:37,449 INFO annie_runtime.realtime realtime_cleanup robot=annie-b begin
+2026-11-19 14:31:37,451 INFO annie_runtime.realtime realtime_cleanup robot=annie-b audio_done
+2026-11-19 14:31:37,451 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_begin
+2026-11-19 14:31:37,451 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_done
+2026-11-19 14:31:37,743 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=290 history_turns=8 instructions_chars=4765 tools=16 tool_schema_chars=9911 restored_turns=3 memory_bootstrap_chars=0
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:31:39,202 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:31:39,285 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:32:09,469 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:32:09,613 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54589 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:32:27,644 INFO httpx HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+2026-11-19 14:32:28,507 INFO httpx HTTP Request: POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions "HTTP/1.1 200 OK"
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:32:39,697 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:32:39,795 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-a/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-a/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54321 - "GET /api/robots/annie-a/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/conversations/%E6%B5%8B%E8%AF%95%E9%98%B6?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-a/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-a/conversations/%E6%B5%8B%E8%AF%95%E9%98%B6?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+2026-11-19 14:33:06,544 INFO annie_runtime runtime_event robot=annie-small kind=robot_head_offline request_id=None source=room_audio elapsed_ms=None queue_wait_ms=None error=None
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-a/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-a/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-a/wakeword HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-a/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/session HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/persona-instances HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/social-state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/actions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54323 - "GET /api/robots/annie-small/realtime/stream?after=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/conversations/default?persona_id=annie&limit=80 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:33:09,904 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:33:10,003 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+2026-11-19 14:33:13,407 INFO annie_runtime runtime_event robot=annie-small kind=robot_head_online request_id=None source=room_audio elapsed_ms=None queue_wait_ms=None error=None
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:33:23,575 WARNING annie_runtime.realtime Realtime robot=annie-a disconnected: RuntimeError: user_idle_timeout: Your session was closed because no user input was received for 180 seconds.
+2026-11-19 14:33:23,577 INFO annie_runtime.realtime realtime_cleanup robot=annie-a begin
+2026-11-19 14:33:23,577 INFO annie_runtime.realtime realtime_cleanup robot=annie-a audio_done
+2026-11-19 14:33:23,577 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_begin
+2026-11-19 14:33:23,577 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_done
+2026-11-19 14:33:23,783 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=203 history_turns=8 instructions_chars=5480 tools=18 tool_schema_chars=11725 restored_turns=8 memory_bootstrap_chars=277
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54761 - "GET /health HTTP/1.1" 200 OK
+2026-11-19 14:33:40,193 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:33:40,313 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:34:00,759 WARNING annie_runtime.realtime Realtime robot=annie-small disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:34:00,760 INFO annie_runtime.realtime realtime_cleanup robot=annie-small begin
+2026-11-19 14:34:00,760 INFO annie_runtime.realtime realtime_cleanup robot=annie-small audio_done
+2026-11-19 14:34:00,761 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_begin
+2026-11-19 14:34:00,761 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_done
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+2026-11-19 14:34:00,994 INFO annie_runtime.realtime realtime_ready robot=annie-small model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=227 history_turns=8 instructions_chars=3988 tools=14 tool_schema_chars=8937 restored_turns=1 memory_bootstrap_chars=0
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:34:10,425 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:34:10,522 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+2026-11-19 14:34:37,733 WARNING annie_runtime.realtime Realtime robot=annie-b disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:34:37,733 INFO annie_runtime.realtime realtime_cleanup robot=annie-b begin
+2026-11-19 14:34:37,734 INFO annie_runtime.realtime realtime_cleanup robot=annie-b audio_done
+2026-11-19 14:34:37,734 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_begin
+2026-11-19 14:34:37,734 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_done
+2026-11-19 14:34:37,992 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=256 history_turns=8 instructions_chars=4765 tools=16 tool_schema_chars=9911 restored_turns=3 memory_bootstrap_chars=0
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+2026-11-19 14:34:40,680 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:34:40,771 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+2026-11-19 14:35:10,854 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+2026-11-19 14:35:11,017 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+2026-11-19 14:35:41,048 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 502 Bad Gateway"
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+2026-11-19 14:36:11,136 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:36:11,310 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:36:23,894 WARNING annie_runtime.realtime Realtime robot=annie-a disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:36:23,895 INFO annie_runtime.realtime realtime_cleanup robot=annie-a begin
+2026-11-19 14:36:23,895 INFO annie_runtime.realtime realtime_cleanup robot=annie-a audio_done
+2026-11-19 14:36:23,895 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_begin
+2026-11-19 14:36:23,895 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_done
+2026-11-19 14:36:24,114 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=216 history_turns=8 instructions_chars=5480 tools=18 tool_schema_chars=11725 restored_turns=8 memory_bootstrap_chars=277
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+2026-11-19 14:36:41,391 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:36:41,474 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+2026-11-19 14:37:01,122 WARNING annie_runtime.realtime Realtime robot=annie-small disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:37:01,123 INFO annie_runtime.realtime realtime_cleanup robot=annie-small begin
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+2026-11-19 14:37:01,125 INFO annie_runtime.realtime realtime_cleanup robot=annie-small audio_done
+2026-11-19 14:37:01,125 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_begin
+2026-11-19 14:37:01,125 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_done
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:37:01,370 INFO annie_runtime.realtime realtime_ready robot=annie-small model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=240 history_turns=8 instructions_chars=3988 tools=14 tool_schema_chars=8937 restored_turns=1 memory_bootstrap_chars=0
+INFO:     127.0.0.1:54682 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:37:11,603 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:37:11,701 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+2026-11-19 14:37:37,928 WARNING annie_runtime.realtime Realtime robot=annie-b disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:37:37,928 INFO annie_runtime.realtime realtime_cleanup robot=annie-b begin
+2026-11-19 14:37:37,929 INFO annie_runtime.realtime realtime_cleanup robot=annie-b audio_done
+2026-11-19 14:37:37,929 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_begin
+2026-11-19 14:37:37,929 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_done
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:37:38,215 INFO annie_runtime.realtime realtime_ready robot=annie-b model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=281 history_turns=8 instructions_chars=4765 tools=16 tool_schema_chars=9911 restored_turns=3 memory_bootstrap_chars=0
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:37:41,780 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+2026-11-19 14:37:41,873 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:38:11,966 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:38:12,057 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+2026-11-19 14:38:42,141 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:38:42,308 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:39:12,394 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+2026-11-19 14:39:12,476 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:39:24,250 WARNING annie_runtime.realtime Realtime robot=annie-a disconnected: RuntimeError: response_idle_timeout: Your session was closed because no response was generated for 180 seconds.
+2026-11-19 14:39:24,250 INFO annie_runtime.realtime realtime_cleanup robot=annie-a begin
+2026-11-19 14:39:24,251 INFO annie_runtime.realtime realtime_cleanup robot=annie-a audio_done
+2026-11-19 14:39:24,251 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_begin
+2026-11-19 14:39:24,251 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_done
+2026-11-19 14:39:24,508 INFO annie_runtime.realtime realtime_ready robot=annie-a model=qwen-audio-3.1-realtime-plus host=<已脱敏:ALIYUN_WORKSPACE_ID>.cn-beijing.maas.aliyuncs.com handshake_ms=254 history_turns=8 instructions_chars=5480 tools=18 tool_schema_chars=11725 restored_turns=8 memory_bootstrap_chars=277
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+2026-11-19 14:39:42,600 INFO httpx HTTP Request: GET <已脱敏:ANNIE_D3_URL>/health "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+2026-11-19 14:39:42,688 INFO httpx HTTP Request: POST <已脱敏:ANNIE_D3_URL>/v1/systemone "HTTP/1.1 404 Not Found"
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inner-life HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54360 - "GET /api/robots/annie-small/speech-expression HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54324 - "GET /api/robots/annie-small/room-observations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54682 - "GET /api/robots/annie-small/inputs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54312 - "GET /api/phase2/rooms HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54687 - "GET /api/robots/annie-small/realtime HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55654 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55655 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+INFO:     Waiting for application shutdown.
+2026-11-19 14:39:53,519 INFO annie_runtime.realtime realtime_shutdown robot=annie-a opening=False ready=True
+2026-11-19 14:39:53,519 INFO annie_runtime.realtime realtime_shutdown robot=annie-a awaiting_tasks
+2026-11-19 14:39:53,519 INFO annie_runtime.realtime realtime_cleanup robot=annie-a begin
+2026-11-19 14:39:53,519 INFO annie_runtime.realtime realtime_cleanup robot=annie-a audio_done
+2026-11-19 14:39:53,520 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_begin
+2026-11-19 14:39:53,520 INFO annie_runtime.realtime realtime_cleanup robot=annie-a socket_close_done
+2026-11-19 14:39:53,520 INFO annie_runtime.realtime realtime_shutdown robot=annie-a complete
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_shutdown robot=annie-b opening=False ready=True
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_shutdown robot=annie-b awaiting_tasks
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_cleanup robot=annie-b begin
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_cleanup robot=annie-b audio_done
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_begin
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_cleanup robot=annie-b socket_close_done
+2026-11-19 14:39:53,522 INFO annie_runtime.realtime realtime_shutdown robot=annie-b complete
+2026-11-19 14:39:53,523 INFO annie_runtime.realtime realtime_shutdown robot=annie-small opening=False ready=True
+2026-11-19 14:39:53,523 INFO annie_runtime.realtime realtime_shutdown robot=annie-small awaiting_tasks
+2026-11-19 14:39:53,523 INFO annie_runtime.realtime realtime_cleanup robot=annie-small begin
+2026-11-19 14:39:53,523 INFO annie_runtime.realtime realtime_cleanup robot=annie-small audio_done
+2026-11-19 14:39:53,523 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_begin
+2026-11-19 14:39:53,523 INFO annie_runtime.realtime realtime_cleanup robot=annie-small socket_close_done
+2026-11-19 14:39:53,524 INFO annie_runtime.realtime realtime_shutdown robot=annie-small complete
+2026-11-19 14:39:53,541 INFO livekit livekit::room:1835:livekit::room - Disconnected from room "robot-test" with reason: ClientInitiated
+2026-11-19 14:39:53,617 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:39:53,617 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-19 14:39:53,617 INFO annie_runtime runtime_event robot=annie-small kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [10061]

@@ -59,7 +59,7 @@ def test_head_options_are_opt_in_and_validated(monkeypatch):
 
 
 def test_the_service_keeps_a_board_that_was_taken_over_stopped():
-    unit = (ROOT / "room-speaker" / "annie-audio.sh").read_text()  # install writes the unit
+    unit = (ROOT / "sidecars" / "room-speaker" / "annie-audio.sh").read_text()  # install writes the unit
     assert re.search(r"^Restart=always$", unit, re.M)
     assert f"RestartPreventExitStatus={head_module.EXIT_TAKEN_OVER}" in unit
     assert f"SuccessExitStatus={head_module.EXIT_TAKEN_OVER}" in unit  # inactive, not failed
@@ -67,7 +67,7 @@ def test_the_service_keeps_a_board_that_was_taken_over_stopped():
 
 def test_the_board_has_one_script_for_the_main_project_and_the_service():
     """annie-audio.sh is what the embedded main project and systemd both call."""
-    script = ROOT / "room-speaker" / "annie-audio.sh"
+    script = ROOT / "sidecars" / "room-speaker" / "annie-audio.sh"
     text = script.read_text()
     assert 'UNIT="${ANNIE_AUDIO_UNIT:-annie-room-audio}"' in text
     assert 'cat > "/etc/systemd/system/$UNIT.service"' in text
@@ -78,8 +78,8 @@ def test_the_board_has_one_script_for_the_main_project_and_the_service():
     wrong = subprocess.run(["sh", str(script), "bogus"], capture_output=True, text=True,
                            env={**os.environ, "ANNIE_AUDIO_LOCKED": "1"})
     assert wrong.returncode == 2 and "用法" in wrong.stderr
-    assert not (ROOT / "room-speaker" / "start.sh").exists()
-    assert not (ROOT / "room-speaker" / "install-service.sh").exists()
+    assert not (ROOT / "sidecars" / "room-speaker" / "start.sh").exists()
+    assert not (ROOT / "sidecars" / "room-speaker" / "install-service.sh").exists()
 
 
 def test_a_board_whose_card_delivers_nothing_never_claims_the_room():

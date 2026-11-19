@@ -54,7 +54,7 @@ def test_robots_toml_gives_the_small_head_its_own_room_and_switches():
     small, big = robots["annie-small"], robots["annie-a"]
     assert small.enabled and big.enabled
     assert (small.wake_enabled, small.aec_enabled, small.mouth_enabled, small.camera_enabled) == (
-        False, True, False, True)
+        False, False, False, True)
     assert small.livekit_room_of == "annie-a"
     assert small.actions == SMALL_ACTIONS
     assert (big.wake_enabled, big.aec_enabled, big.mouth_enabled, big.camera_enabled) == (

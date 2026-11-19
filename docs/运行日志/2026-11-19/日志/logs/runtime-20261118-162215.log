@@ -1,0 +1,13 @@
+2026-11-18 16:22:16,625 WARNING annie.speakers 声纹模型未找到，注册与识别暂不可用: /Users/dream/Documents/zhc/python/brainv2/var/tmp/small-head/root/var/models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+2026-11-18 16:22:16,626 WARNING annie_runtime ANNIE_CLOUD_AEC_ROBOTS=annie-a is ignored; robots.toml aec_enabled selects annie-a,annie-small
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__main__.py", line 550, in <module>
+    main()
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__main__.py", line 405, in main
+    runtime = HarborRuntime(
+              ^^^^^^^^^^^^^^
+  File "/Users/dream/Documents/zhc/python/brainv2/apps/runtime/src/annie_runtime/__init__.py", line 1048, in __init__
+    raise ValueError("cloud AEC requires Realtime, active TTS and a configured Room")
+ValueError: cloud AEC requires Realtime, active TTS and a configured Room

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load(name, file):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "room-speaker" / file)
+    spec = importlib.util.spec_from_file_location(name, ROOT / "sidecars" / "room-speaker" / file)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)

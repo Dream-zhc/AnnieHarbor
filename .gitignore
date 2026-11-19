@@ -19,5 +19,6 @@ web/var/
 sidecars/**/output*/
 
 # room-speaker 板端本地配置（房间/设备），只在板子上
-room-speaker/room-audio.env
-room-speaker/.speaker-volume
+sidecars/room-speaker/room-audio.env
+sidecars/room-speaker/.speaker-volume
+sidecars/annie-room-audio/.speaker-volume

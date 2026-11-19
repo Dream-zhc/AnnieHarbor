@@ -8,7 +8,7 @@ from annie_adapters.playback import playback_receipt
 
 SPEC = importlib.util.spec_from_file_location(
     "room_speaker_program",
-    Path(__file__).resolve().parents[1] / "room-speaker" / "speaker.py",
+    Path(__file__).resolve().parents[1] / "sidecars" / "room-speaker" / "speaker.py",
 )
 speaker = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = speaker

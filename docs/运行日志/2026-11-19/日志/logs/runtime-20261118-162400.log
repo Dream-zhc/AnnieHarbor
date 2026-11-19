@@ -1,0 +1,74 @@
+2026-11-18 16:24:00,999 WARNING annie.speakers 声纹模型未找到，注册与识别暂不可用: /Users/dream/Documents/zhc/python/brainv2/var/tmp/small-head/root/var/models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+2026-11-18 16:24:01,038 INFO annie_runtime vision_intent_config robots=none route=cloud deadline_ms=3500 tts=False
+INFO:     Started server process [39019]
+INFO:     Waiting for application startup.
+2026-11-18 16:24:01,092 INFO annie_runtime runtime_event robot=annie-a kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-18 16:24:01,096 INFO annie_runtime runtime_event robot=annie-b kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-18 16:24:01,097 INFO annie_runtime runtime_event robot=annie-small kind=started request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application startup complete.
+2026-11-18 16:24:01,103 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-11-18 16:24:01,103 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-11-18 16:24:01,103 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=1.0s
+2026-11-18 16:24:01,103 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:01,103 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:01,103 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     Uvicorn running on http://127.0.0.1:18793 (Press CTRL+C to quit)
+2026-11-18 16:24:02,105 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-11-18 16:24:02,105 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-11-18 16:24:02,105 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=2.0s
+2026-11-18 16:24:02,106 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:02,106 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:02,106 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:04,106 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-11-18 16:24:04,106 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-11-18 16:24:04,107 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=4.0s
+2026-11-18 16:24:04,107 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:04,107 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:04,107 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:08,109 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-11-18 16:24:08,109 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-11-18 16:24:08,109 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=8.0s
+2026-11-18 16:24:08,109 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:08,109 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:08,109 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:11,122 WARNING annie_runtime 嘴型服务未在线 robot=annie-a room=roomv2 state=disconnected reason=None：10 秒内未收到可用 viseme_health，请确认 Windows tts_viseme 已启动并监听该房间
+2026-11-18 16:24:11,123 WARNING annie_runtime 嘴型服务未在线 robot=annie-b room=roomv3 state=disconnected reason=None：10 秒内未收到可用 viseme_health，请确认 Windows tts_viseme 已启动并监听该房间
+INFO:     127.0.0.1:59881 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59882 - "GET /health HTTP/1.1" 503 Service Unavailable
+2026-11-18 16:24:16,112 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:16,112 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:16,112 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:16,112 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:16,112 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:16,112 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:31,116 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:31,117 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:31,117 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:31,117 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:31,117 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:31,117 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:46,121 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:46,122 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:46,122 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:24:46,122 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:46,122 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:24:46,122 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:25:01,125 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:25:01,125 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:25:01,125 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:25:01,126 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:25:01,126 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:25:01,126 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:25:16,131 WARNING annie_adapters room_pcm disconnected room=roomv2 url=ws://127.0.0.1:9/robot/roomv2/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:25:16,131 WARNING annie_adapters room_pcm disconnected room=roomv3 url=ws://127.0.0.1:9/robot/roomv3/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:25:16,131 WARNING annie_adapters room_pcm disconnected room=roomv4 url=ws://127.0.0.1:9/robot/roomv4/reb_mic error=[Errno 61] Connect call failed ('127.0.0.1', 9) retry=15.0s
+2026-11-18 16:25:16,131 WARNING annie_adapters.playback Room listener room=roomv2 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:25:16,131 WARNING annie_adapters.playback Room listener room=roomv2 channel=visualllm: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+2026-11-18 16:25:16,131 WARNING annie_adapters.playback Room listener room=roomv3 channel=sam: ConnectionRefusedError: [Errno 61] Connect call failed ('127.0.0.1', 9)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-11-18 16:25:25,953 INFO annie_runtime runtime_event robot=annie-a kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-18 16:25:25,955 INFO annie_runtime runtime_event robot=annie-b kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+2026-11-18 16:25:25,955 INFO annie_runtime runtime_event robot=annie-small kind=stopped request_id=None source=None elapsed_ms=None queue_wait_ms=None error=None
+INFO:     Application shutdown complete.
+INFO:     Finished server process [39019]

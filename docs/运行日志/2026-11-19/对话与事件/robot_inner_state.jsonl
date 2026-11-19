@@ -1,0 +1,3 @@
+{"robot_id": "annie-a", "valence": -0.05, "energy": 0.638, "tone": "neutral", "reason": "", "reason_ms": null, "last_interaction_ms": 1795069824378, "updated_ms": 1795069824378}
+{"robot_id": "annie-b", "valence": 0.15, "energy": 0.3367, "tone": "neutral", "reason": "", "reason_ms": null, "last_interaction_ms": 1793880766698, "updated_ms": 1793880766698}
+{"robot_id": "annie-small", "valence": 0.15, "energy": 0.5935, "tone": "neutral", "reason": "", "reason_ms": null, "last_interaction_ms": 1795070623447, "updated_ms": 1795070623447}

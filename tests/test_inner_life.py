@@ -528,3 +528,151 @@ def test_idle_planner_gets_her_mood_and_bodily_day_but_no_names():
         assert "mood是小安妮自己此刻真实的心情" in system
 
     asyncio.run(run())
+
+
+class FakeTopics:
+    def __init__(self):
+        self.calls = []
+
+    async def complete(self, system, user, *, max_tokens):
+        self.calls.append(json.loads(user))
+        return '{"topics": ["咖啡豆其实是果核", "立冬刚过"]}'
+
+
+def test_talking_points_join_the_hint_and_refresh_at_most_every_half_hour(tmp_path):
+    async def run():
+        client = FakeClient()
+        service, clock = service_with(tmp_path, client)
+        service.topics_chat = topics = FakeTopics()
+        await service.start()
+        try:
+            service.tick()
+            await settled(service)
+            assert "【谈资】" in service.hint("a") and "咖啡豆其实是果核" in service.hint("a")
+            service.tick()
+            await settled(service)
+            assert len(topics.calls) == 1
+            clock["now"] += 31 * 60_000
+            service.tick()
+            await settled(service)
+            assert len(topics.calls) == 2
+            assert topics.calls[1]["最近用过"] == ["咖啡豆其实是果核", "立冬刚过"]
+        finally:
+            await service.close()
+
+    asyncio.run(run())
+
+
+class FakeMemory:
+    robot_ids = ("a",)
+
+    def __init__(self, state, text):
+        self.state, self.text = state, text
+
+    async def summary(self, robot_id, persona_id):
+        return {"state": self.state, "text": self.text}
+
+
+class HeldTopics(FakeTopics):
+    def __init__(self):
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def complete(self, system, user, *, max_tokens):
+        reply = await super().complete(system, user, max_tokens=max_tokens)
+        await self.release.wait()
+        return reply
+
+
+def with_memory(service, state, text):
+    service.runtime.robots["a"].persona_id = "annie"
+    service.runtime.memory = memory = FakeMemory(state, text)
+    return memory
+
+
+def test_talking_points_drop_a_memory_summary_once_one_of_its_facts_changed(tmp_path):
+    async def run():
+        service, _clock = service_with(tmp_path, FakeClient())
+        memory = with_memory(service, "current", "常聊杭州的天气")
+        service.topics_chat = topics = FakeTopics()
+        await service.start()
+        try:
+            service.tick()
+            await settled(service)
+            assert topics.calls[-1]["记得的事"] == "常聊杭州的天气" and service.topics["a"]
+            memory.state = "behind"
+            service.memory_changed("a")
+            await settled(service)
+            assert service.topics["a"] and len(topics.calls) == 1
+            memory.state = "stale"
+            service.memory_changed("a")
+            await settled(service)
+            assert service.topics["a"] == [] and "【谈资】" not in service.hint("a")
+            service.tick()
+            await settled(service)
+            assert len(topics.calls) == 2 and topics.calls[-1]["记得的事"] == ""
+        finally:
+            await service.close()
+
+    asyncio.run(run())
+
+
+def test_talking_points_asked_for_before_a_memory_change_are_thrown_away(tmp_path):
+    async def run():
+        service, _clock = service_with(tmp_path, FakeClient())
+        memory = with_memory(service, "current", "常聊杭州的天气")
+        service.topics_chat = topics = HeldTopics()
+        await service.start()
+        try:
+            service.tick()
+            for _ in range(50):
+                if topics.calls:
+                    break
+                await asyncio.sleep(0)
+            memory.state = "stale"
+            service.memory_changed("a")
+            for _ in range(50):
+                if service.topics_epoch["a"]:
+                    break
+                await asyncio.sleep(0)
+            topics.release.set()
+            await settled(service)
+            assert service.topics["a"] == []
+            service.tick()
+            await settled(service)
+            assert service.topics["a"] and topics.calls[-1]["记得的事"] == ""
+        finally:
+            await service.close()
+
+    asyncio.run(run())
+
+
+def test_talking_points_leave_out_people_she_knows_and_deleted_chats(tmp_path):
+    async def run():
+        service, _clock = service_with(tmp_path, FakeClient())
+        service.topics_chat = topics = FakeTopics()
+        await service.start()
+        try:
+            service._remember("a", "chat", "和张三聊了他下周要去面试", person="张三", chat_id="c1")
+            service._remember("a", "chat", "有人问她会不会跳舞", chat_id="c2")
+            service.tick()
+            await settled(service)
+            assert topics.calls[-1]["最近的经历"] == ["有人问她会不会跳舞"]
+            service.on_chat_deleted("a", "c2")
+            assert service.topics["a"] == [] and "【谈资】" not in service.hint("a")
+            service.tick()
+            await settled(service)
+            assert len(topics.calls) == 2 and topics.calls[-1]["最近的经历"] == []
+            service.on_person_forgotten("a", "张三")
+            assert service.topics["a"] == []
+        finally:
+            await service.close()
+
+    asyncio.run(run())
+
+
+def test_a_memory_change_reaches_the_talking_points():
+    seen = []
+    runtime = SimpleNamespace(realtime={}, inner_life=SimpleNamespace(memory_changed=seen.append))
+    HarborRuntime._memory_changed(runtime, "a")
+    assert seen == ["a"]

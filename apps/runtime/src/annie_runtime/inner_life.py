@@ -55,6 +55,14 @@ from annie_brain.inner_life import (
     thread_visible,
     threads_hint,
 )
+from annie_brain.topics import (
+    TOPICS_REFRESH_MS,
+    TOPICS_TOKENS,
+    day_period,
+    parse_topics,
+    topics_hint,
+    topics_request,
+)
 from annie_core import NormalizedEvent
 
 log = logging.getLogger(__name__)
@@ -72,11 +80,12 @@ MAX_TASKS = 32
 
 
 class InnerLifeService:
-    def __init__(self, runtime, *, summarizer=None, close_seconds=120, keep_days=7,
+    def __init__(self, runtime, *, summarizer=None, topics_chat=None, close_seconds=120, keep_days=7,
                  clock=None):
         self.runtime = runtime
         self.store = runtime.store
         self.summarizer = summarizer
+        self.topics_chat = topics_chat
         self.close_ms = int(close_seconds * 1000)
         self.keep_ms = int(keep_days * 86_400_000)
         self.clock = clock or (lambda: time.time_ns() // 1_000_000)
@@ -92,6 +101,9 @@ class InnerLifeService:
         self.thought_keys = {robot_id: deque(maxlen=64) for robot_id in robots}
         self.thought_state = {robot_id: {"status": "idle"} for robot_id in robots}
         self.reflect_tried = dict.fromkeys(robots)
+        self.topics = {robot_id: [] for robot_id in robots}
+        self.topics_tried = dict.fromkeys(robots)
+        self.topics_epoch = dict.fromkeys(robots, 0)
         self.locks = {robot_id: asyncio.Lock() for robot_id in robots}
         self.stats = {robot_id: {"appraisals": 0, "appraisal_failures": 0,
                                  "summaries": 0, "summary_failures": 0,
@@ -140,7 +152,8 @@ class InnerLifeService:
         # looks it up with recall_my_day when asked.
         return (mood_hint(self.moods[robot_id], now)
                 + threads_hint(self._threads_for(robot_id, who, now), who)
-                + reflection_hint(self.reflection[robot_id], who))
+                + reflection_hint(self.reflection[robot_id], who)
+                + topics_hint(self.topics[robot_id]))
 
     def my_day(self, robot_id):
         """The recall_my_day tool result."""
@@ -280,6 +293,7 @@ class InnerLifeService:
         self.day[robot_id] = [row for row in self.day[robot_id] if row["chat_id"] != chat_id]
         self.threads[robot_id] = [row for row in self.threads[robot_id]
                                   if row["chat_id"] != chat_id]
+        self._drop_topics(robot_id)
         reflection = self.reflection[robot_id]
         if reflection is not None and chat_id in reflection["chat_ids"]:
             reflection["people"] = {}
@@ -303,6 +317,7 @@ class InnerLifeService:
                               if row["person"] != name and name not in row["text"]]
         self.threads[robot_id] = [row for row in self.threads[robot_id]
                                   if row["person"] != name and name not in row["text"]]
+        self._drop_topics(robot_id)
         reflection = self.reflection[robot_id]
         if reflection is not None:
             reflection["people"] = {person: text for person, text in reflection["people"].items()
@@ -514,6 +529,57 @@ class InnerLifeService:
         self.reflect_tried[robot_id] = day_key
         self._spawn(self._reflect(robot_id, day_key, start_today - 86_400_000, start_today))
 
+    def _maybe_gather_topics(self, robot_id, now):
+        """Every half hour, or when the time of day turns, a few fresh things to talk about."""
+        if self.topics_chat is None:
+            return
+        period = day_period(now)
+        tried = self.topics_tried[robot_id]
+        if tried is not None and tried[1] == period and now - tried[0] < TOPICS_REFRESH_MS:
+            return
+        self.topics_tried[robot_id] = (now, period)
+        self._spawn(self._gather_topics(robot_id, now))
+
+    async def _gather_topics(self, robot_id, now):
+        epoch = self.topics_epoch[robot_id]
+        try:
+            summary = ""
+            memory = getattr(self.runtime, "memory", None)
+            if memory is not None and robot_id in getattr(memory, "robot_ids", ()):
+                persona_id = self.runtime.robots[robot_id].persona_id
+                current = await memory.summary(robot_id, persona_id)
+                if current.get("state") in ("current", "behind"):
+                    summary = current.get("text") or ""
+            day = [row["text"] for row in self.day[robot_id] if not row.get("person")][:5]
+            system, user = topics_request(now, memory=summary, episodes=day, used=self.topics[robot_id])
+            topics = parse_topics(await self.topics_chat.complete(system, user, max_tokens=TOPICS_TOKENS))
+        except Exception:
+            log.warning("inner_life topics failed robot=%s", robot_id, exc_info=True)
+            return
+        if epoch != self.topics_epoch[robot_id]:
+            return
+        self.topics[robot_id] = topics
+        self._notify(robot_id)
+
+    def memory_changed(self, robot_id):
+        if self.topics_chat is not None and self.started and robot_id in self.topics:
+            self._spawn(self._recheck_topics(robot_id))
+
+    async def _recheck_topics(self, robot_id):
+        try:
+            persona_id = self.runtime.robots[robot_id].persona_id
+            if (await self.runtime.memory.summary(robot_id, persona_id))["state"] != "stale":
+                return
+        except Exception:
+            log.warning("inner_life topics recheck failed robot=%s", robot_id, exc_info=True)
+        self._drop_topics(robot_id)
+        self._notify(robot_id)
+
+    def _drop_topics(self, robot_id):
+        self.topics_epoch[robot_id] += 1
+        self.topics_tried[robot_id] = None
+        self.topics[robot_id] = []
+
     # ---- something on her mind -------------------------------------------------------
     def _thought_block(self, robot_id, now, view):
         client = self.runtime.realtime.get(robot_id)
@@ -679,6 +745,7 @@ class InnerLifeService:
             if stretch is not None and now - stretch["last_ms"] > self.close_ms:
                 self._close_stretch(robot_id)
             self._maybe_reflect(robot_id, now)
+            self._maybe_gather_topics(robot_id, now)
             if getattr(self.runtime, "events", None) is not None:
                 self._consider_thoughts(robot_id, now)
             self._notify(robot_id)

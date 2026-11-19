@@ -74,6 +74,7 @@ from annie_brain.persona import (
     style_named,
 )
 from annie_brain.recap import recap_hint
+from annie_brain.topics import BLAND_NOTE, is_bland
 from annie_core import RobotUnavailableError
 from annie_core.speech_style import apply_persona_tone
 
@@ -2023,9 +2024,11 @@ class RealtimeRobot:
         spent = [kind for kind, (_note, by) in self._once_notes.items() if by != self.turn_id]
         for kind in spent:
             del self._once_notes[kind]
-        if spent:
-            self.visual_changed()
         heard = str(turn.get("user_text") or "")
+        if is_bland(heard):
+            self._once_notes["bland"] = (BLAND_NOTE, self.turn_id)
+        if spent or is_bland(heard):
+            self.visual_changed()
         if earlier and len(self.text) >= 6 and not REPEAT_REQUEST.search(heard):
             self._background(self._check_repeat(self.turn_id, self.text, earlier, heard), "reply-repeat")
 

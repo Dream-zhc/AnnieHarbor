@@ -1319,7 +1319,7 @@ class HarborRuntime:
             from annie_runtime.inner_life import InnerLifeService
 
             self.inner_life = InnerLifeService(
-                self, summarizer=inner_life_summarizer,
+                self, summarizer=inner_life_summarizer, topics_chat=inner_life_summarizer,
                 close_seconds=inner_life_close_seconds, keep_days=inner_life_keep_days)
             for client in self.realtime.values():
                 client.inner_life = self.inner_life
@@ -1978,6 +1978,8 @@ class HarborRuntime:
         client = self.realtime.get(robot_id)
         if client is not None:
             client.memory_changed()
+        if self.inner_life is not None:
+            self.inner_life.memory_changed(robot_id)
 
     async def _warm_decision(self):
         try:

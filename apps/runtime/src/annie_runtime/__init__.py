@@ -873,6 +873,7 @@ class HarborRuntime:
         realtime_key: str | None = None,
         realtime_url: str | None = None,
         realtime_model: str | None = None,
+        realtime_hotwords: dict | None = None,
         realtime_socket_factory=None,
         acoustic_enabled: bool = False,
         tts_expression_enabled: bool = False,
@@ -884,6 +885,7 @@ class HarborRuntime:
         wake_followup_ms: int = 20000,
         side_talk_listen_ms: int = 120000,
         greet_known_cooldown_minutes: float = 30,
+        event_habituation: dict | None = None,
         face_api_urls: dict[str, str] | None = None,
         face_registries: dict | None = None,
         face_samples: int = 18,
@@ -946,6 +948,7 @@ class HarborRuntime:
         vision_intent_route: str = "cloud",
         vision_intent_deadline_ms: int = 3500,
         vision_intent_action_extra_ms: int = 1200,
+        vision_intent_ack: bool = False,
         vision_look_decision: dict | None = None,
         camera_frames: dict | None = None,
         livekit: dict | None = None,
@@ -955,6 +958,8 @@ class HarborRuntime:
         if (type(vision_intent_action_extra_ms) is not int
                 or not 0 <= vision_intent_action_extra_ms <= 10000):
             raise ValueError("vision_intent_action_extra_ms must be an integer between 0 and 10000")
+        if type(vision_intent_ack) is not bool:
+            raise ValueError("vision_intent_ack must be boolean")
         look_decision = {"enabled": False, "scope": "cue", "timeout_ms": 700, "image": True,
                          **(vision_look_decision or {})}
         if (type(look_decision["enabled"]) is not bool or type(look_decision["image"]) is not bool
@@ -1062,11 +1067,18 @@ class HarborRuntime:
         self._viseme_probe = None
         self.realtime = {}
         if realtime_key:
-            from annie_adapters.realtime import DEFAULT_URL, MODEL, QwenRealtimeSocket, validate_model
+            from annie_adapters.realtime import (
+                DEFAULT_URL,
+                MODEL,
+                QwenRealtimeSocket,
+                validate_hotwords,
+                validate_model,
+            )
             from annie_adapters.realtime import realtime_url as validate_url
 
             model = validate_model(realtime_model or MODEL)
             url = validate_url(realtime_url or DEFAULT_URL, model)
+            hotwords = validate_hotwords(realtime_hotwords) if realtime_hotwords else None
             self.realtime = {
                 robot_id: RealtimeRobot(
                     robot, url=url, key=realtime_key, model=model,
@@ -1082,6 +1094,8 @@ class HarborRuntime:
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }
+            for client in self.realtime.values():
+                client.hotwords = hotwords
         if type(acoustic_enabled) is not bool:
             raise ValueError('acoustic_enabled must be boolean')
         if self.realtime:
@@ -1292,7 +1306,14 @@ class HarborRuntime:
             self.memory.on_change = self._memory_changed
         self.started = False
         self.start_time = time.time()
-        self.events = EventService(self, greet_cooldown_ms=int(greet_known_cooldown_minutes * 60_000))
+        habituation = {"enabled": False, "quiet_seconds": 120, **(event_habituation or {})}
+        if (type(habituation["enabled"]) is not bool
+                or type(habituation["quiet_seconds"]) not in (int, float)
+                or not 10 <= habituation["quiet_seconds"] <= 3600):
+            raise ValueError("event_habituation needs enabled: bool and quiet_seconds 10-3600")
+        self.events = EventService(self, greet_cooldown_ms=int(greet_known_cooldown_minutes * 60_000),
+                                   habituation=habituation["enabled"],
+                                   habit_quiet_ms=int(habituation["quiet_seconds"] * 1000))
         # "记住我/忘掉我" in conversation, on each robot's own camera service.
         self.faces = None
         registries = dict(face_registries or {})
@@ -1411,6 +1432,7 @@ class HarborRuntime:
                 for robot_id in cameras:
                     self.realtime[robot_id].vision_intents = self.vision_intents
                     self.realtime[robot_id].vision_action_extra_ms = vision_intent_action_extra_ms
+                    self.realtime[robot_id].vision_ack = vision_intent_ack
                 # “有戴眼镜的人吗”: what the phrase rules miss goes to the decision model, with
                 # the newest LiveKit camera frame when d3 answers (user decision 11-03).
                 if look_decision["enabled"] and (self.d3 is not None or self.decision is not None):
@@ -1432,10 +1454,11 @@ class HarborRuntime:
                         self.realtime[robot_id].camera_frames = self.camera_frames.get(robot_id)
             if vision_intent_enabled:
                 # Exported logs carry no /health: say at startup who looks before answering.
-                logger.info("vision_intent_config robots=%s route=%s deadline_ms=%s tts=%s",
+                logger.info("vision_intent_config robots=%s route=%s deadline_ms=%s tts=%s ack=%s",
                             ",".join(sorted(self.vision_intents.publishers))
                             if self.vision_intents else "none",
-                            vision_intent_route, vision_intent_deadline_ms, bool(tts_voice))
+                            vision_intent_route, vision_intent_deadline_ms, bool(tts_voice),
+                            vision_intent_ack)
             if self.vision_look_decision is not None:
                 logger.info("vision_look_decision_config scope=%s timeout_ms=%s image=%s frames=%s",
                             look_decision["scope"], look_decision["timeout_ms"],

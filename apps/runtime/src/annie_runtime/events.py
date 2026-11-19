@@ -15,9 +15,12 @@ RETRIES = 2
 
 
 class EventService:
-    def __init__(self, runtime, *, greet_cooldown_ms=30 * 60_000):
+    def __init__(self, runtime, *, greet_cooldown_ms=30 * 60_000, habituation=False,
+                 habit_quiet_ms=120_000):
         self.runtime = runtime
-        self.policies = {robot_id: EventPolicy(greet_cooldown_ms=greet_cooldown_ms)
+        self.policies = {robot_id: EventPolicy(greet_cooldown_ms=greet_cooldown_ms,
+                                               habituation=habituation,
+                                               habit_quiet_ms=habit_quiet_ms)
                          for robot_id in runtime.robots}
         self.pending = {robot_id: deque(maxlen=16) for robot_id in runtime.robots}
         self.wakeups = {robot_id: asyncio.Event() for robot_id in runtime.robots}
@@ -74,6 +77,14 @@ class EventService:
                 row["status"] = "waiting"
                 self.pending[robot_id].append(row)
                 self.wake(robot_id)
+        elif row["decision"] == "habituated":
+            inner = getattr(self.runtime, "inner_life", None)
+            if inner is not None:
+                inner.on_event(robot_id, event)
+            motions = getattr(self.runtime, "motions", None)
+            client = self.runtime.realtime.get(robot_id)
+            if motions is not None and client is not None:
+                row["motion"] = motions.react_quietly(robot_id, client, row["stimulus"])
         self._publish(robot_id, row)
         return row
 

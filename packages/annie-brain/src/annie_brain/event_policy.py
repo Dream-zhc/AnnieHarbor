@@ -61,6 +61,15 @@ GAS_PROMPT = (
     "说说你对这股气味的态度或反应；不要编造它具体是什么味道、来源或是否危险，"
     "也不要用“像是/可能是/让我想起”绕着猜。" + _IN_CHARACTER
 )
+RADAR_PROMPT = (
+    "现场情况：有人靠得很近。这不是用户说的话，也不是要你照念的台词。"
+    "按你当前的性格，就这次靠近自己组织一句自然的口头回应，"
+    "不要借机把话题拉回之前聊过的内容。"
+    "不要使用固定套话，不要复述这段说明，不要提及传感器、雷达或具体数字，不要执行物理动作。"
+)
+BRIEF_AGAIN = ("这事刚刚才发生过一次：这回只用几个字随口应一下，像人被连着碰时那样，"
+               "别再抖机灵、别反问，也别说“又……了”。")
+STRONG_LEVEL = 4
 
 
 @dataclass
@@ -72,6 +81,9 @@ class EventPolicy:
     history: deque = field(default_factory=lambda: deque(maxlen=80))
     # One greeting per recognised person in this window (user decision 2026-10-16).
     greet_cooldown_ms: int = 30 * 60_000
+    habituation: bool = False
+    habit_quiet_ms: int = 120_000
+    habit: dict = field(default_factory=dict)
 
     def snapshot(self, now_ms: int):
         self._prune(now_ms)
@@ -87,6 +99,18 @@ class EventPolicy:
             self.cooldown.pop(key, None)
         for key in [key for key, expires in self.held.items() if expires <= now_ms]:
             self.held.pop(key, None)
+        for key in [key for key, seen in self.habit.items()
+                    if now_ms - seen["last_ms"] >= self.habit_quiet_ms]:
+            self.habit.pop(key, None)
+
+    def _habituated(self, stimulus, now_ms, *, strong=False):
+        """The first time "fresh", the next "brief", then "silent" until a quiet gap."""
+        if not self.habituation:
+            return "fresh"
+        seen = self.habit.get(stimulus)
+        count = seen["count"] + 1 if seen else 1
+        self.habit[stimulus] = {"count": count, "last_ms": now_ms}
+        return "fresh" if count == 1 else "brief" if count == 2 or strong else "silent"
 
     def route(self, event: NormalizedEvent, *, robot_id: str, transport: str,
               identity: dict, now_ms: int) -> dict:
@@ -110,7 +134,7 @@ class EventPolicy:
                 self.seen.popitem(last=False)
 
         decision = "dropped" if reason else "context_only"
-        prompt = None
+        prompt = stimulus = None
         if not reason and event.kind in {"sensor.touch", "sensor.pressure", "sensor.gas"}:
             # Touch/pressure 1-5 and gas 1 always get a reply (V1 behavior);
             # level 0 is a release that only updates context and re-arms.
@@ -127,21 +151,30 @@ class EventPolicy:
             elif not fresh:
                 reason = "sensor_held"
             else:
-                decision = "need_response"
-                prompt = GAS_PROMPT if event.kind == "sensor.gas" else _body_prompt(event.payload)
+                gas = event.kind == "sensor.gas"
+                stimulus = "gas" if gas else "body"
+                habit = self._habituated(
+                    ("gas",) if gas else ("body", touch_phrase(event.payload)[0] or ""), now_ms,
+                    strong=not gas and level >= STRONG_LEVEL)
+                if habit == "silent":
+                    decision, reason = "habituated", "habituated"
+                else:
+                    decision = "need_response"
+                    prompt = ((GAS_PROMPT if gas else _body_prompt(event.payload))
+                              + (BRIEF_AGAIN if habit == "brief" else ""))
         elif not reason and event.kind == "sensor.radar":
             # Embedded already decided the person is too close. Reply once,
             # then ignore repeats until the cooldown so a held trigger cannot spam.
             if key in self.cooldown:
                 decision, reason = "dropped", "cooldown"
             else:
-                decision = "need_response"
-                prompt = (
-                    "现场情况：有人靠得很近。这不是用户说的话，也不是要你照念的台词。"
-                    "按你当前的性格，就这次靠近自己组织一句自然的口头回应，"
-                    "不要借机把话题拉回之前聊过的内容。"
-                    "不要使用固定套话，不要复述这段说明，不要提及传感器、雷达或具体数字，不要执行物理动作。"
-                )
+                stimulus = "radar"
+                habit = self._habituated(("radar",), now_ms)
+                if habit == "silent":
+                    decision, reason = "habituated", "habituated"
+                else:
+                    decision = "need_response"
+                    prompt = RADAR_PROMPT + (BRIEF_AGAIN if habit == "brief" else "")
                 self.cooldown[key] = now_ms + 15_000
         elif not reason and event.kind == "vision.known_arrival":
             # A face the vision side recognised and the runtime saw arrive and
@@ -216,6 +249,7 @@ class EventPolicy:
             "decision": decision, "reason": reason, "transport": transport,
             "observed_ms": when, "expires_at_ms": when + ttl,
             "prompt": prompt, "status": "observed", "summary": fact["summary"],
+            "stimulus": stimulus,
             # After a greeting or a face result the person usually answers:
             # listen like after a reply.
             "listen_after": decision == "need_response" and event.kind in {

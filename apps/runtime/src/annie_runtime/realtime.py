@@ -97,6 +97,7 @@ from annie_runtime.presence import DialoguePresence, canonical_wake_call
 from annie_runtime.repeat_guard import RepeatGuard, asked_again
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
 from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
+from annie_runtime.voice_timing import VoiceTiming, ms_between
 from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
 
 logger = logging.getLogger(__name__)
@@ -132,11 +133,21 @@ INVALID_RECOVERY_SECONDS = 5
 RECOVERY_SETTLE_SECONDS = 0.6
 _TRAILING_STOP = re.compile(r"[。.!！?？…~～\s]+$")
 AUTO_EXPRESSION_COOLDOWN_SECONDS = 20
+VOICE_LOOKBACK_SECONDS = 30
 # Look first (10-28, docs/规范/视觉意图协议.md): a fresh description stays in the
 # prompt this long for follow-ups; a busy motor slot is retried this often.
 FRESH_VIEW_SECONDS = 30
 LOOK_RETRY_SECONDS = 0.15
 LOOKED_TOWARD = {"look_left": "转向左边后", "look_right": "转向右边后", "look_up": "抬头往上看时"}
+VISION_ACK_WAIT_SECONDS = 1.0
+VISION_ACK_DONE_SECONDS = 4.0
+LOOKING_NOW = {"look_left": "正转头往左边看", "look_right": "正转头往右边看", "look_up": "正抬头往上看"}
+VISION_ACK_NOTE = (
+    "\n【先应一声】用户这一问得看了才能答（原话：「{question}」），你{doing}，新画面还没到。"
+    "这一回只说一句很短的口语先应一声（十个字以内），用你当前性格自己的说法，每次都不一样；"
+    "不说看到了什么、不猜画面、不回答问题本身、不调用任何工具。看清以后系统会让你接着说。")
+VISION_ACKED_NOTE = ("\n【刚才已经应过一声】你刚才先说了「{ack}」，现在直接说看到的，"
+                     "不要再说“我看看”“我瞅瞅”这类话，也不要把那句再说一遍。")
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound
 SPEECH_VOLUME = {"quieter": 42, "louder": 58}  # within SpeechStyle's 40..60 bound
 EXPLICIT_MOTION = re.compile(
@@ -189,6 +200,8 @@ LOOK_RULES = ("以这份结果为准：who 是 recognized=true 时才是名字�
               "looking_at_you=true 的是你正看着的那位，说话的人不一定是TA。"
               "穿着长相只按 scene 写到的说，没写就说看不清；"
               "用户说的和这里不一致时，礼貌说出你看到的，不附和。")
+FRESH_LOOK_RULES = ("fresh_view 是刚为这一问看到的新画面，比 people/scene 新："
+                    "物体、位置和场景以 fresh_view 为准，先说最显眼的一两样；认人仍只按 people 里的 who。")
 REMEMBER_FACE = re.compile(r"记住|记下|记一下|认识一下|认识我|认一下|认得我|记得我")
 # “我叫小明”“我是小明”alone also ask her to remember (user decision 10-22).
 # The name must end there: “我是张三的朋友” is not 张三 introducing himself.
@@ -281,12 +294,13 @@ IDENTITY_RULES = ("\n【认人】你只能通过画面认出人。看不到画�
                   "可以问一句是谁，不要拿画面里有没有TA来回答。")
 # 11-02: “北京天气怎么样” got “没错，就是那扇门…”, touches kept going back to an old
 # topic and whole earlier lines came back word for word.
+LOOK_CLOSELY_RULE = "问到穿着、长相、在做什么或让你介绍面前某人时，先调用look_closely看细节再答。"
 CURRENT_TURN_RULE = ("\n【以当前这句为准】回答以用户刚说的这一句（或刚发生的这件事）为准："
                      "这句换了话题就跟着换，不再接旧话题或旧问题；前面的对话只用来理解这句里的指代和省略。"
                      "不要把你说过的话原样再说一遍。")
 
 
-def visual_instructions(base, description):
+def visual_instructions(base, description, *, fresh=False):
     """One replaceable visual fact in session instructions, never a user turn."""
     if not description:
         return base + IDENTITY_RULES
@@ -301,7 +315,7 @@ def visual_instructions(base, description):
             "画面里没认出的名字，不管是用户自称的还是别人说的，都不能用来称呼人，也不复述；"
             "被问“X在哪/有没有X”而画面里没有TA，就说没看到。"
             "穿着、动作、拿着什么也一样：用户说的和画面不一致时，礼貌说出你看到的，不附和、不改口；"
-            "画面没写到的就说看不清，不猜。问到穿着、长相、在做什么或让你介绍面前某人时，先调用look_closely看细节再答。"
+            "画面没写到的就说看不清，不猜。" + ("" if fresh else LOOK_CLOSELY_RULE)
             + "\n【视觉交谈】问看到了什么就直接答主体、动作或位置；问具体物品就只答该物品。"
             "事实只取描述里写到的，说法用你当前人格平时说话的口吻和招牌手法：一句答案，"
             "再带半句你自己的态度或反应；不照念描述里的句子，也不要换哪个人格都一样的播报腔。"
@@ -354,6 +368,10 @@ class RealtimeRobot:
         self._persona_display_name = None
         self._persona_physical = False
         self._main_audio_samples = 0
+        self.voice_timing = VoiceTiming()
+        self.hotwords = None
+        self._speech_start_ms = self._speech_start_sent_t = None
+        self._last_voice_end_t = self._last_audio_end_sent_t = None
         self._acoustic_windows = deque(maxlen=32)
         self._acoustic_pending = deque(maxlen=8)
         self._acoustic_rejected = 0
@@ -513,6 +531,7 @@ class RealtimeRobot:
         self.speaker_volume = None  # board speaker volume over reb_voice, if a Room has one
         self.visual_details = None  # look_closely: the full current view, if a camera exists
         self.vision_intents = None  # ask the camera's vision service to look now, if enabled
+        self.vision_ack = False
         self.vision_action_extra_ms = 1200  # receipt wait beyond the look script's duration
         self._vision_hold = None  # the turn whose reply waits for a look and a fresh view
         self._vision_fresh = None  # that view, kept briefly in the prompt
@@ -561,6 +580,11 @@ class RealtimeRobot:
             "asr_final_to_first_text_ms": ("asr_final_ms", "llm_first_text_ms"),
             "first_text_to_room_ms": ("llm_first_text_ms", "room_first_publish_ms"),
             "endpoint_to_room_ms": ("speech_stopped_ms", "room_first_publish_ms"),
+            "voice_end_to_endpoint_ms": ("voice_end_ms", "speech_stopped_ms"),
+            "provider_endpoint_ms": ("provider_end_sent_ms", "speech_stopped_ms"),
+            "voice_end_to_first_text_ms": ("voice_end_ms", "llm_first_text_ms"),
+            "voice_end_to_room_ms": ("voice_end_ms", "room_first_publish_ms"),
+            "voice_end_to_speaker_start_ms": ("voice_end_ms", "speaker_started_ms"),
         }
         durations = {}
         duration_sources = {}
@@ -675,13 +699,14 @@ class RealtimeRobot:
         fields = ("speech_to_asr_final_ms", "endpoint_to_asr_final_ms",
                   "llm_request_to_first_text_ms", "tts_submit_to_pcm_ms",
                   "first_pcm_to_room_ms", "endpoint_to_speaker_start_ms",
-                  "room_to_speaker_drained_ms")
+                  "room_to_speaker_drained_ms", "voice_end_to_endpoint_ms",
+                  "voice_end_to_speaker_start_ms")
         turns = [self._timeline_snapshot(turn, include_tts=False) for turn in self._timeline_order]
         result = {}
         for field in fields:
             applicable = [turn for turn in turns if turn is not None and (
                 turn["input_mode"] == "audio" or not field.startswith((
-                    "speech_to_", "endpoint_to_asr_", "endpoint_to_speaker_")))]
+                    "speech_to_", "endpoint_to_asr_", "endpoint_to_speaker_", "voice_end_to_")))]
             values = sorted(turn["durations"][field] for turn in applicable
                             if turn["durations"][field] is not None)
             result[field] = {
@@ -754,6 +779,10 @@ class RealtimeRobot:
             if self.prompt_snapshot is not None:
                 self._turn_prompt_snapshots[turn_id] = dict(self.prompt_snapshot)
             is_audio = fields.get("asr_final_ms") is not None
+            stopped = is_audio and fields.get("speech_stopped_ms") == self.last_provider_stopped_ms
+            voiced = {slot: at for slot, at in (("voice_end_ms", self._last_voice_end_t),
+                                                ("provider_end_sent_ms", self._last_audio_end_sent_t))
+                      if stopped and at is not None}
             self._turn_timelines[turn_id] = {"provider_session_id": self.session,
                                             "identity": dict(self.robot.session_state()),
                                             "user_text": fields.get("user_text"),
@@ -767,15 +796,16 @@ class RealtimeRobot:
                 "speech_started_ms": (self._last_provider_speech_started_t
                     if is_audio and fields.get("speech_started_ms") == self.last_provider_speech_ms
                     else None),
-                "speech_stopped_ms": (self._last_provider_stopped_t
-                    if is_audio and fields.get("speech_stopped_ms") == self.last_provider_stopped_ms
-                    else None),
+                "speech_stopped_ms": self._last_provider_stopped_t if stopped else None,
                 "asr_final_ms": observed_t if is_audio else None,
+                **voiced,
             },
                                             "times": {
                 "speech_started_ms": fields.get("speech_started_ms"),
                 "speech_stopped_ms": fields.get("speech_stopped_ms"),
                 "asr_final_ms": fields.get("asr_final_ms"),
+                **{slot: event["ts_ms"] - round((observed_t - at) * 1000)
+                   for slot, at in voiced.items()},
             }}
         else:
             slot = {
@@ -882,6 +912,31 @@ class RealtimeRobot:
         self._decision_tasks.add(task)
         task.add_done_callback(self._decision_tasks.discard)
 
+    def _log_endpoint(self, event, invalid):
+        """How long after the user's voice ended the provider called the turn over (11-19)."""
+        stopped_t = time.monotonic()
+        end_ms = event.get("audio_end_ms")
+        end_sent = self.voice_timing.sent_at(end_ms)
+        since = self._speech_start_sent_t or (
+            (self._last_provider_speech_started_t or stopped_t) - VOICE_LOOKBACK_SECONDS)
+        voice_end = self.voice_timing.voice_end(since)
+        start_ms = self._speech_start_ms
+        self._last_voice_end_t = None if invalid else voice_end
+        self._last_audio_end_sent_t = None if invalid else end_sent
+        logger.info("speech_vad robot=%s item=%s event=stopped state=%s invalid=%s speech_ms=%s "
+                    "endpoint_ms=%s voice_end_to_stopped_ms=%s audio_end_after_voice_ms=%s "
+                    "floor_dbfs=%s her_voice=%s", self.robot.config.robot_id, event.get("item_id"),
+                    self.wake.state if self.wake else None, invalid,
+                    end_ms - start_ms if type(end_ms) is int and type(start_ms) is int else None,
+                    ms_between(end_sent, stopped_t), ms_between(voice_end, stopped_t),
+                    round((end_sent - voice_end) * 1000)
+                    if end_sent is not None and voice_end is not None else None,
+                    self.voice_timing.floor_dbfs(),
+                    self._her_reply_out())
+
+    def _her_reply_out(self):
+        return bool(self.speech is not None and getattr(self.speech, "turn_id", None))
+
     def _prewarm_tts(self):
         prewarm = getattr(self.speech, "prewarm", None)
         if prewarm is not None:
@@ -907,11 +962,13 @@ class RealtimeRobot:
                 "turn_latency robot=%s model=%s turn=%s input=%s status=%s "
                 "endpoint_to_asr_final_ms=%s endpoint_to_first_text_ms=%s "
                 "asr_final_to_first_text_ms=%s llm_request_to_first_text_ms=%s "
-                "tool_calls=%s reply_chars=%s",
+                "tool_calls=%s reply_chars=%s voice_end_to_endpoint_ms=%s "
+                "provider_endpoint_ms=%s voice_end_to_first_text_ms=%s",
                 robot, self.model, snap["turn_id"], snap["input_mode"], fields.get("status"),
                 d["endpoint_to_asr_final_ms"], d["endpoint_to_first_text_ms"],
                 d["asr_final_to_first_text_ms"], d["llm_request_to_first_text_ms"],
-                self.call_count, len(fields.get("text") or ""))
+                self.call_count, len(fields.get("text") or ""), d["voice_end_to_endpoint_ms"],
+                d["provider_endpoint_ms"], d["voice_end_to_first_text_ms"])
         elif kind == "tts.first_published":
             connect = getattr(self.speech, "last_connect", None) or {}
             if connect.get("turn_id") != snap["turn_id"]:
@@ -926,8 +983,9 @@ class RealtimeRobot:
                 d["first_text_to_room_ms"], d["endpoint_to_room_ms"])
         elif kind == "tts.playback.started" and fields.get("source") == "speaker":
             logger.info("speaker_latency robot=%s turn=%s endpoint_to_speaker_start_ms=%s "
-                        "room_to_speaker_start_ms=%s", robot, snap["turn_id"],
-                        d["endpoint_to_speaker_start_ms"], d["room_to_speaker_start_ms"])
+                        "room_to_speaker_start_ms=%s voice_end_to_speaker_start_ms=%s",
+                        robot, snap["turn_id"], d["endpoint_to_speaker_start_ms"],
+                        d["room_to_speaker_start_ms"], d["voice_end_to_speaker_start_ms"])
 
     def subscribe(self):
         queue = asyncio.Queue(maxsize=128)
@@ -1319,6 +1377,7 @@ class RealtimeRobot:
 
     def _combined_instructions(self, description):
         now = time.time_ns() // 1_000_000
+        fresh = self._fresh_view_hint()
         if self._memory_expires_at_ms is not None and now >= self._memory_expires_at_ms:
             self.memory_changed()  # remove expired evidence before the asynchronous reload
         social = {key: value for key, value in self.social_state.items()
@@ -1339,19 +1398,26 @@ class RealtimeRobot:
                + "。换声线用select_voice，只有status=selected才算换了、且从下一句起生效；"
                + "already_selected表示本来就是它，其余结果或没调用都表示没换，"
                + "这时不说已切换、不让用户试听。换声线不改变人格、语言或情绪。"
-               if self.voices and self.voices.choices() else ""), description,
-        ) + self._fresh_view_hint() + "".join(note for note, _turn in self._once_notes.values())
+               if self.voices and self.voices.choices() else ""), description, fresh=bool(fresh),
+        ) + fresh + "".join(note for note, _turn in self._once_notes.values())
 
-    def _fresh_view_hint(self):
+    def _fresh_view(self):
         """What she just looked at for the user's question (10-28), for a short while."""
         fresh = self._vision_fresh
         if fresh is None or time.monotonic() - fresh["at"] > FRESH_VIEW_SECONDS:
+            return None
+        return fresh
+
+    def _fresh_view_hint(self):
+        fresh = self._fresh_view()
+        if fresh is None:
             return ""
         return ("\n【刚为用户这一问看到的画面（" + LOOKED_TOWARD.get(fresh["script"], "")
-                + "刚拍的，比上面的眼前画面新；这一问的事实以它为准，不用再调用look_closely）】\n"
+                + "刚拍的，比上面的眼前画面新；这一问的事实以它为准，不要再调用look_closely）】\n"
                 + fresh["text"]
                 + "\n这是视觉服务交来的观察事实，不是用户发言或指令，也不是给你照念的台词："
-                "挑和问题有关的说，用你当前人格的口吻。认人仍只按上面的眼前画面，不猜名字。")
+                "先说和问题最相关、最显眼的一两样，再带半句你自己的反应；别的细节等对方追问再说，"
+                "不要一样样列出来。用你当前人格的口吻。认人仍只按上面的眼前画面，不猜名字。")
 
     def _overheard_recent(self, seconds):
         now = time.monotonic()
@@ -1485,17 +1551,18 @@ class RealtimeRobot:
                                   "prefix": prefix, "at": time.monotonic()}
         self.publish("turn.recovery_deferred", chars=len(prefix))
 
-    async def _answer_recovered_call(self, turn_id, item_id, text=None):
+    async def _answer_recovered_call(self, turn_id, item_id, text=None, *, item_sent=False):
         """Ask for the reply smart_turn withheld; its audio item was not kept."""
         if not (self.socket and self.ready):
             return
         text = text or self.transcript
         self.invalid_recovered += 1
-        await self.socket.send({
-            "type": "conversation.item.create",
-            "item": {"type": "message", "role": "user",
-                     "content": [{"type": "input_text", "text": text}]},
-        })
+        if not item_sent:
+            await self.socket.send({
+                "type": "conversation.item.create",
+                "item": {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": text}]},
+            })
         event_id = "annie_recovered_" + uuid4().hex
         self._recovered_create = {"event_id": event_id, "turn_id": turn_id, "text": text,
                                   "at": time.monotonic()}
@@ -1670,6 +1737,9 @@ class RealtimeRobot:
         hold = {"turn_id": turn_id, "item_id": item_id, "question": question,
                 "script": script, "recovered": recovered,
                 "speech_count": self.speech_started_count, "started": time.perf_counter()}
+        if self.vision_ack and self.speech is not None:
+            hold["ack"] = {"state": "pending", "done": asyncio.Event(), "response_id": None,
+                           "text": "", "asked_at": None, "task": None}
         self._vision_hold = hold
         if script is not None:
             self._auto_expression_turn = turn_id  # the look is this turn's one action
@@ -1685,6 +1755,12 @@ class RealtimeRobot:
         hold, self._vision_hold = self._vision_hold, None
         if hold is None:
             return
+        ack = hold.get("ack")
+        if ack is not None:
+            if ack["task"] is not None and not ack["task"].done():
+                ack["task"].cancel()
+            ack["done"].set()
+            self._end_vision_ack_note()
         task = self._vision_task
         if task is not None and task is not asyncio.current_task() and not task.done():
             task.cancel()
@@ -1696,6 +1772,19 @@ class RealtimeRobot:
         if hold["turn_id"] != self.turn_id:
             self._drop_vision_hold("turn_changed")
             return False
+        ack = hold.get("ack")
+        response_id = held_response_id(event)
+        if ack is not None and response_id is not None:
+            if (kind == "response.created" and ack["state"] == "requested"
+                    and response_id not in self._cancelled_response_ids):
+                ack.update(state="speaking", response_id=response_id)
+                return False
+            if response_id == ack["response_id"]:
+                if kind == "response.function_call_arguments.done":
+                    self.publish("vision.ack.tool_ignored", turn_id=hold["turn_id"],
+                                 name=event.get("name"))
+                    return True
+                return False
         if self.speech_started_count != hold["speech_count"]:
             # Someone spoke again and the provider answers that: like a barge-in.
             await self._interrupt_active_turn("valid_smart_turn")
@@ -1768,11 +1857,15 @@ class RealtimeRobot:
         finally:
             if self._vision_hold is hold:
                 self._vision_hold = None  # abandoned: the turn no longer waits on a look
+            self._end_vision_ack_note()
 
     async def _look_and_answer(self, hold, generation, socket, current):
         robot_id = self.robot.config.robot_id
         turn_id, script, question = hold["turn_id"], hold["script"], hold["question"]
         after, result = None, {"status": "skipped"}
+        if hold.get("ack") is not None:
+            hold["ack"]["task"] = self._background(
+                self._say_vision_ack(hold, socket, generation, current), "vision-ack")
         try:
             if script is not None:
                 after = await self._look_first(turn_id, script, generation, question)
@@ -1789,6 +1882,16 @@ class RealtimeRobot:
                                       "script": script if looked else None}
                 # Drop it from the prompt once it is stale, even if nothing else changes.
                 asyncio.get_running_loop().call_later(FRESH_VIEW_SECONDS + 1, self.visual_changed)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            result = {**result, "error": type(exc).__name__}
+            logger.warning("vision_intent_error robot=%s turn=%s error=%s", robot_id, turn_id,
+                           type(exc).__name__)
+        if not current():
+            return
+        try:
+            if await self._settle_vision_ack(hold) or result["status"] == "ok":
                 confirm = asyncio.Event()
                 try:
                     await self._send_instruction_update(socket, generation, confirm=confirm)
@@ -1800,9 +1903,9 @@ class RealtimeRobot:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            result = {**result, "error": type(exc).__name__}
-            logger.warning("vision_intent_error robot=%s turn=%s error=%s", robot_id, turn_id,
-                           type(exc).__name__)
+            result = {**result, "error": result.get("error") or type(exc).__name__}
+            logger.warning("vision_intent_error robot=%s turn=%s stage=prompt error=%s", robot_id,
+                           turn_id, type(exc).__name__)
         if not current():
             return
         total_ms = round((time.perf_counter() - hold["started"]) * 1000)
@@ -1818,7 +1921,8 @@ class RealtimeRobot:
                     " ".join(f"{key}={value}" for key, value in fields.items()))
         self._vision_hold = None
         if hold["recovered"]:
-            await self._answer_recovered_call(turn_id, hold["item_id"], question)
+            await self._answer_recovered_call(turn_id, hold["item_id"], question,
+                                              item_sent=hold.get("item_sent", False))
             return
         asked = {"event_id": "annie_looked_" + uuid4().hex, "turn_id": turn_id, "text": question,
                  "at": time.monotonic()}
@@ -1830,6 +1934,120 @@ class RealtimeRobot:
         self.publish("llm.request_started", turn_id=turn_id)
         await socket.send({"type": "response.create", "event_id": asked["event_id"],
                            "response": {"modalities": ["text"]}})
+
+    async def _say_vision_ack(self, hold, socket, generation, current):
+        """While she turns and looks, a short line of her own at once (11-19)."""
+        ack = hold["ack"]
+        try:
+            deadline = time.monotonic() + VISION_ACK_WAIT_SECONDS
+            while self._provider_active_response_id is not None and time.monotonic() < deadline:
+                await asyncio.sleep(.02)
+            if not self._may_ack(hold, current):
+                return
+            if hold["recovered"]:
+                await socket.send({"type": "conversation.item.create", "item": {
+                    "type": "message", "role": "user",
+                    "content": [{"type": "input_text", "text": hold["question"]}]}})
+                hold["item_sent"] = True
+            self._once_notes["look_ack"] = (VISION_ACK_NOTE.format(
+                question=hold["question"][:60], doing=LOOKING_NOW.get(hold["script"], "正在看")),
+                hold["turn_id"])
+            confirm = asyncio.Event()
+            try:
+                await self._send_instruction_update(socket, generation, confirm=confirm)
+                if not confirm.is_set():
+                    await asyncio.wait_for(confirm.wait(), 2)
+            finally:
+                if self._instruction_wait is not None and self._instruction_wait[1] is confirm:
+                    self._instruction_wait = None
+            if not self._may_ack(hold, current):
+                return
+            event_id = "annie_vision_ack_" + uuid4().hex
+            ack.update(state="requested", asked_at=time.monotonic())
+            self._recovered_create = {"event_id": event_id, "turn_id": hold["turn_id"],
+                                      "text": hold["question"], "at": time.monotonic()}
+            self.publish("llm.request_started", turn_id=hold["turn_id"])
+            await socket.send({"type": "response.create", "event_id": event_id,
+                               "response": {"modalities": ["text"]}})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            ack["state"] = "failed"
+            logger.warning("vision_ack_error robot=%s turn=%s error=%s",
+                           self.robot.config.robot_id, hold["turn_id"], type(exc).__name__)
+        finally:
+            if ack["state"] in {"pending", "skipped", "failed"}:
+                ack["state"] = "skipped" if ack["state"] == "pending" else ack["state"]
+                self._end_vision_ack_note()
+                ack["done"].set()
+
+    def _may_ack(self, hold, current):
+        """Only while this question still waits and nobody spoke or replied meanwhile."""
+        ack = hold["ack"]
+        if (current() and ack["state"] == "pending" and not self.response_id
+                and self._provider_active_response_id is None
+                and self.speech_started_count == hold["speech_count"]):
+            return True
+        if ack["state"] == "pending":
+            ack["state"] = "skipped"
+        return False
+
+    def _vision_ack_finished(self, response, status):
+        """Her short line before the look is over: the turn waits on what she sees next."""
+        hold = self._vision_hold
+        ack = hold.get("ack") if hold is not None else None
+        if ack is None or not response.get("id") or ack["response_id"] != response.get("id"):
+            return False
+        ack.update(state="spoken" if status == "completed" else status, text=self.text.strip())
+        self._once_notes.pop("look_ack", None)
+        ack["done"].set()
+        self.publish("vision.ack.done", turn_id=hold["turn_id"], status=ack["state"],
+                     text=ack["text"][:40])
+        logger.info("vision_ack robot=%s turn=%s status=%s chars=%d ack_ms=%s",
+                    self.robot.config.robot_id, hold["turn_id"], ack["state"], len(ack["text"]),
+                    ms_between(ack["asked_at"], time.monotonic()))
+        return True
+
+    async def _settle_vision_ack(self, hold):
+        """Her short line is over before the answer is asked for; True when the prompt changes."""
+        ack = hold.get("ack")
+        if ack is None:
+            return False
+        if ack["state"] == "pending":
+            ack["state"] = "skipped"
+            if ack["task"] is not None:
+                ack["task"].cancel()
+            ack["done"].set()
+        try:
+            await asyncio.wait_for(ack["done"].wait(), VISION_ACK_DONE_SECONDS)
+        except TimeoutError:
+            ack["state"] = "timeout"
+            if ack["response_id"] is not None and self._provider_active_response_id == ack["response_id"]:
+                await self._request_response_cancel(expected_id=ack["response_id"])
+                deadline = time.monotonic() + VISION_ACK_WAIT_SECONDS
+                while self._provider_active_response_id is not None and time.monotonic() < deadline:
+                    await asyncio.sleep(.02)
+        self._once_notes.pop("look_ack", None)
+        if ack["text"] and self._vision_hold is hold:
+            self._once_notes["look_acked"] = (VISION_ACKED_NOTE.format(ack=ack["text"][:24]),
+                                              hold["turn_id"])
+        return True
+
+    def _end_vision_ack_note(self):
+        """The short-line note never outlives its own question (a barge-in answers normally)."""
+        if self._once_notes.pop("look_ack", None) is None:
+            return
+        if self.socket is not None and self.ready:
+            self._background(self._resend_instructions(self.socket, self.robot.generation),
+                             "vision-ack-note")
+
+    async def _resend_instructions(self, socket, generation):
+        try:
+            await self._send_instruction_update(socket, generation)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.publish("dialogue.policy.failed", reason=type(exc).__name__)
 
     def _stage_filter(self, text, *, final=False):
         """Stage directions like 【眨眼】 are never spoken or shown, nor the names
@@ -3399,6 +3617,7 @@ class RealtimeRobot:
             try:
                 self.invalidate_acoustic('realtime_connection', reset_policy=True)
                 self._main_audio_samples = 0
+                self.voice_timing.reset()
                 self._language_pending_update = None
                 self._instruction_wait = None
                 if self.acoustic:
@@ -3575,6 +3794,7 @@ class RealtimeRobot:
                     speaker_volume=self.speech is not None,
                     look=self.visual_details is not None,
                     persona_labels=tuple(profile["label"] for profile in self.persona_profiles.values()),
+                    hotwords=self.hotwords,
                 )
                 self._visual_sent_text = initial_visual
                 self._visual_sent_instructions = configured_instructions
@@ -3897,6 +4117,7 @@ class RealtimeRobot:
                     self.acoustic.offer(chunk, identity=self.robot.session_state(),
                         stream_epoch=stream_epoch, source_id=source_id,
                         received_at=time.monotonic(), sample_start=self._main_audio_samples)
+                self.voice_timing.sent(chunk, self._main_audio_samples)
                 self._main_audio_samples += len(chunk)//2
                 self.frames_sent += 1
                 self.session_frames_sent += 1
@@ -4087,6 +4308,8 @@ class RealtimeRobot:
     def _finish(self, status, *, cancel_source=None):
         if self._vision_hold is not None:
             self._drop_vision_hold(cancel_source or status)
+        if self._once_notes.pop("look_acked", None) is not None:
+            self.visual_changed()
         if not self.turn_id:
             self._reset_turn()
             return
@@ -4779,6 +5002,13 @@ class RealtimeRobot:
             self._last_conversation_activity_t = time.monotonic()
             self.last_provider_speech_ms = time.time_ns() // 1_000_000
             self.publish("speech.started", item_id=event.get("item_id"))
+            self._speech_start_ms = event.get("audio_start_ms")
+            self._speech_start_sent_t = self.voice_timing.sent_at(self._speech_start_ms)
+            logger.info("speech_vad robot=%s item=%s event=started state=%s start_lag_ms=%s "
+                        "her_voice=%s", self.robot.config.robot_id, new_item_id,
+                        self.wake.state if self.wake else None,
+                        ms_between(self._speech_start_sent_t, self._last_provider_speech_started_t),
+                        self._her_reply_out())
             if self._refresh_clock():
                 self.visual_changed()  # lands before smart_turn ends this utterance
             if not (self.wake and self.wake.state == "SLEEP"):
@@ -4799,6 +5029,7 @@ class RealtimeRobot:
                 return
             self._acoustic_window(event, stopped=True)
             invalid = event.get("reason") == "turn_invalid"
+            self._log_endpoint(event, invalid)
             recoverable = False
             if invalid:
                 # Qwen smart_turn may drop even a call by name (seen live, more
@@ -5230,6 +5461,8 @@ class RealtimeRobot:
             response = event.get("response") or {}
             status = response.get("status", "failed")
             self.response_id = None
+            if self._vision_ack_finished(response, status):
+                return
             if self.followup_needed and status == "completed":
                 self.followup_needed = False
                 pending = self._pending_sleep
@@ -5474,6 +5707,10 @@ class RealtimeRobot:
                 result = ({"status": "ok", **details, "instruction": LOOK_RULES} if details else
                           {"status": "no_view",
                            "instruction": "现在看不到画面，直说暂时看不清，不要猜。"})
+                fresh = self._fresh_view()
+                if fresh is not None:
+                    result = {**result, "status": "ok", "fresh_view": fresh["text"],
+                              "instruction": FRESH_LOOK_RULES + (LOOK_RULES if details else "")}
             elif name == "set_speaker_volume" and self.speech is not None:
                 result = await self._set_speaker_volume(args)
             elif name in {"remember_face", "forget_face"} and self._faces_available():

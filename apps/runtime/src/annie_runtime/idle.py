@@ -5,6 +5,8 @@ import re
 import time
 from collections import deque
 
+from annie_runtime.inner_life import QUIET_AFTER_SLEEP_SECONDS
+
 PERSON_KINDS = {"person", "human", "人物", "人"}
 PUBLIC_KINDS = {"cup", "book", "cat", "dog", "plant", "tea", "杯子", "书", "猫", "狗", "植物", "茶"}
 IDENTITY = ("robot_id", "chat_id", "persona_id", "session_epoch", "generation")
@@ -491,6 +493,9 @@ class IdleService:
             return "waiting_user_turn"
         if client.speech is None:
             return "tts_unavailable"
+        asked_quiet = getattr(client, "_asked_quiet_at", None)
+        if asked_quiet is not None and now - asked_quiet < QUIET_AFTER_SLEEP_SECONDS:
+            return "asked_to_be_quiet"
         if row["attempts"] >= 2:
             return "max_attempts"
         if row["attempts"] == 1:

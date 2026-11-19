@@ -20,6 +20,7 @@ Nothing here waits on the reply path; a failure only means no motion.
 
 import asyncio
 import logging
+import random
 import time
 from uuid import uuid4
 
@@ -66,6 +67,12 @@ NOD_AFTER_LISTEN_SECONDS = 3.2  # the opening listening motion (0.7 s + up to 2.
 VOICE_ABOVE_FLOOR_DB = 10.0
 FLOOR_RISE_DB = 0.02  # per frame: the room floor follows quiet frames down at once, up slowly
 FLOOR_MIN_DBFS = -90.0  # digital silence from a muted input must not become the floor
+QUIET_REACTIONS = {
+    "body": ("shy", "fast_double_blink", "micro_tilt", "smirk"),
+    "radar": ("fast_double_blink", "eye_glance_down", "micro_pitch"),
+    "gas": ("sniff_forward", "skeptical", "fast_double_blink"),
+}
+QUIET_REACTION_GAP_SECONDS = 4.0
 WAIT_GLANCE_SECONDS = 1.2  # an answer that starts sooner needs no thinking look
 
 
@@ -110,10 +117,12 @@ class InteractionMotions:
         self.last_listen_script = dict.fromkeys(robots)
         self.last_inner = dict.fromkeys(robots, -1e9)
         self.last_nod = dict.fromkeys(robots, -1e9)
+        self.last_quiet = dict.fromkeys(robots, -1e9)
         self.ears = {robot_id: {"floor": None, "words": 0.0, "quiet": 0.0} for robot_id in robots}
         self.recent = {robot_id: [] for robot_id in robots}  # last decisions, for the UI
         self.stats = {robot_id: {"listen": 0, "nod": 0, "think": 0, "speech": 0, "inner": 0,
-                                 "skipped": 0, "decision_failures": 0} for robot_id in robots}
+                                 "quiet": 0, "skipped": 0, "decision_failures": 0}
+                      for robot_id in robots}
         self.tasks = set()
 
     # ---- gates ------------------------------------------------------------------------
@@ -218,6 +227,21 @@ class InteractionMotions:
         self.last_nod[robot_id] = now
         self._spawn(self._perform(robot_id, "nod", NOD_MOTION, f"nod-{uuid4().hex[:12]}",
                                   client.robot.generation))
+
+    def react_quietly(self, robot_id, client, stimulus):
+        """A poke she no longer remarks on still gets a blink or a tilt (11-19)."""
+        group = self._allowed(QUIET_REACTIONS.get(stimulus, ()))
+        now = time.monotonic()
+        speech = getattr(client, "speech", None)
+        if (not self.reactions or not group or not self._awake(client) or not self._wanted(client)
+                or now - self.last_quiet[robot_id] < QUIET_REACTION_GAP_SECONDS
+                or (speech is not None and getattr(speech, "turn_id", None))):
+            return None
+        self.last_quiet[robot_id] = now
+        script = random.choice(group)
+        self._spawn(self._perform(robot_id, "quiet", script, f"quiet-{uuid4().hex[:12]}",
+                                  client.robot.generation, stimulus=stimulus))
+        return script
 
     def on_speech_stopped(self, robot_id, client):
         """smart_turn handed her the turn: if no voice comes soon, she looks like she is thinking."""

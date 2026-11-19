@@ -12,6 +12,11 @@ from annie_adapters.net import cloud_proxy
 
 MODEL = "qwen-audio-3.0-realtime-flash"
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+HOTWORD_WEIGHTS = frozenset({1, 2, 3, 4, 5, 50})
+SUPER_HOTWORD = 50
+MAX_HOTWORDS = 2000
+MAX_SUPER_HOTWORDS = 50
+MAX_HOTWORD_CHARS = 15
 # Same Qwen-Audio Realtime wire family (3.0 flash/plus, 3.1 plus); other model
 # families use different protocols and must not be selected by a typo.
 _MODEL_NAME = re.compile(r"qwen-audio-\d+(?:\.\d+)*-realtime-(?:flash|plus)")
@@ -54,7 +59,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
                    look: bool = False,
                    my_day: bool = False,
                    persona_labels: tuple[str, ...] = (),
-                   action_descriptions: dict[str, str] | None = None) -> dict:
+                   action_descriptions: dict[str, str] | None = None,
+                   hotwords: dict[str, int] | None = None) -> dict:
     """Configure all joint capabilities before sending the first PCM frame."""
     if type(history_turns) is not int or not 1 <= history_turns <= 50:
         raise ValueError("Realtime history_turns must be an integer between 1 and 50")
@@ -65,6 +71,8 @@ def session_update(instructions: str, history_turns: int = 20, *,
         "max_history_turns": history_turns,
         "instructions": instructions,
     }
+    if hotwords:
+        session["input_audio_transcription"] = {"corpus": {"vocabulary": validate_hotwords(hotwords)}}
     session["tools"] = [{
             "type": "function",
             "function": {
@@ -482,6 +490,21 @@ def session_update(instructions: str, history_turns: int = 20, *,
         "type": "session.update",
         "session": session,
     }
+
+
+def validate_hotwords(hotwords) -> dict[str, int]:
+    """Instant hotwords for the input transcription: weight 1-5, or 50 for a super hotword."""
+    if not isinstance(hotwords, dict) or len(hotwords) > MAX_HOTWORDS:
+        raise ValueError(f"Realtime hotwords must be a table of at most {MAX_HOTWORDS} words")
+    words = {}
+    for word, weight in hotwords.items():
+        if (type(word) is not str or not 1 <= len(word.strip()) <= MAX_HOTWORD_CHARS
+                or type(weight) is not int or weight not in HOTWORD_WEIGHTS):
+            raise ValueError("each Realtime hotword needs 1-15 characters and a weight of 1-5 or 50")
+        words[word.strip()] = weight
+    if sum(weight == SUPER_HOTWORD for weight in words.values()) > MAX_SUPER_HOTWORDS:
+        raise ValueError(f"at most {MAX_SUPER_HOTWORDS} Realtime hotwords may weigh {SUPER_HOTWORD}")
+    return words
 
 
 def audio_append(pcm: bytes) -> dict:

@@ -506,3 +506,20 @@ def test_speech_preemption_during_submit_does_not_rearm_followup():
         await service.tick()
         assert len(model.calls) == 1
     asyncio.run(run())
+
+
+def test_told_to_be_quiet_she_keeps_her_own_remarks_back():
+    """11-14 16:51: “小爱你退下，小爱你别说话”, then an unprompted remark 110 s later."""
+    async def run():
+        service, clients, _, _, model = setup({"decision": "SPEAK", "topic": "喝茶"},
+                                              robots=("a",))
+        clients["a"]._asked_quiet_at = time.monotonic() - 110
+        service.observe_visual("a", person())
+        service.observe_visual("a", person())
+        await settle(service, "a")
+        assert not model.calls and clients["a"].messages == []
+        assert service.snapshot("a")["reason"] == "asked_to_be_quiet"
+        clients["a"]._asked_quiet_at = time.monotonic() - 31 * 60
+        await settle(service, "a")
+        assert len(clients["a"].messages) == 1
+    asyncio.run(run())

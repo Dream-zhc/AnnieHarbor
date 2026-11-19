@@ -286,6 +286,8 @@ def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
         "vision_intent_route": str(intent.get("route", "cloud")),
         "vision_intent_deadline_ms": int(intent.get("deadline_ms", 3500)),
         "vision_intent_action_extra_ms": int(intent.get("action_receipt_extra_ms", 1200)),
+        "vision_intent_ack": environ.get(
+            "ANNIE_VISION_ACK_ENABLED", "1" if intent.get("ack", False) else "0") == "1",
         "vision_look_decision": {
             "enabled": environ.get("ANNIE_VISION_LOOK_DECISION_ENABLED",
                                    "1" if decision.get("enabled", False) else "0") == "1",
@@ -407,6 +409,7 @@ def main():
         side_talk_listen_ms=int(runtime_defaults["duplex"].get("side_talk_listen_ms", 120000)),
         greet_known_cooldown_minutes=float(
             runtime_defaults["vision"].get("greet_known_cooldown_minutes", 30)),
+        event_habituation=dict(runtime_defaults.get("events", {}).get("habituation", {})),
         face_api_urls=dict(runtime_defaults["vision"].get("face", {}).get("api_urls", {})),
         face_samples=int(runtime_defaults["vision"].get("face", {}).get("samples", 18)),
         cloud_aec_robots=(tuple(item.strip() for item in os.environ.get(
@@ -417,6 +420,7 @@ def main():
         realtime_url=os.environ.get("ANNIE_REALTIME_URL") or None,
         realtime_model=(os.environ.get("ANNIE_REALTIME_MODEL")
                         or provider_defaults.get("realtime", {}).get("model") or None),
+        realtime_hotwords=dict(provider_defaults.get("realtime", {}).get("hotwords", {})),
         acoustic_enabled=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_ENABLED", "0") == "1",
         acoustic_url=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_URL") or None,
         tts_expression_enabled=os.environ.get("ANNIE_TTS_EXPRESSION_ENABLED", "0") == "1",

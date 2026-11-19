@@ -2557,6 +2557,20 @@ class HarborRuntime:
             raise RobotUnavailableError("robot memory not enabled")
         return await self.memory.restore(robot_id, persona_id, ident, version)
 
+    async def memory_summary(self, robot_id, persona_id):
+        if self.memory is None:
+            return {"status": "not_configured"}
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return {"status": "ready", **await self.memory.summary(robot_id, persona_id)}
+
+    async def memory_summary_refresh(self, robot_id, persona_id):
+        if self.memory is None:
+            raise RobotUnavailableError("memory not configured")
+        if robot_id not in self.memory.robot_ids:
+            raise RobotUnavailableError("robot memory not enabled")
+        return {"status": "ready", **await self.memory.refresh_summary(robot_id, persona_id)}
+
     def memory_insight(self, robot_id):
         """Recent recalls, consolidation runs and the recap, for the workbench."""
         if self.memory is None:

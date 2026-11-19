@@ -778,6 +778,10 @@ class RuntimeStore:
                 ON chat_memories(robot_id, persona_id, chat_id, status)""")
             db.execute("""CREATE TABLE IF NOT EXISTS memory_progress (
                 robot_id TEXT PRIMARY KEY, turn_row_id INTEGER NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS memory_summaries (
+                robot_id TEXT NOT NULL, persona_id TEXT NOT NULL, text TEXT NOT NULL,
+                facts_json TEXT NOT NULL, facts_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL,
+                PRIMARY KEY(robot_id, persona_id))""")
             db.execute("""CREATE TABLE IF NOT EXISTS action_requests (
                 robot_id TEXT NOT NULL, call_id TEXT NOT NULL, turn_id TEXT NOT NULL,
                 generation INTEGER NOT NULL, room_id TEXT NOT NULL,

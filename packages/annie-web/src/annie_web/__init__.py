@@ -686,6 +686,27 @@ def create_app(runtime, dashboard_dir: Path) -> FastAPI:
         except RobotUnavailableError as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    @app.get("/api/robots/{robot_id}/memory-summary")
+    async def memory_summary(robot_id: str):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_summary(robot_id, persona)
+        except RobotUnavailableError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/robots/{robot_id}/memory-summary/refresh")
+    async def memory_summary_refresh(robot_id: str):
+        require_robot(robot_id)
+        persona = runtime.session_state(robot_id)["persona_id"]
+        try:
+            return await runtime.memory_summary_refresh(robot_id, persona)
+        except RobotUnavailableError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except Exception as exc:
+            logger.warning("memory_summary failed robot=%s error=%s", robot_id, type(exc).__name__)
+            raise HTTPException(502, "记忆摘要整理失败，请稍后再试或查看服务器日志") from exc
+
     @app.get("/api/robots/{robot_id}/conversations/{chat_id}")
     async def conversation(robot_id: str, chat_id: str, persona_id: str,
                            limit: int | None = None, before_id: int | None = None):

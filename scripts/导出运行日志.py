@@ -32,6 +32,7 @@ SNAPSHOT_TABLES = (
     "persona_instances",
     "runtime_snapshots",
     "memory_progress",
+    "memory_summaries",
     "phase8_reminders",
     "cloned_voices",
     "robot_language_preferences",

@@ -9,6 +9,7 @@ row as a tombstone, so no later conversation can teach it again.
 """
 
 import asyncio
+import json
 import logging
 import re
 import sqlite3
@@ -31,6 +32,7 @@ from annie_brain.memory_index import (
     when_text,
 )
 from annie_brain.memory_scope import memory_namespace
+from annie_brain.memory_summary import SUMMARY_FACTS, parse_summary, summary_fit, summary_request
 from annie_brain.recap import parse_recap, recap_request
 
 log = logging.getLogger(__name__)
@@ -47,6 +49,7 @@ MANUAL_IMPORTANCE = 0.7
 EVIDENCE_LIMIT = 4
 TOOL_MIN_SCORE = 0  # she asked for it: any shared word is evidence
 SAME_FACT = 0.6
+CONVERSATION_KEY = "conversation"
 INDEX_LIMIT = 2000
 INDEX_TTL_MS = 3_600_000
 RELATED_LIMIT = 15
@@ -57,6 +60,9 @@ STALE_RUNNING_MS = 300_000
 CONSOLIDATE_TOKENS = 900
 CONSOLIDATE_ATTEMPTS = 3
 RECAP_TOKENS = 300
+SUMMARY_TOKENS = 500
+SUMMARY_SETTLE_MS = 15_000  # one rebuild for a burst of edits
+SUMMARY_RETRY_MS = 60_000
 POLL_SECONDS = 5
 RECALL_LOG = 20
 CONSOLIDATION_LOG = 10
@@ -74,6 +80,8 @@ _EMPTY_FACT_TEXT = re.compile(
     r"(?:未提取到|未发现|无(?:法|明确)?|没有|暂无|未能).{0,45}"
     r"(?:长期记忆|持久偏好|有意义经历|事实|提取|可记忆内容)"
 )
+# The consolidator has filed its own verdict as a fact: "…属于闲聊，不提取为长期记忆。"
+_NOT_KEPT = re.compile(r"(?:不|无需|不必|不用|不需要)(?:提取|记录|保存|作为|写入)(?:为|成|进|入)?长期记忆")
 _NOT_FACT_PREFIXES = ("placeholder", "用户询问", "用户曾询问", "用户问过", "用户只是询问",
                       "用户提及地点为", "用户称呼助手", "本轮没有", "本轮未")
 _REMINDER_REQUEST = re.compile(r"(?:提醒|闹钟|定时|倒计时).{0,35}(?:分钟|小时|秒|点)|(?:分钟|小时|秒)后.{0,16}提醒")
@@ -122,7 +130,7 @@ def now_ms():
 def is_meta_memory(key, value):
     """Not a fact about the user: empty-result prose, a self-reported name, a one-off command."""
     value = value.strip()
-    return bool(_EMPTY_FACT_KEY.fullmatch(key) or _EMPTY_FACT_TEXT.search(value)
+    return bool(_EMPTY_FACT_KEY.fullmatch(key) or _EMPTY_FACT_TEXT.search(value) or _NOT_KEPT.search(value)
                 or _USER_NAME_KEY.search(key)
                 or (_NAME_TOKEN_KEY.search(key) and _USER_IS.search(value))
                 or _ONE_SHOT_REQUEST.search(value) or value.strip("。. ") in {"无", "没有", "暂无"}
@@ -170,6 +178,10 @@ def ground_fondness(ops, said):
         else:
             grounded.append({**op, "ungrounded": True})
     return grounded
+
+
+def is_conversation_episode(row):
+    return row["kind"] == "episodes" and row["fact_key"].startswith(CONVERSATION_KEY + "_")
 
 
 def safe_consolidated_scope(kind, text):
@@ -223,7 +235,8 @@ def conversations(rows):
 
 
 def _public(row, now):
-    item = {**row, "retention": round(retention(row, now), 3), "faded": faded(row, now)}
+    item = {**row, "retention": round(retention(row, now), 3), "faded": faded(row, now),
+            "ignored": is_meta_memory(row["fact_key"], row["text"])}
     if item["status"] == "deleted":
         item["text"] = ""  # the row only stops consolidation from learning it again
     return item
@@ -247,12 +260,17 @@ class MemoryService:
         self.consolidations = {robot: deque(maxlen=CONSOLIDATION_LOG) for robot in self.robot_ids}
         self.pending = {}
         self.recaps = {}
+        self.summaries = {}  # (robot, persona) -> stored summary, None when there is none
+        self.summary_errors = {}
+        self._summary_wanted = {}  # (robot, persona) -> earliest rebuild ms
+        self._changed_ms = {}
         self._locks = {robot: asyncio.Lock() for robot in self.robot_ids}
         self._indexes = {}
         self._generations = dict.fromkeys(self.robot_ids, 0)
 
     def _changed(self, robot):
         self._generations[robot] = self._generations.get(robot, 0) + 1
+        self._changed_ms[robot] = now_ms()
         for key in [key for key in self._indexes if key[0] == robot]:
             del self._indexes[key]
         if self.on_change is not None:
@@ -365,17 +383,23 @@ class MemoryService:
                 "scope": "chat_only", "conversation_history_deleted": False}
 
     async def bootstrap(self, robot, persona, chat, *, with_metadata=False):
-        """What a Realtime session opens with: this chat's constraints, then the weightiest facts."""
+        """What a Realtime session opens with: this chat's constraints, then the memory summary
+        and the facts newer than it, or the weightiest facts while no summary is current."""
         entry = await self._index(robot, persona)
         chats = await self.chat_list(robot, persona, chat)
+        summary = await self._summary(robot, persona)
         now = now_ms()
-        longs = sorted(entry["live_rows"], key=lambda row: -weight(row, now))
+        usable, newer = summary_fit(summary, entry["live_rows"])
+        if not usable or newer:
+            self._summary_wanted.setdefault((robot, persona), 0)
+        paragraph = summary["text"] if usable else ""
+        longs = sorted(newer if usable else entry["live_rows"], key=lambda row: -weight(row, now))
         groups = (
             ("这次聊天", [row for row in chats
                        if not is_meta_memory(row["fact_key"], row["text"])][:BOOTSTRAP_CHAT_FACTS]),
             ("", longs[:BOOTSTRAP_LONG_FACTS]),
         )
-        used, lines, expiries = 0, [], []
+        used, lines, expiries = len(paragraph.encode("utf-8")), {"这次聊天": [], "": []}, []
         for scope, rows in groups:
             for row in rows:
                 when = when_text(row.get("source_created_ms"), now)
@@ -383,17 +407,98 @@ class MemoryService:
                 size = len(line.encode("utf-8"))
                 if used + size > BOOTSTRAP_BYTES:
                     continue
-                lines.append(line)
+                lines[scope].append(line)
                 used += size
                 if type(row.get("expires_at_ms")) is int:
                     expiries.append(row["expires_at_ms"])
-        text = BOOTSTRAP_HEADER + "\n".join(lines) if lines else ""
+        body = lines["这次聊天"] + ([paragraph] if paragraph else []) + lines[""]
+        text = BOOTSTRAP_HEADER + "\n".join(body) if body else ""
         if not with_metadata:
             return text
         return {"text": text, "expires_at_ms": min(expiries) if expiries else None}
 
     async def bootstrap_snapshot(self, robot, persona, chat):
         return await self.bootstrap(robot, persona, chat, with_metadata=True)
+
+    def _load_summary(self, robot, persona):
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT text,facts_json,facts_ms,updated_ms FROM memory_summaries
+                   WHERE robot_id=? AND persona_id=?""", (robot, persona),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"text": row["text"], "facts": dict(json.loads(row["facts_json"])),
+                "facts_ms": row["facts_ms"], "updated_ms": row["updated_ms"]}
+
+    def _save_summary(self, robot, persona, summary):
+        with self._connect() as db:
+            db.execute("INSERT OR REPLACE INTO memory_summaries VALUES (?,?,?,?,?,?)", (
+                robot, persona, summary["text"], json.dumps(list(summary["facts"].items())),
+                summary["facts_ms"], summary["updated_ms"]))
+
+    async def _summary(self, robot, persona):
+        key = (robot, persona)
+        if key not in self.summaries:
+            self.summaries[key] = await asyncio.to_thread(self._load_summary, robot, persona)
+        return self.summaries[key]
+
+    async def refresh_summary(self, robot, persona):
+        """Rewrite the summary from the weightiest live facts; open sessions reload their bootstrap."""
+        memory_namespace(robot, persona, "persona")
+        key = (robot, persona)
+        entry = await self._index(robot, persona)
+        started = now_ms()
+        rows = sorted(entry["live_rows"], key=lambda row: -weight(row, started))[:SUMMARY_FACTS]
+        text = ""
+        if rows:
+            system, user = summary_request(rows, started)
+            text = parse_summary(await self.chat.complete(system, user, max_tokens=SUMMARY_TOKENS))
+        summary = {"text": text, "facts": {row["id"]: row["version"] for row in rows},
+                   "facts_ms": started, "updated_ms": now_ms()}
+        await asyncio.to_thread(self._save_summary, robot, persona, summary)
+        self.summaries[key] = summary
+        self._summary_wanted.pop(key, None)
+        self.summary_errors.pop(key, None)
+        if self.on_change is not None:
+            self.on_change(robot)
+        return await self.summary(robot, persona)
+
+    async def summary(self, robot, persona):
+        """What the workbench shows: the paragraph and whether sessions open with it."""
+        memory_namespace(robot, persona, "persona")
+        key = (robot, persona)
+        stored = await self._summary(robot, persona)
+        entry = await self._index(robot, persona)
+        usable, newer = summary_fit(stored, entry["live_rows"])
+        error = self.summary_errors.get(key)
+        return {
+            "persona_id": persona,
+            "state": "missing" if stored is None else "stale" if not usable else "behind" if newer else "current",
+            "text": stored["text"] if stored else "",
+            "updated_ms": stored["updated_ms"] if stored else None,
+            "facts": len(stored["facts"]) if stored else 0,
+            "live_facts": len(entry["live_rows"]),
+            "queued": key in self._summary_wanted,
+            "error": error["error"] if error else None,
+        }
+
+    async def _refresh_wanted_summaries(self, robot):
+        """Rebuild the summaries sessions found out of date, once this robot's facts settle."""
+        if now_ms() - self._changed_ms.get(robot, 0) < SUMMARY_SETTLE_MS:
+            return
+        for key, due in list(self._summary_wanted.items()):
+            if key[0] != robot or due > now_ms():
+                continue
+            try:
+                await self.refresh_summary(*key)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                failures = self.summary_errors.get(key, {}).get("failures", 0) + 1
+                self.summary_errors[key] = {"error": type(exc).__name__, "failures": failures}
+                self._summary_wanted[key] = now_ms() + SUMMARY_RETRY_MS * failures
+                log.exception("memory summary failed robot=%s persona=%s", *key)
 
     def _log_recall(self, robot, persona, query, hits, now, source):
         if robot not in self.recalls or not hits and source == "turn":
@@ -596,10 +701,10 @@ class MemoryService:
             )
         return {"id": ident, "version": next_version, "status": "active"}
 
-    def _insert(self, db, robot, persona, kind, text, importance, source, now):
+    def _insert(self, db, robot, persona, kind, text, importance, source, now, *, prefix="auto"):
         ident = uuid4().hex
         row = {"id": ident, "robot_id": robot, "persona_id": "" if kind == "semantic" else persona,
-               "kind": kind, "fact_key": f"auto_{ident[:16]}", "text": text,
+               "kind": kind, "fact_key": f"{prefix}_{ident[:16]}", "text": text,
                "source_turn_id": source["turn_id"], "source_created_ms": source["created_ms"],
                "version": 1, "status": "active", "updated_ms": now,
                "index_state": "not_required", "importance": importance, "hits": 0,
@@ -611,14 +716,21 @@ class MemoryService:
         )
         return row
 
-    def _learn(self, db, robot, persona, kind, text, importance, rows, source, now, *, skip=None):
+    def _learn(self, db, robot, persona, kind, text, importance, rows, source, now, *, skip=None,
+               conversation=False):
         """Add a fact unless it was forgotten or is already known: (result, row)."""
+        def alike(row):
+            if is_conversation_episode(row) != conversation:
+                return False
+            return row["text"] == text if conversation else similarity(row["text"], text) >= SAME_FACT
+
         for row in rows:
-            if (row["status"] == "deleted" and row["text"]
-                    and similarity(row["text"], text) >= SAME_FACT):
+            if row["status"] == "deleted" and row["text"] and (alike(row) or (
+                    conversation and not is_conversation_episode(row)
+                    and similarity(row["text"], text) >= SAME_FACT)):
                 return "blocked", row
         twin = next((row for row in rows if row is not skip and row["status"] == "active"
-                     and similarity(row["text"], text) >= SAME_FACT), None)
+                     and alike(row)), None)
         if twin is not None and (twin["text"] == text or twin["origin"] == "manual"
                                  and similarity(twin["text"], text) >= 0.9):
             twin["importance"] = max(importance_of(twin), importance)
@@ -637,7 +749,8 @@ class MemoryService:
                  source["created_ms"], twin["id"]),
             )
             return "merged", twin
-        row = self._insert(db, robot, persona, kind, text, importance, source, now)
+        row = self._insert(db, robot, persona, kind, text, importance, source, now,
+                           prefix=CONVERSATION_KEY if conversation else "auto")
         rows.append(row)
         return "added", row
 
@@ -649,7 +762,8 @@ class MemoryService:
             return {**entry, "result": "rejected"}
         entry["text"] = text
         target = next((row for row in rows if row["id"] == op["target"]
-                       and row["status"] == "active" and row["origin"] != "manual"), None)
+                       and row["status"] == "active" and row["origin"] != "manual"
+                       and not is_conversation_episode(row)), None)
         if op["op"] == "update" and target is not None:
             if any(row["status"] == "deleted" and row["text"] and
                    similarity(row["text"], text) >= SAME_FACT for row in rows):
@@ -666,7 +780,8 @@ class MemoryService:
             return {**entry, "result": "updated", "id": target["id"]}
         kind = target["kind"] if target is not None else op["kind"]
         result, row = self._learn(db, robot, persona, kind, text, op["importance"], rows, source,
-                                  now, skip=target)
+                                  now, skip=target,
+                                  conversation=bool(op.get("conversation")) and kind == "episodes")
         if op["op"] != "outdated" or target is None:
             return {**entry, "result": result, "id": row["id"]}
         newer = None if result == "blocked" else row["id"]
@@ -786,6 +901,7 @@ class MemoryService:
                 self._note_pending(robot, rows)
                 batch = ready_batch(rows, now_ms(), self.idle_ms, self.max_turns)
                 if batch is None:
+                    await self._refresh_wanted_summaries(robot)
                     await asyncio.sleep(POLL_SECONDS)
                     continue
                 chosen, last_id = batch

@@ -3,18 +3,38 @@ import {gsap} from 'gsap';
 import {useGSAP} from '@gsap/react';
 import {api,robotPath} from './api';
 import {consolidationLabel,importanceLabel,memoryClock,memoryDate,memoryOrigin,memoryStrength,memoryText,memoryType,
-  visibleMemory} from './memory-display';
-import type {MemoryFact,MemoryInsight,MemoryScope} from './memory-display';
+  summaryStateLabel,visibleMemory} from './memory-display';
+import type {MemoryFact,MemoryInsight,MemoryScope,MemorySummary} from './memory-display';
 import './memory-panel.css';
 
 type List={status:string;memories:MemoryFact[]};
-type Tab=MemoryScope|'insight';
-const TABS:[Tab,string][]=[['shared','长期通用'],['persona','当前角色'],['chat','本次会话'],['insight','想起与整理']];
+type Tab=MemoryScope|'insight'|'summary';
+const TABS:[Tab,string][]=[['summary','记忆摘要'],['shared','长期通用'],['persona','当前角色'],['chat','本次会话'],
+  ['insight','想起与整理']];
 const LIST_POLL_MS=15_000;
 const INSIGHT_POLL_MS=5_000;
 const message=(error:unknown)=>error instanceof Error?error.message:String(error);
 const scopeName=(scope:MemoryScope)=>scope==='chat'?'本次会话':scope==='shared'?'长期通用':'当前角色';
 const stamp=(ms:number)=>new Date(ms).toDateString()===new Date().toDateString()?memoryClock(ms):memoryDate(ms);
+
+function SummaryView({summary,busy,onRefresh}:{summary:MemorySummary|null;busy:boolean;onRefresh:()=>void}){
+  if(!summary)return <div className="memory-empty-state">读取中</div>;
+  if(summary.status==='not_configured')return <div className="memory-empty-state">没有启用长期记忆</div>;
+  return <div className="memory-insight">
+    <section className="memory-insight-card">
+      <h3>她记得的事<span className="memory-insight-count">由 {summary.facts??0} 条记忆写成</span></h3>
+      {summary.text?<p className="memory-recap-text">{summary.text}</p>
+        :<p className="memory-insight-muted">{summary.state==='missing'?'还没整理过':'现在没有可以写进摘要的记忆'}</p>}
+      <p className="memory-insight-muted">{summaryStateLabel[summary.state??'missing']}
+        {summary.updated_ms?<> · {stamp(summary.updated_ms)} 整理</>:null}</p>
+      {summary.error&&<p className="danger-text">上次整理出错：{summary.error}，会自动重试</p>}
+      <div className="memory-actions">
+        <button type="button" className="secondary-button" disabled={busy} onClick={onRefresh}>
+          {busy?'整理中…':'重新整理'}</button>
+      </div>
+    </section>
+  </div>;
+}
 
 function InsightView({insight}:{insight:MemoryInsight|null}){
   if(!insight)return <div className="memory-empty-state">读取中</div>;
@@ -97,9 +117,10 @@ export function MemoryPanel({robotId,personaId,chatId,generation,onClose}:{
     return ()=>media.revert();
   },{scope:panelRef});
 
-  const [tab,setTab]=useState<Tab>('shared');
+  const [tab,setTab]=useState<Tab>('summary');
   const [items,setItems]=useState<MemoryFact[]>([]);
   const [insight,setInsight]=useState<MemoryInsight|null>(null);
+  const [summary,setSummary]=useState<MemorySummary|null>(null);
   const [state,setState]=useState('读取中');
   const [failure,setFailure]=useState('');
   const [busy,setBusy]=useState(false);
@@ -114,9 +135,10 @@ export function MemoryPanel({robotId,personaId,chatId,generation,onClose}:{
   const [filterType,setFilterType]=useState('all');
   const [withOutdated,setWithOutdated]=useState(false);
 
-  const listing=tab!=='insight';
-  const scope:MemoryScope=tab==='insight'?'shared':tab;
+  const listing=tab!=='insight'&&tab!=='summary';
+  const scope:MemoryScope=tab==='insight'||tab==='summary'?'shared':tab;
   const base=robotPath(robotId)+(scope==='chat'?'/chat-memories':'/memories');
+  const summaryPath=robotPath(robotId)+'/memory-summary';
   const identity={chat_id:chatId,persona_id:personaId,generation};
 
   const refresh=useCallback(async()=>{
@@ -137,7 +159,7 @@ export function MemoryPanel({robotId,personaId,chatId,generation,onClose}:{
   },[base,listing,personaId,chatId,generation]);
 
   useEffect(()=>{
-    if(listing)return;
+    if(tab!=='insight')return;
     let active=true;
     const load=()=>api<MemoryInsight>(robotPath(robotId)+'/memory-insight').then(result=>{
       if(active){setInsight(result);setFailure('');}
@@ -145,11 +167,29 @@ export function MemoryPanel({robotId,personaId,chatId,generation,onClose}:{
     void load();
     const timer=window.setInterval(()=>{void load();},INSIGHT_POLL_MS);
     return()=>{active=false;window.clearInterval(timer);};
-  },[listing,robotId]);
+  },[tab,robotId]);
+
+  useEffect(()=>{
+    if(tab!=='summary')return;
+    let active=true;
+    const load=()=>api<MemorySummary>(summaryPath).then(result=>{
+      if(active){setSummary(result);setFailure('');}
+    }).catch(error=>{if(active)setFailure(message(error));});
+    void load();
+    const timer=window.setInterval(()=>{void load();},INSIGHT_POLL_MS);
+    return()=>{active=false;window.clearInterval(timer);};
+  },[tab,summaryPath,personaId,generation]);
 
   async function mutate(action:()=>Promise<unknown>){
     setBusy(true);setFailure('');
     try{await action();await refresh();setEditing(null);}
+    catch(error){setFailure(message(error));}
+    finally{setBusy(false);}
+  }
+
+  async function rebuildSummary(){
+    setBusy(true);setFailure('');
+    try{setSummary(await api<MemorySummary>(summaryPath+'/refresh','POST'));}
     catch(error){setFailure(message(error));}
     finally{setBusy(false);}
   }
@@ -163,7 +203,7 @@ export function MemoryPanel({robotId,personaId,chatId,generation,onClose}:{
     .sort((a,b)=>Number(a.status==='outdated')-Number(b.status==='outdated'));
   const activeCount=valid.filter(item=>item.status==='active').length;
   const changeTab=(next:Tab)=>{
-    setTab(next);if(next!=='insight')setKind(next==='persona'?'persona':'semantic');setEditing(null);
+    setTab(next);if(next!=='insight'&&next!=='summary')setKind(next==='persona'?'persona':'semantic');setEditing(null);
     setCreating(false);setSearch('');setFilterType('all');setFailure('');
   };
 
@@ -275,7 +315,8 @@ export function MemoryPanel({robotId,personaId,chatId,generation,onClose}:{
               </article>;
             })}
           </div>
-        </>:<InsightView insight={insight}/>}
+        </>:tab==='summary'?<SummaryView summary={summary} busy={busy} onRefresh={()=>void rebuildSummary()}/>
+          :<InsightView insight={insight}/>}
       </div>
 
       {creating&&listing&&<div className="memory-create-backdrop" role="presentation"

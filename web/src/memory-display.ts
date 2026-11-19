@@ -2,8 +2,17 @@
 export type MemoryFact={id:string;kind:string;persona_id:string;chat_id?:string;fact_key:string;text:string;
   source_turn_id:string|null;source_created_ms?:number;version:number;status:string;index_state:string;
   expires_at_ms?:number|null;importance?:number;hits?:number;hit_days?:number;last_hit_ms?:number|null;
-  superseded_by?:string|null;origin?:string;retention?:number;faded?:boolean};
+  superseded_by?:string|null;origin?:string;retention?:number;faded?:boolean;ignored?:boolean};
 export type MemoryScope='shared'|'persona'|'chat';
+export type MemorySummary={status:string;persona_id?:string;state?:'missing'|'stale'|'behind'|'current';
+  text?:string;updated_ms?:number|null;facts?:number;live_facts?:number;queued?:boolean;error?:string|null};
+
+export const summaryStateLabel:Record<string,string>={
+  current:'她开场带着的就是这段',
+  behind:'有新记下的事，稍后并入；在此之前新事逐条附在这段后面',
+  stale:'记忆有改动，稍后重写；在此之前开场用逐条记忆',
+  missing:'还没有摘要，开场用逐条记忆',
+};
 
 export type RecallHit={id:string;text:string;score:number;why:string[]};
 export type MemoryRecall={at_ms:number;source:'turn'|'tool';persona_id:string;query:string;hits:RecallHit[]};
@@ -15,7 +24,8 @@ export type MemoryInsight={status:string;recalls?:MemoryRecall[];recall_turns?:n
   recap?:{text:string;updated_ms:number;folded:number}|null;error?:string|null;idle_seconds?:number;max_turns?:number};
 
 // Mirrors is_meta_memory in annie_brain/memory.py: rows memory never uses are not shown either.
-export const invalidMemory=(item:MemoryFact)=>
+export const invalidMemory=(item:MemoryFact)=>item.ignored===true||
+  /(?:不|无需|不必|不用|不需要)(?:提取|记录|保存|作为|写入)(?:为|成|进|入)?长期记忆/.test(item.text)||
   /^no[-_]?(extractable(?:[-_]?content)?|extraction|memory|fact|durable[-_]?fact)$|^(none|null|placeholder|empty[-_]?memory)$/i.test(item.fact_key)||
   /^(?:placeholder|无效抽取|用户(?:曾)?询问|用户问过|用户只是询问|用户提及地点为|用户称呼助手|本轮(?:没有|未))/.test(item.text)||
   /(?:未提取到|未发现|无(?:法|明确)?|没有|暂无|未能).{0,45}(?:长期记忆|持久偏好|有意义经历|事实|提取|可记忆内容)/.test(item.text)||

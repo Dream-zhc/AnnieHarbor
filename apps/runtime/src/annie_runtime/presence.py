@@ -75,6 +75,11 @@ _SLEEP_REJECT = (
     "为什么", "怎么", "什么", "没让", "没有", "不是", "别让", "不要让",
     "干嘛", "干什么", "怎样",
 )
+# Up to three words of any kind before 你退下/你闭嘴 ("讲完你退下", "想你闭嘴") still
+# tell her to stop, unless they negate or ask.
+_SLEEP_SUFFIX = re.compile(r"(.{0,3})你(?:退下|闭嘴)(?:吧|了|啊|呀|啦|哦)?")
+_SLEEP_SUFFIX_BLOCK = re.compile(r"[不没别甭勿莫谁啥哪何怎么]")
+SLEEP_DECIDE_CHARS = 80  # longer turns are not a request to stop, even for the decision model
 ASR_GRACE_SECONDS = 10.0
 
 
@@ -279,7 +284,23 @@ class DialoguePresence:
             return False
         if any(word in normalized for word in _SLEEP_REJECT):
             return False
+        suffix = _SLEEP_SUFFIX.fullmatch(normalized)
+        if suffix and not _SLEEP_SUFFIX_BLOCK.search(suffix[1]):
+            return True
         return _sleep_phrase(normalized)
+
+    @staticmethod
+    def sleep_request_verdict(text):
+        """True for an explicit request to stop, False when the words rule one out, None
+        when only the decision model can tell ("你可以先退下了吗？")."""
+        if DialoguePresence.is_sleep_request(text):
+            return True
+        normalized = _sleep_text(unicodedata.normalize("NFKC", str(text or "")))
+        if not normalized or len(normalized) > SLEEP_DECIDE_CHARS:
+            return False
+        if any(word in normalized for word in _SLEEP_REJECT):
+            return False
+        return None
 
     def is_wake_transcript(self, text):
         """One observed misdecode, only on the first utterance after KWS.

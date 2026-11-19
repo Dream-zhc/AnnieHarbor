@@ -5,6 +5,7 @@ import json
 from types import SimpleNamespace
 
 import httpx
+import pytest
 from annie_brain.event_policy import EventPolicy
 from annie_core import NormalizedEvent, RobotConfig
 from annie_runtime import HarborRuntime
@@ -125,6 +126,98 @@ def test_event_realtime_isolation_and_waiting(tmp_path):
             await rt.close()
 
     asyncio.run(exercise())
+
+
+def contact_runtime(tmp_path, body):
+    async def exercise():
+        FakeSocket.instances.clear()
+        rt = HarborRuntime([RobotConfig("a", room_id="roomv2")], tmp_path / "contact.db",
+                           realtime_key="fake", realtime_socket_factory=FakeSocket)
+        rt.bind_input_source("room:roomv2:main-event", ["a"])
+        await rt.start()
+        try:
+            for _ in range(100):
+                if rt.realtime["a"].ready:
+                    break
+                await asyncio.sleep(.01)
+            assert rt.realtime["a"].ready
+            await body(rt, rt.realtime["a"])
+        finally:
+            await rt.close()
+
+    asyncio.run(exercise())
+
+
+async def settled(rows, status, steps=100):
+    for _ in range(steps):
+        if rows[-1]["status"] == status:
+            return True
+        await asyncio.sleep(.01)
+    return False
+
+
+def creates(client):
+    return [item for item in client.socket.outbound if item["type"] == "response.create"]
+
+
+def test_a_touch_cuts_her_own_reply_short_at_once(tmp_path):
+    async def body(rt, client):
+        client._create_turn("给我讲个很长的故事")
+        story = client.turn_id
+        rt.dispatch_room_event("room:roomv2:main-event", touch())
+        rows = rt.external_events("a")["events"]
+        assert await settled(rows, "submitted_unknown")
+        assert rows[-1]["interrupted"] is True
+        assert any(event["kind"] == "turn.done" and event["turn_id"] == story
+                   and event["status"] == "cancelled" and event["cancel_source"] == "external_event"
+                   for event in client.events)
+        assert client.robot.cached_turn(client.turn_id)["turn_source"] == "external"
+        assert len(creates(client)) == 1
+
+    contact_runtime(tmp_path, body)
+
+
+def test_her_reply_to_an_earlier_event_and_the_users_words_are_not_cut(tmp_path):
+    async def body(rt, client):
+        client._create_turn("【外部事件，非用户发言】有人摸了你的头", source="external")
+        rt.dispatch_room_event("room:roomv2:main-event", touch(sensor="arm"))
+        rows = rt.external_events("a")["events"]
+        await asyncio.sleep(.03)
+        assert (rows[-1]["status"], rows[-1]["reason"]) == ("waiting", "model_busy")
+        client._finish("completed")
+        assert await settled(rows, "submitted_unknown")
+        assert "interrupted" not in rows[-1]
+        client._finish("completed")
+        client.speech_active = True
+        rt.dispatch_room_event("room:roomv2:main-event", touch("touch-3", sensor="back"))
+        await asyncio.sleep(.03)
+        latest = rt.external_events("a")["events"][-1]
+        assert (latest["event_id"], latest["status"], latest["reason"]) == (
+            "touch-3", "waiting", "model_busy")
+        assert len(creates(client)) == 1
+
+    contact_runtime(tmp_path, body)
+
+
+def test_provider_refusal_while_someone_speaks_keeps_the_session_and_retries(tmp_path):
+    async def body(rt, client):
+        rt.dispatch_room_event("room:roomv2:main-event", touch())
+        rows = rt.external_events("a")["events"]
+        assert await settled(rows, "submitted_unknown")
+        socket, refused_turn = client.socket, client.turn_id
+        await client.handle({"type": "error", "error": {
+            "code": "invalid_value", "message": "Cannot create response while user is speaking.",
+            "event_id": creates(client)[0]["event_id"]}}, client.robot.generation)
+        assert client.ready and client.socket is socket
+        assert client.turn_id != refused_turn
+        assert (rows[-1]["status"], rows[-1]["reason"]) == ("waiting", "user_speaking")
+        assert await settled(rows, "submitted_unknown")
+        assert len(creates(client)) == 2 and rows[-1]["retries"] == 1
+        with pytest.raises(RuntimeError):
+            await client.handle({"type": "error", "error": {
+                "code": "invalid_value", "message": "something else"}}, client.robot.generation)
+
+    contact_runtime(tmp_path, body)
 
 
 def test_radar_too_close_replies_once_then_cools_down(tmp_path):

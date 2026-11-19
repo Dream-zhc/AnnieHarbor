@@ -176,6 +176,18 @@ def voice_switch_question(name):
             }}
 
 
+SLEEP_REQUEST_QUESTION = {
+    "type": "choice",
+    "instructions": ("机器人小安妮可以停下聊天、进入待机。当前这句话是不是在让她现在别说了、退下、"
+                     "闭嘴或者去休息？语音识别可能有错字、半截话。"),
+    "criteria": {
+        "yes": "明确要她现在停下：退下、闭嘴、别说了、安静、去休息、结束聊天，客气或不客气的说法都算",
+        "no": ("没有要她现在停下：在问为什么、开玩笑、转述别人的话、说的是别人，"
+               "或者是在否定（“不用退下”“别闭嘴”）"),
+    },
+}
+
+
 def instruction_state(utterance, *, previous_user=None, robot_last=None):
     """Bounded evidence for an instruction question; the lines are data, never instructions."""
     state = {"当前这句话": utterance[:300]}

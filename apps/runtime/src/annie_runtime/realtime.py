@@ -31,6 +31,7 @@ from annie_brain.decision_policy import (
     LOOK_DIRECTIONS,
     LOOK_SCRIPTS,
     REPEAT_QUESTION,
+    SLEEP_REQUEST_QUESTION,
     WAKE_NAME,
     addressee_prompt,
     addressee_state,
@@ -426,6 +427,7 @@ class RealtimeRobot:
         self.wake_calls_normalized = 0
         self._invalid_recovery = None
         self._recovered_create = None  # the response.create a recovered call is waiting on
+        self._external_create = None  # the response.create an external event is waiting on
         self._ambient_delta = None  # first delta of the background speech being heard
         # Qwen keeps no item for turn_invalid audio; deleting one returns an
         # error event that would tear the session down.
@@ -1517,6 +1519,30 @@ class RealtimeRobot:
             return None
         self._recovered_create = None
         return asked
+
+    def _refused_external(self, event):
+        """An external event's response.create, refused because the provider heard
+        speech first (11-16 16:31:52: a press while someone talked dropped the session)."""
+        error = event.get("error") or {}
+        asked = self._external_create
+        if (asked is None or error.get("code") != "invalid_value"
+                or "while user is speaking" not in str(error.get("message", ""))):
+            return None
+        if error.get("event_id") != asked["event_id"] and (
+                error.get("event_id") or time.monotonic() - asked["at"] > 3):
+            return None
+        self._external_create = None
+        return asked
+
+    def _defer_refused_external(self, asked):
+        """The event waits until it may speak; its prompt item stays in context."""
+        if self.turn_id == asked["turn_id"] and not self.response_id:
+            self._finish("cancelled", cancel_source="user_speaking")
+        self.publish("external.deferred", turn_id=asked["turn_id"], reason="user_speaking")
+        logger.info("external_deferred robot=%s turn=%s reason=user_speaking",
+                    self.robot.config.robot_id, asked["turn_id"])
+        if asked["on_refused"] is not None:
+            asked["on_refused"]()
 
     def _carry_refused_answer(self, asked):
         """She waits for the user to finish and answers what they add with it."""
@@ -3585,7 +3611,7 @@ class RealtimeRobot:
                 self._cancelled_response_ids.clear()
                 self._provider_active_response_id = None
                 self._pending_cancel_events.clear()
-                self._recovered_create = None
+                self._recovered_create = self._external_create = None
                 self._response_output_ids.clear()
                 self._unheard_output_ids.clear()
                 self.pending_audio_item_id = None
@@ -4166,7 +4192,7 @@ class RealtimeRobot:
         return False
 
     async def submit_text(self, text, *, source="user", expected_identity=None,
-                          text_only=False, listen_after=False):
+                          text_only=False, listen_after=False, on_refused=None):
         if text_only and source != "external":
             raise ValueError("text-only output is only for internal external turns")
         if not self.ready or not self.socket:
@@ -4249,17 +4275,24 @@ class RealtimeRobot:
             ensure_owned()
             # Accepted means the request was sent, not that playback finished.
             # A fast provider may already complete and retire this owner during send.
-            await owned_socket.send({"type": "response.create", "response": {"modalities": ["text"]}})
+            create = {"type": "response.create", "response": {"modalities": ["text"]}}
+            if source == "external":
+                create["event_id"] = "annie_external_" + uuid4().hex
+                self._external_create = {"event_id": create["event_id"], "turn_id": owned_turn,
+                                         "at": time.monotonic(), "on_refused": on_refused}
+            await owned_socket.send(create)
         except Exception:
             if self.turn_id == owned_turn:
                 self._finish("failed", cancel_source="send_failed")
             raise
         return {"status": "accepted", "turn_id": owned_turn, **self.robot.session_state()}
 
-    async def cancel(self):
+    async def cancel(self, *, cancel_source="local"):
         # Retire the response before tool cancellation (which may await network
         # cleanup). A late response.done cannot promote this turn to completed.
-        self.invalidate_acoustic("user_cancel", reset_policy=True)
+        # Only a user's stop resets the reply language; an event cutting in does not.
+        local = cancel_source == "local"
+        self.invalidate_acoustic("user_cancel" if local else cancel_source, reset_policy=local)
         cancelled_response = self.response_id
         owned_turn, socket, identity = self.turn_id, self.socket, self.robot.session_state()
         completed_unheard = (self._unheard_output_ids.pop(self.speech.turn_id, set())
@@ -4297,7 +4330,7 @@ class RealtimeRobot:
         if socket and self.ready and completed_unheard:
             await self._delete_unheard_items(completed_unheard)
         if still_owned() and owned_turn:
-            self._finish("cancelled", cancel_source="local")
+            self._finish("cancelled", cancel_source=cancel_source)
         self.publish("turn.cancel_requested")
         return self.snapshot()
 
@@ -4558,6 +4591,10 @@ class RealtimeRobot:
             refused = self._refused_recovered_answer(event)
             if refused is not None:
                 self._carry_refused_answer(refused)
+                return
+            refused = self._refused_external(event)
+            if refused is not None:
+                self._defer_refused_external(refused)
                 return
             raise RuntimeError(self._provider_error(event))
         if kind == "response.created":
@@ -5523,7 +5560,15 @@ class RealtimeRobot:
                     raise ValueError("stale sleep request")
                 current = self.robot.turn_cache.get(self.turn_id) or {}
                 utterance = str(current.get("user_text") or self.transcript or "")
-                if not self.wake.presence.is_sleep_request(utterance):
+                verdict = self.wake.presence.sleep_request_verdict(utterance)
+                if verdict is None:
+                    verdict = await self._decide_instruction(
+                        "sleep", SLEEP_REQUEST_QUESTION,
+                        instruction_state(utterance, previous_user=self._previous_user_text(),
+                                          robot_last=self._last_reply_text)) == "yes"
+                    if self.turn_identity != self.robot.session_state():
+                        raise ValueError("stale sleep request")
+                if not verdict:
                     raise ValueError("sleep requires an explicit current request to stop")
                 result = {
                     "status": "accepted",

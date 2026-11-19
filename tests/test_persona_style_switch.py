@@ -103,6 +103,25 @@ def test_only_bare_mentions_are_left_to_the_decision_model():
         assert not isinstance(refused.value, UnclearPersonaRequest), text
 
 
+@pytest.mark.parametrize("text", [
+    "性格切换了", "性性格性格切切换了。", "她刚才切换了毒舌性格", "刚才变成了毒舌", "毒舌我早就换过了",
+])
+def test_telling_what_happened_is_left_to_the_decision_model(text):
+    with pytest.raises(UnclearPersonaRequest):
+        resolve_persona_style_request("annie", PROFILES, {}, "毒舌", text)
+
+
+def test_the_11_17_demo_line_switches_because_it_asks_to():
+    demo = ("被我惊讶了，您刚才说话了，所以就转向您那边了。性性格性格切切换了。那性格就是今天演示是一个"
+            "比较稳定的版本。没问题。他还有这个，本来是有个性格切换，嗯，还能骂人，骂人老老狠了。"
+            "啊，有什么？切换一下性格。注意啊，他说话可能不太文明。")
+    style, options = resolve_persona_style_request("annie", PROFILES, {}, "毒舌", demo)
+    assert style == "annie-savage" and options is None
+    with pytest.raises(UnclearPersonaRequest):
+        resolve_persona_style_request("annie", PROFILES, {}, "毒舌",
+                                      demo.replace("切换一下性格。", ""))
+
+
 def test_only_turning_down_the_switch_or_the_named_option_refuses_it():
     for text in ("别换声音，这个挺好", "不要换了", "不用再换", "我不想换", "算了不换了", "不切换",
                  "别用毒舌", "不要那个毒舌"):

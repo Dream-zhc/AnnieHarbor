@@ -70,6 +70,19 @@ class RealtimeWireTests(unittest.TestCase):
                        "先停下来把那个故事讲完"):
             self.assertFalse(DialoguePresence.is_sleep_request(phrase), phrase)
 
+    def test_a_short_lead_before_ni_tuixia_or_ni_bizui_is_still_a_request(self):
+        for phrase in ("讲完你退下", "想你闭嘴", "小安妮，讲完你退下吧。", "好了你闭嘴", "我让你退下"):
+            self.assertTrue(DialoguePresence.is_sleep_request(phrase), phrase)
+            self.assertIs(DialoguePresence.sleep_request_verdict(phrase), True, phrase)
+        for phrase in ("谁让你闭嘴", "不用你退下", "我没让你退下", "怎么你闭嘴了", "讲完故事以后你再退下"):
+            self.assertFalse(DialoguePresence.is_sleep_request(phrase), phrase)
+
+    def test_sleep_wording_the_rules_cannot_place_is_left_to_the_decision_model(self):
+        for phrase in ("谁让你闭嘴", "不用你退下", "你可以先退下了吗？", "累了，你也歇歇吧"):
+            self.assertIsNone(DialoguePresence.sleep_request_verdict(phrase), phrase)
+        for phrase in ("我没让你退下", "你为什么退下了", "", "我跟你说" * 30):
+            self.assertIs(DialoguePresence.sleep_request_verdict(phrase), False, phrase)
+
     def test_chained_stuttered_or_corrected_sleep_commands_still_close_the_gate(self):
         for phrase in ("你你闭嘴，别说话了。", "闭嘴，你别说话了", "别说了别说了", "闭闭嘴",
                        "不是让你闭嘴，是让你退下。"):
@@ -1520,6 +1533,44 @@ class DeferredSleepTests(unittest.IsolatedAsyncioTestCase):
             "name": "enter_sleep", "arguments": "{}",
         }, generation)
         self.assertEqual(self._tool_output()["reason"], "external_event_no_sleep")
+        self.assertEqual(self.client.wake.state, "ACTIVE")
+
+    async def _sleep_result(self, text, item_id, response_id):
+        generation = await self._admit(text, item_id=item_id)
+        await self.client.handle({"type": "response.created", "response": {"id": response_id}},
+                                 generation)
+        await self.client.handle({
+            "type": "response.function_call_arguments.done", "response_id": response_id,
+            "call_id": "call-" + item_id, "name": "enter_sleep", "arguments": "{}",
+        }, generation)
+        outputs = []
+        for _ in range(100):
+            outputs = [event for event in self.client.socket.outbound
+                       if event.get("type") == "conversation.item.create"
+                       and event["item"].get("call_id") == "call-" + item_id]
+            if outputs:
+                break
+            await asyncio.sleep(0.01)
+        self.client._disarm_sleep_wait()
+        if self.client.turn_id:
+            self.client._finish("completed")
+        return json.loads(outputs[-1]["item"]["output"])
+
+    async def test_demo_sleep_phrases_and_unsure_wording_reach_sleep(self):
+        from tests.test_decision_model import FakeDecision
+
+        self.assertEqual((await self._sleep_result("讲完你退下", "demo", "bye-1"))["status"],
+                         "accepted")
+        decision = FakeDecision({"choice": "yes", "confidence": .9}, {"choice": "no", "confidence": .9})
+        self.client._decision_model = lambda: ("fake", decision, "fake-model")
+        polite = await self._sleep_result("你可以先退下了吗？", "polite", "bye-2")
+        self.assertEqual(polite["status"], "accepted")
+        state, questions = decision.calls[0]
+        self.assertEqual(state["当前这句话"], "你可以先退下了吗？")
+        self.assertIn("待机", questions["intent"]["instructions"])
+        refused = await self._sleep_result("不用你退下", "stay", "bye-3")
+        self.assertEqual(refused["status"], "rejected")
+        self.assertEqual(len(decision.calls), 2)
         self.assertEqual(self.client.wake.state, "ACTIVE")
 
     async def test_new_speech_or_text_cancels_unfinished_sleep(self):

@@ -5,8 +5,13 @@ import time
 from collections import deque
 
 from annie_brain.event_policy import EventPolicy
+from annie_core import RobotUnavailableError
 
 GREETING_QUIET_SECONDS = 20  # no greeting within this long of the last conversation
+# Body contact and gas cut her own reply short instead of waiting behind it.
+INTERRUPTING_KINDS = frozenset({"sensor.touch", "sensor.pressure", "sensor.gas"})
+RETRY_HOLD_SECONDS = 0.4  # the provider's speech start lands before the next try
+RETRIES = 2
 
 
 class EventService:
@@ -72,6 +77,34 @@ class EventService:
         self._publish(robot_id, row)
         return row
 
+    @staticmethod
+    def _may_interrupt(row, robot, client):
+        """Never the user's own words, nor her reply to an earlier event."""
+        if row["kind"] not in INTERRUPTING_KINDS or client.speech_active:
+            return False
+        speech = client.speech
+        for turn_id in (client.turn_id, speech.turn_id if speech else None):
+            turn = robot.cached_turn(turn_id) if turn_id else None
+            if turn and turn.get("turn_source") == "external":
+                return False
+        return True
+
+    def _retry(self, robot_id, row, reason):
+        """Back in front for another try while the event is still fresh."""
+        row["retries"] = row.get("retries", 0) + 1
+        if row["retries"] > RETRIES or row["expires_at_ms"] <= time.time_ns() // 1_000_000:
+            return False
+        row.update(status="waiting", reason=reason,
+                   retry_at=time.monotonic() + RETRY_HOLD_SECONDS)
+        self.pending[robot_id].appendleft(row)
+        self.wake(robot_id)
+        return True
+
+    def _refused(self, robot_id, row):
+        if not self._retry(robot_id, row, "user_speaking"):
+            row.update(status="failed", reason="user_speaking")
+        self._publish(robot_id, row)
+
     def wake(self, robot_id):
         if not self.runtime.started or not self.pending[robot_id]:
             return
@@ -100,14 +133,23 @@ class EventService:
                 self._publish(robot_id, row)
                 continue
             client = self.runtime.realtime.get(robot_id)
+            hold = row.get("retry_at", 0) - time.monotonic()
             if client is None or not client.ready:
                 blocked = "realtime_unavailable"
+            elif hold > 0:
+                blocked = "user_speaking"
             else:
                 speech = client.speech
                 blocked = robot.coordinator.event_block_reason(
                     model_busy=bool(client.speech_active or client.turn_id or client.response_id),
                     playback_active=bool(speech and speech.output_active()),
                 )
+                if blocked is not None and self._may_interrupt(row, robot, client):
+                    await client.cancel(cancel_source="external_event")
+                    row["interrupted"] = True
+                    # The speaker's own state report lags the local stop: do not wait on it.
+                    busy = client.speech_active or client.turn_id or client.response_id
+                    blocked = "model_busy" if busy else None
                 if (blocked is None and row.get("wait_for_quiet")
                         and time.monotonic() - client._last_conversation_activity_t
                         < GREETING_QUIET_SECONDS):
@@ -125,8 +167,13 @@ class EventService:
                         "【外部事件，非用户发言】" + row["prompt"],
                         source="external", expected_identity=row,
                         listen_after=bool(row.get("listen_after")),
+                        on_refused=lambda row=row: self._refused(robot_id, row),
                     )
                     row.update(status="submitted_unknown", turn_id=result["turn_id"])
+                except RobotUnavailableError as exc:
+                    # Speech started under the submission ("preempted by speech"): try again.
+                    if not self._retry(robot_id, row, "user_speaking"):
+                        row.update(status="failed", reason=type(exc).__name__)
                 except Exception as exc:
                     row.update(status="failed", reason=type(exc).__name__)
                 self._publish(robot_id, row)
@@ -134,8 +181,9 @@ class EventService:
             row.update(status="waiting", reason=blocked)
             self._publish(robot_id, row)
             wakeup.clear()
+            timeout = (row["expires_at_ms"] - now_ms) / 1000
             try:
-                await asyncio.wait_for(wakeup.wait(), (row["expires_at_ms"]-now_ms)/1000)
+                await asyncio.wait_for(wakeup.wait(), min(timeout, hold) if hold > 0 else timeout)
             except asyncio.TimeoutError:
                 pass
 

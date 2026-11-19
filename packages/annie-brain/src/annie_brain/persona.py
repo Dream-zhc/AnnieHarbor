@@ -258,6 +258,7 @@ SWITCH_VERB = (r"(?:切换(?:成|到|回)?|切(?:成|到|回)|换(?:成|到|回|
                r"|试试|开启|打开)")
 STYLE_WORD = r"(?:性格|风格|人格|人设)"
 CLAUSE = r"[^，,。？?！!；;\s]"
+NOT_DONE = r"(?![了过])"
 
 
 def style_named(profiles, name):
@@ -318,15 +319,18 @@ def resolve_persona_style_request(persona_id, profiles, social, requested_name, 
     named = [style_id for style_id in named
              if not any(style_id != other and profiles[style_id]["label"] in profiles[other]["label"]
                         and profiles[other]["label"] in user_text for other in named)]
+    # A verb followed by 了/过 tells what happened (“性格切换了”, “刚才变成了毒舌”);
+    # only a request may switch without the decision model.
     governed = [style_id for style_id in named if re.search(
-        SWITCH_VERB + CLAUSE + "{0,4}?" + re.escape(profiles[style_id]["label"]), user_text)]
+        SWITCH_VERB + NOT_DONE + CLAUSE + "{0,4}?" + re.escape(profiles[style_id]["label"]),
+        user_text)]
     names_style = bool(re.search(
         SWITCH_VERB + r"(?:一下)?(?:你的?|自己的?)?(?:这个|那个|一下)?(?:新的?|别的|原来的?|之前的?)?"
-        + STYLE_WORD + "|" + STYLE_WORD + CLAUSE + r"{0,8}?(?:换|切换?|改)(?:成|到|回|一下|个|换|吧|掉)",
+        + STYLE_WORD + "|" + STYLE_WORD + CLAUSE + r"{0,8}?(?:切换|换|切|改)(?:成|到|回|一下|个|吧|掉)",
         user_text,
     ))
     names_label = bool(governed) or bool(named) and bool(re.search(
-        r"换成|改成|切换成|切换到|变成|调成|(?<!不)用(?!户)", user_text))
+        r"(?:换成|改成|切换成|切换到|变成|调成|(?<!不)用(?!户))" + NOT_DONE, user_text))
     if not names_style and not names_label:
         raise UnclearPersonaRequest("persona switch requires an explicit current request")
     if len(governed) == 1:

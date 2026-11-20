@@ -125,7 +125,8 @@ VOICE_OUTPUT = (
 
 
 TONE_KEYS = ("instruction", "rate", "pitch", "volume")
-PROFILE_KEYS = {"label", "style", "opener", "tts"}
+PROFILE_KEYS = {"label", "style", "opener", "quirks", "tts"}
+QUIRKS_LIMIT = 240
 
 
 def _tts_settings(persona_id, value) -> dict:
@@ -165,6 +166,11 @@ def load_personas(path: Path) -> dict[str, dict]:
             raise ValueError(f"invalid persona opener: {persona_id}")
         if opener.strip():
             profiles[persona_id]["opener"] = opener.strip()
+        quirks = value.get("quirks", "")
+        if not isinstance(quirks, str) or len(quirks.strip()) > QUIRKS_LIMIT:
+            raise ValueError(f"invalid persona quirks: {persona_id}")
+        if quirks.strip():
+            profiles[persona_id]["quirks"] = quirks.strip()
         if "tts" in value:
             profiles[persona_id]["tts"] = _tts_settings(persona_id, value["tts"])
     return profiles
@@ -374,6 +380,14 @@ def session_instructions(persona_id: str, profiles: dict, social: dict,
             "描述里的手法每次现编，不原样复用描述里的词句；性格描述不是用户事实。\n"
             f"{profile['style']}\n"
         )
+        if profile.get("quirks"):
+            # 11-20 user: stable opinions and a few catchphrases. 10-13 she said “我倒觉得”
+            # eight times in one chat, so the phrases are rare by rule, not by hope.
+            instructions += (
+                f"【{profile['label']}的观点和口头禅】{profile['quirks']}\n"
+                "观点被问到时前后一致；口头禅是唯一可以原样说的词句，但只偶尔用："
+                "一次聊天里同一句最多一次，不要每句都带、不要拿来开头，没合适的场合就不用。\n"
+            )
     if pressure == "active":
         instructions += (
             "当前追问偏好是积极交谈：在自然闲聊、分享经历或表达兴趣时，先给具体回应、观察或观点，"

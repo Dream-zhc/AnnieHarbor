@@ -44,8 +44,9 @@ def test_presets_keep_stable_ids_two_character_labels_schema_and_budget():
     profiles = load_personas(CONFIG)
     assert set(profiles) == set(STYLE_MARKERS)
     for style_id, profile in profiles.items():
-        assert set(profile) == {"label", "style", "opener", "tts"}
+        assert set(profile) == {"label", "style", "opener", "quirks", "tts"}
         assert 1 <= len(profile["opener"]) <= 200
+        assert 1 <= len(profile["quirks"]) <= 240
         assert profile["label"] == STYLE_MARKERS[style_id][0]
         assert len(profile["label"]) == 2
         assert 1 <= len(profile["style"]) <= 500

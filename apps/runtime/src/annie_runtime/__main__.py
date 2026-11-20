@@ -431,6 +431,9 @@ def main():
             "ANNIE_RECORDING_ENABLED", "1" if recording.get("enabled", False) else "0") == "1"
             else None),
         recording_keep_days=int(recording.get("keep_days", 7)),
+        dialect_follow_enabled=os.environ.get(
+            "ANNIE_DIALECT_FOLLOW_ENABLED",
+            "1" if runtime_defaults.get("dialect_follow", {}).get("enabled", False) else "0") == "1",
         voice_mimic_enabled=os.environ.get(
             "ANNIE_VOICE_MIMIC_ENABLED",
             "1" if runtime_defaults.get("voice_mimic", {}).get("enabled", False) else "0") == "1",

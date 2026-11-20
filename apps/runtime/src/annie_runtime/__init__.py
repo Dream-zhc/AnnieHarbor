@@ -881,6 +881,7 @@ class HarborRuntime:
         tts_sounds_enabled: bool = False,
         recording_dir: Path | None = None,
         voice_mimic_enabled: bool = False,
+        dialect_follow_enabled: bool = False,
         recording_keep_days: int = 7,
         tts_mixed_mode_enabled: bool = False,
         acoustic_url: str | None = None,
@@ -1037,6 +1038,7 @@ class HarborRuntime:
             )
             for c in configs
         }
+        self.dialect_follow_enabled = bool(dialect_follow_enabled)
         if recording_dir is not None:
             from annie_runtime.audio_archive import AudioArchive
 
@@ -1112,6 +1114,7 @@ class HarborRuntime:
             }
             for client in self.realtime.values():
                 client.hotwords = hotwords
+                client.language.dialect_follow_more = bool(dialect_follow_enabled)
         if type(acoustic_enabled) is not bool:
             raise ValueError('acoustic_enabled must be boolean')
         if self.realtime:
@@ -1938,6 +1941,9 @@ class HarborRuntime:
         self.room_monitors[robot_id].on_sam(message, timing=timing)
         if mouth:
             speech.on_mouth_script(message)
+        if (message.get("type") == "language_id" and client is not None
+                and client.language.dialect_follow_more):
+            client.accept_language_id(message)
 
     def _room_visual_event(self, robot_id, message):
         monitor = self.room_monitors[robot_id]

@@ -33,3 +33,13 @@
 - 修复：所有“试一下”的调用走 `Invoke-Quiet`（临时改成继续执行，只看退出码）；会打印的安装命令走 `Invoke-Loud`，输出用 `Out-Host` 显示，不混进函数返回值；`-c` 里的 Python 代码不再含双引号（PowerShell 5.1 传参会把内嵌双引号弄坏）。
 - 那台机器下载约 400 KB/s：PyTorch 和依赖先走阿里云镜像、模型先走 hf-mirror.com；FireRedLID 推理代码（11 个 .py，Apache-2.0）直接放进 `vendor/`，不再去 GitHub 下载。用放入的代码在 Mac 上复测粤语样本仍判为 `zh yue` 1.0。
 - 脚本在 Mac 上无法执行 PowerShell，只做了静态检查，需要在 Windows 上再双击验证。
+
+## 方言跟随：方言词 + 语种旁路综合（同日，用户按推荐：先做、先关着）
+
+- 不加模型，用规则综合：FireRedLID 只听声音给大类，方言词由已有的 `language.py` 按主模型转写文字匹配。
+- 开关 `config/runtime_defaults.toml` `[dialect_follow] enabled = false`（`.env` 的 `ANNIE_DIALECT_FOLLOW_ENABLED` 覆盖）。打开后：
+  1. 多认方言词：东北（咋整、嘎哈、唠嗑、埋汰、嘚瑟、旮旯…）、山东（杠赛、拉呱、俺寻思…）、上海（侬、阿拉、好伐、结棍、白相…）、湖南（么子、伢子、妹陀、霸得蛮…）；原有粤语/四川/河南/陕西词表照旧常开。天津话语音合成不支持，不加。
+  2. 语种旁路连续两句同一大类且把握度 ≥0.9：粤语→粤语、吴语→上海话、西南官话→四川话、湘语→湖南话，按“听口音判断”跟随（和方言词同一条路径，2 分钟内有效，每句同类结果续期）；连续两句普通话就改回。北方官话、闽语不跟（北方分不出哪种，语音合成没有闽南话）。
+  3. 话里的方言词指向别的方言时以词为准；用户明确要求的语言/方言优先。
+- 实现：`ReplyLanguageState.hear_lid()`、`EXTRA_DIALECT_MARKERS`、`RealtimeRobot.accept_language_id()`（只收本机器人 Room 的结果，跟随变化时发 `language.lid_followed` 事件、日志 `dialect_follow_lid`，并立即刷新提示词）；`_room_sam_event` 在开关打开时把 `language_id` 交给对应机器人。
+- 验证：新增 tests/test_dialect_follow.py（词表只在开关打开时生效；一句不跟、两句才跟；改回普通话；北方官话 / 低把握 / 开关关 / 方言词冲突 / 明确要求都不被覆盖；别的 Room 的结果不进来；默认关时只显示）；`uv run --locked pytest -q` 1548 passed，ruff、web 144/0 通过；开关打开的隔离根 `sh start.sh` 工作台 200、`/health` 503（Room 故意连不上），已清理。

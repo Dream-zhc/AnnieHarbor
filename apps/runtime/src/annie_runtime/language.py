@@ -131,15 +131,28 @@ DIALECT_MARKERS = (
     ('zh', 'henan', re.compile(r'中不中|弄啥嘞|弄啥咧|可中|恁(?!地)|夜儿个|美得很嘞')),
     ('zh', 'shaanxi', re.compile(r'嫽|咥|谝闲传|么麻达|美滴很|哈怂|额们|额滴')),
 )
+# More dialects the TTS can speak (11-20), only with [dialect_follow] on, so the default
+# behaviour does not change before real dialect speakers have been tested.
+EXTRA_DIALECT_MARKERS = (
+    ('zh', 'dongbei', re.compile(r'咋整|嘎哈|唠嗑|埋汰|嘚瑟|嘎达|旮旯|瞅啥|整挺好|波棱盖|老鼻子')),
+    ('zh', 'shandong', re.compile(r'杠赛|拉呱|俺寻思|夜来个|齁咸|齁甜')),
+    ('zh', 'shanghai', re.compile(r'侬|阿拉|好伐|对伐|是伐|晓得伐|结棍|白相|辰光|老灵|搿个|伊拉')),
+    ('zh', 'hunan', re.compile(r'么子|伢子|妹陀|霸得蛮|咯个')),
+)
 # A dialect heard by its words keeps being followed this long after the last one.
 DIALECT_FOLLOW_SECONDS = 120
+# FireRedLID groups (Windows sidecar) the TTS can speak; north/min/mandarin are not a
+# follow: “北方官话” could be 东北、陕西、河南… and the TTS has no 闽南话.
+LID_DIALECTS = {'zh yue': ('yue', 'cantonese'), 'zh wu': ('zh', 'shanghai'),
+                'zh xinan': ('zh', 'sichuan'), 'zh xiang': ('zh', 'hunan')}
+LID_MIN_CONFIDENCE = .9  # wrong ones were .97+ too (11-20), so two in a row is the real gate
 
 
-def dialect_marker(text):
+def dialect_marker(text, *, extra=False):
     """(language, dialect, word) for the first dialect-only word, else None."""
     if not isinstance(text, str) or re.search(r'[“”‘’「」"\']|翻译|引用', text):
         return None
-    for language, dialect, pattern in DIALECT_MARKERS:
+    for language, dialect, pattern in DIALECT_MARKERS + (EXTRA_DIALECT_MARKERS if extra else ()):
         match = pattern.search(text)
         if match:
             return language, dialect, match.group(0)
@@ -317,6 +330,7 @@ class ReplyLanguageState:
         self.revision = 0
         self.confirmed_revision = -1
         self.styles = OrderedDict()
+        self.dialect_follow_more = False  # [dialect_follow]: extra words + FireRedLID; survives reset
         self.reset({})
 
     def reset(self, identity):
@@ -325,6 +339,7 @@ class ReplyLanguageState:
         self.typed_observation = None
         self.asr_text_observation = None
         self.asr_dialect = None
+        self._lid_recent = []
         self.candidate = None
         self.first_pending = False
         self.last_candidate = None
@@ -406,6 +421,7 @@ class ReplyLanguageState:
             self.last_candidate = None
             self.first_pending = False
             self.seen_candidates.clear()
+            self._lid_recent.clear()
         self.last_activity = time.monotonic()
         self.observation = {**observation, 'dialect': 'unknown', 'dialect_candidate': None,
                             'dialect_confidence': None, 'evidence_level': 'asr_language'}
@@ -470,7 +486,7 @@ class ReplyLanguageState:
         if request:
             self.asr_dialect = None
             return
-        found = dialect_marker(text)
+        found = dialect_marker(text, extra=self.dialect_follow_more)
         if not found:
             return
         language, dialect, word = found
@@ -482,6 +498,39 @@ class ReplyLanguageState:
             self.candidate = dict(language=language, dialect=dialect, source='asr_lexicon')
             self.last_candidate = pair
             self.first_pending = pair not in self.seen_candidates
+
+    def hear_lid(self, label, confidence):
+        """FireRedLID heard this sentence's dialect group (11-20). Two sentences in a row of a
+        group the TTS can speak are followed like a dialect word; two of Mandarin end it.
+        Explicit requests and dialect words in her own text win."""
+        if not self.dialect_follow_more or self.explicit or not isinstance(label, str):
+            return False
+        if type(confidence) not in (int, float) or confidence < LID_MIN_CONFIDENCE:
+            return False
+        self._lid_recent = (self._lid_recent + [label])[-2:]
+        if len(self._lid_recent) < 2 or self._lid_recent[0] != label:
+            return False
+        heard = self.asr_dialect if self._dialect_followed() else None
+        pair = LID_DIALECTS.get(label)
+        if pair is None:
+            if label == 'zh mandarin' and heard and heard['source'] == 'acoustic_lid':
+                self.asr_dialect = None
+                self._refresh_revision()
+                return True
+            return False
+        if heard and heard['source'] == 'asr_lexicon' and (heard['language'], heard['dialect']) != pair:
+            return False
+        changed = not (heard and (heard['language'], heard['dialect']) == pair)
+        self.asr_dialect = {'language': pair[0], 'dialect': pair[1],
+                            'evidence': f'{label} {confidence:.2f}', 'source': 'acoustic_lid',
+                            'evidence_level': 'acoustic_inference', 'at': time.monotonic()}
+        if changed:
+            # same path as a dialect word: the voice may follow before the prompt is confirmed
+            self.candidate = dict(language=pair[0], dialect=pair[1], source='asr_lexicon')
+            self.last_candidate = pair
+            self.first_pending = pair not in self.seen_candidates
+            self._refresh_revision()
+        return changed
 
     def _dialect_followed(self):
         heard = self.asr_dialect
@@ -568,8 +617,9 @@ class ReplyLanguageState:
                    if lasting else '')
                 + ('；当前用户用此语种交流，优先用对应语种自然回答；不因历史中文回复改回中文'
                    if selected['source'] in {'typed_text', 'asr_text_heuristic'} else '')
-                + ('；用户正用这种方言说话（说了“' + self.asr_dialect['evidence']
-                   + '”），用它地道的口语词回答，不要只换一两个词'
+                + ('；用户正用这种方言说话（' + ('听口音判断' if self.asr_dialect['source'] == 'acoustic_lid'
+                                              else '说了“' + self.asr_dialect['evidence'] + '”')
+                   + '），用它地道的口语词回答，不要只换一两个词'
                    if selected['source'] == 'asr_lexicon' and self.asr_dialect else '')
                 + ('；新候选首次跟随一句，之后按语境自然延续或恢复默认' if self.first_pending else '')
                 + ('；最近观察=' + self.candidate['language'] + '/' + self.candidate['dialect']

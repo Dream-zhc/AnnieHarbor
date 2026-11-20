@@ -1258,6 +1258,23 @@ class RealtimeRobot:
             self.visual_changed()
         return accepted
 
+    def accept_language_id(self, message):
+        """FireRedLID (Windows sidecar) heard this Room's last sentence: follow its dialect
+        group when [dialect_follow] is on (11-20); the language state decides."""
+        if message.get("room") != self.robot.config.room_id:
+            return False
+        changed = self.language.hear_lid(message.get("label"), message.get("confidence"))
+        if changed:
+            heard = self.language.asr_dialect
+            following = f"{heard['language']}/{heard['dialect']}" if heard else "mandarin"
+            self.publish("language.lid_followed", label=message.get("label"),
+                         confidence=message.get("confidence"), following=following)
+            logger.info("dialect_follow_lid robot=%s label=%s conf=%s following=%s",
+                        self.robot.config.robot_id, message.get("label"),
+                        message.get("confidence"), following)
+            self.visual_changed()  # new instructions before her next reply
+        return changed
+
     def _acoustic_window(self, event, *, stopped=False):
         stamp = event.get('audio_end_ms' if stopped else 'audio_start_ms')
         if type(stamp) is not int or stamp < 0:

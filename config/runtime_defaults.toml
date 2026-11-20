@@ -136,3 +136,10 @@ keep_days = 7
 # 学我说话（2026-11-20 用户要求）：本人明确同意后，用他刚说的 6～30 秒原声在阿里云复刻音色，
 # 用他的声音说一句，说完立即删除云端音色、不入音色列表；只学正在对话的人。.env 的 ANNIE_VOICE_MIMIC_ENABLED=0/1 覆盖。
 enabled = true
+
+[dialect_follow]
+# 方言跟随的补充（2026-11-20）：打开后①多认东北、山东、上海、湖南的方言词；②Windows 语种旁路
+# （sidecars/annie-dialect-lid，FireRedLID）连续两句判成粤语 / 吴语 / 西南官话 / 湘语，就跟着说粤语 / 上海话 /
+# 四川话 / 湖南话，连续两句普通话就改回来；北方官话、闽语不跟。话里的方言词和用户明确要求优先。
+# 真人方言录音测完准确率前先关着；.env 的 ANNIE_DIALECT_FOLLOW_ENABLED=0/1 覆盖。
+enabled = false

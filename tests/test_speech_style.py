@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 from functools import wraps
 
 import pytest
-from annie_adapters.tts import MAX_VOLUME, command
+from annie_adapters.tts import MAX_VOLUME, NEUTRAL_INSTRUCTION, command
 from annie_core.speech_style import (
     CHINESE_DIALECTS,
     PersonaTone,
@@ -83,10 +83,16 @@ def test_unknown_intent_falls_back_without_guessed_expression():
 
 
 def test_default_wire_sends_only_base_parameters_and_a_safe_volume():
+    # 11-20: Chinese with no instruction sometimes came back as a bare “哦”; never send none.
     assert command("run-task", "task", voice="keep")["payload"]["parameters"] == {
         "text_type": "PlainText", "voice": "keep", "format": "pcm",
         "sample_rate": 24000, "enable_ssml": False, "volume": MAX_VOLUME,
+        "instruction": NEUTRAL_INSTRUCTION,
     }
+    english = command("run-task", "task", voice="keep", style=SpeechStyle(language="en"))
+    assert not english["payload"]["parameters"].get("instruction")
+    toned = command("run-task", "task", voice="keep", style=SpeechStyle(instruction="声音明亮轻快。"))
+    assert toned["payload"]["parameters"]["instruction"] == "声音明亮轻快。"
 
 
 @pytest.mark.parametrize("kwargs", [

@@ -20,6 +20,10 @@ MODELS = ("qwen-audio-3.1-tts-plus", "qwen-audio-3.1-tts-flash",
 # (11-05 measurement, 3.0-flash and 3.1-plus clones alike), while 48 stays clean.
 MAX_VOLUME = 48
 DEFAULT_URL = "wss://dashscope.aliyuncs.com/api-ws/v1/inference"
+# With no instruction a Chinese sentence sometimes came back as a bare “啊”/“哦” or only
+# its last words (11-20: 3 of 23 with the plain runtime style, 7 of 23 with none at all;
+# 46 of 46 whole with this one). Never synthesize Chinese without one.
+NEUTRAL_INSTRUCTION = "自然口语，像平时聊天一样说。"
 # Exact raw WS enum, distinct from the broader ASR/reply-language state.
 # https://help.aliyun.com/zh/model-studio/qwen-audio-tts-client-events
 TTS_LANGUAGE_HINTS = frozenset({"zh", "en", "fr", "de", "ja", "ko", "ru", "pt", "th",
@@ -65,6 +69,9 @@ def command(action: str, task_id: str, *, text: str = "", voice: str = "", sampl
     if style is not None:
         controls = {"instruction": style.instruction, "rate": style.rate,
                     "pitch": style.pitch, "volume": style.volume}
+    if action == "run-task" and not controls["instruction"] and (
+            style is None or style.language in {"zh", "yue"}):
+        controls["instruction"] = NEUTRAL_INSTRUCTION
     if controls["instruction"] is not None:
         validate_instruction(controls["instruction"])
     for name in ("rate", "pitch"):

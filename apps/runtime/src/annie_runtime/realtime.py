@@ -96,7 +96,13 @@ from annie_runtime.name_guard import PAST_PERSON, NameGuard
 from annie_runtime.presence import DialoguePresence, canonical_wake_call
 from annie_runtime.repeat_guard import RepeatGuard, asked_again
 from annie_runtime.speaker_volume import VOLUME_MIN, volume_target
-from annie_runtime.speech_expression import EXPRESSION_HINT, ExpressionStream, StageDirections
+from annie_runtime.speech_expression import (
+    EXPRESSION_HINT,
+    ExpressionStream,
+    SoundMarks,
+    StageDirections,
+    without_sounds,
+)
 from annie_runtime.voice_timing import VoiceTiming, ms_between
 from annie_runtime.wakeword import WAKE_ADDRESS_INSTRUCTIONS, WakeAdmission
 
@@ -165,6 +171,12 @@ VISION_ACK_NOTE = (
     "不说看到了什么、不猜画面、不回答问题本身、不调用任何工具。看清以后系统会让你接着说。")
 VISION_ACKED_NOTE = ("\n【刚才已经应过一声】你刚才先说了「{ack}」，现在直接说看到的，"
                      "不要再说“我看看”“我瞅瞅”这类话，也不要把那句再说一遍。")
+SOUNDS_HINT = ("\n【笑声和叹气】说话时可以加真实的笑声、叹气这类声音：把标记直接写进回复，"
+               "会合成成真的声音，不会念出来，也不会显示。可用：[laughing]笑出声、[giggles]咯咯轻笑、"
+               "[snorts]哼一声或嗤笑、[sighing]叹气、[gasp]倒吸一口气、[clears throat]清嗓子。"
+               "觉得好笑、被逗乐、调侃人时笑，无奈、心疼、失落时叹气，吃惊时倒吸气，不屑或傲娇时哼。"
+               "有这种情绪就自然用上，一次回复一两个，放在句首或停顿处，不要每句都用；"
+               "不要再写“哈哈”“唉”这类字来代替，也不要解释标记；对方难过、严肃或在求助时不要笑。")
 STALE_QUESTION_NOTE = ("\n【那句已经过去了】用户问「{question}」之后又接着说了好一会儿别的，"
                        "不要再回头回答那句；只回应用户最新说的这句，跟你无关就简短接一句。")
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound
@@ -357,7 +369,7 @@ class RealtimeRobot:
                  history_turns: int = 8, restore_char_budget: int = 3000,
                  socket_factory=QwenRealtimeSocket, wake_detector=None,
                  wake_wait_ms=5000, wake_followup_ms=20000, side_talk_listen_ms=120000,
-                 expression_enabled=False):
+                 expression_enabled=False, sounds_enabled=False):
         self.robot = robot
         self.wake = (WakeAdmission(wake_detector, wake_wait_ms=wake_wait_ms,
                                    followup_ms=wake_followup_ms,
@@ -397,6 +409,9 @@ class RealtimeRobot:
         self._acoustic_rejected = 0
         self.speech = None
         self.expression_enabled = expression_enabled
+        # Laughs and sighs as real sounds; the whole-sentence emotion protocol stays separate.
+        self.sounds_enabled = sounds_enabled and not expression_enabled
+        self.sounds = None
         self.expression = None
         self._expression_raw = ""
         self._stage = StageDirections()
@@ -771,6 +786,7 @@ class RealtimeRobot:
             text = str(fields.get("text") or "")
             parts.update(status=fields.get("status"), cancel_source=fields.get("cancel_source"),
                          first_text_ms=fields.get("first_text_ms"), chars=len(text),
+                         sounds=",".join(fields.get("sounds") or []) or None,
                          text=text[:LOGGED_TEXT_CHARS] or None)
         elif kind.startswith("transcript."):
             parts.update(reason=fields.get("reason"),
@@ -3621,6 +3637,7 @@ class RealtimeRobot:
         self.expression = None
         self._expression_raw = ""
         self._stage = StageDirections()
+        self.sounds = None
         self._names = NameGuard()
         self._repeats = None
         self.turn_id = self.response_id = None
@@ -3867,6 +3884,8 @@ class RealtimeRobot:
                         "用一句很短的口语答应并调用enter_sleep（聆听开关，不是动作）；"
                         "accepted后不追问、不解释。问句、否定、转述时不调用。"
                     )
+                if self.sounds_enabled and self.speech is not None:
+                    tail += SOUNDS_HINT
                 tail += CURRENT_TURN_RULE
                 self._instruction_tail = tail
                 self._refresh_clock()
@@ -4373,6 +4392,7 @@ class RealtimeRobot:
         })
         self.turn_id = turn_id
         self._stage = StageDirections()
+        self.sounds = SoundMarks() if self.sounds_enabled else None
         self._names = NameGuard(self._absent_candidates(turn_id),
                                 lambda name: self._may_name(turn_id, name))
         self._repeats = None
@@ -4470,7 +4490,8 @@ class RealtimeRobot:
         elif status != "discarded":
             self.robot.snapshot.failures += 1
         self.publish("turn.done", turn_id=self.turn_id, text=self.text, status=status,
-                     first_text_ms=self.first_text_ms, cancel_source=cancel_source)
+                     first_text_ms=self.first_text_ms, cancel_source=cancel_source,
+                     sounds=list(self.sounds.used) if self.sounds is not None else None)
         self._reset_turn()
 
     @staticmethod
@@ -5498,12 +5519,15 @@ class RealtimeRobot:
                 if before != (self.expression.changes, len(self.expression.issues)):
                     self.publish("speech.expression.observed", turn_id=self.turn_id,
                                  **self.expression.snapshot())
+            if self.sounds is not None:
+                chunk = self.sounds.feed(chunk)  # “[laughing]” → one mark only the TTS expands
             chunk = self._stage_filter(chunk)
-            self.text += chunk
+            visible = without_sounds(chunk)
+            self.text += visible
             if chunk and self.first_text_ms is None and self.began is not None:
                 self.first_text_ms = round((time.perf_counter() - self.began) * 1000, 2)
-            if chunk or self.expression is None:
-                self.publish("text.delta", turn_id=self.turn_id, delta=chunk, text=self.text)
+            if visible or self.expression is None:
+                self.publish("text.delta", turn_id=self.turn_id, delta=visible, text=self.text)
             if self.speech and chunk and not self._external_text_only:
                 await self.speech.feed(self.turn_id, self.turn_identity, chunk)
                 if self.actions is not None:
@@ -5544,12 +5568,17 @@ class RealtimeRobot:
                 complete = self.text
             else:
                 # The full text replaces the streamed one: the same cleanup.
-                tail = self._stage_filter("", final=True)
+                tail = self._stage_filter(self.sounds.finish() if self.sounds is not None else "",
+                                          final=True)
                 if tail and self.text:
-                    self.text += tail
-                    self.publish("text.delta", turn_id=self.turn_id, delta=tail, text=self.text)
+                    self.text += without_sounds(tail)
+                    self.publish("text.delta", turn_id=self.turn_id, delta=without_sounds(tail),
+                                 text=self.text)
                     if self.speech and not self._external_text_only:
                         await self.speech.feed(self.turn_id, self.turn_identity, tail)
+                if self.sounds is not None:
+                    marks = SoundMarks(limit=self.sounds.limit)
+                    complete = marks.feed(complete) + marks.finish()
                 whole = StageDirections()
                 complete = self._names.fresh().feed(whole.feed(complete) + whole.finish(), final=True)
                 self._stage = StageDirections()
@@ -5560,7 +5589,7 @@ class RealtimeRobot:
                 if self.actions is not None:
                     self.actions.on_text_ready({"robot_id": self.robot.config.robot_id,
                                                 "turn_id": self.turn_id})
-            self.text = complete
+            self.text = without_sounds(complete)
             self.language.response_text_done(self.text)
             self.publish("text.done", turn_id=self.turn_id, text=self.text)
         elif kind == "response.function_call_arguments.done":

@@ -13,6 +13,8 @@ from hashlib import sha256
 from annie_adapters.tts import TTS_LANGUAGE_HINTS, QwenTtsSocket, command, task_id, validate_model
 from annie_core.speech_style import SpeechStyle
 
+from annie_runtime.speech_expression import sounds_as_tags, without_sounds
+
 logger = logging.getLogger(__name__)
 FRAME_BYTES = 960  # 20ms, 24kHz, S16LE, mono; not the 16kHz MIC_AUDIO format.
 SENTENCE_END = frozenset("。！？!?；;\n")
@@ -566,9 +568,10 @@ class SpeechOutput:
             )
             return
         self.received_chars += len(delta)
-        self.generated_text += delta
+        visible = without_sounds(delta)
+        self.generated_text += visible
         if self.mixed_enabled:
-            self._mixed_feed(delta)
+            self._mixed_feed(visible)
             if self.pending and not self.flush_timer:
                 self.flush_timer = asyncio.create_task(self._first_flush(turn_id, identity))
             return
@@ -1179,7 +1182,9 @@ class SpeechOutput:
                                 self._mixed_first_sent.set()
                             return
                         if text:
-                            await socket.send(command("continue-task", task, text=text))
+                            await socket.send(command("continue-task", task,
+                                                      text=sounds_as_tags(text)))
+                            text = without_sounds(text)
                             start_char = len(self.submitted_text)
                             self.submitted_text += text
                             self._emit("tts.text_submitted", text=text, chars=len(text),

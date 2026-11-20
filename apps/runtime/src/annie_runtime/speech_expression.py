@@ -4,6 +4,7 @@ This is deliberately not a TTS scheduler: the first spoken token is never
 held for a style decision, and no provider or model is called from here.
 """
 
+import re
 from dataclasses import dataclass, field
 
 _FIELDS = frozenset({"overall", "language", "dialect", "pace", "instruction",
@@ -19,6 +20,16 @@ _SOUND_TAGS = frozenset({"gasp", "sighing", "clears throat", "giggles",
                          "laughing", "cough", "snorts"})
 _LABELS = tuple(sorted({*(key + ":" for key in _FIELDS), *_CONTROL_TAGS,
                         *_SOUND_TAGS}))
+# The documented paralinguistic tags, rendered as a real sound in the duplex stream
+# (11-20 probe: never read out). Undocumented ones are not allowed: “[sneezes]” and
+# “[tsk]” swallowed the whole sentence in the same probe. Inside the speech text each is
+# one private-use character, so the aligner, the workbench and the history see only words.
+SOUND_TAGS = ("laughing", "giggles", "snorts", "sighing", "gasp", "clears throat", "cough")
+_SOUND_MARKS = {tag: chr(0xE100 + index) for index, tag in enumerate(SOUND_TAGS)}
+_MARK_TAGS = {mark: tag for tag, mark in _SOUND_MARKS.items()}
+_MARKS = re.compile("[" + "".join(_MARK_TAGS) + "]")
+_BRACKET_TAGS = (*SOUND_TAGS, *_CONTROL_TAGS)
+SOUNDS_PER_REPLY = 3
 _SIGNALS = ("语气", "语调", "重音", "停顿", "节奏", "语速", "尾音", "轻声",
             "放慢", "稍慢", "稍快", "上扬", "收住", "咬字", "声音", "口吻",
             "表达", "缓和", "加重", "起伏", "轻快", "舒缓")
@@ -205,3 +216,49 @@ EXPRESSION_HINT = (
     "或[sentence_instruction:本句实际发声方式]。普通句无需标记，不能为加标记而延长回答。"
     "标记是传输元数据，不是语言内容，禁止口头读出、输出JSON或解释。"
 )
+
+
+def without_sounds(text):
+    return _MARKS.sub("", text)
+
+
+def sounds_as_tags(text):
+    return _MARKS.sub(lambda found: f"[{_MARK_TAGS[found.group()]}]", text)
+
+
+class SoundMarks:
+    """“[laughing]” in her reply becomes one mark for the TTS (11-20, user: laughs and
+    sighs sound natural). A whole-sentence emotion tag (“[excited]”) is dropped: that
+    style sounded theatrical and was switched off. Other brackets stay ordinary text."""
+
+    def __init__(self, limit=SOUNDS_PER_REPLY):
+        self.limit = limit
+        self.used = []
+        self._held = ""
+
+    def feed(self, delta):
+        out = []
+        for char in delta:
+            if self._held:
+                self._held += char
+                if char == "]":
+                    body = self._held[1:-1].strip().lower()
+                    if body in _SOUND_MARKS:
+                        if len(self.used) < self.limit:
+                            self.used.append(body)
+                            out.append(_SOUND_MARKS[body])
+                    elif body not in _CONTROL_TAGS:
+                        out.append(self._held)
+                    self._held = ""
+                elif not any(tag.startswith(self._held[1:].lower()) for tag in _BRACKET_TAGS):
+                    out.append(self._held)
+                    self._held = ""
+            elif char == "[":
+                self._held = "["
+            else:
+                out.append(char)
+        return "".join(out)
+
+    def finish(self):
+        held, self._held = self._held, ""
+        return held

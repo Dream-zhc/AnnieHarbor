@@ -425,6 +425,7 @@ def main():
         acoustic_enabled=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_ENABLED", "0") == "1",
         acoustic_url=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_URL") or None,
         tts_expression_enabled=os.environ.get("ANNIE_TTS_EXPRESSION_ENABLED", "0") == "1",
+        tts_sounds_enabled=os.environ.get("ANNIE_TTS_SOUNDS_ENABLED", "1") == "1",
         tts_mixed_mode_enabled=os.environ.get("ANNIE_TTS_MIXED_MODE_ENABLED", "0") == "1",
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]

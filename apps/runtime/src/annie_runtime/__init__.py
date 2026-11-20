@@ -877,6 +877,7 @@ class HarborRuntime:
         realtime_socket_factory=None,
         acoustic_enabled: bool = False,
         tts_expression_enabled: bool = False,
+        tts_sounds_enabled: bool = False,
         tts_mixed_mode_enabled: bool = False,
         acoustic_url: str | None = None,
         acoustic_socket_factory=None,
@@ -977,6 +978,8 @@ class HarborRuntime:
             raise ValueError("realtime_restore_char_budget must be an integer between 1 and 12000")
         if type(tts_expression_enabled) is not bool:
             raise ValueError("tts_expression_enabled must be boolean")
+        if type(tts_sounds_enabled) is not bool:
+            raise ValueError("tts_sounds_enabled must be boolean")
         if type(tts_mixed_mode_enabled) is not bool or (tts_mixed_mode_enabled
                                                           and not tts_expression_enabled):
             raise ValueError("mixed TTS requires enabled expression parser")
@@ -1091,6 +1094,7 @@ class HarborRuntime:
                     wake_followup_ms=wake_followup_ms,
                     side_talk_listen_ms=side_talk_listen_ms,
                     expression_enabled=tts_expression_enabled and bool(tts_voice),
+                    sounds_enabled=tts_sounds_enabled and bool(tts_voice),
                 )
                 for robot_id, robot in self.robots.items() if robot.config.enabled
             }

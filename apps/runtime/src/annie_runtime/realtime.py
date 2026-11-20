@@ -134,6 +134,9 @@ RECOVERY_SETTLE_SECONDS = 0.6
 _TRAILING_STOP = re.compile(r"[。.!！?？…~～\s]+$")
 AUTO_EXPRESSION_COOLDOWN_SECONDS = 20
 VOICE_LOOKBACK_SECONDS = 30
+SLEEP_CUE = re.compile(r"退|闭嘴|别说|不要说|安静|休息|睡|结束|停|别吵|下去")
+SLEEP_JUDGE_MAX_CHARS = 40
+SLEEP_JUDGE_CONFIDENCE = 0.8
 # Look first (10-28, docs/规范/视觉意图协议.md): a fresh description stays in the
 # prompt this long for follow-ups; a busy motor slot is retried this often.
 FRESH_VIEW_SECONDS = 30
@@ -1649,7 +1652,8 @@ class RealtimeRobot:
         script = None
         if self.actions is not None and self.actions.enabled:
             allowed = [name for name in LOOK_SCRIPTS if name in self.actions.allowlist]
-            script = explicit_motion(text, allowed) or head_turn_motion(text, previous, allowed)
+            script = (explicit_motion(text, allowed, names=self._motion_names())
+                      or head_turn_motion(text, previous, allowed))
         return True, script
 
     async def _camera_image(self):
@@ -2530,7 +2534,7 @@ class RealtimeRobot:
             return "llm", getattr(self.addressee_judge, "model", "llm")
         return kind, model
 
-    async def _decide_instruction(self, kind, question, state):
+    async def _decide_instruction(self, kind, question, state, *, min_confidence=None):
         """The decision model's choice for an instruction the phrase rules could not
         place (user decision 10-22). None when no model answered: the caller decides."""
         started = time.perf_counter()
@@ -2557,7 +2561,22 @@ class RealtimeRobot:
         logger.info("instruction_decision robot=%s kind=%s model=%s choice=%s confidence=%s "
                     "latency_ms=%s error=%s text=%r", self.robot.config.robot_id, kind, model,
                     choice, confidence, latency_ms, error, state.get("当前这句话", "")[:30])
+        if min_confidence is not None and (confidence is None or confidence < min_confidence):
+            return None
         return choice
+
+    async def _sleep_judged(self, text):
+        """A stop request the phrase rules miss (“你他妈闭嘴”“好的，退下”). 11-20 replay of 1,527
+        lines: rules alone found 19 of 43, the model alone flagged 249 others; with a cue word,
+        a short line and confidence 0.8 together, 37 of 43 and 3 wrong."""
+        if (not SLEEP_CUE.search(text) or len(text) > SLEEP_JUDGE_MAX_CHARS
+                or not self._has_decision() or self.wake.presence.sleep_request_verdict(text) is False):
+            return False
+        return await self._decide_instruction(
+            "sleep", SLEEP_REQUEST_QUESTION,
+            instruction_state(text, previous_user=self._previous_user_text(),
+                              robot_last=self._last_reply_text),
+            min_confidence=SLEEP_JUDGE_CONFIDENCE) == "yes"
 
     async def _face_request_decided(self, kind, question, texts):
         """A face request no phrase rule placed goes to the decision model; ValueError unless yes."""
@@ -2688,10 +2707,15 @@ class RealtimeRobot:
         actions = self.actions
         return bool(actions is not None and actions.enabled and self._asked_motion(text))
 
+    def _motion_names(self):
+        actions = self.actions
+        return ({script: row.get("name") for script, row in actions.catalog.items()}
+                if actions is not None else None)
+
     def _asked_motion(self, text):
         """The enabled motion this names, or the side a bare "转头看看" was just pointed at."""
         allowed = self.actions.allowlist
-        return explicit_motion(text, allowed) or head_turn_motion(
+        return explicit_motion(text, allowed, names=self._motion_names()) or head_turn_motion(
             text, [turn.get("user_text") for turn in self.robot.recent_context()[-3:]], allowed)
 
     def _begin_addressee_check(self, event, generation, background_tools):
@@ -5262,6 +5286,9 @@ class RealtimeRobot:
                 admitted = self.wake.transcript_accepted(final_text, item_id)
             if self.wake and admitted and self.wake.presence.is_sleep_command(final_text):
                 await self._enter_sleep("asr", item_id=item_id)
+                return
+            if self.wake and admitted and await self._sleep_judged(final_text):
+                await self._enter_sleep("asr_decision", item_id=item_id)
                 return
             if self.wake and not admitted:
                 if recovering:

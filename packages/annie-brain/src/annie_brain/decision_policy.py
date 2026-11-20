@@ -7,6 +7,7 @@ so every question names its options and criteria.
 
 import json
 import re
+import unicodedata
 from difflib import SequenceMatcher
 
 WAKE_NAME = re.compile(r"小?安妮")
@@ -288,18 +289,51 @@ LOOK_SCRIPTS = ("look_left", "look_right", "look_up")
 _HEAD_TURN = re.compile(r"(?:转|扭|回|侧)(?:个|一下|下)?(?:头|身)(?:去|过去|过来)?看|[转扭]过去看")
 GENERIC_MOTION = re.compile(r"做个动作|做一个动作|来个动作|动一下|动一动|表演一下")
 _NEGATED = re.compile(r"别|不要|不用|不许|停")
+_ASK_ACTION = re.compile(r"做|作|来个|来一个|来一下|整个|摆个|表演")
+_NAME_NOISE = re.compile(r"[（(][^）)]*[）)]|[\s·・_\-]+")
+NAME_MATCH_RATIO = 0.66
+NAMED_MOTION_MAX_CHARS = 30
 
 
-def explicit_motion(user_text, allowed):
-    """A named action or face the user asked for, if it is enabled."""
+def explicit_motion(user_text, allowed, *, names=None):
+    """A named action or face the user asked for, if it is enabled. ``names`` (script id ->
+    catalog name) also lets any catalog action be asked for by its own name."""
     text = str(user_text or "")
     if _NEGATED.search(text):
         return None
     face = explicit_expression(text)
     if face in allowed:
         return face
-    return next((script for script, pattern in _MOTION_NAMES
-                 if script in allowed and re.search(pattern, text)), None)
+    script = next((script for script, pattern in _MOTION_NAMES
+                   if script in allowed and re.search(pattern, text)), None)
+    if script is None and names:
+        script = named_motion(text, {key: name for key, name in names.items() if key in allowed})
+    return script
+
+
+def _plain_name(text):
+    return _NAME_NOISE.sub("", unicodedata.normalize("NFKC", str(text or ""))).lower()
+
+
+def named_motion(user_text, names):
+    """The catalog action asked for by name, said loosely or misheard (“做个逗鸡眼”“来个侧耳朵听”).
+    Only with an ask (做/来个/表演…), never negated, closest name by character overlap."""
+    text = _plain_name(user_text)
+    if (not names or not text or len(text) > NAMED_MOTION_MAX_CHARS or _NEGATED.search(text)
+            or not _ASK_ACTION.search(text)):
+        return None
+    best, score = None, 0.0
+    for script, name in names.items():
+        name = _plain_name(name)
+        if len(name) < 2:
+            continue
+        ratio = 1.0 if name in text else max(
+            (SequenceMatcher(None, text[start:start + size], name).ratio()
+             for size in {max(2, len(name) - 1), len(name), len(name) + 1}
+             for start in range(max(1, len(text) - size + 1))), default=0.0)
+        if ratio > score:
+            best, score = script, ratio
+    return best if score >= NAME_MATCH_RATIO else None
 
 
 def head_turn_motion(user_text, previous_texts, allowed):

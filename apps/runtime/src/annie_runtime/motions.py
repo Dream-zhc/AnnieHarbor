@@ -281,7 +281,8 @@ class InteractionMotions:
         cached = client.robot.turn_cache.get(turn_id) or {}
         user_text = str(cached.get("user_text") or client.transcript or "")
         if not reply["seen"] and (
-                explicit_motion(user_text, self.runtime.actions.allowlist)
+                explicit_motion(user_text, self.runtime.actions.allowlist, names={
+                    script: row.get("name") for script, row in self.runtime.actions.catalog.items()})
                 or explicit_expression(user_text) or GENERIC_MOTION.search(user_text)):
             # The user named the motion: that one runs (auto-expression path);
             # a gesture of her own on “行，我摇头了” would contradict it (d3 replay 10-27).

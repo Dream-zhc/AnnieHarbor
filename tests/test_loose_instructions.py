@@ -33,15 +33,15 @@ IDENTITY = {'robot_id': 'a', 'room_id': 'r', 'chat_id': 'c', 'persona_id': 'p',
 
 @pytest.mark.parametrize(('text', 'expected'), [
     # The user's own three examples.
-    ('用河南话说话', ('henan', 'chat')),
+    ('用河南话说话', ('henan', 'turn')),
     ('用陕西话说一句话', ('shaanxi', 'turn')),
     ('以后都用粤语和我讲话', ('cantonese', 'robot')),
-    # Only how to talk: the rest of this chat.
+    # Said to last (继续/切换/跟我聊): the rest of this chat (user decision 11-20).
     ('小安妮，用河南话跟我说话吧', ('henan', 'chat')),
-    ('说河南话', ('henan', 'chat')),
-    ('跟我说陕西话', ('shaanxi', 'chat')),
+    ('说河南话', ('henan', 'turn')),
+    ('跟我说陕西话', ('shaanxi', 'turn')),
     ('用四川话和我聊天', ('sichuan', 'chat')),
-    ('你能不能说河南话', ('henan', 'chat')),
+    ('你能不能说河南话', ('henan', 'turn')),
     ('换成粤语', ('cantonese', 'chat')),
     ('说回普通话', ('mandarin', 'chat')),
     # Something to say: this reply only.
@@ -91,7 +91,7 @@ def test_stop_returns_to_mandarin_only_when_that_language_is_in_force():
 def test_chat_scoped_request_tells_the_model_it_is_saved_for_this_chat():
     s = ReplyLanguageState()
     s.reset(IDENTITY)
-    s.user_request('用河南话说话')
+    s.user_request('用河南话跟我聊')
     assert '这次聊天一直用河南话，已替你保存' in s.instruction_hint()
     s.response_finished()
     s.user_request('以后都用粤语和我讲话')
@@ -101,16 +101,16 @@ def test_chat_scoped_request_tells_the_model_it_is_saved_for_this_chat():
 def test_persona_follows_requests_but_keeps_who_she_is():
     text, _ = persona.session_instructions('annie', {}, {})
     assert persona.USER_REQUESTS in text
-    assert '拿不准按这次聊天都这样办' in text and '不再当小安妮' in text
+    assert '拿不准就只管这一回' in text and '不再当小安妮' in text
 
 
 def test_prompt_request_examples_match_the_runtime_scope():
-    one_off = ['用粤语骂两句', '用英语说一下这句', '用四川话讲个笑话']
-    lasting = ['说粤语', '用东北话跟我聊', '以后都说英语']
+    one_off = ['用粤语骂两句', '用英语说一下这句', '用四川话讲个笑话', '你用陕西话', '说粤语']
+    lasting = ['用东北话跟我聊', '以后都说英语', '切换成普通话']
     assert all(f'“{text}”' in persona.USER_REQUESTS for text in one_off + lasting)
     assert '下一句就回到原来的说法' in persona.USER_REQUESTS
-    assert [explicit_language_request(text)['scope'] for text in one_off] == ['turn'] * 3
-    assert [explicit_language_request(text)['scope'] for text in lasting] == ['chat', 'chat', 'robot']
+    assert [explicit_language_request(text)['scope'] for text in one_off] == ['turn'] * 5
+    assert [explicit_language_request(text)['scope'] for text in lasting] == ['chat', 'robot', 'chat']
 
 
 # ---- runtime ------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def saved(rt, client):
 
 def test_spoken_requests_save_and_stop_by_scope(tmp_path):
     async def body(rt, client):
-        await client.submit_text('用河南话说话')
+        await client.submit_text('用河南话跟我聊')
         assert await until(lambda: client.language.preferences['chat'])
         assert saved(rt, client)['chat']['dialect'] == 'henan'
         await client.cancel()
@@ -312,3 +312,24 @@ def test_lost_input_frames_are_recorded_with_their_time():
     assert gate.lost_since(began) == 2
     gate.reset_source('mic')
     assert gate.lost_since(began) == 4 and gate.lost_since(time.monotonic() + 1) == 0
+
+
+def test_a_stop_request_the_rules_miss_is_judged_by_the_model(tmp_path):
+    """11-20 replay: “好的，退下。”“你他妈闭嘴。” missed by the phrase rules; cue + short + 0.8."""
+    from tests.test_wake_call_recovery import say, woken
+
+    decision = FakeDecision({'choice': 'yes', 'confidence': .93}, {'choice': 'yes', 'confidence': .5})
+
+    async def body(rt, client):
+        woken(client)
+        await say(client, 'u1', final='好的，退下。')
+        assert client.wake.state == 'SLEEP' and len(decision.calls) == 1
+        woken(client)
+        await say(client, 'u2', final='你他妈闭嘴。')
+        assert client.wake.state != 'SLEEP' and len(decision.calls) == 2
+        await client.cancel()
+        woken(client)
+        await say(client, 'u3', final='今天天气怎么样')
+        assert len(decision.calls) == 2
+
+    live(tmp_path, body, decision=decision)

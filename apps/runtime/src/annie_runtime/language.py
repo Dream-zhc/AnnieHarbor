@@ -155,6 +155,9 @@ def validate_language(language, dialect):
 
 
 CHAT_SCOPE = re.compile(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)')
+_SWITCH_VERBS = frozenset({'说回', '讲回', '改成', '改用', '改回', '换成', '换到', '换回',
+                           '切换', '切换到', '切换成', '切到', '切成', '切回'})
+_CHAT_LASTING = re.compile(r'继续|接下来|从现在|之后|后面都|[跟和陪]我(?:聊|说话|讲话)|都用|都说|都讲')
 ROBOT_SCOPE = re.compile(r'以后|今后|往后|一直|永远|所有会话|全局|这台机器人')
 # What may surround a request that only says how to talk (“小安妮，用河南话跟我说话吧”).
 # Anything left over is content for this one reply: “用陕西话说一句话”.
@@ -168,7 +171,8 @@ _MANNER_WORDS = re.compile(
 # Negations, ability questions, translation/quoting. 能不能/要不要/可不可以
 # are requests, not negations: “能不能用粤语说”.
 _NOT_A_REQUEST = re.compile(
-    r'(?<!要)不要|别(?:用|说|讲)|不用|(?<!能)不能|不想|会说.*[吗么?？]|翻译|引用'
+    r'(?<!要)不要|别(?:用|说|讲)|不用|(?<!能)不能|不想|会说.*[吗么?？]'
+    r'|(?:会|能|可以)(?:说|讲)[^，。！？!?个段句首点些]{0,6}[吗么?？]|翻译|引用'
     r'|怎么(?:说|讲|念|读|写)|咋(?:说|讲|念)|什么意思|啥意思|叫什么|叫啥|[“”‘’「」"\']')
 
 
@@ -216,9 +220,10 @@ def explicit_language_stop(text):
 def explicit_language_request(text):
     """Conservative current-user command matcher, not a location/dialect classifier.
 
-    scope: chat/robot when named; a request that only says how to talk
-    (“用河南话说话”“说粤语吧”) holds for this chat (user decision 10-22);
-    one with content (“用陕西话说一句话”“陕西话介绍一下自己”) is this turn only.
+    scope: chat/robot when named; a request that only says how to talk holds for this
+    chat only with 继续/切换/跟我聊 and the like (“切换普通话”“用东北话跟我聊”);
+    bare (“你用陕西话”“说粤语吧”) or with content (“陕西话介绍一下自己”) it is this
+    turn only (user decision 11-20, replacing 10-22).
     """
     if not isinstance(text, str) or _NOT_A_REQUEST.search(text):
         return None
@@ -241,7 +246,7 @@ def explicit_language_request(text):
     # 来 needs a measure word: “原来英语这么难” is no request.
     modifier = r'(?:(?:正宗|地道|自然|标准|纯正)的)?\s*'
     measure = r'(?:个|一个|段|一段|句|一句|两句|几句|首|一首|点|一点|些)'
-    match = re.search(r'(?:(说回|讲回|用|说|讲|唱|改成|改用|改回|换成|换到|换回|切换到|切换成|切到|切成|切回)\s*'
+    match = re.search(r'(?:(说回|讲回|用|说|讲|唱|改成|改用|改回|换成|换到|换回|切换到|切换成|切到|切成|切回|切换)\s*'
                       + modifier + '(' + measure + r')?|(来)\s*' + measure + r'\s*' + modifier + r')\s*('
                       + _NAME_PATTERN + ')', text)
     if match:
@@ -256,11 +261,12 @@ def explicit_language_request(text):
                           text)
         if not match:
             return None
-        name, one_off = match[1], True
+        name, one_off, verb = match[1], True, None
     language, dialect = NAMES[name]
     scope = ('chat' if CHAT_SCOPE.search(text)
              else 'robot' if ROBOT_SCOPE.search(text)
-             else 'chat' if not one_off and _manner_only(text, match)
+             else 'chat' if not one_off and (_CHAT_LASTING.search(text) or (
+                 verb in _SWITCH_VERBS and _manner_only(text, match)))
              else 'turn')
     return dict(language=language, dialect=dialect, scope=scope)
 

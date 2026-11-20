@@ -8,11 +8,12 @@ base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 chat_completions_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
 # Realtime 主脑（ASR/smart_turn/对话/Function Calling）。ANNIE_REALTIME_MODEL 可临时覆盖。
-# 只允许同一 wire 协议族：qwen-audio-3.0-realtime-flash / 3.0-realtime-plus / 3.1-realtime-plus。
-# 2026-10-13 实测：语音首响与 3.0-flash 持平，上下文与工具使用更好；文字输入首字慢约150ms。
-# 回退只需改回 qwen-audio-3.0-realtime-flash。证据见 docs/开发记录/2026-10-13/。
+# 只允许同一 wire 协议族：qwen-audio-3.0-realtime-flash / 3.0-realtime-plus / 3.1-realtime-flash / 3.1-realtime-plus。
+# 2026-10-13 实测 3.1-plus：语音首响与 3.0-flash 持平，上下文与工具使用更好；证据见 docs/开发记录/2026-10-13/。
+# 2026-11-20 用户决定：3.1-plus 额度用完（Allocated quota exceeded），先换 3.1-flash；
+# 实测完整会话配置（18 个工具、smart_turn_v2、热词）与工具调用正常。额度恢复后改回 3.1-plus 即可。
 [realtime]
-model = "qwen-audio-3.1-realtime-plus"
+model = "qwen-audio-3.1-realtime-flash"
 
 # 即时热词（2026-11-19）：只让输入转写更容易认对这些词（唤醒判断、退下/方言/性格等规则吃的是转写），
 # 不改变实时模型自己听到的内容。普通热词权重 1–5，50 为超级热词（最多 50 个）；人名可按需加。

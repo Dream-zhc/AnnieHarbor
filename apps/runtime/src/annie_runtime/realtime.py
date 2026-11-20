@@ -3,11 +3,13 @@
 import asyncio
 import base64
 import copy
+import io
 import json
 import logging
 import math
 import re
 import time
+import wave
 from collections import deque
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -181,6 +183,20 @@ SOUNDS_HINT = ("\n【笑声和叹气】说话时可以加真实的笑声、叹�
                "[curious]好奇、[mischievously]调皮、[empathetic]温柔体贴、[whispers]压低声音说悄悄话、"
                "[amazed]惊叹、[excited]兴奋、[sad]难过、[reluctantly]不情愿、[tired]疲惫、[bored]无聊、"
                "[serious]严肃、[sarcastic]讽刺、[scornful]不屑、[angry]生气；它会改变这一整句的语气。")
+MIMIC_MIN_SECONDS = 6  # the clone service takes 5..60 s of the person's own speech
+MIMIC_KEEP_SECONDS = 30
+MIMIC_MAX_CHARS = 40
+MIMIC_COOLDOWN_SECONDS = 120
+MIMIC_WAIT_SECONDS = 30
+MIMIC_RULE = ("\n【学用户说话】用户想让你学他的声音时，先问一句“我可以学你的声音吗？”，本人明确答应才调用"
+              "mimic_user_voice；只学正在跟你说话的这个人，不学别人、不冒充别人；那句话由对方定，或你编一句好玩的，"
+              "不超过40个字，不说骂人、造谣或冒充别人的话。返回need_more_audio就请对方再连续说十秒左右"
+              "（比如介绍一下自己），说完再调用；返回started后只说一句很短的话（比如“让我琢磨琢磨你的嗓音”），"
+              "不要自己先把那句话说出来。")
+MIMIC_PROMPT = ("【内部：学用户说话，非用户发言】你已经学会了刚才那位用户的声音，这一轮会用他的声音播出来。"
+                "只原样说下面这句，不加任何别的字和标记：{text}")
+MIMIC_FAILED_PROMPT = ("【内部：学用户说话，非用户发言】刚才没学会对方的声音。用一句轻松的话告诉对方没学会，"
+                       "可以在安静点的地方再试一次。")
 STALE_QUESTION_NOTE = ("\n【那句已经过去了】用户问「{question}」之后又接着说了好一会儿别的，"
                        "不要再回头回答那句；只回应用户最新说的这句，跟你无关就简短接一句。")
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound
@@ -509,6 +525,12 @@ class RealtimeRobot:
         self.voice_event = None  # optional same-room reb_voice status relay
         self.display_event = None  # optional reb_display relay; must not await the room
         self.voices = None  # optional persistent TTS voice catalog, no extra LLM
+        self.voice_mimic_enabled = False  # 学我说话 (11-20), set by the runtime
+        self._user_voice = deque()
+        self._user_voice_bytes = 0
+        self._user_voice_key = None
+        self._mimic_at = -1e9
+        self._mimic_task = None
         self.speakers = None  # optional global voiceprint tracker, no extra LLM
         self.visual_observer = None  # fresh Room observation, not a second LLM
         self._visual_task = None
@@ -3371,6 +3393,81 @@ class RealtimeRobot:
             self._opener.cancel()
         self._opener = self._background(self._switch_opener(), "switch-opener")
 
+    def _mimic_available(self):
+        return bool(self.voice_mimic_enabled and self.speech is not None
+                    and getattr(self.voices, "provider", None) is not None)
+
+    def _keep_user_voice(self, chunk):
+        """The current user's own speech for 学我说话: her voice and other Chats never mix in."""
+        key = (self.robot.chat_id, self.robot.session_epoch)
+        if key != self._user_voice_key:
+            self._user_voice.clear()
+            self._user_voice_bytes, self._user_voice_key = 0, key
+        self._user_voice.append(chunk)
+        self._user_voice_bytes += len(chunk)
+        while self._user_voice_bytes > MIMIC_KEEP_SECONDS * 32000:
+            self._user_voice_bytes -= len(self._user_voice.popleft())
+
+    def _mimic_busy(self):
+        return bool(self.speech_active or self.turn_id or self.response_id
+                    or (self.speech is not None and self.speech.output_active()))
+
+    async def _mimic(self, text, pcm, identity):
+        """Clone the user's voice from what they said, say one line in it, then delete it."""
+        robot_id, started, voice_id = self.robot.config.robot_id, time.perf_counter(), None
+        try:
+            buffer = io.BytesIO()
+            with wave.open(buffer, "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(16000)
+                out.writeframes(pcm)
+            try:
+                voice_id = await self.voices.provider.clone(
+                    "mimic.wav", buffer.getvalue(), "mimic" + uuid4().hex[:5], "zh")
+                prompt = MIMIC_PROMPT.format(text=text)
+                logger.info("voice_mimic_cloned robot=%s seconds=%.1f clone_ms=%d", robot_id,
+                            len(pcm) / 32000, round((time.perf_counter() - started) * 1000))
+            except Exception as exc:
+                prompt = MIMIC_FAILED_PROMPT
+                logger.warning("voice_mimic_failed robot=%s error=%s: %s", robot_id,
+                               type(exc).__name__, str(exc)[:120])
+            for _ in range(int(MIMIC_WAIT_SECONDS / .2)):
+                if self.robot.session_state() != identity:
+                    return
+                if not self._mimic_busy():
+                    break
+                await asyncio.sleep(.2)
+            else:
+                return
+            try:
+                result = await self.submit_text(prompt, source="external")
+            except RobotUnavailableError:
+                return
+            turn_id = result.get("turn_id")
+            if voice_id and turn_id and self.speech is not None:
+                self.speech.voice_override = (turn_id, voice_id)
+            self.publish("voice_mimic.spoken", turn_id=turn_id, cloned=bool(voice_id))
+            logger.info("voice_mimic_spoken robot=%s turn=%s cloned=%s", robot_id, turn_id,
+                        bool(voice_id))
+            for _ in range(int(MIMIC_WAIT_SECONDS / .2)):
+                await asyncio.sleep(.2)
+                speech = self.speech
+                if not (self.turn_id == turn_id or (speech is not None and speech.turn_id == turn_id
+                                                    and speech.output_active())):
+                    break
+        finally:
+            speech = self.speech
+            if speech is not None and speech.voice_override and speech.voice_override[1] == voice_id:
+                speech.voice_override = None
+            if voice_id:
+                try:
+                    await self.voices.provider.delete_remote(voice_id)
+                    logger.info("voice_mimic_deleted robot=%s", robot_id)
+                except Exception as exc:
+                    logger.warning("voice_mimic_delete_failed robot=%s error=%s", robot_id,
+                                   type(exc).__name__)
+
     async def _switch_opener(self):
         await asyncio.sleep(SWITCH_OPENER_SETTLE_SECONDS)
         waited = 0.0
@@ -3890,6 +3987,8 @@ class RealtimeRobot:
                     )
                 if self.sounds_enabled and self.speech is not None:
                     tail += SOUNDS_HINT
+                if self._mimic_available():
+                    tail += MIMIC_RULE
                 tail += CURRENT_TURN_RULE
                 self._instruction_tail = tail
                 self._refresh_clock()
@@ -3918,6 +4017,7 @@ class RealtimeRobot:
                     reminders=self.reminders is not None,
                     language_preferences=True,
                     voice_selection=bool(self.voices),
+                    voice_mimic=self._mimic_available(),
                     preferences=True,
                     spontaneous_expressions=not (self.auto_expression_enabled
                                                  and self._has_decision()),
@@ -4245,6 +4345,9 @@ class RealtimeRobot:
                 archive = getattr(self.robot, "audio_archive", None)
                 if archive is not None:
                     archive.heard(chunk, self.robot.session_state())
+                if (self.voice_mimic_enabled and self.speech_active
+                        and not (self.speech is not None and self.speech.output_active())):
+                    self._keep_user_voice(chunk)
                 if self.speakers is not None:
                     self.speakers.observe(chunk)
                 if self.motions is not None:
@@ -5736,6 +5839,27 @@ class RealtimeRobot:
                 result = await self._select_persona_style(args)
             elif name == "update_chat_preference":
                 result = await self._update_chat_preference(args)
+            elif name == "mimic_user_voice" and self._mimic_available():
+                if (set(args) != {"text"} or not isinstance(args["text"], str)
+                        or not 1 <= len(args["text"].strip()) <= MIMIC_MAX_CHARS):
+                    raise ValueError(f"expected text of 1..{MIMIC_MAX_CHARS} characters")
+                seconds = round(self._user_voice_bytes / 32000, 1)
+                if self._mimic_task is not None and not self._mimic_task.done():
+                    result = {"status": "busy", "instruction": "正在学，稍等一下就好。"}
+                elif time.monotonic() - self._mimic_at < MIMIC_COOLDOWN_SECONDS:
+                    result = {"status": "cooldown", "instruction": "刚学过一次，过两分钟再学。"}
+                elif seconds < MIMIC_MIN_SECONDS:
+                    result = {"status": "need_more_audio", "have_seconds": seconds,
+                              "need_seconds": MIMIC_MIN_SECONDS}
+                else:
+                    self._mimic_at = time.monotonic()
+                    self._mimic_task = asyncio.create_task(self._mimic(
+                        args["text"].strip(), b"".join(self._user_voice),
+                        dict(self.robot.session_state())))
+                    result = {"status": "started", "have_seconds": seconds,
+                              "instruction": "只说一句很短的话，比如“让我琢磨琢磨你的嗓音”；学好会自动用他的声音说那句，不要自己先说。"}
+                logger.info("voice_mimic_requested robot=%s status=%s seconds=%s",
+                            self.robot.config.robot_id, result["status"], seconds)
             elif name == "select_voice" and self.voices is not None:
                 if set(args) != {"voice_name", "scope"}:
                     raise ValueError("expected voice_name and scope")

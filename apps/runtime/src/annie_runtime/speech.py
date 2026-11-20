@@ -144,6 +144,7 @@ class SpeechOutput:
         self.voice = voice
         self.model = None if model is None else validate_model(model)
         self.voice_provider = voice_provider
+        self.voice_override = None  # (turn_id, voice): one turn in the user's own voice (学我说话)
         self.locked_voice = None
         self.socket_factory = socket_factory
         self.style_provider = style_provider
@@ -1121,8 +1122,13 @@ class SpeechOutput:
                     self._emit("tts.language_hint.unsupported", language=style.language,
                                fallback="provider_default", source=style.source)
             run_started = time.perf_counter()
-            selected_voice = (self.voice_provider(dict(identity))
-                              if self.voice_provider else self.voice)
+            override = self.voice_override
+            if override and override[0] == turn_id:
+                self.voice_override = None
+                selected_voice = override[1]
+            else:
+                selected_voice = (self.voice_provider(dict(identity))
+                                  if self.voice_provider else self.voice)
             if not isinstance(selected_voice, str) or not selected_voice:
                 raise ValueError("invalid selected TTS voice")
             self.locked_voice = selected_voice

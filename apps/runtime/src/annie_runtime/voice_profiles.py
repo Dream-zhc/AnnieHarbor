@@ -148,7 +148,7 @@ def voice_name(value: str):
 
 
 _CLONE_STAGES = {"policy": "云端上传凭证获取失败", "upload": "参考音频上传云端失败",
-                 "enroll": "云端创建音色失败"}
+                 "enroll": "云端创建音色失败", "delete": "云端删除音色失败"}
 _PROVIDER_HINTS = {"Arrearage": "阿里云账户欠费或余额不足", "InvalidApiKey": "API Key 无效"}
 
 
@@ -255,6 +255,17 @@ class DashscopeVoiceProvider:
         if not isinstance(value, str) or not VOICE_ID.fullmatch(value):
             raise ValueError("复刻接口未返回合法 voice_id")
         return value
+
+    async def delete_remote(self, voice_id: str):
+        """Delete a provider-hosted clone (学我说话 never keeps a visitor's voice)."""
+        if not isinstance(voice_id, str) or not VOICE_ID.fullmatch(voice_id):
+            raise ValueError("invalid voice_id")
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.)) as client:
+            await _checked("delete", client.post(
+                self.http_base + "/services/audio/tts/customization",
+                headers={"Authorization": f"Bearer {self.key}"},
+                json={"model": "voice-enrollment",
+                      "input": {"action": "delete_voice", "voice_id": voice_id}}))
 
     async def synthesize(self, voice: str, preset: tuple):
         # Preview uses the same 24kHz PCM wire as production, not the Room.

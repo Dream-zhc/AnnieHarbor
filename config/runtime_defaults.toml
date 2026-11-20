@@ -131,3 +131,8 @@ samples = 18
 # 展厅录观众声音请在现场设告示；.env 的 ANNIE_RECORDING_ENABLED=0/1 覆盖本项。
 enabled = true
 keep_days = 7
+
+[voice_mimic]
+# 学我说话（2026-11-20 用户要求）：本人明确同意后，用他刚说的 6～30 秒原声在阿里云复刻音色，
+# 用他的声音说一句，说完立即删除云端音色、不入音色列表；只学正在对话的人。.env 的 ANNIE_VOICE_MIMIC_ENABLED=0/1 覆盖。
+enabled = true

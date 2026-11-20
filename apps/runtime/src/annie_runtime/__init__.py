@@ -880,6 +880,7 @@ class HarborRuntime:
         tts_expression_enabled: bool = False,
         tts_sounds_enabled: bool = False,
         recording_dir: Path | None = None,
+        voice_mimic_enabled: bool = False,
         recording_keep_days: int = 7,
         tts_mixed_mode_enabled: bool = False,
         acoustic_url: str | None = None,
@@ -1268,6 +1269,7 @@ class HarborRuntime:
                     voice_publisher=self.voice_publishers.get(robot_id),
                 )
                 client.voices = self.voices
+                client.voice_mimic_enabled = bool(voice_mimic_enabled)
                 self.playback_listeners[robot_id] = (
                     RoomEventListener(
                         room_server, client.robot.config.room_id, "main",

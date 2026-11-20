@@ -431,6 +431,9 @@ def main():
             "ANNIE_RECORDING_ENABLED", "1" if recording.get("enabled", False) else "0") == "1"
             else None),
         recording_keep_days=int(recording.get("keep_days", 7)),
+        voice_mimic_enabled=os.environ.get(
+            "ANNIE_VOICE_MIMIC_ENABLED",
+            "1" if runtime_defaults.get("voice_mimic", {}).get("enabled", False) else "0") == "1",
         tts_mixed_mode_enabled=os.environ.get("ANNIE_TTS_MIXED_MODE_ENABLED", "0") == "1",
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]

@@ -50,6 +50,7 @@ def session_update(instructions: str, history_turns: int = 20, *,
                    expressions: bool = False, weather: bool = False,
                    reminders: bool = False, language_preferences: bool = False,
                    voice_selection: bool = False,
+                   voice_mimic: bool = False,
                    preferences: bool = False,
                    spontaneous_expressions: bool = True,
                    sleep: bool = False,
@@ -89,6 +90,20 @@ def session_update(instructions: str, history_turns: int = 20, *,
                 },
             },
         }]
+    if voice_mimic:
+        session["tools"].append({
+            "type": "function", "function": {
+                "name": "mimic_user_voice",
+                "description": (
+                    "Say one line in the CURRENT user's own voice, learned from what they just said. "
+                    "Ask them first and call only after they clearly agree; never for anyone else's "
+                    "voice. need_more_audio: ask them to keep talking for about ten seconds, then "
+                    "call again. started: say only a very short line; their voice follows by itself."),
+                "parameters": {"type": "object", "properties": {"text": {
+                    "type": "string", "description": "The line to say in their voice, at most 40 characters"}},
+                    "required": ["text"], "additionalProperties": False},
+            },
+        })
     if voice_selection:
         session["tools"].append({
             "type": "function", "function": {

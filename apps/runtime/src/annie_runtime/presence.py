@@ -1,9 +1,11 @@
 """Per-robot listening and reply admission policy; no SDK or audio I/O."""
 
+import logging
 import re
 import time
 import unicodedata
 
+logger = logging.getLogger(__name__)
 _PUNCTUATION = re.compile(r"[\s,，。！!？?、.：:~～…]+")
 _WAKE_ONLY = re.compile(r"^(?:小安妮)+$")
 _WAKE_ONLY_ASR_ALIASES = frozenset({
@@ -134,6 +136,8 @@ class DialoguePresence:
         self.side_talk_listen_seconds = side_talk_listen_ms / 1000
         self._listen_since = None  # when the current wake/follow-up window opened
         self.epoch = 0
+        self.label = None  # robot id, for the log only
+        self.expirations = 0
         self.state = "SLEEP"
         self.deadline = None
         self._window_deadline = None
@@ -141,7 +145,19 @@ class DialoguePresence:
         self._candidate_item_id = None
         self._reply_admitted = False
         self._first_wake_transcript = False
-        self.expirations = 0
+
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        """Every change of who may talk to her is logged (11-20: logs were incomplete)."""
+        previous = getattr(self, "_state", None)
+        self._state = value
+        if previous is not None and value != previous:
+            logger.info("wake_state robot=%s from=%s to=%s expirations=%d",
+                        self.label, previous, value, self.expirations)
 
     def close(self):
         """Revoke permissions on stop, goodbye, session switch or reconnect."""

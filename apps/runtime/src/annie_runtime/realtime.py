@@ -134,6 +134,20 @@ RECOVERY_SETTLE_SECONDS = 0.6
 _TRAILING_STOP = re.compile(r"[。.!！?？…~～\s]+$")
 AUTO_EXPRESSION_COOLDOWN_SECONDS = 20
 VOICE_LOOKBACK_SECONDS = 30
+# Published events also written to the runtime log (11-20: barge-in timing, what she
+# was heard saying, dropped speech, sensor decisions, motions and TTS style were missing).
+LOGGED_EVENTS = frozenset({
+    "playback.hold_requested", "playback.resume_requested", "playback.interrupt_confirmed",
+    "turn.cancel_requested", "tts.playback.held", "tts.playback.resumed", "tts.playback.stopped",
+    "tts.playback.drained", "tts.playback.control_error", "transcript.dropped",
+    "transcript.ignored", "transcript.ambient", "turn.done", "event.policy", "action.state",
+    "tts.run_task", "wakeword.detected", "wakeword.sleep_command", "wakeword.response_rejected",
+    "wakeword.transcript_ignored", "acoustic.observed",
+})
+QUIET_ACTION_STATES = frozenset({"reserved", "awaiting_audio_anchor", "awaiting_text_anchor",
+                                 "send_unknown"})
+PLAYBACK_SAMPLES_PER_MS = 24  # TTS PCM is 24 kHz
+LOGGED_TEXT_CHARS = 200
 SLEEP_CUE = re.compile(r"退|闭嘴|别说|不要说|安静|休息|睡|结束|停|别吵|下去")
 SLEEP_JUDGE_MAX_CHARS = 40
 SLEEP_JUDGE_CONFIDENCE = 0.8
@@ -349,6 +363,8 @@ class RealtimeRobot:
                                    followup_ms=wake_followup_ms,
                                    side_talk_listen_ms=side_talk_listen_ms)
                      if wake_detector is not None else None)
+        if self.wake is not None:
+            self.wake.presence.label = robot.config.robot_id
         self._wake_held_events = []
         self._wake_candidate_pending = False
         self.url = url
@@ -734,6 +750,59 @@ class RealtimeRobot:
                     t["times"].get("speaker_drained_ms") is None for t in turns
                     if self.speech is not None)}
 
+    def _log_event(self, kind, fields):
+        """One compact log line per event the workbench shows but the log used to miss."""
+        turn = fields.get("turn_id") or fields.get("conversation_id")
+        parts = {"turn": str(turn)[:8] if turn else None}
+        if kind == "action.state":
+            if fields.get("status") in QUIET_ACTION_STATES:
+                return
+            parts.update(script=fields.get("action_value"), status=fields.get("status"),
+                         call=str(fields.get("call_id") or "")[:20] or None,
+                         error=fields.get("error"))
+        elif kind == "tts.run_task":
+            wire = fields.get("parameters") or {}
+            style = fields.get("speech_style") or {}
+            parts.update(segment=fields.get("segment_id"), emotion=style.get("emotion"),
+                         instruction=str(wire.get("instruction") or "")[:60] or None,
+                         rate=wire.get("rate"), pitch=wire.get("pitch"),
+                         volume=wire.get("volume"), source=fields.get("expression_source"))
+        elif kind == "turn.done":
+            text = str(fields.get("text") or "")
+            parts.update(status=fields.get("status"), cancel_source=fields.get("cancel_source"),
+                         first_text_ms=fields.get("first_text_ms"), chars=len(text),
+                         text=text[:LOGGED_TEXT_CHARS] or None)
+        elif kind.startswith("transcript."):
+            parts.update(reason=fields.get("reason"),
+                         text=str(fields.get("text") or "")[:LOGGED_TEXT_CHARS] or None)
+        elif kind == "event.policy":
+            parts.update(event=fields.get("event_kind"), decision=fields.get("decision"),
+                         status=fields.get("status"), reason=fields.get("reason"))
+        elif kind == "acoustic.observed":
+            parts.update(language=fields.get("language"), emotion=fields.get("emotion"),
+                         application=fields.get("application"))
+        elif kind.startswith("wakeword."):
+            parts.update(reason=fields.get("reason"),
+                         text=str(fields.get("text") or fields.get("transcript") or "")[:80] or None)
+        else:  # playback and barge-in: how far she got, how long after the user spoke up
+            speech = self.speech
+            mine = speech is not None and turn is not None and getattr(speech, "turn_id", None) == turn
+            played = fields.get("played_sample_count")
+            if played is None and mine:
+                played = getattr(speech, "played_samples", None)
+            total = getattr(speech, "samples", None) if mine else None
+            started = self._last_provider_speech_started_t
+            parts.update(reason=fields.get("reason"), source=fields.get("source"),
+                         played_ms=round(played / PLAYBACK_SAMPLES_PER_MS) if played else None,
+                         total_ms=round(total / PLAYBACK_SAMPLES_PER_MS) if total else None,
+                         since_user_speech_ms=(round((time.monotonic() - started) * 1000)
+                                               if started is not None and self.speech_active
+                                               else None),
+                         error=fields.get("error"))
+        detail = " ".join(f"{key}={value!r}" if isinstance(value, str) else f"{key}={value}"
+                          for key, value in parts.items() if value is not None)
+        logger.info("event robot=%s kind=%s %s", self.robot.config.robot_id, kind, detail)
+
     def publish(self, kind, **fields):
         if kind == "tts.run_task":
             # Exact sent controls only: never export clone identifiers or secrets.
@@ -774,6 +843,8 @@ class RealtimeRobot:
             "ts_ms": time.time_ns() // 1_000_000,
             **fields,
         }
+        if kind in LOGGED_EVENTS:
+            self._log_event(kind, fields)
         if kind == "turn.started" and fields.get("turn_id"):
             turn_id = fields["turn_id"]
             if len(self._timeline_order) == self._timeline_order.maxlen:
@@ -4324,12 +4395,12 @@ class RealtimeRobot:
             self._recall_soon(turn_id, user_text)
         self.began = time.perf_counter()
         logger.info("turn_started robot=%s turn=%s input=%s source=%s cause=%s item=%s chars=%d "
-                    "input_lost_frames=%s asr_text_ms=%s deltas=%s",
+                    "input_lost_frames=%s asr_text_ms=%s deltas=%s text=%r",
                     self.robot.config.robot_id, turn_id, fields["input_mode"], source,
                     cause or ("asr_final" if audio else "submit"), self.pending_audio_item_id,
                     len(visible_text), self._input_lost() if audio else None,
                     self._asr_text_ms() if audio else None,
-                    self.asr_delta_count if audio else None)
+                    self.asr_delta_count if audio else None, visible_text[:LOGGED_TEXT_CHARS])
         self.publish("turn.started", turn_id=turn_id, user_text=visible_text,
                      turn_source=source,
                      speech_started_ms=(

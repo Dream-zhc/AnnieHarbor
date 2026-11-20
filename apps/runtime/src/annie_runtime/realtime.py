@@ -299,8 +299,7 @@ IDENTITY_RULES = ("\n【认人】你只能通过画面认出人。看不到画�
 # topic and whole earlier lines came back word for word.
 LOOK_CLOSELY_RULE = "问到穿着、长相、在做什么或让你介绍面前某人时，先调用look_closely看细节再答。"
 CURRENT_TURN_RULE = ("\n【以当前这句为准】回答以用户刚说的这一句（或刚发生的这件事）为准："
-                     "这句换了话题就跟着换，不再接旧话题或旧问题；前面的对话只用来理解这句里的指代和省略。"
-                     "不要把你说过的话原样再说一遍。")
+                     "这句换了话题就跟着换，不再接旧话题或旧问题；前面的对话只用来理解这句里的指代和省略。")
 
 
 def visual_instructions(base, description, *, fresh=False):

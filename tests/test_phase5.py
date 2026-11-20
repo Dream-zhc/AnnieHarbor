@@ -79,7 +79,7 @@ class ContextSelectionTests(unittest.TestCase):
             self.assertIn("你是小安妮", text)
             self.assertIn("最新明确更正", text)
             self.assertIn("只回应当前用户意图", text)
-            self.assertIn("历史用于理解指代而不是续答旧任务", text)
+            self.assertNotIn("历史用于理解指代而不是续答旧任务", text)  # lives in CURRENT_TURN_RULE (11-20)
             self.assertIn("不虚构亲身经历、共同回忆、实体动作或设备能力", text)
             self.assertIn("复杂问题完整解释", text)
             self.assertIn("不靠反问", text)
@@ -580,3 +580,11 @@ class Phase5PageTests(unittest.TestCase):
                 response = client.get("/api/personas")
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual([p["persona_id"] for p in response.json()], list(PROFILES))
+
+
+def test_history_rule_lives_once_in_the_current_turn_rule():
+    """11-20 prompt dedupe: said once, in the tail every session carries."""
+    from annie_runtime.realtime import CURRENT_TURN_RULE
+
+    assert "前面的对话只用来理解这句里的指代和省略" in CURRENT_TURN_RULE
+    assert "这句换了话题就跟着换" in CURRENT_TURN_RULE

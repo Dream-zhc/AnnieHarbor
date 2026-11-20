@@ -1,5 +1,6 @@
 import {Fragment,useEffect,useId,useState} from 'react';
 import {api,robotPath} from './api';
+import {type LanguageId,languagePill} from './language-id';
 import {type MouthRound,mouthRoundRows,mouthRoundTitle} from './mouth-round';
 import './room-observations.css';
 
@@ -9,6 +10,7 @@ export type RoomObservations={
     mouth_count:number;last_mouth_age_ms:number|null;
     latest_mouth:{char:string;viseme:string;seq:number;conversation_id:string}|null;
     last_round:MouthRound|null};
+  language?:LanguageId;
   visual:{state:string;description:string|null;age_ms:number|null;
     llm_context:{state:string;sent_seq?:number;confirmed_seq?:number}};
 };
@@ -57,6 +59,7 @@ export function RoomObservationsBar({robotId}:{robotId:string}){
 
   const round=viseme?.last_round??null;
   const heartbeat=viseme?.heartbeat_age_ms!=null?` · 心跳 ${(viseme.heartbeat_age_ms/1000).toFixed(1)} 秒前`:'';
+  const language=languagePill(data?.language,error);
   const visualTooltip = `视觉描述 · ${visualStatus}${visual?.description ? `\n画面描述：${visual.description}` : ''}${visual?.llm_context?.state ? `\nLLM：${llmLabel[visual.llm_context.state] ?? visual.llm_context.state}` : ''}`;
 
   return <div className="room-observations" aria-label="房间实时观测">
@@ -79,6 +82,10 @@ export function RoomObservationsBar({robotId}:{robotId:string}){
         </>:<div className="mouth-popover-empty">还没有收到嘴型</div>}
         {mouth&&<div className="mouth-popover-foot">最新口型：{mouth.char} / {mouth.viseme} · #{mouth.seq}</div>}
       </div>
+    </div>
+    <div className="room-observation-pill" title={language.title}>
+      <span className={'status-dot dot-'+language.tone}/>
+      <span>语种 · {language.text}</span>
     </div>
     <div className="room-observation-pill" title={visualTooltip}>
       <span className={'status-dot '+(visual?.state==='online'?'dot-good':visual?.state==='disconnected'||error?'dot-bad':'dot-warn')}/>

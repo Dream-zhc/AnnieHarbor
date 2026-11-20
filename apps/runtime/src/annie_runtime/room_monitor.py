@@ -1,8 +1,12 @@
 """Small, per-robot Room observations; never infer service health from old messages."""
 
 import json
+import logging
 import time
 from collections import Counter, deque
+
+logger = logging.getLogger(__name__)
+LANGUAGE_HEALTH_STALE_SECONDS = 10  # the Windows LID sidecar beats every 2 s
 
 VISUAL_CONTEXT_LIMIT = 2000
 VISUAL_DESCRIPTION_LIMIT = 4000
@@ -263,6 +267,12 @@ class RoomMonitor:
         self.visual_context_truncated = False
         self.visual_facts_accepted = False
         self.visual_source = None
+        # Windows FireRedLID sidecar (11-20): latest language/dialect heard in this Room
+        self.language_health_at = None
+        self.language_health = None
+        self.language_at = None
+        self.language = None
+        self.language_count = 0
         self._observation_key = None
         self._observation_context_at = None
         self._observation_changes = []  # (monotonic, "一位朋友出现")
@@ -326,6 +336,21 @@ class RoomMonitor:
                 "status", "sam_connected", "tts_connected",
                 "sam_subscribed", "tts_subscribed", "reason",
             )}
+        elif kind == "language_id_health" and message.get("room") == self.room_id:
+            self.language_health_at = now
+            self.language_health = {name: message.get(name) for name in (
+                "status", "reason", "mic_connected", "device", "queue", "processed", "dropped")}
+        elif (kind == "language_id" and message.get("room") == self.room_id
+              and isinstance(message.get("label"), str)):
+            self.language_at = now
+            self.language_count += 1
+            self.language = {name: message.get(name) for name in (
+                "label", "lang", "dialect", "name", "confidence", "duration_s",
+                "latency_ms", "seq", "robot_id")}
+            logger.info("language_id room=%s robot=%s label=%s name=%s conf=%s dur=%s latency_ms=%s",
+                        self.room_id, message.get("robot_id"), message.get("label"),
+                        message.get("name"), message.get("confidence"),
+                        message.get("duration_s"), message.get("latency_ms"))
         elif (kind == "mouth_script" and isinstance(message.get("viseme"), str)
               and type(message.get("seq")) is int):
             self.mouth_at = now
@@ -475,6 +500,24 @@ class RoomMonitor:
             "summary_received": stats["summary"] is not None,
         }
 
+    def _language_view(self, now, sam_connected):
+        age = None if self.language_health_at is None else now - self.language_health_at
+        health = self.language_health or {}
+        state = ("disconnected" if not sam_connected else
+                 "waiting" if age is None else
+                 "offline" if age > LANGUAGE_HEALTH_STALE_SECONDS else
+                 "error" if health.get("status") == "error" else
+                 "loading" if health.get("status") == "loading" else
+                 "no_mic" if health.get("mic_connected") is False else "online")
+        return {
+            "state": state, "heartbeat_age_ms": None if age is None else round(age * 1000),
+            "reason": health.get("reason"), "device": health.get("device"),
+            "queue": health.get("queue"), "count": self.language_count,
+            "latest": self.language,
+            "latest_age_ms": None if self.language_at is None
+            else round((now - self.language_at) * 1000),
+        }
+
     def snapshot(self, *, sam_connected, visual_connected, visual_configured):
         now = self.clock()
         age = None if self.health_at is None else now - self.health_at
@@ -504,6 +547,7 @@ class RoomMonitor:
                 else round((now - self.mouth_at) * 1000),
                 "last_round": self._round_view(now),
             },
+            "language": self._language_view(now, sam_connected),
             "visual": {
                 "state": ("not_configured" if not visual_configured else
                           "disconnected" if not visual_connected else

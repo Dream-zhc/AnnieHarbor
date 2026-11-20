@@ -1,0 +1,5 @@
+numpy>=1.24,<2.3
+kaldiio>=2.18
+kaldi_native_fbank>=1.15
+websockets>=12,<16
+huggingface_hub>=0.24

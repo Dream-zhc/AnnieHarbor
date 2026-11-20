@@ -1,0 +1,23 @@
+{
+  "room_root": "ws://192.168.1.47:8090/robot",
+  "mic_channel": "reb_mic",
+  "publish_channel": "reb_sam",
+  "robots": [
+    {"robot_id": "annie-a", "room": "roomv2", "enabled": true},
+    {"robot_id": "annie-b", "room": "roomv3", "enabled": true},
+    {"robot_id": "annie-small", "room": "roomv4", "enabled": false}
+  ],
+  "model_dir": "models/FireRedLID",
+  "use_half": true,
+  "health_interval_s": 2,
+  "queue_max": 8,
+  "vad": {
+    "start_ms": 120,
+    "end_ms": 600,
+    "min_ms": 1000,
+    "max_ms": 12000,
+    "preroll_ms": 300,
+    "margin_db": 12,
+    "min_db": -45
+  }
+}

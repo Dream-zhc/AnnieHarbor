@@ -12,6 +12,7 @@
 - apps/runtime负责统一bootstrap；annie-core无SDK/Graph依赖；LangGraph只进annie-brain；第三方SDK只通过annie-adapters接入。
 - 前端只在web；Phase 4起原位升级正式React + TypeScript工作台，接入已有多会话/Persona/完整历史/20轮上下文/PCM与诊断，再接Realtime；后续阶段都在同一工作台增加功能。annie-web仍是后端Web接口边界；禁止新增第二份前端或Pipecat空壳。现行职责与待验项见总计划“正式网页与 WEB-01～08”和对应阶段证据，不把历史规划当实测。
 - 嘴型只用独立Windows tts_viseme服务（原仓库`project/tts_viseme`，同时监听room/roomv2/roomv3）；本项目不再内置、不启动嘴型sidecar，只订阅各Room `reb_sam`的`viseme_health`/`mouth_script`，启动时探测在线并在工作台“嘴型”状态显示。
+- 语种/方言识别用独立Windows旁路`sidecars/annie-dialect-lid`（FireRedLID，start_win.bat一键安装启动）：听各Room `reb_mic`，结果`language_id`/`language_id_health`发同Room `reb_sam`；主脑只订阅显示（工作台“语种”）和记日志，暂不驱动方言跟随。
 - 用户已确认：一机器人一独立Room，一个Room只归属一个机器人；A→roomv2、B→roomv3；各Room完整保留`main/tts/mic/visualdata/vision/sam`六通道且只有一路连续PCM输入。本期不做同房间多机器人/多音源分流；Phase 2只启用mic也不得删除其它五通道。不猜from/conversation_id为设备目标。
 - 旧`tests/html/`临时验收页、后端挂载和网页旧入口已按用户确认清理，不重建。用户后续统一测试只在现有`web/` React工作台进行，失败/待验状态如实记录；不新增独立验收前端。
 - 当前回归：`uv run --locked pytest -q`、`npm --prefix web test`、`uv lock --check`、`uv run --locked ruff check apps packages tests`；启动验收必须额外真实执行`sh start.sh`/空闲端口HTTP。

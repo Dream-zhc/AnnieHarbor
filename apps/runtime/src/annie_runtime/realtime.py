@@ -151,6 +151,8 @@ VISION_ACK_NOTE = (
     "不说看到了什么、不猜画面、不回答问题本身、不调用任何工具。看清以后系统会让你接着说。")
 VISION_ACKED_NOTE = ("\n【刚才已经应过一声】你刚才先说了「{ack}」，现在直接说看到的，"
                      "不要再说“我看看”“我瞅瞅”这类话，也不要把那句再说一遍。")
+STALE_QUESTION_NOTE = ("\n【那句已经过去了】用户问「{question}」之后又接着说了好一会儿别的，"
+                       "不要再回头回答那句；只回应用户最新说的这句，跟你无关就简短接一句。")
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound
 SPEECH_VOLUME = {"quieter": 42, "louder": 58}  # within SpeechStyle's 40..60 bound
 EXPLICIT_MOTION = re.compile(
@@ -1625,6 +1627,20 @@ class RealtimeRobot:
                                   "at": time.monotonic()}
         self.publish("turn.recovery_deferred", chars=len(asked["text"]), reason="user_speaking")
         logger.info("recovered_answer_deferred robot=%s turn=%s reason=user_speaking chars=%d",
+                    self.robot.config.robot_id, asked["turn_id"], len(asked["text"]))
+        asyncio.get_running_loop().call_later(
+            INVALID_RECOVERY_SECONDS, self._expire_carried_answer, self._invalid_recovery, asked)
+
+    def _expire_carried_answer(self, carry, asked):
+        """11-20 demo: “你看我长得帅不帅？”, then 37 s of talk to visitors, and her next
+        reply went back to that question. Once the carry lapses unjoined, it is past."""
+        if self._invalid_recovery is not carry:
+            return
+        self._once_notes["stale_question"] = (
+            STALE_QUESTION_NOTE.format(question=asked["text"][:40]), asked["turn_id"])
+        self.visual_changed()
+        self.publish("turn.recovery_expired", turn_id=asked["turn_id"], chars=len(asked["text"]))
+        logger.info("recovered_answer_expired robot=%s turn=%s chars=%d",
                     self.robot.config.robot_id, asked["turn_id"], len(asked["text"]))
 
     # ---- look first, then answer (10-28, docs/规范/视觉意图协议.md) --------------------

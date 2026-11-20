@@ -276,3 +276,47 @@ def test_background_speech_being_judged_keeps_a_closing_window_open(tmp_path):
         await settled(client)
         assert answered(client) == ["简单的介绍一下你自己。"]
     demo(tmp_path, body, FakeDecision({"choice": "robot", "confidence": .9}))
+
+
+def test_a_refused_answer_the_user_talked_past_is_not_answered_later(tmp_path, monkeypatch):
+    """11-20 demo: “你看我长得帅不帅？” was refused while the presenter kept talking; 37 s
+    later her reply to that unrelated talk went back to the old question."""
+    monkeypatch.setattr(realtime_module, "INVALID_RECOVERY_SECONDS", 0.05)
+
+    async def body(client):
+        in_state(client, "FOLLOWUP")
+        g = client.robot.generation
+        await background(client, "amb_s", "你看我长得帅不帅？")
+        await settled(client)
+        asked = sent(client, "response.create")[-1]
+        await client.handle({"type": "error", "error": {
+            "type": "invalid_request_error", "code": "invalid_value",
+            "message": "Cannot create response while user is speaking.",
+            "param": "response.create", "event_id": asked.get("event_id")}}, g)
+        await asyncio.sleep(0.15)
+        assert "stale_question" in client._once_notes
+        note = sent(client, "session.update")[-1]["session"]["instructions"]
+        assert "那句已经过去了" in note and "你看我长得帅不帅" in note
+
+    demo(tmp_path, body, FakeDecision({"choice": "robot", "confidence": .9}))
+
+
+def test_a_refused_answer_joined_in_time_leaves_no_stale_note(tmp_path, monkeypatch):
+    monkeypatch.setattr(realtime_module, "INVALID_RECOVERY_SECONDS", 0.2)
+
+    async def body(client):
+        in_state(client, "FOLLOWUP")
+        g = client.robot.generation
+        await background(client, "amb_t", "你对你现在的样子满意吗？")
+        await settled(client)
+        asked = sent(client, "response.create")[-1]
+        await client.handle({"type": "error", "error": {
+            "type": "invalid_request_error", "code": "invalid_value",
+            "message": "Cannot create response while user is speaking.",
+            "param": "response.create", "event_id": asked.get("event_id")}}, g)
+        await background(client, "amb_t2", "说实话。")
+        await settled(client)
+        await asyncio.sleep(0.3)
+        assert "stale_question" not in client._once_notes
+
+    demo(tmp_path, body, FakeDecision({"choice": "robot", "confidence": .9}))

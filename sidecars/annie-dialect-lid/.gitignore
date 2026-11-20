@@ -1,7 +1,5 @@
 /.venv/
 /models/
-/FireRedASR2S/
-/FireRedASR2S.zip
 /logs/
 /tmp/
 __pycache__/

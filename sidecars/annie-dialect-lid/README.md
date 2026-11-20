@@ -7,9 +7,9 @@
 1. 把整个 `annie-dialect-lid` 文件夹拷到 Windows 上（路径里最好没有空格）。
 2. 需要 Python 3.11（tts_viseme 用的同一个就行）和 NVIDIA 显卡驱动。
 3. 双击 `start_win.bat`。第一次会自动：
-   - 在本文件夹建 `.venv`，装 CUDA 版 PyTorch（约 2.5 GB）和几个小依赖；官方源失败自动换阿里云镜像；
-   - 下载 FireRedASR2S 推理代码（GitHub，Apache-2.0）；
-   - 下载 FireRedLID 模型（约 3.5 GB，Hugging Face，失败自动换 hf-mirror.com）。
+   - 在本文件夹建 `.venv`，装 CUDA 版 PyTorch（约 2.5 GB）和几个小依赖；先走阿里云镜像，失败再走官方源；
+   - 下载 FireRedLID 模型（约 3.5 GB）：先走 hf-mirror.com 镜像，失败再走 Hugging Face；中途断了再双击会续传。
+   - 推理代码已经随文件夹带上（`vendor/fireredlid`，Apache-2.0，见 `vendor/README.md`），不用访问 GitHub。
 4. 之后再双击就直接启动。窗口里每识别一句打一行 `language robot=annie-a room=roomv2 label=zh yue conf=0.999 ...`，日志也写在 `logs/lid.log`。
 5. 同一台电脑只允许一个实例（占本机端口 37661）。
 
@@ -55,3 +55,9 @@
 ## 结果什么时候用
 
 用户说完一句约 0.5 秒出结果，所以只影响下一轮：现在主脑先在工作台显示和写日志（`language_id room=... label=...`），要不要让她据此跟着说方言，等真人方言录音测完准确率再定。
+
+## 出错了怎么办
+
+- 窗口里有提示就按提示处理，修好后再双击 `start_win.bat`，已装好的部分不会重装。
+- 提示 `.venv` 不是 Python 3.11，或者反复装不上：删掉本文件夹里的 `.venv` 再双击。
+- 模型下载失败：检查网络后再双击，会接着下。

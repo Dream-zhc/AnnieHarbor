@@ -117,7 +117,7 @@ class Lid:
     """FireRedLID on the GPU (fp16 by default), one utterance at a time."""
 
     def __init__(self, config):
-        sys.path.insert(0, str(HERE / "FireRedASR2S" / "fireredasr2s"))
+        sys.path.insert(0, str(HERE / "vendor"))  # FireRedLID inference code, Apache-2.0
         import torch
         from fireredlid.lid import FireRedLid, FireRedLidConfig
 

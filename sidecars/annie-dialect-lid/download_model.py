@@ -1,11 +1,11 @@
-"""Download FireRedLID into models/FireRedLID: Hugging Face first, then the hf-mirror.com mirror."""
+"""Download FireRedLID into models/FireRedLID: the hf-mirror.com mirror first, then Hugging Face."""
 import sys
 from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
 TARGET = Path(__file__).resolve().parent / "models" / "FireRedLID"
-for endpoint in (None, "https://hf-mirror.com"):
+for endpoint in ("https://hf-mirror.com", None):  # the domestic mirror first, then huggingface.co
     try:
         snapshot_download("FireRedTeam/FireRedLID", local_dir=str(TARGET), endpoint=endpoint)
         if (TARGET / "model.pth.tar").is_file():

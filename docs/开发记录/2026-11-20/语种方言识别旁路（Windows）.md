@@ -26,3 +26,10 @@
 - 隔离根真实 `sh start.sh` + 假 Room 的 reb_sam：接口返回 annie-a 粤语、annie-b 西南官话，state=online，日志有 `language_id` 行；工作台 200。
 - 新增 tests/test_language_id.py（主脑接收与过期、切句不被全零帧唤醒、消息带机器人、配置一房一机）和 web/tests/language-id.test.mjs；`uv run --locked pytest -q` 1543 passed，ruff、`uv lock --check`、`npm --prefix web test`（144/0）、typecheck 通过。
 - 待真机：Windows 上 bat 实际安装下载、4060 实测速度与显存、真实麦克风下的切句和方言准确率。
+
+## Windows 首次运行报错修复（同日）
+
+- 现象：`install_win.ps1` 第 31 行检测 torch 时中断，“环境准备失败”。原因：Windows PowerShell 5.1 在“出错就停”下，把原生程序写到 stderr 的内容当成致命错误；检测“没装 torch”本来就靠导入失败，于是整个脚本被中断（嘴型服务的脚本用 try/catch 绕开过）。
+- 修复：所有“试一下”的调用走 `Invoke-Quiet`（临时改成继续执行，只看退出码）；会打印的安装命令走 `Invoke-Loud`，输出用 `Out-Host` 显示，不混进函数返回值；`-c` 里的 Python 代码不再含双引号（PowerShell 5.1 传参会把内嵌双引号弄坏）。
+- 那台机器下载约 400 KB/s：PyTorch 和依赖先走阿里云镜像、模型先走 hf-mirror.com；FireRedLID 推理代码（11 个 .py，Apache-2.0）直接放进 `vendor/`，不再去 GitHub 下载。用放入的代码在 Mac 上复测粤语样本仍判为 `zh yue` 1.0。
+- 脚本在 Mac 上无法执行 PowerShell，只做了静态检查，需要在 Windows 上再双击验证。

@@ -5302,6 +5302,9 @@ class RealtimeRobot:
             if self.wake and admitted and self.wake.presence.is_sleep_command(final_text):
                 await self._enter_sleep("asr", item_id=item_id)
                 return
+            if self.wake and admitted and self.wake.presence.tail_sleep_command(final_text):
+                await self._enter_sleep("asr_tail", item_id=item_id)
+                return
             if self.wake and admitted and await self._sleep_judged(final_text):
                 await self._enter_sleep("asr_decision", item_id=item_id)
                 return

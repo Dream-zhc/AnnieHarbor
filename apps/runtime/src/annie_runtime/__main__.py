@@ -55,6 +55,7 @@ def motion_options(motions: dict, environ) -> dict | None:
     return {"listening": bool(motions.get("listening", True)),
             "pauses": bool(motions.get("pauses", True)),
             "waiting": bool(motions.get("waiting", True)),
+            "keep_listening": bool(motions.get("keep_listening", True)),
             "speaking": bool(motions.get("speaking", True)),
             "reactions": bool(motions.get("reactions", True)),
             "per_reply": per_reply}

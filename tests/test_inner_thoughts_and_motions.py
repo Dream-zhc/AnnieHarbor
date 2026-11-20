@@ -745,3 +745,50 @@ def test_a_motion_the_user_named_is_not_contradicted_by_her_own_gestures(tmp_pat
         await drain(motions)
         assert client.asked == [] and publisher.sent == []
     asyncio.run(run())
+
+
+def test_digital_silence_does_not_sink_the_room_floor(tmp_path, monkeypatch):
+    """11-20: 519 listening motions on the robots, not one pause nod. A zero-filled frame
+    set the floor to -90 dB, so room noise counted as words and no pause ever came."""
+    async def run():
+        motions, client, publisher = motions_with(tmp_path, monkeypatch)
+        silence = [bytes(640)] * 10
+        for part in (silence, tone(-60, 1), tone(-30, 1.5), tone(-60, 0.5)):
+            for frame in part:
+                motions.on_audio("a", client, frame)
+        await drain(motions)
+        assert [p["data"]["script_id"] for p in publisher.sent] == ["agree_micro_nod"]
+    asyncio.run(run())
+
+
+def test_a_long_talk_gets_a_listening_motion_every_few_seconds(tmp_path, monkeypatch):
+    """11-20 demo: 15–37 s talks got one tilt at the start, then she stood still."""
+    async def run():
+        monkeypatch.setattr(motions_module, "KEEP_LISTENING_SECONDS", 0.03)
+        monkeypatch.setattr(motions_module, "KEEP_LISTENING_MAX", 3)
+        motions, client, publisher = motions_with(tmp_path, monkeypatch)
+        motions.listening = False  # only the keep-listening loop here
+
+        def kept():
+            return [row for row in motions.recent["a"] if row["kind"] == "keep"]
+
+        motions.on_speech_started("a", client)
+        await asyncio.sleep(0.2)
+        assert len(kept()) == 3 and all(row["script"] in LISTEN_MOTIONS for row in kept())
+        assert publisher.sent and publisher.sent[0]["data"]["script_id"] in LISTEN_MOTIONS
+        motions.recent["a"].clear()
+        motions.on_speech_started("a", client)
+        client.speech_active = False  # the talk ended: the loop stops
+        await asyncio.sleep(0.1)
+        assert kept() == []
+        client.speech_active = True
+        client.speech.output_active = lambda: True  # she is talking: no listening motion
+        motions.on_speech_started("a", client)
+        await asyncio.sleep(0.1)
+        assert kept() == []
+        client.speech.output_active = lambda: False
+        client.wake.state = "SLEEP"
+        motions.on_speech_started("a", client)
+        await asyncio.sleep(0.1)
+        assert kept() == [] and motions.keepers["a"] is None
+    asyncio.run(run())

@@ -64,6 +64,7 @@ consolidate_max_turns = 24
 # listening：用户开口约 0.7 秒后，从倾听组（倾听、点头、侧耳听、轻歪头）选一个；
 # pauses：用户说话中间停顿约 0.4 秒（本地按麦克风音量判断，比云端判停早一秒多），轻点一下头；至少隔 4 秒；
 # waiting：用户说完 1.2 秒她还没出声（多半在查天气这类工具），眼睛往上瞟一下，像在想；
+# keep_listening：用户一直在说（长讲解、讲故事），每 6 秒左右再做一个倾听组的小动作，最多 6 次，说完就停（2026-11-20）；
 # speaking：她说的每句话由决策模型选一个动作或不配，等扬声器快播到那句时再发；
 # reactions：一轮对话让她心情明显变化，说完后由决策模型挑一个不出声的小动作。
 # 真动作仍需 .env 的 ANNIE_ACTIONS_ENABLED=1；.env 的 ANNIE_INTERACTION_MOTIONS_ENABLED=1/0 覆盖本项。
@@ -72,6 +73,7 @@ enabled = true
 listening = true
 pauses = true
 waiting = true
+keep_listening = true
 speaking = true
 reactions = true
 # 每轮回复最多配几个动作（含原有的自发表情）。

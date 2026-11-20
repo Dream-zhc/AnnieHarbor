@@ -54,6 +54,8 @@ _STUTTER = re.compile(r"(.)\1+")  # ASR keeps stutters: "你你闭嘴"
 # Sleep text has no punctuation left, so a misheard call ("小爱你退下") has no
 # pause to anchor on as in canonical_wake_call; it is still the call, not a lead.
 _SLEEP_CALL = re.compile(r"^(?:[小晓筱][安爱艾阿][妮尼泥倪妳霓你呢]?)+")
+_CALL_IN_SENTENCE = re.compile(r"[小晓筱][安爱艾阿][妮尼泥倪妳霓]?|安妮")
+_SENTENCE_END = re.compile(r"[。！!？?；;]")
 _SLEEP_CORRECTION = re.compile(r"我?不是.{1,8}?(?:而是|是)(?:[让叫要]你)?(.+)")
 _SLEEP_LEADS = (
     "小安妮", "能不能", "可不可以", "请你", "现在", "马上", "立刻", "赶紧",
@@ -268,13 +270,27 @@ class DialoguePresence:
         return bool(_SLEEP_COMMAND.fullmatch(_sleep_text(source)))
 
     @staticmethod
+    def tail_sleep_command(text):
+        """A talk to others that ends by telling her to stop (“……展展。小安妮退下。”).
+
+        11-20: of 4 such endings in the records, 2 were answered instead (“赶紧退下吧你”,
+        “既然你不想让我闭嘴”). Only the last sentence counts, and only from her name on.
+        """
+        source = unicodedata.normalize("NFKC", str(text or ""))
+        sentences = [part for part in _SENTENCE_END.split(source) if part.strip()]
+        if len(sentences) < 2:
+            return False
+        calls = list(_CALL_IN_SENTENCE.finditer(sentences[-1]))
+        return bool(calls) and DialoguePresence.is_sleep_command(sentences[-1][calls[-1].start():])
+
+    @staticmethod
     def is_sleep_request(text):
         """Current-turn evidence that she was told to stop, including paraphrases.
 
         Exact commands stay on is_sleep_command so they can close immediately.
         This check only admits a model sleep call; it does not close the gate.
         """
-        if DialoguePresence.is_sleep_command(text):
+        if DialoguePresence.is_sleep_command(text) or DialoguePresence.tail_sleep_command(text):
             return True
         source = unicodedata.normalize("NFKC", str(text or ""))
         if "?" in source or "？" in source:

@@ -74,6 +74,8 @@ QUIET_REACTIONS = {
 }
 QUIET_REACTION_GAP_SECONDS = 4.0
 WAIT_GLANCE_SECONDS = 1.2  # an answer that starts sooner needs no thinking look
+KEEP_LISTENING_SECONDS = 6.0  # a long talk: one more small listening motion this often
+KEEP_LISTENING_MAX = 6
 
 
 def target_sample(speech, char_index):
@@ -103,9 +105,11 @@ def played_sample(speech, now=None):
 
 class InteractionMotions:
     def __init__(self, runtime, *, listening=True, speaking=True, reactions=True,
-                 pauses=True, waiting=True, per_reply=SPEECH_MOTIONS_PER_REPLY):
+                 pauses=True, waiting=True, keep_listening=True,
+                 per_reply=SPEECH_MOTIONS_PER_REPLY):
         self.runtime = runtime
         self.listening = listening
+        self.keep_listening = keep_listening
         self.pauses = pauses
         self.waiting = waiting
         self.speaking = speaking
@@ -118,10 +122,12 @@ class InteractionMotions:
         self.last_inner = dict.fromkeys(robots, -1e9)
         self.last_nod = dict.fromkeys(robots, -1e9)
         self.last_quiet = dict.fromkeys(robots, -1e9)
+        self.last_kept = dict.fromkeys(robots, -1e9)
+        self.keepers = dict.fromkeys(robots)
         self.ears = {robot_id: {"floor": None, "words": 0.0, "quiet": 0.0} for robot_id in robots}
         self.recent = {robot_id: [] for robot_id in robots}  # last decisions, for the UI
         self.stats = {robot_id: {"listen": 0, "nod": 0, "think": 0, "speech": 0, "inner": 0,
-                                 "quiet": 0, "skipped": 0, "decision_failures": 0}
+                                 "quiet": 0, "keep": 0, "skipped": 0, "decision_failures": 0}
                       for robot_id in robots}
         self.tasks = set()
 
@@ -156,6 +162,7 @@ class InteractionMotions:
     def snapshot(self, robot_id):
         return {"actions_enabled": self._actions() is not None,
                 "listening": self.listening, "pauses": self.pauses, "waiting": self.waiting,
+                "keep_listening": self.keep_listening,
                 "speaking": self.speaking,
                 "reactions": self.reactions, "per_reply": self.per_reply,
                 "groups": {"listen": self._allowed(LISTEN_MOTIONS),
@@ -166,6 +173,7 @@ class InteractionMotions:
     # ---- listening --------------------------------------------------------------------
     def on_speech_started(self, robot_id, client):
         """Someone started talking to her: look like she is listening."""
+        self._keep_listening_from_now(robot_id, client)
         if not self.listening or not self._allowed(LISTEN_MOTIONS):
             return
         if not self._awake(client) or not self._wanted(client):
@@ -191,6 +199,46 @@ class InteractionMotions:
         await self._perform(robot_id, "listen", script, f"listen-{uuid4().hex[:12]}",
                             generation)
 
+    def _keep_listening_from_now(self, robot_id, client):
+        """11-20 demo: 15–37 s talks got one tilt at the start and then nothing, as if
+        she had frozen. A long talk gets another small listening motion every few seconds."""
+        keeper = self.keepers[robot_id]
+        if keeper is not None:
+            keeper.cancel()
+            self.keepers[robot_id] = None
+        if not self.keep_listening or not self._allowed(LISTEN_MOTIONS):
+            return
+        if not self._awake(client) or not self._wanted(client):
+            return
+        task = self._spawn(self._keep_listening(robot_id, client, client.robot.generation))
+        self.keepers[robot_id] = task
+
+    async def _keep_listening(self, robot_id, client, generation):
+        try:
+            for _ in range(KEEP_LISTENING_MAX):
+                await asyncio.sleep(KEEP_LISTENING_SECONDS)
+                speech = getattr(client, "speech", None)
+                if (not client.speech_active or client.robot.generation != generation
+                        or not self._awake(client) or not self._wanted(client)
+                        or (speech is not None and speech.output_active())):
+                    return
+                latest = max(self.last_listen[robot_id], self.last_nod[robot_id],
+                             self.last_kept[robot_id])
+                if time.monotonic() - latest < KEEP_LISTENING_SECONDS - 1:
+                    continue  # a nod at a pause just did it
+                group = self._allowed(LISTEN_MOTIONS)
+                if not group:
+                    return
+                last = self.last_listen_script[robot_id]
+                script = random.choice([item for item in group if item != last] or group)
+                self.last_listen_script[robot_id] = script
+                self.last_kept[robot_id] = time.monotonic()
+                await self._perform(robot_id, "keep", script, f"keep-{uuid4().hex[:12]}",
+                                    generation)
+        finally:
+            if self.keepers[robot_id] is asyncio.current_task():
+                self.keepers[robot_id] = None
+
     # ---- pauses and waiting -----------------------------------------------------------
     def on_audio(self, robot_id, client, pcm):
         """Each 20 ms microphone frame: a nod when the speaker pauses, as listeners do."""
@@ -199,13 +247,16 @@ class InteractionMotions:
         ear = self.ears[robot_id]
         level = frame_dbfs(pcm)
         floor = ear["floor"]
-        floor = level if floor is None or level < floor else floor + FLOOR_RISE_DB
-        ear["floor"] = max(FLOOR_MIN_DBFS, floor)
+        if level > FLOOR_MIN_DBFS:
+            # Digital silence (a muted or zero-filled frame) must not pull the floor to
+            # -90 dB: every room noise would then count as words and no pause ever came
+            # (11-20: 519 listening motions on the robots so far, not one pause nod).
+            ear["floor"] = level if floor is None or level < floor else floor + FLOOR_RISE_DB
         if not client.speech_active:
             ear["words"] = ear["quiet"] = 0.0
             return
         seconds = len(pcm) / (2 * MIC_RATE)
-        if level >= ear["floor"] + VOICE_ABOVE_FLOOR_DB:
+        if ear["floor"] is not None and level >= ear["floor"] + VOICE_ABOVE_FLOOR_DB:
             ear["words"] += seconds
             ear["quiet"] = 0.0
             return
@@ -404,6 +455,8 @@ class InteractionMotions:
         else:
             self.stats[robot_id]["skipped"] += 1
         self._record(robot_id, kind, script, status=status, **fields)
+        log.info("interaction_motion robot=%s kind=%s script=%s status=%s",
+                 robot_id, kind, script, status)
 
     def _spawn(self, coroutine):
         if len(self.tasks) >= MAX_TASKS:
@@ -412,6 +465,7 @@ class InteractionMotions:
         task = asyncio.create_task(coroutine)
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
+        return task
 
     async def close(self):
         tasks = list(self.tasks)

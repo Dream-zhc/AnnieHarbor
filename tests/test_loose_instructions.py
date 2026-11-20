@@ -16,6 +16,7 @@ from annie_brain import persona
 from annie_brain.decision_policy import face_request_question, language_request_question
 from annie_core import RobotConfig
 from annie_runtime import AudioInputGate, HarborRuntime
+from annie_runtime.presence import DialoguePresence
 from annie_runtime.language import (
     ReplyLanguageState,
     explicit_language_request,
@@ -333,3 +334,28 @@ def test_a_stop_request_the_rules_miss_is_judged_by_the_model(tmp_path):
         assert len(decision.calls) == 2
 
     live(tmp_path, body, decision=decision)
+
+
+@pytest.mark.parametrize(("text", "sleeps"), [
+    ("当时如果咱早点把咱们拉过去展展。小安妮退下。", True),   # 11-20 #2338: “赶紧退下吧你”
+    ("反应速度还是比较快的。对对，小安妮闭嘴。", True),      # 11-18 #2197: answered the opposite
+    ("你当然，小安你退一下，这个影片，因为影片", False),     # mid-talk, not the ending
+    ("他说小安妮闭嘴。你听到了吗", False),
+    ("我们不想让她闭嘴。你觉得呢？", False),
+    ("别让小安妮闭嘴。", False),
+])
+def test_a_talk_that_ends_by_telling_her_to_stop(text, sleeps):
+    assert DialoguePresence.tail_sleep_command(text) is sleeps
+    if sleeps:
+        assert DialoguePresence.sleep_request_verdict(text) is True
+
+
+def test_a_long_talk_ending_in_a_stop_puts_her_to_sleep_at_once(tmp_path):
+    from tests.test_wake_call_recovery import say, woken
+
+    async def body(rt, client):
+        woken(client)
+        await say(client, 'u1', final='那次办得非常大，三四千人。当时如果咱早点把咱们拉过去展展。小安妮退下。')
+        assert client.wake.state == 'SLEEP'
+
+    live(tmp_path, body)

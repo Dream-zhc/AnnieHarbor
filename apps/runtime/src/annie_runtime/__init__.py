@@ -365,6 +365,7 @@ class RobotRuntime:
     ):
         self.config = config
         self.recorder = recorder
+        self.audio_archive = None  # var/recordings when [recording] is on
         self.store = store
         self.ledger = ledger
         self.context_limit = context_limit
@@ -878,6 +879,8 @@ class HarborRuntime:
         acoustic_enabled: bool = False,
         tts_expression_enabled: bool = False,
         tts_sounds_enabled: bool = False,
+        recording_dir: Path | None = None,
+        recording_keep_days: int = 7,
         tts_mixed_mode_enabled: bool = False,
         acoustic_url: str | None = None,
         acoustic_socket_factory=None,
@@ -1033,6 +1036,14 @@ class HarborRuntime:
             )
             for c in configs
         }
+        if recording_dir is not None:
+            from annie_runtime.audio_archive import AudioArchive
+
+            if type(recording_keep_days) is not int or recording_keep_days < 1:
+                raise ValueError("recording_keep_days must be a positive integer")
+            AudioArchive.prune(recording_dir, recording_keep_days)
+            for robot_id, robot in self.robots.items():
+                robot.audio_archive = AudioArchive(recording_dir, robot_id)
         # One microphone and one speaker per Room: observed, never enforced.
         self.audio_devices = {
             robot_id: RoomAudioDevices(
@@ -2104,6 +2115,9 @@ class HarborRuntime:
 
     async def close(self):
         await self.process_probe.close()
+        for robot in self.robots.values():
+            if robot.audio_archive is not None:
+                robot.audio_archive.close()
         for aec in self.cloud_aec.values():
             aec.close()
         if self._viseme_probe is not None:

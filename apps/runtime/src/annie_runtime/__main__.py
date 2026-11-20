@@ -389,6 +389,7 @@ def main():
     )
     motions = motion_options(runtime_defaults.get("motions", {}), os.environ)
     robots = load_robots(root / "config/robots.toml")
+    recording = runtime_defaults.get("recording", {})
     runtime = HarborRuntime(
         robots,
         database,
@@ -426,6 +427,10 @@ def main():
         acoustic_url=os.environ.get("ANNIE_ACOUSTIC_SIDECAR_URL") or None,
         tts_expression_enabled=os.environ.get("ANNIE_TTS_EXPRESSION_ENABLED", "0") == "1",
         tts_sounds_enabled=os.environ.get("ANNIE_TTS_SOUNDS_ENABLED", "1") == "1",
+        recording_dir=(root / "var/recordings" if os.environ.get(
+            "ANNIE_RECORDING_ENABLED", "1" if recording.get("enabled", False) else "0") == "1"
+            else None),
+        recording_keep_days=int(recording.get("keep_days", 7)),
         tts_mixed_mode_enabled=os.environ.get("ANNIE_TTS_MIXED_MODE_ENABLED", "0") == "1",
         tts_voice=(
             provider_defaults["tts"]["qwen_audio"]["voice"]

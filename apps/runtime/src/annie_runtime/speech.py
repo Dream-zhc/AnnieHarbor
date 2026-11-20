@@ -1294,6 +1294,9 @@ class SpeechOutput:
         self.inflight_end = self.samples + len(pcm) // 2
         async with asyncio.timeout(2):
             await self.publisher.publish(self._packet(pcm, text, segment_id=segment_id))
+        archive = getattr(self.robot, "audio_archive", None)
+        if archive is not None:
+            archive.said(pcm, self.robot.session_state())
         self.samples += len(pcm) // 2
         self.frames += 1
         if len(self.pcm_marks) < PCM_MARKS_MAX:

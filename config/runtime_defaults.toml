@@ -123,3 +123,11 @@ image = true
 api_urls = { "annie-a" = "http://192.168.1.13:8766" }
 # 每次注册采集的样本数（视觉端 1–100，默认 18）
 samples = 18
+
+[recording]
+# 现场原始音频（2026-11-20 用户要求）：按机器人、按会话存到 var/recordings/<日期>/<机器人>/，
+# heard 是发给实时模型的 16kHz 麦克风声音（过了输入闸门和回声消除），said 是她播出的 24kHz 声音；
+# 两个文件同一时刻开始、空档补静音，可以对齐着听，精确时间看运行日志。超过 keep_days 天的日期目录启动时删除。
+# 展厅录观众声音请在现场设告示；.env 的 ANNIE_RECORDING_ENABLED=0/1 覆盖本项。
+enabled = true
+keep_days = 7

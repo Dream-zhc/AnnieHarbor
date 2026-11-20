@@ -4242,6 +4242,9 @@ class RealtimeRobot:
                     break
                 async with asyncio.timeout(AUDIO_SEND_DEADLINE_SECONDS):
                     await self.socket.send(audio_append(chunk))
+                archive = getattr(self.robot, "audio_archive", None)
+                if archive is not None:
+                    archive.heard(chunk, self.robot.session_state())
                 if self.speakers is not None:
                     self.speakers.observe(chunk)
                 if self.motions is not None:

@@ -3,7 +3,13 @@
 import asyncio
 
 from annie_runtime import realtime as realtime_module
-from annie_runtime.speech_expression import SOUND_TAGS, SoundMarks, sounds_as_tags, without_sounds
+from annie_runtime.speech_expression import (
+    EMOTION_TAGS,
+    SOUND_TAGS,
+    SoundMarks,
+    sounds_as_tags,
+    without_sounds,
+)
 
 from tests.test_companion_speech import speech
 from tests.test_phase4b import FakeTts
@@ -23,10 +29,13 @@ def test_documented_sound_tags_become_marks_even_split_across_deltas():
                                "clears throat", "cough"}
 
 
-def test_emotion_tags_are_dropped_other_brackets_stay_and_at_most_three_sounds():
-    text, used = marked("[excited]好呀[不是标签]，[sighing][gasp][snorts][laughing]走吧[sneezes]")
-    assert used == ["sighing", "gasp", "snorts"]  # the fourth is over the limit
+def test_theatrical_tags_are_dropped_other_brackets_stay_and_caps_hold():
+    text, used = marked("[like dracula]好呀[不是标签]，[sighing][gasp][snorts][laughing]走吧[sneezes]")
+    assert used == ["sighing", "gasp", "snorts"]  # the fourth sound is over the limit
     assert without_sounds(text) == "好呀[不是标签]，走吧[sneezes]"  # undocumented: plain text
+    text, used = marked("[curious]你拿的啥？[excited]快给我看！[sad]不给就算了。")
+    assert used == ["curious", "excited"]  # at most two emotion tags a reply
+    assert sounds_as_tags(text) == "[curious]你拿的啥？[excited]快给我看！不给就算了。"
     assert marked("[clears", " throat]嗯", "[")[0] == SoundMarks().feed("[clears throat]") + "嗯["
 
 
@@ -53,6 +62,10 @@ def test_the_prompt_lists_only_the_sounds_the_runtime_passes_through():
     for tag in ("laughing", "giggles", "snorts", "sighing", "gasp", "clears throat"):
         assert f"[{tag}]" in realtime_module.SOUNDS_HINT
     assert "[cough]" not in realtime_module.SOUNDS_HINT
+    for tag in EMOTION_TAGS:
+        assert f"[{tag}]" in realtime_module.SOUNDS_HINT
+    for tag in ("like dracula", "shouting", "crying", "trembling", "panicked", "asmr"):
+        assert f"[{tag}]" not in realtime_module.SOUNDS_HINT
 
 
 def test_a_laugh_in_her_reply_reaches_the_tts_but_never_the_reply_text(tmp_path):
@@ -98,7 +111,7 @@ def test_a_laugh_in_her_reply_reaches_the_tts_but_never_the_reply_text(tmp_path)
             assert any(realtime_module.SOUNDS_HINT in text for text in updates(client))
             woken(client)
             await say(client, "u1", final="给我讲个笑话")
-            await reply(client, "r1", "[laughing]好嘞，[excited][giggles]听好了。")
+            await reply(client, "r1", "[laughing]好嘞，[shouting][giggles]听好了。")
             done = kinds(client, "turn.done")[-1]
             assert done["text"] == "好嘞，听好了。" and done["sounds"] == ["laughing", "giggles"]
             texts = ""

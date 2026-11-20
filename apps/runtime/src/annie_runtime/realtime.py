@@ -176,7 +176,11 @@ SOUNDS_HINT = ("\n【笑声和叹气】说话时可以加真实的笑声、叹�
                "[snorts]哼一声或嗤笑、[sighing]叹气、[gasp]倒吸一口气、[clears throat]清嗓子。"
                "觉得好笑、被逗乐、调侃人时笑，无奈、心疼、失落时叹气，吃惊时倒吸气，不屑或傲娇时哼。"
                "有这种情绪就自然用上，一次回复一两个，放在句首或停顿处，不要每句都用；"
-               "不要再写“哈哈”“唉”这类字来代替，也不要解释标记；对方难过、严肃或在求助时不要笑。")
+               "不要再写“哈哈”“唉”这类字来代替，也不要解释标记；对方难过、严肃或在求助时不要笑。"
+               "整句语气很明显时，可以在那句开头加一个语气标记（一次回复最多两个，平常的话不加）："
+               "[curious]好奇、[mischievously]调皮、[empathetic]温柔体贴、[whispers]压低声音说悄悄话、"
+               "[amazed]惊叹、[excited]兴奋、[sad]难过、[reluctantly]不情愿、[tired]疲惫、[bored]无聊、"
+               "[serious]严肃、[sarcastic]讽刺、[scornful]不屑、[angry]生气；它会改变这一整句的语气。")
 STALE_QUESTION_NOTE = ("\n【那句已经过去了】用户问「{question}」之后又接着说了好一会儿别的，"
                        "不要再回头回答那句；只回应用户最新说的这句，跟你无关就简短接一句。")
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound

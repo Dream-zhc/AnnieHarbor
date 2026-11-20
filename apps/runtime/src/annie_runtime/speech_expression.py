@@ -25,7 +25,12 @@ _LABELS = tuple(sorted({*(key + ":" for key in _FIELDS), *_CONTROL_TAGS,
 # “[tsk]” swallowed the whole sentence in the same probe. Inside the speech text each is
 # one private-use character, so the aligner, the workbench and the history see only words.
 SOUND_TAGS = ("laughing", "giggles", "snorts", "sighing", "gasp", "clears throat", "cough")
-_SOUND_MARKS = {tag: chr(0xE100 + index) for index, tag in enumerate(SOUND_TAGS)}
+# Whole-sentence emotion tags the user liked after listening (11-20); the theatrical
+# ones (like dracula, shouting, crying, trembling, panicked, asmr, speed) stay dropped.
+EMOTION_TAGS = ("curious", "mischievously", "empathetic", "whispers", "amazed", "excited", "sad",
+                "reluctantly", "tired", "bored", "serious", "sarcastic", "scornful", "angry")
+EMOTIONS_PER_REPLY = 2
+_SOUND_MARKS = {tag: chr(0xE100 + index) for index, tag in enumerate(SOUND_TAGS + EMOTION_TAGS)}
 _MARK_TAGS = {mark: tag for tag, mark in _SOUND_MARKS.items()}
 _MARKS = re.compile("[" + "".join(_MARK_TAGS) + "]")
 _BRACKET_TAGS = (*SOUND_TAGS, *_CONTROL_TAGS)
@@ -228,11 +233,12 @@ def sounds_as_tags(text):
 
 class SoundMarks:
     """“[laughing]” in her reply becomes one mark for the TTS (11-20, user: laughs and
-    sighs sound natural). A whole-sentence emotion tag (“[excited]”) is dropped: that
-    style sounded theatrical and was switched off. Other brackets stay ordinary text."""
+    sighs sound natural), as does an allowed emotion tag (“[curious]”); a theatrical one
+    (“[like dracula]”) is dropped. Other brackets stay ordinary text."""
 
-    def __init__(self, limit=SOUNDS_PER_REPLY):
+    def __init__(self, limit=SOUNDS_PER_REPLY, emotions=EMOTIONS_PER_REPLY):
         self.limit = limit
+        self.emotions = emotions
         self.used = []
         self._held = ""
 
@@ -244,7 +250,9 @@ class SoundMarks:
                 if char == "]":
                     body = self._held[1:-1].strip().lower()
                     if body in _SOUND_MARKS:
-                        if len(self.used) < self.limit:
+                        kind = EMOTION_TAGS if body in EMOTION_TAGS else SOUND_TAGS
+                        cap = self.emotions if kind is EMOTION_TAGS else self.limit
+                        if sum(tag in kind for tag in self.used) < cap:
                             self.used.append(body)
                             out.append(_SOUND_MARKS[body])
                     elif body not in _CONTROL_TAGS:

@@ -19,3 +19,18 @@ test('service states are shown instead of a stale or missing result',()=>{
   assert.equal(languagePill({...base,state:'no_mic'}).text,'麦克风未连');
   assert.equal(languagePill(null,true).text,'离线');
 });
+
+test('online but no sound from the robot microphone says so instead of just "在线"',()=>{
+  const idle={...base,latest:null,latest_age_ms:null,mic_fps:0,echo_skipped:0};
+  const pill=languagePill(idle);
+  assert.deepEqual([pill.text,pill.tone],['没收到麦克风声音','warn']);
+  assert.match(pill.title,/麦克风：0 帧\/秒（正常约 50） · 机器人的麦克风没有把声音送进 Room/);
+  assert.equal(languagePill({...idle,mic_fps:49.8}).text,'在线');
+  assert.equal(languagePill({...base,mic_fps:0}).text,'粤语 100%');  // a recent result still shows
+});
+
+test('her own voice that was skipped as echo is counted in the details',()=>{
+  const pill=languagePill({...base,mic_fps:50,echo_skipped:3});
+  assert.match(pill.title,/已跳过 3 句她自己的声音（回声）/);
+  assert.doesNotMatch(languagePill({...base,echo_skipped:0}).title,/回声/);
+});

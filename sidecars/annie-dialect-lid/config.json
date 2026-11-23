@@ -2,10 +2,12 @@
   "room_root": "ws://192.168.1.47:8090/robot",
   "mic_channel": "reb_mic",
   "publish_channel": "reb_sam",
+  "tts_channel": "reb_tts",
   "robots": [
     {"robot_id": "annie-a", "room": "roomv2", "enabled": true},
     {"robot_id": "annie-b", "room": "roomv3", "enabled": true},
-    {"robot_id": "annie-small", "room": "roomv4", "enabled": false}
+    {"robot_id": "annie-small", "room": "roomv4", "enabled": false},
+    {"robot_id": "annie-test", "room": "lidtest", "enabled": false}
   ],
   "model_dir": "models/FireRedLID",
   "use_half": true,

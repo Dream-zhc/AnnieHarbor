@@ -43,3 +43,7 @@
   3. 话里的方言词指向别的方言时以词为准；用户明确要求的语言/方言优先。
 - 实现：`ReplyLanguageState.hear_lid()`、`EXTRA_DIALECT_MARKERS`、`RealtimeRobot.accept_language_id()`（只收本机器人 Room 的结果，跟随变化时发 `language.lid_followed` 事件、日志 `dialect_follow_lid`，并立即刷新提示词）；`_room_sam_event` 在开关打开时把 `language_id` 交给对应机器人。
 - 验证：新增 tests/test_dialect_follow.py（词表只在开关打开时生效；一句不跟、两句才跟；改回普通话；北方官话 / 低把握 / 开关关 / 方言词冲突 / 明确要求都不被覆盖；别的 Room 的结果不进来；默认关时只显示）；`uv run --locked pytest -q` 1548 passed，ruff、web 144/0 通过；开关打开的隔离根 `sh start.sh` 工作台 200、`/health` 503（Room 故意连不上），已清理。
+
+## 2026-11-23 修正
+
+真实 Room 实测发现 Room 的麦克风帧带信封、机器人自己的声音会被当成用户，已修，见 [语种旁路真实Room验证与修正](../2026-11-23/语种旁路真实Room验证与修正.md)。上文第一次实测用的是自己编的假 Room（发裸 PCM），没有覆盖这两点。

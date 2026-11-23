@@ -339,7 +339,8 @@ class RoomMonitor:
         elif kind == "language_id_health" and message.get("room") == self.room_id:
             self.language_health_at = now
             self.language_health = {name: message.get(name) for name in (
-                "status", "reason", "mic_connected", "device", "queue", "processed", "dropped")}
+                "status", "reason", "mic_connected", "mic_fps", "device", "queue", "processed",
+                "dropped", "echo_skipped")}
         elif (kind == "language_id" and message.get("room") == self.room_id
               and isinstance(message.get("label"), str)):
             self.language_at = now
@@ -513,6 +514,7 @@ class RoomMonitor:
             "state": state, "heartbeat_age_ms": None if age is None else round(age * 1000),
             "reason": health.get("reason"), "device": health.get("device"),
             "queue": health.get("queue"), "count": self.language_count,
+            "mic_fps": health.get("mic_fps"), "echo_skipped": health.get("echo_skipped"),
             "latest": self.language,
             "latest_age_ms": None if self.language_at is None
             else round((now - self.language_at) * 1000),

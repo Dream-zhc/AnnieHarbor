@@ -55,9 +55,10 @@ def current_action_not_vetoed(text):
 
 class ActionCoordinator:
     def __init__(self, store, catalog, robots, main_publishers, emit, *,
-                 enabled=False, allowlist=(), robot_allowlists=None):
+                 enabled=False, allowlist=(), robot_allowlists=None, robot_catalogs=None):
         self.store = store
         self.catalog = catalog
+        self.robot_catalogs = dict(robot_catalogs or {})  # robot -> its own action table
         self.robots = robots
         self.main_publishers = main_publishers
         self.emit = emit
@@ -76,8 +77,15 @@ class ActionCoordinator:
         self.receipts = {"applied": 0, "ignored": 0, "unmatched": 0, "invalid": 0}
         self.locks = {robot_id: asyncio.Lock() for robot_id in robots}
 
+    def catalog_for(self, robot_id):
+        """The action table describing this robot's body: its own, else the shared one."""
+        return self.robot_catalogs.get(robot_id, self.catalog)
+
     def allowed(self, robot_id):
-        """Scripts this robot's body can run: its robots.toml actions, else the shared allowlist."""
+        """Scripts this robot's body can run: its robots.toml actions, else the shared allowlist.
+        A robot with its own table never falls back to the shared allowlist."""
+        if robot_id in self.robot_catalogs:
+            return self.robot_allowlists.get(robot_id, ())
         return self.robot_allowlists.get(robot_id, self.allowlist)
 
     async def start(self):
@@ -187,7 +195,7 @@ class ActionCoordinator:
         if kind == "action":
             if value not in self.allowed(robot_id):
                 raise ValueError("action is not enabled for physical execution")
-            action = resolve_action(self.catalog, value)
+            action = resolve_action(self.catalog_for(robot_id), value)
             cooldown = action["duration_ms"]
         elif kind == "expression" and type(value) is str and value in EXPRESSIONS:
             cooldown = 0
@@ -576,7 +584,7 @@ class ActionCoordinator:
         robot = self.robots[robot_id]
         if generation != robot.generation:
             raise ValueError("stale_generation")
-        action = resolve_action(self.catalog, script)
+        action = resolve_action(self.catalog_for(robot_id), script)
         async with self.locks[robot_id]:
             row, duplicate = await asyncio.to_thread(
                 self.store.reserve_action, robot_id, call_id, conversation_id, generation,

@@ -1718,7 +1718,7 @@ class RealtimeRobot:
                 return None
             try:
                 receipt = await asyncio.wait_for(
-                    watch, actions.catalog[script]["duration_ms"] / 1000 + extra)
+                    watch, self.action_catalog[script]["duration_ms"] / 1000 + extra)
             except TimeoutError:
                 receipt = "timeout"
         finally:
@@ -2446,6 +2446,11 @@ class RealtimeRobot:
         """The scripts this robot's own body can run."""
         return self.actions.allowed(self.robot.config.robot_id)
 
+    @property
+    def action_catalog(self):
+        """The action table describing this robot's body: its own, else the shared one."""
+        return self.actions.catalog_for(self.robot.config.robot_id)
+
     def _asked_motion(self, text):
         """The enabled motion this names, or the side a bare "转头看看" was just pointed at."""
         allowed = self.action_scripts
@@ -2684,7 +2689,7 @@ class RealtimeRobot:
             threshold = self.d3.expression_threshold if kind == "d3" else self.expression_threshold
             self.decision_stats["expression_checks"] += 1
             try:
-                question = (motion_question({script: self.actions.catalog[script]["description"]
+                question = (motion_question({script: self.action_catalog[script]["description"]
                                              for script in allowed})
                             if generic else expression_question(allowed))
                 answers = await client.ask(
@@ -3457,8 +3462,8 @@ class RealtimeRobot:
                     # Only enabled scripts: 10-22 she said “这就给你摇一个” with
                     # shake_head off the allowlist, and nothing moved.
                     names = "、".join(dict.fromkeys(
-                        re.sub(r"（.*?）", "", self.actions.catalog[script]["name"])
-                        for script in self.action_scripts if script in self.actions.catalog))
+                        re.sub(r"（.*?）", "", self.action_catalog[script]["name"])
+                        for script in self.action_scripts if script in self.action_catalog))
                     tail += (
                         f"\n【实体动作】你能做的动作和表情只有：{names}。"
                         "动作与表情由系统根据对话自动执行。用户要你做其中一个时，动作已经在做了，"
@@ -3543,7 +3548,7 @@ class RealtimeRobot:
                     my_day=self.inner_life is not None,
                     actions=llm_actions,
                     action_descriptions=(
-                        {script_id: self.actions.catalog[script_id]["description"]
+                        {script_id: self.action_catalog[script_id]["description"]
                          for script_id in llm_actions}
                         if physical else None
                     ),

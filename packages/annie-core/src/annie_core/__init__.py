@@ -74,6 +74,10 @@ class RobotConfig:
     mouth_enabled: bool = True
     camera_enabled: bool = True
     actions: tuple[str, ...] = ()  # empty: the runtime's shared allowlist
+    # File name, next to action_scripts.json, of this robot's own action table. Set: the robot
+    # knows and runs only that table's scripts (every enabled one unless ``actions`` narrows
+    # it) and never the shared table's or another robot's. Empty: the shared table.
+    action_catalog: str = ""
     # Another robot whose LiveKit camera room this one reuses when its own
     # ANNIE_EXHIBIT_LIVEKIT_ROOM_* is unset.
     livekit_room_of: str = ""
@@ -90,6 +94,10 @@ class RobotConfig:
                 or not all(isinstance(s, str) and s.strip() for s in self.actions)
                 or len(set(self.actions)) != len(self.actions)):
             raise ValueError("actions must be a tuple of unique non-empty script ids")
+        if not isinstance(self.action_catalog, str) or (self.action_catalog and not (
+                self.action_catalog.endswith(".json") and not self.action_catalog.startswith(".")
+                and all(char.isalnum() or char in "_.-" for char in self.action_catalog))):
+            raise ValueError("action_catalog must be a .json file name without a directory")
         if not isinstance(self.livekit_room_of, str) or self.livekit_room_of == self.robot_id:
             raise ValueError("livekit_room_of must name another robot")
         if type(self.queue_capacity) is not int or self.queue_capacity < 1:

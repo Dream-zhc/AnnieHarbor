@@ -1254,12 +1254,25 @@ class HarborRuntime:
             if actions_enabled and (not self.realtime or room_server is None or not tts_voice):
                 raise ValueError("real action delivery requires Realtime, Room and TTS anchor")
             catalog = load_action_catalog(action_catalog)
-            robot_allowlists = {
-                robot_id: robot.config.actions
-                for robot_id, robot in self.robots.items() if robot.config.actions
+            # A robot with its own table (robots.toml action_catalog, a file next to the
+            # shared one) is described by that table alone: it runs its scripts and none of
+            # the shared table's, and its durations never touch another robot's.
+            robot_catalogs = {
+                robot_id: load_action_catalog(Path(action_catalog).parent / robot.config.action_catalog)
+                for robot_id, robot in self.robots.items() if robot.config.action_catalog
             }
-            for script in (*action_allowlist, *(s for scripts in robot_allowlists.values() for s in scripts)):
+            robot_allowlists = {}
+            for robot_id, robot in self.robots.items():
+                own = robot_catalogs.get(robot_id)
+                scripts = robot.config.actions or (
+                    tuple(script for script, entry in own.items() if entry["enabled"]) if own else ())
+                if scripts:
+                    robot_allowlists[robot_id] = scripts
+            for script in action_allowlist:
                 resolve_action(catalog, script)
+            for robot_id, scripts in robot_allowlists.items():
+                for script in scripts:
+                    resolve_action(robot_catalogs.get(robot_id, catalog), script)
             if len(set(action_allowlist)) != len(action_allowlist):
                 raise ValueError("duplicate action allowlist entry")
             if actions_enabled and not action_allowlist:
@@ -1279,6 +1292,7 @@ class HarborRuntime:
                 enabled=actions_enabled,
                 allowlist=action_allowlist,
                 robot_allowlists=robot_allowlists,
+                robot_catalogs=robot_catalogs,
             )
             for client in self.realtime.values():
                 client.actions = self.actions
@@ -2528,8 +2542,8 @@ class HarborRuntime:
         return {
             "status": "ready" if self.actions.enabled else "disabled",
             "enabled": self.actions.enabled,
-            "allowlist": list(self.actions.allowlist),
-            "actions": list(self.actions.catalog.values()),
+            "allowlist": list(self.actions.allowed(robot_id)),
+            "actions": list(self.actions.catalog_for(robot_id).values()),
             "requests": await self.actions.list(robot_id),
             "transport_error": self.actions.connection_errors.get(robot_id),
         }

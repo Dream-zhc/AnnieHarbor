@@ -118,7 +118,7 @@ class InteractionMotions:
     def _record(self, robot_id, kind, script, **fields):
         rows = self.recent[robot_id]
         actions = getattr(self.runtime, "actions", None)
-        name = (actions.catalog.get(script) or {}).get("name") if actions and script else None
+        name = (actions.catalog_for(robot_id).get(script) or {}).get("name") if actions and script else None
         rows.append({"kind": kind, "script": script, "name": name,
                      "ts_ms": time.time_ns() // 1_000_000, **fields})
         del rows[:-12]

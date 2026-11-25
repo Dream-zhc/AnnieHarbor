@@ -1,0 +1,28 @@
+{
+  "_doc": "小头（annie-small）自己的动作表，robots.toml 里 action_catalog 指向它；只有小头用，和 action_scripts.json（大头、B）互不相通：同一个 id 在两张表里各按各的名称、说明和时长，小头只能做这张表里的动作。嵌入式给什么就写什么，已有的 id 直接覆盖，没有的追加。tilt、tilt_left、sad、sad_look_down、nod_serious 与 tilt_head_right、tilt_head_left、cry、cry_look_down、nod_look_down 名称和时长相同（嵌入式清单里的同动作别名），名称相同让系统提示里的“你能做的动作”不重复列出。",
+  "scripts": [
+    {"id":"shake_head","llm_id":1,"name":"摇头","description":"明确否定、不同意、拒绝、劝阻、不是这样时使用。","duration_ms":3700,"category":"primary","enabled":true},
+    {"id":"nod","llm_id":2,"name":"点头","description":"明显点头，表示同意、肯定、答应、听懂或打招呼时使用。","duration_ms":2200,"category":"primary","enabled":true},
+    {"id":"tilt_head_right","llm_id":3,"name":"右歪头","description":"明显向右歪头，表达疑惑、好奇、没听清或重新确认时使用。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"tilt_head_left","llm_id":4,"name":"左歪头","description":"明显向左歪头，表达疑惑、好奇、没听清或重新确认时使用。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"tilt","llm_id":5,"name":"右歪头","description":"明显向右歪头，表达疑惑、好奇、没听清或重新确认时使用。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"tilt_left","llm_id":6,"name":"左歪头","description":"明显向左歪头，表达疑惑、好奇、没听清或重新确认时使用。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"look_left","llm_id":7,"name":"看左边","description":"用户明确要求看左边，或当前视觉目标明确在左侧时使用；向左看后停住。","duration_ms":1200,"category":"primary","enabled":true},
+    {"id":"look_right","llm_id":8,"name":"看右边","description":"用户明确要求看右边，或当前视觉目标明确在右侧时使用；向右看后停住。","duration_ms":1200,"category":"primary","enabled":true},
+    {"id":"look_up","llm_id":9,"name":"抬头","description":"用户明确要求抬头、往上看，或当前视觉目标明确在上方时使用。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"look_down","llm_id":10,"name":"低头","description":"用户明确要求低头、往下看，或当前视觉目标明确在下方时使用。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"think_tilt","llm_id":11,"name":"慢倾思考","description":"正在思考、权衡、回忆、准备给判断时使用；动作自带快速双眨，不用再单独眨眼。","duration_ms":2800,"category":"primary","enabled":true},
+    {"id":"fast_double_blink","llm_id":12,"name":"快速双眨","description":"轻微困惑、意外、怀疑、重新确认、被问懵或自然表达‘嗯？’时使用。","duration_ms":550,"category":"micro","enabled":true},
+    {"id":"wink_left","llm_id":13,"name":"左眼 Wink","description":"轻松玩笑、默契、俏皮暗示时偶尔左眼眨一下；严肃场景不用。","duration_ms":520,"category":"special","enabled":true},
+    {"id":"wink_right","llm_id":14,"name":"右眼 Wink","description":"轻松玩笑、默契、俏皮暗示时偶尔右眼眨一下；严肃场景不用。","duration_ms":520,"category":"special","enabled":true},
+    {"id":"smile","llm_id":15,"name":"微笑","description":"开心、友好、被夸、表达善意或打招呼时露出微笑；难过、严肃的话题不用。","duration_ms":2000,"category":"primary","enabled":true},
+    {"id":"cry","llm_id":16,"name":"伤心","description":"难过、失落、委屈、表示同情或抱歉时露出伤心的表情；轻松玩笑的场景不用。","duration_ms":2000,"category":"primary","enabled":true},
+    {"id":"sad","llm_id":17,"name":"伤心","description":"难过、失落、委屈、表示同情或抱歉时露出伤心的表情；轻松玩笑的场景不用。","duration_ms":2000,"category":"primary","enabled":true},
+    {"id":"smile_nod","llm_id":18,"name":"微笑点头","description":"微笑着点头：友好地答应、赞同、道谢或打招呼时使用。","duration_ms":2200,"category":"primary","enabled":true},
+    {"id":"cry_look_down","llm_id":19,"name":"伤心低头","description":"伤心并低下头：很难过、失落、愧疚或认真道歉时使用；不要用于玩笑。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"sad_look_down","llm_id":20,"name":"伤心低头","description":"伤心并低下头：很难过、失落、愧疚或认真道歉时使用；不要用于玩笑。","duration_ms":1800,"category":"primary","enabled":true},
+    {"id":"shake_cry","llm_id":21,"name":"摇头伤心","description":"摇着头露出伤心：遗憾地拒绝、做不到、无能为力或为坏消息惋惜时使用。","duration_ms":2500,"category":"primary","enabled":true},
+    {"id":"nod_look_down","llm_id":22,"name":"微低头点头","description":"微微低头点头：郑重、认真、恭敬地答应，或严肃场合表示收到时使用。","duration_ms":2200,"category":"primary","enabled":true},
+    {"id":"nod_serious","llm_id":23,"name":"微低头点头","description":"微微低头点头：郑重、认真、恭敬地答应，或严肃场合表示收到时使用。","duration_ms":2200,"category":"primary","enabled":true}
+  ]
+}

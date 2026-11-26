@@ -29,6 +29,7 @@ SOUND_TAGS = ("laughing", "giggles", "snorts", "sighing", "gasp", "clears throat
 # ones (like dracula, shouting, crying, trembling, panicked, asmr, speed) stay dropped.
 EMOTION_TAGS = ("curious", "mischievously", "empathetic", "whispers", "amazed", "excited", "sad",
                 "reluctantly", "tired", "bored", "serious", "sarcastic", "scornful", "angry")
+SERIOUS_EMOTION_TAGS = frozenset({"empathetic", "serious", "sad"})
 EMOTIONS_PER_REPLY = 2
 _SOUND_MARKS = {tag: chr(0xE100 + index) for index, tag in enumerate(SOUND_TAGS + EMOTION_TAGS)}
 _MARK_TAGS = {mark: tag for tag, mark in _SOUND_MARKS.items()}
@@ -236,11 +237,16 @@ class SoundMarks:
     sighs sound natural), as does an allowed emotion tag (“[curious]”); a theatrical one
     (“[like dracula]”) is dropped. Other brackets stay ordinary text."""
 
-    def __init__(self, limit=SOUNDS_PER_REPLY, emotions=EMOTIONS_PER_REPLY):
+    def __init__(self, limit=SOUNDS_PER_REPLY, emotions=EMOTIONS_PER_REPLY, *, serious=False):
         self.limit = limit
         self.emotions = emotions
+        self.serious = bool(serious)
         self.used = []
         self._held = ""
+
+    def set_serious(self, serious=True):
+        """Hard runtime safety valve: drop laughs/sounds and keep only empathetic/serious/sad."""
+        self.serious = bool(serious)
 
     def feed(self, delta):
         out = []
@@ -250,8 +256,12 @@ class SoundMarks:
                 if char == "]":
                     body = self._held[1:-1].strip().lower()
                     if body in _SOUND_MARKS:
-                        kind = EMOTION_TAGS if body in EMOTION_TAGS else SOUND_TAGS
-                        cap = self.emotions if kind is EMOTION_TAGS else self.limit
+                        is_emotion = body in EMOTION_TAGS
+                        if self.serious and (not is_emotion or body not in SERIOUS_EMOTION_TAGS):
+                            self._held = ""
+                            continue
+                        kind = EMOTION_TAGS if is_emotion else SOUND_TAGS
+                        cap = self.emotions if is_emotion else self.limit
                         if sum(tag in kind for tag in self.used) < cap:
                             self.used.append(body)
                             out.append(_SOUND_MARKS[body])

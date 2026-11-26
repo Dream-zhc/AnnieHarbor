@@ -186,7 +186,21 @@ _MANNER_WORDS = re.compile(
 _NOT_A_REQUEST = re.compile(
     r'(?<!要)不要|别(?:用|说|讲)|不用|(?<!能)不能|不想|会说.*[吗么?？]'
     r'|(?:会|能|可以)(?:说|讲)[^，。！？!?个段句首点些]{0,6}[吗么?？]|翻译|引用'
-    r'|怎么(?:说|讲|念|读|写)|咋(?:说|讲|念)|什么意思|啥意思|叫什么|叫啥|[“”‘’「」"\']')
+    r'|怎么(?:说|讲|念|读|写)|咋(?:说|讲|念)|什么意思|啥意思|叫什么|叫啥')
+_QUOTE_SPAN = re.compile(r'“[^”]*”|‘[^’]*’|「[^」]*」|"[^"]*"|\'[^\']*\'')
+_ENGLISH_NAME_PATTERN = '|'.join(_ENGLISH_NAMES)
+# Long rambling talks (“…比如说我在说汉语…”) are too ambiguous for a phrase regex;
+# keep the fast path for crisp commands and let the decision model judge long turns.
+LANGUAGE_FAST_MAX_CHARS = 40
+
+
+def _language_quoted(text):
+    """True only when a language name itself sits inside quotes (not an unrelated quoted word)."""
+    for span in _QUOTE_SPAN.finditer(text):
+        chunk = span.group(0)
+        if re.search(_NAME_PATTERN, chunk) or re.search(rf'\b(?:{_ENGLISH_NAME_PATTERN})\b', chunk, re.I):
+            return True
+    return False
 
 
 def _manner_only(text, match):
@@ -202,13 +216,13 @@ def named_languages(text):
 
 def unplaced_language_mention(text):
     """A named language the phrase rules can neither place nor rule out:
-    “粤语聊天”“整点河南话”. The decision model judges it."""
-    if (not isinstance(text, str) or _NOT_A_REQUEST.search(text)
+    “粤语聊天”“整点河南话”, or a long narrative naming a language. The decision model judges it."""
+    if (not isinstance(text, str) or _NOT_A_REQUEST.search(text) or _language_quoted(text)
             or explicit_language_request(text) or explicit_language_stop(text)
             or explicit_language_clear(text)):
         return None
-    match = re.search(_NAME_PATTERN, text)
-    return NAMES[match[0]] if match else None
+    matches = list(re.finditer(_NAME_PATTERN, text))
+    return NAMES[matches[-1][0]] if matches else None
 
 
 def stop_covers(stop, language, dialect):
@@ -236,9 +250,11 @@ def explicit_language_request(text):
     scope: chat/robot when named; a request that only says how to talk holds for this
     chat only with 继续/切换/跟我聊 and the like (“切换普通话”“用东北话跟我聊”);
     bare (“你用陕西话”“说粤语吧”) or with content (“陕西话介绍一下自己”) it is this
-    turn only (user decision 11-20, replacing 10-22).
+    turn only (user decision 11-20, replacing 10-22). Long utterances (>40 chars) are
+    left to the decision model via unplaced_language_mention instead of regex matching.
     """
-    if not isinstance(text, str) or _NOT_A_REQUEST.search(text):
+    if (not isinstance(text, str) or len(text.strip()) > LANGUAGE_FAST_MAX_CHARS
+            or _NOT_A_REQUEST.search(text) or _language_quoted(text)):
         return None
     lang = '|'.join(_ENGLISH_NAMES)
     english = re.search(
@@ -347,6 +363,7 @@ class ReplyLanguageState:
         self.style_request = {}
         self.intent = None
         self._intent_emotion_pending = False
+        self._intent_once = False
         self.response = None
         self.application = 'unknown'
         self.last_decision = None
@@ -573,6 +590,9 @@ class ReplyLanguageState:
         self.intent = dict(language=language, dialect=dialect, emotion=emotion,
                            source='llm_inferred' if evidence else 'llm_early', reason=reason[:120])
         self._intent_emotion_pending = self.response is None or self.active_turn_id in self.locked_turns
+        explicit = self.explicit or {}
+        self._intent_once = bool(confirmed and explicit.get('scope') == 'turn'
+                                 and (explicit.get('language'), explicit.get('dialect')) == (language, dialect))
         pair = (language, dialect)
         if evidence and pair != self.last_candidate:
             self.candidate = dict(self.intent)
@@ -591,8 +611,21 @@ class ReplyLanguageState:
             self.application = 'next_turn'
         self._refresh_revision()
 
+    def mark_serious(self):
+        """Decision-model safety valve: keep laughs/banter out of this turn's reply."""
+        previous_hint = self.instruction_hint()
+        self.serious_context = True
+        if self.response is not None:
+            self.response['serious'] = True
+        if self.active_turn_id in self.styles:
+            self.styles[self.active_turn_id]['serious'] = True
+        self._refresh_revision()
+        return previous_hint != self.instruction_hint()
+
     def instruction_hint(self):
         selected = self.selection()
+        serious_note = ('\n【严肃倾诉】用户正在倾诉难过、困难或求助，认真温柔接住，'
+                        '不开玩笑，不发笑声标记。' if self.serious_context else '')
         if (not self.observation and not self.typed_observation and not any(self.preferences.values())
                 and not self.explicit and not self.style_request and not self.intent
                 and not self.candidate and not self._dialect_followed()):
@@ -601,7 +634,8 @@ class ReplyLanguageState:
                     '这一轮整句是外语时就用该语言回答，不要改用中文点评。'
                     '根据语境与人格安排重音与标点节奏，'
                     '不写情绪标签/JSON/旁白；明确情绪要求优先。'
-                    'select_reply_style可选提前提出具体语气，不必每轮调用，不等待工具再开口。')
+                    'select_reply_style可选提前提出具体语气，不必每轮调用，不等待工具再开口。'
+                    + serious_note)
         saved = {'chat_preference': '本会话', 'robot_preference': '这台机器人'}.get(selected['source'])
         lasting = self.explicit and self.explicit.get('scope') in {'chat', 'robot'}
         # The model follows a name, not a code: 10/22 “ru” alone kept Chinese replies.
@@ -630,7 +664,8 @@ class ReplyLanguageState:
                 + ('。' if saved or lasting else '；这一轮整句是外语时仍用该语言回答。')
                 + '输入情绪只供温和回应参考。'
                 + '仅当前用户明确要求保存/清除Chat或机器人语言偏好时调用对应工具，成功才说已保存。'
-                + '可选select_reply_style供有证据的方言推断/语境选择，不必每轮调用，不等待工具再开口。')
+                + '可选select_reply_style供有证据的方言推断/语境选择，不必每轮调用，不等待工具再开口。'
+                + serious_note)
 
     def confirm(self, revision):
         if revision == self.revision:
@@ -696,6 +731,8 @@ class ReplyLanguageState:
         self.explicit = None
         self.style_request = {}
         self.serious_context = False
+        if self._intent_once:
+            self.intent, self._intent_once = None, False
         if not self._intent_emotion_pending:
             # Language can naturally continue; a consumed acting intent cannot
             # pin unrelated later replies to the same sadness/excitement.

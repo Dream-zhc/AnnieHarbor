@@ -295,6 +295,7 @@ def vision_intent_options(vision: dict, environ, robot_ids=()) -> dict:
             "scope": decision.get("scope", "cue"),
             "timeout_ms": int(decision.get("timeout_ms", 700)),
             "image": decision.get("image", True),
+            "d3_min_confidence": float(decision.get("d3_min_confidence", 0.6)),
         },
         "livekit": ({"url": url, "api_key": key, "api_secret": secret, "rooms": rooms,
                      "source": environ.get("ANNIE_EXHIBIT_LIVEKIT_SOURCE", "").strip() or "camera-a"}

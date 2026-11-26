@@ -967,13 +967,15 @@ class HarborRuntime:
         if type(vision_intent_ack) is not bool:
             raise ValueError("vision_intent_ack must be boolean")
         look_decision = {"enabled": False, "scope": "cue", "timeout_ms": 700, "image": True,
-                         **(vision_look_decision or {})}
+                         "d3_min_confidence": 0.6, **(vision_look_decision or {})}
+        d3_min = look_decision["d3_min_confidence"]
         if (type(look_decision["enabled"]) is not bool or type(look_decision["image"]) is not bool
                 or look_decision["scope"] not in {"cue", "all"}
                 or type(look_decision["timeout_ms"]) is not int
-                or not 100 <= look_decision["timeout_ms"] <= 3000):
-            raise ValueError("vision look decision needs boolean enabled/image, scope cue or all "
-                             "and timeout_ms between 100 and 3000")
+                or not 100 <= look_decision["timeout_ms"] <= 3000
+                or type(d3_min) not in (int, float) or not 0 <= d3_min <= 1):
+            raise ValueError("vision look decision needs boolean enabled/image, scope cue or all, "
+                             "timeout_ms 100..3000 and d3_min_confidence 0..1")
         if type(conversation_history_turns) is not int or not 1 <= conversation_history_turns <= 100:
             raise ValueError("conversation_history_turns must be an integer between 1 and 100")
         if type(realtime_history_turns) is not int or not 1 <= realtime_history_turns <= 50:
@@ -1480,9 +1482,10 @@ class HarborRuntime:
                             vision_intent_route, vision_intent_deadline_ms, bool(tts_voice),
                             vision_intent_ack)
             if self.vision_look_decision is not None:
-                logger.info("vision_look_decision_config scope=%s timeout_ms=%s image=%s frames=%s",
+                logger.info("vision_look_decision_config scope=%s timeout_ms=%s image=%s "
+                            "d3_min_confidence=%s frames=%s",
                             look_decision["scope"], look_decision["timeout_ms"],
-                            look_decision["image"],
+                            look_decision["image"], look_decision["d3_min_confidence"],
                             ",".join(f"{robot_id}:{getattr(item, 'room_name', '?')}"
                                      for robot_id, item in sorted(self.camera_frames.items()))
                             or "none")

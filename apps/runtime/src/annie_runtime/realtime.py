@@ -33,12 +33,14 @@ from annie_brain.decision_policy import (
     LOOK_DIRECTIONS,
     LOOK_SCRIPTS,
     REPEAT_QUESTION,
+    SERIOUS_CONTEXT_QUESTION,
     SLEEP_REQUEST_QUESTION,
     WAKE_NAME,
     addressee_prompt,
     addressee_state,
     addressee_verdict,
     asks_to_look,
+    explicit_expression,
     explicit_motion,
     expression_choice,
     expression_question,
@@ -56,6 +58,8 @@ from annie_brain.decision_policy import (
     pick_anchor,
     repeat_state,
     reply_likeness,
+    serious_cue,
+    turn_intent_state,
     voice_switch_question,
 )
 from annie_brain.dialogue import DialogueState
@@ -159,6 +163,10 @@ LOGGED_TEXT_CHARS = 200
 SLEEP_CUE = re.compile(r"退|闭嘴|别说|不要说|安静|休息|睡|结束|停|别吵|下去")
 SLEEP_JUDGE_MAX_CHARS = 40
 SLEEP_JUDGE_CONFIDENCE = 0.8
+# Calibrated d3 confidence floors (11-25 eval); DashScope fallback stays unthresholded.
+D3_MIN_LOOK_CONFIDENCE = 0.6
+D3_MIN_LANGUAGE_CONFIDENCE = 0.6
+D3_MIN_SERIOUS_CONFIDENCE = 0.6
 # Look first (10-28, docs/规范/视觉意图协议.md): a fresh description stays in the
 # prompt this long for follow-ups; a busy motor slot is retried this often.
 FRESH_VIEW_SECONDS = 30
@@ -201,8 +209,7 @@ STALE_QUESTION_NOTE = ("\n【那句已经过去了】用户问「{question}」�
                        "不要再回头回答那句；只回应用户最新说的这句，跟你无关就简短接一句。")
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound
 SPEECH_VOLUME = {"quieter": 42, "louder": 58}  # within SpeechStyle's 40..60 bound
-EXPLICIT_MOTION = re.compile(
-    r"动作|表情|点头|点个头|摇头|眨|歪头|转头|看左|看右|往上看|惊讶|坏笑|得意|害羞|怀疑|做个|来个|演示")
+_MOTION_TOPIC = re.compile(r"动作|表情|演示")
 SLEEP_AFTER_REPLY_SECONDS = 20.0
 WEATHER_QUERY = re.compile(r"天气|气温|温度|下雨|下雪|刮风|冷不冷|热不热|带伞|穿什么|weather", re.I)
 REPEAT_REQUEST = re.compile(r"再说一[遍次下]|再讲一[遍次下]|重复一[下遍次]|刚才说(?:了)?(?:什么|啥)|没听[清见到]")
@@ -1292,11 +1299,24 @@ class RealtimeRobot:
         for observation in pending:
             self.accept_acoustic_observation(observation, pending=False)
 
+    def _pending_language_pair(self, text):
+        """Language pair needing decision-model judgment, or None if rules already settled it."""
+        if self.language_preference_writer is None and not self._has_decision():
+            return None
+        request = explicit_language_request(text)
+        if request or explicit_language_clear(text) or explicit_language_stop(text):
+            return None
+        return unplaced_language_mention(text)
+
     def _save_lasting_language(self, text, turn_id):
         """“这个会话一直用俄语” saves itself. On 10/22 the model only answered
-        “好” and never called set_language_preference, so nothing was kept."""
+        “好” and never called set_language_preference, so nothing was kept.
+
+        Returns an unplaced language pair when the phrase rules could not settle it,
+        so the caller can batch it into the single per-turn decision request.
+        """
         if self.language_preference_writer is None:
-            return
+            return unplaced_language_mention(text) if self._has_decision() else None
         request = explicit_language_request(text)
         scope = explicit_language_clear(text) if not request else None
         saved = self.language.preferences
@@ -1311,16 +1331,14 @@ class RealtimeRobot:
         elif stop:
             changes = self._language_stop_changes(stop, text)
         else:
-            named = None if request else unplaced_language_mention(text)
-            if named and self._has_decision():
-                self._language_decision_task(text, turn_id, named)
-            return
+            return None if request else unplaced_language_mention(text)
         if changes:
             task = asyncio.create_task(
                 self._apply_language_changes(changes, turn_id, dict(self.robot.session_state())),
                 name=f"language-save:{self.robot.config.robot_id}")
             self._decision_tasks.add(task)
             task.add_done_callback(self._decision_tasks.discard)
+        return None
 
     def _language_stop_changes(self, stop, text):
         """“别说河南话了”: drop the setting that holds it. A robot-wide one stays for
@@ -1349,6 +1367,35 @@ class RealtimeRobot:
                              error=type(exc).__name__)
                 return
 
+    @staticmethod
+    def _accepted_language_choice(choice, confidence, judge):
+        if choice not in LANGUAGE_REQUEST_SCOPES:
+            return choice
+        if judge == "d3" and (type(confidence) not in (int, float)
+                              or confidence < D3_MIN_LANGUAGE_CONFIDENCE):
+            return "no"
+        return choice
+
+    async def _apply_language_choice(self, turn_id, pair, choice, confidence, judge, identity):
+        effective = self._accepted_language_choice(choice, confidence, judge)
+        scope = LANGUAGE_REQUEST_SCOPES.get(effective)
+        if scope is None or self.robot.session_state() != identity:
+            return effective
+        if self.turn_id == turn_id and self.language.explicit is None:
+            self.language.adopt_request(*pair, scope)
+            self.visual_changed()
+        if scope == 'chat' and self.language_preference_writer is not None:
+            await self._apply_language_changes(
+                [dict(clear=False, scope='chat', language=pair[0], dialect=pair[1])],
+                turn_id, identity)
+        return effective
+
+    def _seed_language_decision(self, turn_id, pair, choice):
+        future = asyncio.get_running_loop().create_future()
+        future.set_result(choice)
+        self._language_decision = (turn_id, pair, future)
+        return future
+
     def _language_decision_task(self, text, turn_id, pair):
         """Ask the decision model whether the user wants this language now or from now
         on. Asked once per turn and language; the language tools await the same answer."""
@@ -1358,20 +1405,11 @@ class RealtimeRobot:
         identity = dict(self.robot.session_state())
 
         async def decide():
-            choice = await self._decide_instruction(
+            choice, confidence, judge = await self._decide_instruction_detail(
                 "language", language_request_question(SPOKEN_NAMES[pair]),
                 instruction_state(text, robot_last=self._last_reply_text))
-            scope = LANGUAGE_REQUEST_SCOPES.get(choice)
-            if scope is None or self.robot.session_state() != identity:
-                return choice
-            if self.turn_id == turn_id and self.language.explicit is None:
-                self.language.adopt_request(*pair, scope)
-                self.visual_changed()
-            if scope == 'chat' and self.language_preference_writer is not None:
-                await self._apply_language_changes(
-                    [dict(clear=False, scope='chat', language=pair[0], dialect=pair[1])],
-                    turn_id, identity)
-            return choice
+            return await self._apply_language_choice(
+                turn_id, pair, choice, confidence, judge, identity)
         task = asyncio.create_task(decide(), name=f"language-decision:{self.robot.config.robot_id}")
         self._language_decision = (turn_id, pair, task)
         self._decision_tasks.add(task)
@@ -1414,10 +1452,7 @@ class RealtimeRobot:
         if set(args) != ({'scope'} if clear else {'scope', 'language', 'dialect'}):
             raise ValueError('invalid preference arguments')
         if clear:
-            scope = ('chat' if re.search(r'(?i)chat|(?:本|这个|当前|这次|这段)(?:会话|对话|聊天)', text)
-                     else 'robot' if re.search(r'机器人|全局|所有会话', text) else None)
-            if (not re.search(r'清除|清空|删除|取消|恢复默认', text)
-                    or re.search(r'不要|别|不清|引用|翻译|[“”‘’\"\']', text) or scope != args['scope']):
+            if explicit_language_clear(text) != args['scope']:
                 raise ValueError('clear requires explicit current scope request')
         else:
             requested = explicit_language_request(text)
@@ -1817,37 +1852,167 @@ class RealtimeRobot:
         jpeg, age_ms = frame
         return ["data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")], age_ms
 
-    async def _look_decided(self, text, turn_id):
-        """(look, script) from the decision model for a line the phrase rules missed
-        (11-03: 有戴眼镜的人吗、水桶在哪里). It only says whether and where she looks;
-        what she then says still comes from the vision service. (False, None) on any doubt.
-
-        Awaited inline and bounded by timeout_ms: the provider's early reply stays
-        held meanwhile (wake gate or _look_deciding) and is dropped if she looks."""
+    def _look_decision_eligible(self, text, turn_id=None):
+        """True when the phrase rules missed a possible look and the decision model should judge."""
         config = self.look_decision or {}
-        if (not config.get("enabled") or not self._can_look_first(turn_id)
-                or (config.get("scope") != "all" and not look_cue(text))):
-            return False, None
-        judge, client, model = self._decision_model()
-        if client is None:
-            return False, None
+        if not config.get("enabled") or not self._has_decision():
+            return False
+        if turn_id is not None:
+            if not self._can_look_first(turn_id):
+                return False
+        else:
+            intents = self.vision_intents
+            if (intents is None or not intents.available(self.robot.config.robot_id)
+                    or self.response_id or self.text or self._early_tool_events
+                    or self._external_text_only):
+                return False
         previous = [turn.get("user_text") for turn in self.robot.recent_context()[-3:]
                     if turn.get("turn_id") != turn_id]
+        if asks_to_look(text, previous):
+            return False
+        return config.get("scope") == "all" or look_cue(text)
+
+    def _has_absent_candidates(self, turn_id=None):
+        if turn_id is not None:
+            return bool(self._names.names) and turn_id not in self._absent_asked
+        here = self._seen_in_view()
+        speaker = self.speakers.public() if self.speakers is not None else {}
+        if speaker.get("name") and speaker.get("status") != "ambiguous":
+            here.add(speaker["name"])
+        voices, service = set(), getattr(self.speakers, "service", None)
+        if service is not None:
+            voices = {row["name"] for row in service.catalog()["speakers"]}
+        known = (self._known_people[1] | self._seen_names | voices) - here
+        return any(name and name not in {WAKE_NAME, "安妮", "小安妮"} for name in known)
+
+    def _apply_serious_verdict(self, turn_id, text, choice, confidence, model, latency_ms, error):
+        accepted = (choice == "serious" and type(confidence) in (int, float)
+                    and confidence >= D3_MIN_SERIOUS_CONFIDENCE)
+        self.publish("serious.decided", turn_id=turn_id, choice=choice, confidence=confidence,
+                     accepted=accepted, model=model, latency_ms=latency_ms, error=error,
+                     text=text[:80])
+        logger.info("serious_context_decision robot=%s turn=%s model=%s choice=%s confidence=%s "
+                    "accepted=%s latency_ms=%s error=%s text=%r",
+                    self.robot.config.robot_id, turn_id, model, choice, confidence, accepted,
+                    latency_ms, error, text[:30])
+        if accepted and (turn_id is None or self.turn_id == turn_id):
+            if self.sounds is not None:
+                self.sounds.set_serious(True)
+            if self.language.mark_serious():
+                self.visual_changed()
+        return accepted
+
+    def _finish_look_answer(self, text, turn_id, choice, confidence, *, judge, model, images,
+                            frame_age_ms, latency_ms, error, spoken):
+        config = self.look_decision or {}
+        script = LOOK_DIRECTIONS.get(choice)
+        if script is not None and not (self.actions is not None and self.actions.enabled
+                                       and script in self.actions.allowlist):
+            script = None  # no head turn: she looks at what is in front
+        minimum = config.get("d3_min_confidence", D3_MIN_LOOK_CONFIDENCE) if judge == "d3" else 0
+        look = choice in LOOK_DIRECTIONS and (
+            minimum == 0 or type(confidence) in (int, float) and confidence >= minimum)
+        stale = look and (spoken != self.speech_started_count
+                          or (turn_id is not None and not self._can_look_first(turn_id)))
+        self.publish("vision.intent.decided", turn_id=turn_id, choice=choice,
+                     confidence=confidence, accepted=look, script=script, judge=judge,
+                     model=model, image=bool(images), frame_age_ms=frame_age_ms,
+                     latency_ms=latency_ms, error=error, stale=stale, text=text[:80])
+        logger.info("vision_intent_decision robot=%s turn=%s judge=%s model=%s choice=%s "
+                    "confidence=%s accepted=%s script=%s image=%s frame_age_ms=%s latency_ms=%s "
+                    "error=%s stale=%s text=%r", self.robot.config.robot_id, turn_id, judge, model,
+                    choice, confidence, look, script, bool(images), frame_age_ms, latency_ms,
+                    error, stale, text[:30])
+        return (True, script) if look and not stale else (False, None)
+
+    async def _decide_turn_intents(self, text, *, turn_id=None, check_sleep=False,
+                                   check_look=False, lang_pair=None, check_absent=False,
+                                   absent_reserved=False, check_serious=False):
+        """Ask all blocking (and piggybacked) turn-level intent questions in ONE decision request.
+
+        11-25 d3 benchmark: 2-4 questions in one ask take ~225 ms and use 1 concurrency slot,
+        whereas separate concurrent calls hit d3's concurrency>=4 latency doubling. Single-question
+        calls keep their exact wire shape for full compatibility.
+        """
+        out = {"sleep": False, "look": (False, None), "look_asked": False,
+               "language": None, "absent": None, "serious": None}
+        judge, client, model = self._decision_model()
+        if client is None:
+            return out
+        want_sleep = bool(check_sleep)
+        want_look = bool(check_look)
+        want_lang = lang_pair is not None
+        want_absent = bool(check_absent and text.strip()
+                           and (absent_reserved or self._has_absent_candidates(turn_id)))
+        want_serious = bool(check_serious and judge == "d3" and not self.language.serious_context
+                            and serious_cue(text))
+        if not (want_sleep or want_look or want_lang or want_absent or want_serious):
+            return out
+        previous = [turn.get("user_text") for turn in self.robot.recent_context()[-3:]
+                    if turn.get("turn_id") != turn_id and turn.get("user_text")]
         spoken, started = self.speech_started_count, time.perf_counter()
-        images, frame_age_ms, question = [], None, None
-        choice = confidence = error = None
-        self.decision_stats["look_checks"] += 1
-        self._look_deciding = turn_id
+        images, frame_age_ms = [], None
+        config = self.look_decision or {}
+        if want_look:
+            self.decision_stats["look_checks"] += 1
+            if turn_id is not None:
+                self._look_deciding = turn_id
+        if want_sleep:
+            self.decision_stats["instruction_checks"] += 1
+        if want_lang:
+            self.decision_stats["instruction_checks"] += 1
+        answers, error, keys = {}, None, []
         try:
-            async with asyncio.timeout(config.get("timeout_ms", 700) / 1000):
-                if judge == "d3" and config.get("image"):
+            timeout_s = (config.get("timeout_ms", 700) / 1000) if want_look else None
+            async def run_ask():
+                nonlocal images, frame_age_ms, keys
+                if want_look and judge == "d3" and config.get("image"):
                     images, frame_age_ms = await self._camera_image()
-                question = look_question(image=bool(images))
-                answers = await client.ask(look_state(text, previous), {"look": question},
-                                           **({"images": images} if images else {}))
-            answer = answers.get("look") if isinstance(answers, dict) else None
-            if isinstance(answer, dict) and answer.get("choice") in question["criteria"]:
-                choice, confidence = answer["choice"], answer.get("confidence")
+                questions = {}
+                if want_sleep:
+                    questions["sleep"] = SLEEP_REQUEST_QUESTION
+                if want_look:
+                    questions["look"] = look_question(image=bool(images))
+                if want_lang:
+                    questions["language"] = language_request_question(SPOKEN_NAMES[lang_pair])
+                if want_absent:
+                    questions["absent"] = ABSENT_PERSON_QUESTION
+                if want_serious:
+                    questions["serious"] = SERIOUS_CONTEXT_QUESTION
+                keys = list(questions)
+                if keys == ["look"]:
+                    state, payload = look_state(text, previous), questions
+                elif keys == ["sleep"]:
+                    state = instruction_state(text, previous_user=previous[-1] if previous else None,
+                                              robot_last=self._last_reply_text)
+                    payload = {"intent": SLEEP_REQUEST_QUESTION}
+                elif keys == ["language"]:
+                    state = instruction_state(text, robot_last=self._last_reply_text)
+                    payload = {"intent": questions["language"]}
+                elif keys == ["absent"]:
+                    state = instruction_state(text, previous_user=previous[-1] if previous else None,
+                                              robot_last=self._last_reply_text)
+                    payload = questions
+                elif keys == ["serious"]:
+                    state = instruction_state(text)
+                    payload = questions
+                else:
+                    state = turn_intent_state(text, previous_texts=previous,
+                                              robot_last=self._last_reply_text)
+                    payload = questions
+                raw = await client.ask(state, payload, **({"images": images} if images else {}))
+                if isinstance(raw, dict):
+                    if keys == ["sleep"] and "intent" in raw:
+                        return {"sleep": raw["intent"]}
+                    if keys == ["language"] and "intent" in raw:
+                        return {"language": raw["intent"]}
+                    return raw
+                return {}
+            if timeout_s is not None:
+                async with asyncio.timeout(timeout_s):
+                    answers = await run_ask()
+            else:
+                answers = await run_ask()
         except asyncio.CancelledError:
             raise
         except TimeoutError:
@@ -1858,26 +2023,140 @@ class RealtimeRobot:
             if judge == "d3":
                 self.d3.failed(error)
         finally:
-            if self._look_deciding == turn_id:
+            if want_look and turn_id is not None and self._look_deciding == turn_id:
                 self._look_deciding = None
-        script = LOOK_DIRECTIONS.get(choice)
-        if script is not None and not (self.actions is not None and self.actions.enabled
-                                       and script in self.actions.allowlist):
-            script = None  # no head turn: she looks at what is in front
-        look = choice in LOOK_DIRECTIONS
-        # Someone spoke again, or her reply began, while the model thought.
-        stale = look and (spoken != self.speech_started_count or not self._can_look_first(turn_id))
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
-        self.publish("vision.intent.decided", turn_id=turn_id, choice=choice,
-                     confidence=confidence, script=script, judge=judge, model=model,
-                     image=bool(images), frame_age_ms=frame_age_ms, latency_ms=latency_ms,
-                     error=error, stale=stale, text=text[:80])
-        logger.info("vision_intent_decision robot=%s turn=%s judge=%s model=%s choice=%s "
-                    "confidence=%s script=%s image=%s frame_age_ms=%s latency_ms=%s error=%s "
-                    "stale=%s text=%r", self.robot.config.robot_id, turn_id, judge, model, choice,
-                    confidence, script, bool(images), frame_age_ms, latency_ms, error, stale,
-                    text[:30])
-        return (True, script) if look and not stale else (False, None)
+        if len(keys) >= 2:
+            logger.info("turn_intent_batch robot=%s turn=%s judge=%s model=%s keys=%s "
+                        "image=%s latency_ms=%s error=%s text=%r",
+                        self.robot.config.robot_id, turn_id, judge, model, ",".join(keys),
+                        bool(images), latency_ms, error, text[:30])
+
+        def pick(key, criteria):
+            item = answers.get(key) if isinstance(answers, dict) else None
+            if isinstance(item, dict) and item.get("choice") in criteria:
+                return item["choice"], item.get("confidence")
+            return None, None
+
+        if want_sleep:
+            choice, conf = pick("sleep", SLEEP_REQUEST_QUESTION["criteria"])
+            self.publish("instruction.decided", about="sleep", choice=choice, confidence=conf,
+                         latency_ms=latency_ms, error=error, model=model)
+            logger.info("instruction_decision robot=%s kind=sleep model=%s choice=%s confidence=%s "
+                        "latency_ms=%s error=%s text=%r", self.robot.config.robot_id, model,
+                        choice, conf, latency_ms, error, text[:30])
+            out["sleep"] = (choice == "yes" and type(conf) in (int, float)
+                            and conf >= SLEEP_JUDGE_CONFIDENCE)
+            if out["sleep"]:
+                return out
+        if want_lang:
+            q = language_request_question(SPOKEN_NAMES[lang_pair])
+            choice, conf = pick("language", q["criteria"])
+            self.publish("instruction.decided", about="language", choice=choice, confidence=conf,
+                         latency_ms=latency_ms, error=error, model=model)
+            logger.info("instruction_decision robot=%s kind=language model=%s choice=%s confidence=%s "
+                        "latency_ms=%s error=%s text=%r", self.robot.config.robot_id, model,
+                        choice, conf, latency_ms, error, text[:30])
+            out["language"] = (lang_pair, choice, conf, judge)
+        if want_absent:
+            choice, conf = pick("absent", ABSENT_PERSON_QUESTION["criteria"])
+            logger.info("absent_person_check robot=%s turn=%s choice=%s confidence=%s model=%s "
+                        "ms=%.0f error=%s", self.robot.config.robot_id, turn_id, choice, conf,
+                        model, latency_ms, error)
+            if choice is not None:
+                out["absent"] = choice == "absent"
+        if want_serious:
+            choice, conf = pick("serious", SERIOUS_CONTEXT_QUESTION["criteria"])
+            out["serious"] = (choice, conf, model, latency_ms, error)
+        if want_look:
+            out["look_asked"] = True
+            choice, conf = pick("look", look_question(image=bool(images))["criteria"])
+            out["look"] = self._finish_look_answer(
+                text, turn_id, choice, conf, judge=judge, model=model, images=images,
+                frame_age_ms=frame_age_ms, latency_ms=latency_ms, error=error, spoken=spoken)
+        return out
+
+    async def _apply_turn_intent_results(self, turn_id, text, results, identity):
+        if results.get("absent") is not None and turn_id:
+            self._absent_asked[turn_id] = results["absent"]
+            while len(self._absent_asked) > 32:
+                self._absent_asked.pop(next(iter(self._absent_asked)))
+        if results.get("serious") is not None:
+            choice, conf, model, latency_ms, error = results["serious"]
+            self._apply_serious_verdict(turn_id, text, choice, conf, model, latency_ms, error)
+        if results.get("language") is not None:
+            pair, choice, conf, judge = results["language"]
+            effective = await self._apply_language_choice(
+                turn_id, pair, choice, conf, judge, identity)
+            self._seed_language_decision(turn_id, pair, effective)
+
+    def _run_background_intents(self, turn_id, text, *, lang_pair=None, check_absent=True,
+                                check_serious=True):
+        """Run non-blocking intent checks in ONE background request (0 ms added to first audio)."""
+        judge, client, _model = self._decision_model()
+        if client is None:
+            return
+        want_lang = lang_pair is not None
+        want_absent = bool(check_absent and text.strip() and self._names.names
+                           and turn_id not in self._absent_asked)
+        want_serious = bool(check_serious and judge == "d3" and not self.language.serious_context
+                            and serious_cue(text))
+        count = int(want_lang) + int(want_absent) + int(want_serious)
+        if count == 0:
+            return
+        if count == 1:
+            if want_lang:
+                self._language_decision_task(text, turn_id, lang_pair)
+            elif want_absent:
+                self._ask_absent(turn_id, text)
+            elif want_serious:
+                async def decide_serious():
+                    res = await self._decide_turn_intents(
+                        text, turn_id=turn_id, check_serious=True)
+                    if res.get("serious") is not None:
+                        self._apply_serious_verdict(turn_id, text, *res["serious"])
+                self._background(decide_serious(), "serious-context")
+            return
+        identity = dict(self.robot.session_state())
+        if want_absent:
+            self._absent_asked[turn_id] = None
+            while len(self._absent_asked) > 32:
+                self._absent_asked.pop(next(iter(self._absent_asked)))
+        lang_future = asyncio.get_running_loop().create_future() if want_lang else None
+        if want_lang:
+            self._language_decision = (turn_id, lang_pair, lang_future)
+
+        async def decide_batch():
+            try:
+                res = await self._decide_turn_intents(
+                    text, turn_id=turn_id, lang_pair=lang_pair if want_lang else None,
+                    check_absent=want_absent, absent_reserved=want_absent,
+                    check_serious=want_serious)
+                if want_absent and res.get("absent") is not None and turn_id in self._absent_asked:
+                    self._absent_asked[turn_id] = res["absent"]
+                if want_serious and res.get("serious") is not None:
+                    self._apply_serious_verdict(turn_id, text, *res["serious"])
+                if want_lang:
+                    effective = None
+                    if res.get("language") is not None:
+                        pair, choice, conf, j = res["language"]
+                        effective = await self._apply_language_choice(
+                            turn_id, pair, choice, conf, j, identity)
+                    if not lang_future.done():
+                        lang_future.set_result(effective)
+            except BaseException:
+                if lang_future is not None and not lang_future.done():
+                    lang_future.set_result(None)
+                raise
+
+        self._background(decide_batch(), "turn-intents")
+
+    async def _look_decided(self, text, turn_id):
+        """(look, script) from the decision model for a line the phrase rules missed."""
+        if not self._look_decision_eligible(text, turn_id):
+            return False, None
+        res = await self._decide_turn_intents(text, turn_id=turn_id, check_look=True)
+        return res["look"]
 
     async def _begin_vision_turn(self, turn_id, item_id, question, script, generation, *,
                                  recovered):
@@ -2679,9 +2958,8 @@ class RealtimeRobot:
             return "llm", getattr(self.addressee_judge, "model", "llm")
         return kind, model
 
-    async def _decide_instruction(self, kind, question, state, *, min_confidence=None):
-        """The decision model's choice for an instruction the phrase rules could not
-        place (user decision 10-22). None when no model answered: the caller decides."""
+    async def _decide_instruction_detail(self, kind, question, state, *, min_confidence=None):
+        """(choice, confidence, judge) for an instruction the phrase rules could not place."""
         started = time.perf_counter()
         judge, client, model = self._decision_model()
         choice = confidence = error = None
@@ -2707,8 +2985,20 @@ class RealtimeRobot:
                     "latency_ms=%s error=%s text=%r", self.robot.config.robot_id, kind, model,
                     choice, confidence, latency_ms, error, state.get("当前这句话", "")[:30])
         if min_confidence is not None and (confidence is None or confidence < min_confidence):
-            return None
+            return None, confidence, judge
+        return choice, confidence, judge
+
+    async def _decide_instruction(self, kind, question, state, *, min_confidence=None):
+        """The decision model's choice for an instruction the phrase rules could not
+        place (user decision 10-22). None when no model answered: the caller decides."""
+        choice, _confidence, _judge = await self._decide_instruction_detail(
+            kind, question, state, min_confidence=min_confidence)
         return choice
+
+    def _explicit_motion_asked(self, utterance):
+        text = str(utterance or "")
+        return bool(self._motion_command(text) or explicit_expression(text)
+                    or GENERIC_MOTION.search(text) or _MOTION_TOPIC.search(text))
 
     async def _sleep_judged(self, text):
         """A stop request the phrase rules miss (“你他妈闭嘴”“好的，退下”). 11-20 replay of 1,527
@@ -4483,7 +4773,8 @@ class RealtimeRobot:
             if self.wake and self.wake.task is not None:
                 self.wake.reset()
 
-    def _create_turn(self, user_text, *, audio=False, source="user", cause=None):
+    def _create_turn(self, user_text, *, audio=False, source="user", cause=None,
+                     defer_absent=False):
         if self.turn_id:
             return
         # The fresh view was captured for the previous question only ("回答这一问
@@ -4519,11 +4810,12 @@ class RealtimeRobot:
         })
         self.turn_id = turn_id
         self._stage = StageDirections()
-        self.sounds = SoundMarks() if self.sounds_enabled else None
+        self.sounds = (SoundMarks(serious=self.language.serious_context)
+                       if self.sounds_enabled else None)
         self._names = NameGuard(self._absent_candidates(turn_id),
                                 lambda name: self._may_name(turn_id, name))
         self._repeats = None
-        if source == "user":
+        if source == "user" and not defer_absent:
             self._ask_absent(turn_id, user_text)
         if self.expression_enabled:
             self.expression = ExpressionStream()
@@ -4708,10 +5000,10 @@ class RealtimeRobot:
             self.visual_changed()
         if not text_only:
             self._prewarm_tts()
-        self._create_turn(text, source=source)
+        self._create_turn(text, source=source, defer_absent=(source == "user"))
         owned_turn = self.turn_id
-        if source == "user":
-            self._save_lasting_language(text, owned_turn)
+        lang_pair = (self._save_lasting_language(text, owned_turn)
+                     if source == "user" else None)
         if listen_after and self.wake is not None and source == "external" and not text_only:
             # A greeting: whoever was greeted can answer without saying 小安妮.
             if self.wake.presence.robot_spoke_first():
@@ -4744,11 +5036,19 @@ class RealtimeRobot:
             if (source == "external" and
                     (self.speech_active or speech_at != self._last_provider_speech_started_t)):
                 raise RobotUnavailableError("external response preempted by speech")
-            look, script = (self._vision_question(text.strip(), owned_turn)
+            asked = text.strip()
+            look, script = (self._vision_question(asked, owned_turn)
                             if source == "user" else (False, None))
-            if source == "user" and not look:
-                look, script = await self._look_decided(text.strip(), owned_turn)
+            if source == "user" and not look and self._look_decision_eligible(asked, owned_turn):
+                batch = await self._decide_turn_intents(
+                    asked, turn_id=owned_turn, check_look=True, lang_pair=lang_pair,
+                    check_absent=True, check_serious=True)
                 ensure_owned()
+                await self._apply_turn_intent_results(owned_turn, asked, batch, owned_identity)
+                look, script = batch["look"]
+            elif source == "user":
+                self._run_background_intents(
+                    owned_turn, asked, lang_pair=lang_pair, check_absent=True, check_serious=True)
             if look:
                 # Typed "你看看左边有什么" looks first too (10-28 evening: the workbench
                 # answered at once and turned her head only with the reply).
@@ -5524,9 +5824,6 @@ class RealtimeRobot:
             if self.wake and admitted and self.wake.presence.tail_sleep_command(final_text):
                 await self._enter_sleep("asr_tail", item_id=item_id)
                 return
-            if self.wake and admitted and await self._sleep_judged(final_text):
-                await self._enter_sleep("asr_decision", item_id=item_id)
-                return
             if self.wake and not admitted:
                 if recovering:
                     logger.info("recovery_unadmitted robot=%s wake_state=%s overheard=%s chars=%d "
@@ -5548,6 +5845,21 @@ class RealtimeRobot:
             if item_id and item_id in self.audio_item_turns:
                 self.publish("transcript.duplicate", item_id=item_id)
                 return
+            pre_batch = None
+            need_sleep = bool(
+                self.wake and admitted and SLEEP_CUE.search(final_text)
+                and len(final_text) <= SLEEP_JUDGE_MAX_CHARS and self._has_decision()
+                and self.wake.presence.sleep_request_verdict(final_text) is None
+            )
+            if need_sleep:
+                pre_batch = await self._decide_turn_intents(
+                    final_text, check_sleep=True,
+                    check_look=self._look_decision_eligible(final_text),
+                    lang_pair=self._pending_language_pair(final_text),
+                    check_absent=True, check_serious=True)
+                if pre_batch["sleep"]:
+                    await self._enter_sleep("asr_decision", item_id=item_id)
+                    return
             if (final_text and self._turn_waiting() and self.turn_id
                     and self.audio_turn_id != self.turn_id and not self._candidate_confirmed):
                 self._candidate_confirmed = True
@@ -5568,7 +5880,7 @@ class RealtimeRobot:
                 # A final transcript can arrive after response.done; update its
                 # audio turn rather than creating a duplicate completed turn.
                 if self.audio_turn_id is None:
-                    self._create_turn(self.transcript, audio=True)
+                    self._create_turn(self.transcript, audio=True, defer_absent=True)
             target = self.audio_turn_id
             if self.transcript.strip() and target:
                 cached = self.robot.turn_cache.get(target)
@@ -5582,12 +5894,11 @@ class RealtimeRobot:
                         "set_conversation_turn_user_text",
                         self.robot.config.robot_id, target, self.transcript, now,
                     )
-            if target and target == self.turn_id:
-                self._ask_absent(target, self.transcript)
             if self.language.user_request(self.transcript):
                 self.visual_changed()
-            if target:
-                self._save_lasting_language(self.transcript, target)
+            if self.sounds is not None and self.language.serious_context:
+                self.sounds.set_serious(True)
+            lang_pair = self._save_lasting_language(self.transcript, target) if target else None
             self.publish("transcript.done", text=self.transcript, turn_id=target)
             if target:
                 changed = self.dialogue.observe_user(target, self.transcript)
@@ -5600,8 +5911,32 @@ class RealtimeRobot:
                     self.audio_item_turns.pop(next(iter(self.audio_item_turns)))
             asked = self.transcript.strip()
             look, script = self._vision_question(asked, target) if target else (False, None)
-            if target and not look:
-                look, script = await self._look_decided(asked, target)
+            if target:
+                identity = dict(self.robot.session_state())
+                if pre_batch is not None:
+                    await self._apply_turn_intent_results(target, asked, pre_batch, identity)
+                    if not look and pre_batch["look_asked"]:
+                        b_look, b_script = pre_batch["look"]
+                        if b_look and self._can_look_first(target):
+                            look, script = b_look, b_script
+                    elif not look and self._look_decision_eligible(asked, target):
+                        look, script = await self._look_decided(asked, target)
+                    # If absent/language/serious were not covered by pre_batch, run them in background.
+                    self._run_background_intents(
+                        target, asked,
+                        lang_pair=None if pre_batch["language"] is not None else lang_pair,
+                        check_absent=pre_batch["absent"] is None and target == self.turn_id,
+                        check_serious=pre_batch["serious"] is None)
+                elif not look and self._look_decision_eligible(asked, target):
+                    batch = await self._decide_turn_intents(
+                        asked, turn_id=target, check_look=True, lang_pair=lang_pair,
+                        check_absent=(target == self.turn_id), check_serious=True)
+                    await self._apply_turn_intent_results(target, asked, batch, identity)
+                    look, script = batch["look"]
+                else:
+                    self._run_background_intents(
+                        target, asked, lang_pair=lang_pair,
+                        check_absent=(target == self.turn_id), check_serious=True)
             if look:
                 # "你看看左边有什么": turn, wait for the receipt and a fresh view, then answer.
                 await self._begin_vision_turn(target, item_id, asked, script,
@@ -5704,7 +6039,8 @@ class RealtimeRobot:
                     if self.speech and not self._external_text_only:
                         await self.speech.feed(self.turn_id, self.turn_identity, tail)
                 if self.sounds is not None:
-                    marks = SoundMarks(limit=self.sounds.limit)
+                    marks = SoundMarks(limit=self.sounds.limit, emotions=self.sounds.emotions,
+                                       serious=self.sounds.serious)
                     complete = marks.feed(complete) + marks.finish()
                 whole = StageDirections()
                 complete = self._names.fresh().feed(whole.feed(complete) + whole.finish(), final=True)
@@ -5979,7 +6315,7 @@ class RealtimeRobot:
                     raise ValueError("stale physical tool request")
                 cached = self.robot.turn_cache.get(self.turn_id) or {}
                 if (chat_preference(self.social_state, "spontaneous_motions") == "off"
-                        and not EXPLICIT_MOTION.search(
+                        and not self._explicit_motion_asked(
                             str(cached.get("user_text") or self.transcript or ""))):
                     raise ValueError("spontaneous motions are turned off in this chat")
                 result = await self.actions.request(

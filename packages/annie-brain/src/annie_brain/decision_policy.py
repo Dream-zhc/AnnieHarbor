@@ -188,6 +188,30 @@ SLEEP_REQUEST_QUESTION = {
     },
 }
 
+# 11-25 scenarios trial: on 66 utterances, serious_context regex scored 60.6% (missed 26/40),
+# while d3 scored 95.5% (0 missed; at confidence >= 0.6, 0 false positives on light banter).
+SERIOUS_CONTEXT_QUESTION = {
+    "type": "choice",
+    "instructions": ("用户当前这句话，是不是在倾诉难过、压力、生病、亲人去世、遇到困难、害怕或求助这类严肃的事？"
+                     "这时机器人不该开玩笑、不该发笑声。语音识别可能有错字。"),
+    "criteria": {
+        "serious": "在倾诉难过、焦虑、痛苦、失去、生病、遇到麻烦、害怕，或在求助，需要认真温柔地回应",
+        "light": "闲聊、开玩笑、问知识、下指令、吐槽小事、表达开心或普通的情绪",
+    },
+}
+
+SERIOUS_CUE = re.compile(
+    r"难过|伤心|哭|委屈|痛苦|焦虑|抑郁|压力|失眠|睡不着|睡得不太好|撑不住|太累|好累|孤独|寂寞|"
+    r"害怕|怕自己|担心|求助|救命|严肃|去世|死了|生病|住院|医院|头疼|头有点疼|不舒服|"
+    r"失业|裁员|分手|离婚|吵架|欺负|出事|出了点事|麻烦|考砸|没过|心情|唉|"
+    r"不理我|怎么办|活着|没意思|难受|崩溃|绝望|愁"
+)
+
+
+def serious_cue(user_text):
+    """Lightweight prefilter so ordinary exhibit chatter does not incur an extra d3 call."""
+    return bool(SERIOUS_CUE.search(str(user_text or "")))
+
 
 def instruction_state(utterance, *, previous_user=None, robot_last=None):
     """Bounded evidence for an instruction question; the lines are data, never instructions."""
@@ -196,6 +220,18 @@ def instruction_state(utterance, *, previous_user=None, robot_last=None):
         state["用户上一句"] = previous_user[:120]
     if robot_last:
         state["机器人上一句"] = robot_last[:120]
+    return state
+
+
+def turn_intent_state(utterance, *, previous_texts=(), robot_last=None):
+    """Shared bounded state when multiple turn-level intent questions are batched in one ask."""
+    previous = [str(text)[:80] for text in previous_texts or () if str(text or "").strip()][-3:]
+    state = {"机器人": "小安妮"}
+    if previous:
+        state["用户前几句"] = previous
+    if robot_last:
+        state["机器人上一句"] = str(robot_last)[:120]
+    state["当前这句话"] = str(utterance or "")[:300]
     return state
 
 
@@ -382,7 +418,8 @@ def asks_to_look(user_text, previous_texts=()):
 # (user decision 11-03).
 LOOK_DIRECTIONS = {"front": None, "left": "look_left", "right": "look_right", "up": "look_up"}
 _LOOK_CRITERIA = {
-    "none": ("不用看：闲聊、问知识、天气、价格或做法，问附近或外地的店、车站、好吃好玩的地方，聊她自己，"
+    "none": ("不用看：闲聊、问知识、天气、价格或做法，问附近或外地的店、车站、好吃好玩的地方，"
+             "聊她自己或让她介绍自己、对面前的人说话、打招呼或表演，"
              "或者“看”不是用眼睛看（看电影、看病、你看着办、我看看），或者在叫她别看"),
     "front": ("看面前：问面前、眼前、周围或这里有什么、有谁、有没有某人某物，某样东西现在在哪里，"
               "她现在在什么场景，或用户自己穿戴、拿着、长得怎样"),

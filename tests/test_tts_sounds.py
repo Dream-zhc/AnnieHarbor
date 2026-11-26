@@ -68,6 +68,25 @@ def test_the_prompt_lists_only_the_sounds_the_runtime_passes_through():
         assert f"[{tag}]" not in realtime_module.SOUNDS_HINT
 
 
+def test_serious_safety_valve_hard_drops_laughs_and_playful_emotions():
+    marks = SoundMarks(serious=True)
+    out = marks.feed(
+        "[laughing][giggles][snorts][sarcastic][mischievously][scornful]"
+        "[empathetic]别太难过，[serious]我陪着你。[sad]慢慢说。"
+    ) + marks.finish()
+    assert marks.used == ["empathetic", "serious"]  # cap=2, laughs/sarcasm hard-dropped
+    assert without_sounds(out) == "别太难过，我陪着你。慢慢说。"
+    assert sounds_as_tags(out) == "[empathetic]别太难过，[serious]我陪着你。慢慢说。"
+
+    # Switching mid-turn via set_serious immediately blocks subsequent laughs.
+    live_marks = SoundMarks()
+    first = live_marks.feed("[laughing]前一句。")
+    live_marks.set_serious(True)
+    second = live_marks.feed("[giggles][sarcastic][empathetic]后一句。") + live_marks.finish()
+    assert sounds_as_tags(first) == "[laughing]前一句。"
+    assert sounds_as_tags(second) == "[empathetic]后一句。"
+
+
 def test_a_laugh_in_her_reply_reaches_the_tts_but_never_the_reply_text(tmp_path):
     from annie_adapters import RoomServerConfig
     from annie_core import RobotConfig

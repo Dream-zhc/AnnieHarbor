@@ -229,6 +229,47 @@ def test_a_dialect_heard_in_the_asr_text_is_followed_until_mandarin_is_asked():
     assert s.snapshot()["asr_dialect"] is None
 
 
+def test_a_one_off_request_chosen_through_the_tool_does_not_outlive_its_reply():
+    """11-25 demo: after “你能用陕西话夸一夸我吗？” the next, unrelated reply was Shaanxi again."""
+    s = plain_state()
+    text = "你能用陕西话夸一夸我吗？"
+    s.user_request(text)
+    s.response_started()
+    s.reply_intent(language="zh", dialect="shaanxi", emotion="warm", transcript=text, confirmed=True)
+    s.confirm(s.revision)
+    s.first_text("t1")
+    assert s.style_for("t1").dialect == "shaanxi"
+    s.response_finished()
+    assert s.intent is None
+    s.user_request("这个算法是说我们自己训练的。")
+    s.confirm(s.revision)
+    s.response_started()
+    s.first_text("t2")
+    assert s.style_for("t2").dialect != "shaanxi"
+    assert "shaanxi" not in s.instruction_hint()
+
+
+def test_a_lasting_request_or_an_inferred_dialect_chosen_through_the_tool_stays():
+    s = plain_state()
+    text = "用陕西话跟我聊天吧"
+    s.user_request(text)
+    s.response_started()
+    s.reply_intent(language="zh", dialect="shaanxi", emotion="warm", transcript=text, confirmed=True)
+    s.first_text("t1")
+    s.response_finished()
+    s.user_request("那明天呢")
+    assert s.selection()["dialect"] == "shaanxi"
+    inferred = plain_state()
+    inferred.user_request("今天耍得好巴适哦")
+    inferred.response_started()
+    inferred.reply_intent(language="zh", dialect="sichuan", evidence="巴适", emotion="playful",
+                          transcript="今天耍得好巴适哦")
+    inferred.first_text("t1")
+    inferred.response_finished()
+    inferred.user_request("那明天呢")
+    assert inferred.selection()["dialect"] == "sichuan"
+
+
 def test_saved_preferences_keep_only_the_first_follow():
     s = state()  # chat preference: Sichuanese
     s.user_request("中不中？咱去吃烩面")

@@ -309,6 +309,7 @@ class ReplyLanguageState:
         self.style_request = {}
         self.intent = None
         self._intent_emotion_pending = False
+        self._intent_once = False
         self.response = None
         self.application = 'unknown'
         self.last_decision = None
@@ -501,6 +502,9 @@ class ReplyLanguageState:
         self.intent = dict(language=language, dialect=dialect, emotion=emotion,
                            source='llm_inferred' if evidence else 'llm_early', reason=reason[:120])
         self._intent_emotion_pending = self.response is None or self.active_turn_id in self.locked_turns
+        explicit = self.explicit or {}
+        self._intent_once = bool(confirmed and explicit.get('scope') == 'turn'
+                                 and (explicit.get('language'), explicit.get('dialect')) == (language, dialect))
         pair = (language, dialect)
         if evidence and pair != self.last_candidate:
             self.candidate = dict(self.intent)
@@ -623,6 +627,8 @@ class ReplyLanguageState:
         self.explicit = None
         self.style_request = {}
         self.serious_context = False
+        if self._intent_once:
+            self.intent, self._intent_once = None, False
         if not self._intent_emotion_pending:
             # Language can naturally continue; a consumed acting intent cannot
             # pin unrelated later replies to the same sadness/excitement.

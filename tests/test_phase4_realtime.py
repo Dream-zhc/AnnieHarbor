@@ -13,9 +13,16 @@ from annie_adapters.realtime import MODEL, QwenRealtimeSocket, audio_append, rea
 from annie_core import RobotConfig, RobotUnavailableError
 from annie_runtime import HarborRuntime
 from annie_runtime.presence import DialoguePresence
-from annie_runtime.realtime import RealtimeRobot
+from annie_runtime.realtime import INTERRUPTED_REPLY_MARKER, RealtimeRobot
+from annie_runtime.speech_expression import StageDirections
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def marker_after(item_id):
+    return {"type": "conversation.item.create", "previous_item_id": item_id,
+            "item": {"type": "message", "role": "assistant",
+                     "content": [{"type": "output_text", "text": INTERRUPTED_REPLY_MARKER}]}}
 
 
 class FakeSocket:
@@ -319,6 +326,7 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                       client.socket.outbound)
         self.assertEqual(client.robot.snapshot.cancelled, 1)
         self.assertFalse(any(e["kind"] == "context.unheard_unverified" for e in client.events))
+        self.assertFalse(any(e.get("previous_item_id") for e in client.socket.outbound))
 
     async def test_cancel_after_response_done_deletes_unheard_item_but_not_drained_item(self):
         client = self.runtime.realtime["annie-a"]
@@ -353,6 +361,9 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         deleted = [e["item_id"] for e in client.socket.outbound
                    if e["type"] == "conversation.item.delete"]
         self.assertEqual(deleted, ["unheard-item"])
+        marked = [e["previous_item_id"] for e in client.socket.outbound
+                  if e["type"] == "conversation.item.create" and e.get("previous_item_id")]
+        self.assertEqual(marked, ["unheard-item"])
 
     async def test_smart_turn_interrupts_completed_reply_still_playing(self):
         client = self.runtime.realtime["annie-a"]
@@ -386,6 +397,63 @@ class RealtimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn({"type": "conversation.item.delete", "item_id": "unheard-item"},
                       client.socket.outbound)
         self.assertEqual(client.robot.turn_cache[client.turn_id]["user_text"], "不是茶，是咖啡")
+
+    async def test_an_interrupted_reply_is_replaced_by_a_marker_not_just_removed(self):
+        """11-25: the cut-off English intro of Beijing was deleted; its question stayed unanswered
+        and the next reply (Russian weather) answered it again first."""
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+
+        class Speaker:
+            turn_id = "english-turn"
+            control_state = "held_confirmed"
+
+            def request_playback_control(self, kind, *, reason):
+                pass
+
+            async def cancel(self, reason):
+                self.turn_id = None
+
+            async def close(self):
+                pass
+
+        client.speech = Speaker()
+        client._unheard_output_ids["english-turn"] = {"english-reply"}
+        await client.handle({"type": "input_audio_buffer.speech_started",
+                             "item_id": "russian-audio"}, gen)
+        await client.handle({"type": "conversation.item.input_audio_transcription.completed",
+                             "item_id": "russian-audio",
+                             "transcript": "你能用俄语介绍一下今天天气怎么样吗？"}, gen)
+        outbound = client.socket.outbound
+        marker, delete = marker_after("english-reply"), {"type": "conversation.item.delete",
+                                                         "item_id": "english-reply"}
+        self.assertEqual(outbound.count(marker), 1)
+        self.assertLess(outbound.index(marker), outbound.index(delete))  # the anchor still exists
+        self.assertEqual([e for e in client.events if e["kind"] == "context.unheard_delete_requested"
+                          ][-1]["marker"], True)
+
+    async def test_the_marker_is_stripped_if_she_says_it(self):
+        stage = StageDirections()
+        self.assertEqual(stage.feed(INTERRUPTED_REPLY_MARKER) + stage.finish(), "")
+        self.assertEqual(stage.dropped, [INTERRUPTED_REPLY_MARKER.strip("【】")])
+
+    async def test_a_marker_after_a_reply_the_provider_already_dropped_is_not_a_failure(self):
+        client = self.runtime.realtime["annie-a"]
+        gen = client.robot.generation
+        await client._delete_unheard_items({"gone-item"}, interrupted=True)
+        for message, ignored in (("Cannot find previous item with id: gone-item",
+                                  "context.marker_missing_ignored"),
+                                 ("Cannot find item with id: gone-item",
+                                  "context.delete_missing_ignored")):
+            await client.handle({"type": "error", "error": {
+                "type": "invalid_request_error", "code": "invalid_value", "message": message,
+                "param": "conversation.item.create"}}, gen)
+            self.assertEqual(client.events[-1]["kind"], ignored)
+        for message in ("Cannot find previous item with id: gone-item",
+                        "Cannot find previous item with id: never-asked"):
+            with self.assertRaises(RuntimeError):  # each miss is forgiven once, and only ours
+                await client.handle({"type": "error", "error": {
+                    "code": "invalid_value", "message": message}}, gen)
 
     async def test_native_startup_has_no_cascade_or_idle_keepalive(self):
         client = self.runtime.realtime["annie-a"]

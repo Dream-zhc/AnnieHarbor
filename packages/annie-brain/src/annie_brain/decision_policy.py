@@ -338,7 +338,8 @@ def asks_to_look(user_text, previous_texts=()):
 # (user decision 11-03).
 LOOK_DIRECTIONS = {"front": None, "left": "look_left", "right": "look_right", "up": "look_up"}
 _LOOK_CRITERIA = {
-    "none": ("不用看：闲聊、问知识、天气、价格或做法，问附近或外地的店、车站、好吃好玩的地方，聊她自己，"
+    "none": ("不用看：闲聊、问知识、天气、价格或做法，问附近或外地的店、车站、好吃好玩的地方，"
+             "聊她自己或让她介绍自己、对面前的人说话、打招呼或表演，"
              "或者“看”不是用眼睛看（看电影、看病、你看着办、我看看），或者在叫她别看"),
     "front": ("看面前：问面前、眼前、周围或这里有什么、有谁、有没有某人某物，某样东西现在在哪里，"
               "她现在在什么场景，或用户自己穿戴、拿着、长得怎样"),
@@ -360,6 +361,7 @@ def look_cue(user_text):
     return bool(_LOOK_CUE.search(str(user_text or "")))
 
 
+
 def look_question(*, image=False):
     return {"type": "choice",
             "instructions": ("机器人小安妮头上有摄像头" + ("，附图是她此刻正前方的画面" if image else "")
@@ -376,6 +378,28 @@ def look_state(utterance, previous_texts=()):
         state["用户前几句"] = previous
     state["当前这句话"] = str(utterance)[:200]
     return state
+
+
+# 11-25: her held reply says an earlier answer again. Whether the user asked for it
+# again, said something new, or was not talking to her at all is the model's call.
+HELD_REPEAT_QUESTION = {
+    "type": "choice",
+    "instructions": ("展厅里机器人小安妮的麦克风刚收到一句话（语音识别可能有错字、半截话）。"
+                     "她准备的回答和她前面说过的一句几乎一样。判断麦克风收到的这句话是什么情况。"),
+    "criteria": {
+        "not_for_her": ("不是在对机器人说话：旁边的人在互相聊天、给别人讲解，或者这句话本身没有意思"
+                        "（像乱码、半截话），跟机器人刚才的话题也接不上"),
+        "again": "在对机器人说，要她再说一遍、再来一次，或者又提了一遍刚才的要求",
+        "new": "在对机器人说新的话：新的问题、新的要求，或者告诉她自己的名字等事情",
+    },
+}
+
+
+def held_repeat_state(utterance, *, earlier_user, earlier_reply, reply):
+    """11-25 DashScope replay: framed as “the user's line”, all three strangers' lines came back
+    new/again; framed as what the microphone got, all three were not_for_her."""
+    return {"机器人前面回答的": str(earlier_reply)[:160], "那之前用户说的": str(earlier_user)[:120],
+            "麦克风刚收到": str(utterance)[:200], "机器人准备说": str(reply)[:200]}
 
 
 def motion_question(descriptions):

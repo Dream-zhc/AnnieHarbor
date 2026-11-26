@@ -22,6 +22,7 @@ from annie_brain.persona import load_personas
 from annie_web import create_app
 
 from annie_runtime import HarborRuntime
+from annie_runtime.realtime import D3_MIN_LOOK_CONFIDENCE
 
 # Physical scripts runnable without .env. Every motion users can name in
 # dialogue (decision_policy._MOTION_NAMES) is here: 摇头/往上看 were missing.
@@ -308,6 +309,7 @@ def vision_intent_options(vision: dict, environ, robot_ids=(), room_of=None) -> 
             "scope": decision.get("scope", "cue"),
             "timeout_ms": int(decision.get("timeout_ms", 700)),
             "image": decision.get("image", True),
+            "d3_min_confidence": decision.get("d3_min_confidence", D3_MIN_LOOK_CONFIDENCE),
         },
         "livekit": ({"url": url, "api_key": key, "api_secret": secret, "rooms": rooms,
                      "source": environ.get("ANNIE_EXHIBIT_LIVEKIT_SOURCE", "").strip() or "camera-a"}

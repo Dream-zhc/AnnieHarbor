@@ -321,12 +321,14 @@
     "logs/runtime-20261120-141053.log": 366206,
     "logs/runtime-20261123-110436.log": 171833,
     "logs/runtime-20261123-134838.log": 826847,
-    "logs/runtime-20261123-152721.log": 617247
+    "logs/runtime-20261123-152721.log": 617247,
+    "logs/runtime-20261125-175433.log": 340688,
+    "logs/runtime-20261125-181253.log": 1237180
   },
   "table_cursors": {
-    "conversation_turns": 2381,
-    "runtime_events": 118551,
-    "action_requests": 1795419277607
+    "conversation_turns": 2421,
+    "runtime_events": 118599,
+    "action_requests": 1795606656449
   },
-  "last_export": "2026-11-25T14:51:26"
+  "last_export": "2026-11-26T16:29:48"
 }

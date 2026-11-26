@@ -27,6 +27,7 @@ from annie_brain.decision_policy import (
     ADDRESSEE_QUESTION,
     EXPRESSION_SCRIPTS,
     GENERIC_MOTION,
+    HELD_REPEAT_QUESTION,
     LANGUAGE_REQUEST_SCOPES,
     LOOK_DIRECTIONS,
     LOOK_SCRIPTS,
@@ -43,6 +44,7 @@ from annie_brain.decision_policy import (
     face_forget_question,
     face_request_question,
     head_turn_motion,
+    held_repeat_state,
     instruction_state,
     language_request_question,
     look_cue,
@@ -135,6 +137,8 @@ AUTO_EXPRESSION_COOLDOWN_SECONDS = 20
 FRESH_VIEW_SECONDS = 30
 LOOK_RETRY_SECONDS = 0.15
 LOOKED_TOWARD = {"look_left": "转向左边后", "look_right": "转向右边后", "look_up": "抬头往上看时"}
+D3_MIN_LOOK_CONFIDENCE = 0.6
+INTERRUPTED_REPLY_MARKER = "【这条回答被用户打断，没说完】"
 SPEECH_RATE = {"slower": .92, "faster": 1.10}  # within SpeechStyle's .90..1.12 bound
 SPEECH_VOLUME = {"quieter": 42, "louder": 58}  # within SpeechStyle's 40..60 bound
 EXPLICIT_MOTION = re.compile(
@@ -145,6 +149,7 @@ REPEAT_REQUEST = re.compile(r"再说一[遍次下]|再讲一[遍次下]|重复�
 # A reply this alike to a recent one repeats it; from REPEAT_ASK_RATIO the decision model judges.
 REPEAT_RATIO = 0.85
 REPEAT_ASK_RATIO = 0.4
+HELD_REPEAT_ASK_RATIO = 0.6
 KNOWN_PEOPLE_SECONDS = 60
 SWITCH_OPENER_SETTLE_SECONDS = 1.5
 SWITCH_OPENER_READY_SECONDS = 10.0
@@ -423,6 +428,7 @@ class RealtimeRobot:
         self.invalid_recovered = 0
         self.echo_dropped = 0  # her own voice heard back and ignored
         self._pending_deletes = {}  # item_id -> monotonic, deletions we asked for
+        self._pending_markers = {}  # item_id -> monotonic, interrupted-reply markers placed after it
         self.wake_calls_normalized = 0
         self._invalid_recovery = None
         self._recovered_create = None  # the response.create a recovered call is waiting on
@@ -493,7 +499,7 @@ class RealtimeRobot:
         self._last_reply_t = None
         self._last_reply_text = ""
         self.decision_stats = {"addressee_checks": 0, "declined": 0, "expression_checks": 0,
-                               "instruction_checks": 0, "look_checks": 0, "auto_actions": 0,
+                               "instruction_checks": 0, "look_checks": 0, "repeat_checks": 0, "auto_actions": 0,
                                "failures": 0, "last_ms": None}
         self._language_decision = None  # (turn_id, pair, task) for one named language
         self._utterance_started_t = None
@@ -1621,19 +1627,21 @@ class RealtimeRobot:
         if script is not None and not (self.actions is not None and self.actions.enabled
                                        and script in self.action_scripts):
             script = None  # no head turn: she looks at what is in front
-        look = choice in LOOK_DIRECTIONS
+        minimum = config.get("d3_min_confidence", D3_MIN_LOOK_CONFIDENCE) if judge == "d3" else 0
+        look = choice in LOOK_DIRECTIONS and (
+            minimum == 0 or type(confidence) in (int, float) and confidence >= minimum)
         # Someone spoke again, or her reply began, while the model thought.
         stale = look and (spoken != self.speech_started_count or not self._can_look_first(turn_id))
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         self.publish("vision.intent.decided", turn_id=turn_id, choice=choice,
-                     confidence=confidence, script=script, judge=judge, model=model,
-                     image=bool(images), frame_age_ms=frame_age_ms, latency_ms=latency_ms,
-                     error=error, stale=stale, text=text[:80])
+                     confidence=confidence, accepted=look, script=script, judge=judge,
+                     model=model, image=bool(images), frame_age_ms=frame_age_ms,
+                     latency_ms=latency_ms, error=error, stale=stale, text=text[:80])
         logger.info("vision_intent_decision robot=%s turn=%s judge=%s model=%s choice=%s "
-                    "confidence=%s script=%s image=%s frame_age_ms=%s latency_ms=%s error=%s "
-                    "stale=%s text=%r", self.robot.config.robot_id, turn_id, judge, model, choice,
-                    confidence, script, bool(images), frame_age_ms, latency_ms, error, stale,
-                    text[:30])
+                    "confidence=%s accepted=%s script=%s image=%s frame_age_ms=%s latency_ms=%s "
+                    "error=%s stale=%s text=%r", self.robot.config.robot_id, turn_id, judge, model,
+                    choice, confidence, look, script, bool(images), frame_age_ms, latency_ms,
+                    error, stale, text[:30])
         return (True, script) if look and not stale else (False, None)
 
     async def _begin_vision_turn(self, turn_id, item_id, question, script, generation, *,
@@ -3371,7 +3379,7 @@ class RealtimeRobot:
         if speech_cancel:
             await speech_cancel
         if unheard and self.socket and self.ready:
-            await self._delete_unheard_items(unheard)
+            await self._delete_unheard_items(unheard, interrupted=True)
         if self.turn_id:
             self._finish("cancelled", cancel_source=reason)
 
@@ -4163,6 +4171,15 @@ class RealtimeRobot:
         stamp = self._pending_deletes.pop(found.group(1).rstrip(".,"), None)
         return stamp is not None and time.monotonic() - stamp < 30
 
+    def _expected_marker_miss(self, event):
+        """The reply we put an interrupted-reply marker after is already gone: no marker."""
+        error = event.get("error") or {}
+        found = re.search(r"Cannot find previous item with id: (\S+)", str(error.get("message", "")))
+        if error.get("code") != "invalid_value" or found is None:
+            return False
+        stamp = self._pending_markers.pop(found.group(1).rstrip(".,"), None)
+        return stamp is not None and time.monotonic() - stamp < 30
+
     def _expected_cancel_race(self, event):
         error = event.get("error") or {}
         if (error.get("code") != "invalid_value" or
@@ -4313,13 +4330,13 @@ class RealtimeRobot:
         if not still_owned():
             return self.snapshot()
         if socket and self.ready and completed_unheard:
-            await self._delete_unheard_items(completed_unheard)
+            await self._delete_unheard_items(completed_unheard, interrupted=True)
         if still_owned() and owned_turn:
             self._finish("cancelled", cancel_source="local")
         self.publish("turn.cancel_requested")
         return self.snapshot()
 
-    async def _delete_unheard_items(self, item_ids):
+    async def _delete_unheard_items(self, item_ids, *, interrupted=False):
         # Qwen supports item deletion, not playback-cursor text truncation.
         # An item with unknown partial playback is wholly excluded rather than
         # falsely claiming that its generated tail was spoken.
@@ -4328,12 +4345,21 @@ class RealtimeRobot:
             return
         now = time.monotonic()
         for item_id in sorted(item_ids):
+            if interrupted:
+                self._pending_markers[item_id] = now
+                await self.socket.send({
+                    "type": "conversation.item.create", "previous_item_id": item_id,
+                    "item": {"type": "message", "role": "assistant",
+                             "content": [{"type": "output_text", "text": INTERRUPTED_REPLY_MARKER}]},
+                })
             self._pending_deletes[item_id] = now
             await self.socket.send({"type": "conversation.item.delete", "item_id": item_id})
         while len(self._pending_deletes) > 64:
             self._pending_deletes.pop(next(iter(self._pending_deletes)))
+        while len(self._pending_markers) > 64:
+            self._pending_markers.pop(next(iter(self._pending_markers)))
         self.publish("context.unheard_delete_requested", count=len(item_ids),
-                     provider_confirmed=False)
+                     provider_confirmed=False, marker=interrupted)
 
     def _disarm_sleep_wait(self):
         self._pending_sleep = None
@@ -4475,8 +4501,8 @@ class RealtimeRobot:
                 await self._delete_unheard_items(outputs)
         self.publish("wakeword.response_rejected", reason=reason, count=len(events))
 
-    async def _release_wake_response(self, generation, *, background_tools=False):
-        """Replay the held reply; True when it was withdrawn and asked for again."""
+    async def _release_wake_response(self, generation, *, background_tools=False, item_id=None):
+        """Replay the held reply; True when it was withdrawn (asked for again or ignored)."""
         events, self._wake_held_events = self._wake_held_events, []
         self._wake_candidate_pending = False
         responses = [held_response_id(item) for item in events
@@ -4490,8 +4516,15 @@ class RealtimeRobot:
             events = await self._drop_held(events, keep=responses[-1], reason="superseded")
         repeated = self._held_repeat(events)
         if repeated is not None:
-            await self._drop_held(events, keep=None, reason="repeated")
-            return await self._answer_without_repeat(repeated)
+            verdict = await self._judge_held_repeat(repeated)
+            if verdict == "not_for_her":
+                self._wake_held_events = events
+                await self._ignore_utterance(item_id, repeated["heard"])
+                return True
+            if verdict == "new" or (verdict is None and repeated["ratio"] >= REPEAT_RATIO
+                                    and not REPEAT_REQUEST.search(repeated["heard"])):
+                await self._drop_held(events, keep=None, reason="repeated")
+                return await self._answer_without_repeat(repeated["text"])
         for buffered in events:
             if generation != self.robot.generation or (self.wake and not self.wake.reply_allowed()):
                 return False
@@ -4521,9 +4554,14 @@ class RealtimeRobot:
         return kept
 
     def _held_repeat(self, events):
-        """The text of a finished held reply that (nearly) repeats one of her recent lines."""
+        """A finished held reply close to one of her recent replies, with what was asked then.
+
+        With a decision model up the model judges from HELD_REPEAT_ASK_RATIO (11-25: a
+        stranger's line got the last compliment again, 0.79 to its second paragraph);
+        without one the old rule stands: from REPEAT_RATIO, never for “再说一遍”."""
         heard = (self.transcript or "").strip()
-        if not events or not heard or REPEAT_REQUEST.search(heard):
+        judged = self._decision_model()[1] is not None
+        if not events or not heard or (not judged and REPEAT_REQUEST.search(heard)):
             return None
         finished = any(event.get("type") == "response.done"
                        and (event.get("response") or {}).get("status", "completed") == "completed"
@@ -4535,8 +4573,57 @@ class RealtimeRobot:
                        if event.get("type") == "response.text.delta")
         if len(re.sub(r"[\W_]+", "", text)) < 4:
             return None
-        recent = self._recent_replies(limit=6)
-        return text if any(reply_likeness(text, line) >= REPEAT_RATIO for line in recent) else None
+        parts = [text] + [part for part in re.split(r"\n+", text) if len(part.strip()) >= 8]
+        exchanges = [(reply, "") for reply in self._recent_replies(limit=6)] + self._recent_exchanges()
+        best = max(((reply_likeness(part, reply), reply, asked) for reply, asked in exchanges
+                    for part in parts), default=None)
+        if best is None or best[0] < (HELD_REPEAT_ASK_RATIO if judged else REPEAT_RATIO):
+            return None
+        ratio, earlier_reply, earlier_user = best
+        return {"text": text, "heard": heard, "ratio": ratio, "earlier_reply": earlier_reply,
+                "earlier_user": earlier_user}
+
+    def _recent_exchanges(self, limit=3):
+        """(her reply, what the user had said) of the last few finished turns, heard or not."""
+        found = []
+        for turn in reversed(list(self.robot.turn_cache.values())):
+            if len(found) >= limit:
+                break
+            reply = str(turn.get("assistant_generated_text") or "").strip()
+            if (turn.get("turn_id") != self.turn_id and turn.get("status") == "completed"
+                    and turn.get("turn_source", "user") == "user" and reply):
+                found.append((reply, str(turn.get("user_text") or "")))
+        return found
+
+    async def _judge_held_repeat(self, repeated):
+        """again / new / not_for_her from the decision model; None when it cannot say."""
+        try:
+            answers, model = await self.ask_decision(held_repeat_state(
+                repeated["heard"], earlier_user=repeated["earlier_user"],
+                earlier_reply=repeated["earlier_reply"], reply=repeated["text"]),
+                {"repeat": HELD_REPEAT_QUESTION})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.info("held_repeat_judged robot=%s turn=%s ratio=%.2f error=%s",
+                        self.robot.config.robot_id, self.turn_id, repeated["ratio"], error_kind(exc))
+            return None
+        answer = answers.get("repeat") if isinstance(answers, dict) else None
+        answer = answer if isinstance(answer, dict) else {}
+        choice = answer.get("choice") if answer.get("choice") in HELD_REPEAT_QUESTION["criteria"] else None
+        self.decision_stats["repeat_checks"] += 1
+        self.publish("reply.held_repeat_judged", turn_id=self.turn_id, ratio=round(repeated["ratio"], 2),
+                     choice=choice, confidence=answer.get("confidence"), model=model,
+                     text=repeated["heard"][:80])
+        logger.info("held_repeat_judged robot=%s turn=%s ratio=%.2f choice=%s confidence=%s model=%s "
+                    "text=%r", self.robot.config.robot_id, self.turn_id, repeated["ratio"], choice,
+                    answer.get("confidence"), model, repeated["heard"][:30])
+        return choice
+
+    async def _ignore_utterance(self, item_id, text):
+        """Not for her after all: no reply, the turn is dropped, the line kept as side talk."""
+        self._finish("discarded", cancel_source="not_for_her")
+        await self._decline_utterance(item_id, text)
 
     async def _answer_without_repeat(self, repeated):
         """11-02 18:56:39: a held reply said her previous greeting again to an unrelated line."""
@@ -4572,6 +4659,9 @@ class RealtimeRobot:
                 # 10/21 17:26: deleting an item the provider had already
                 # dropped reset the whole session and its context.
                 self.publish("context.delete_missing_ignored")
+                return
+            if self._expected_marker_miss(event):
+                self.publish("context.marker_missing_ignored")
                 return
             refused = self._refused_recovered_answer(event)
             if refused is not None:
@@ -5093,7 +5183,7 @@ class RealtimeRobot:
             asked_again = False
             if self.wake or self._wake_held_events:
                 asked_again = await self._release_wake_response(
-                    generation, background_tools=background_tools)
+                    generation, background_tools=background_tools, item_id=item_id)
             if (recovering and target and target == self.turn_id and not self.response_id
                     and not asked_again):
                 await self._answer_recovered_call(target, item_id)

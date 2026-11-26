@@ -205,6 +205,45 @@ def test_no_look_from_d3_lets_her_early_reply_through(tmp_path):
     scenario(tmp_path, body, **looking(NONE))
 
 
+def test_a_look_d3_is_only_half_sure_of_is_no_look(tmp_path):
+    """11-25 demo: a line needing no look came back front at 0.54 and held her reply."""
+    async def body(rt, client):
+        await ask_held(client, "u10", "我一开始跟你说我今天穿的什么颜色的衣服？")
+        assert len(rt.d3.client.calls) == 1
+        assert kinds(client, "text.delta")  # the held reply was released
+        assert sent(client, "response.cancel") == []
+        assert kinds(client, "vision.intent.started") == [] and intents(rt) == []
+        decided = kinds(client, "vision.intent.decided")[-1]
+        assert (decided["choice"], decided["confidence"], decided["accepted"], decided["stale"]) == (
+            "front", .54, False, False)
+    scenario(tmp_path, body, **looking({"choice": "front", "confidence": .54}))
+
+
+def test_the_look_question_says_introducing_herself_needs_no_look():
+    """11-25 demo: “向面前的人介绍一下你自己” was judged front. The decision model decides, told
+    that introducing herself or talking to the people in front is no look (no phrase rule)."""
+    assert "介绍自己" in look_question()["criteria"]["none"]
+    assert "对面前的人说话" in look_question()["criteria"]["none"]
+
+
+@pytest.mark.parametrize("confidence,minimum,looks", [
+    (.6, None, True), (.59, None, False), (.95, None, True), (.7, .8, False), (.8, .8, True),
+    (.2, 0, True), (None, None, False), ("high", None, False), (True, None, False)])
+def test_the_confidence_threshold_decides_whether_she_looks(tmp_path, confidence, minimum, looks):
+    async def body(rt, client):
+        await ask_held(client, "u11", "水桶在哪里")
+        decided = kinds(client, "vision.intent.decided")[-1]
+        assert decided["accepted"] is looks
+        assert bool(kinds(client, "vision.intent.started")) is looks
+        assert bool(kinds(client, "text.delta")) is not looks
+        if looks:
+            await until(lambda: intents(rt))
+        else:
+            assert intents(rt) == []
+    options = {} if minimum is None else {"d3_min_confidence": minimum}
+    scenario(tmp_path, body, **looking({"choice": "front", "confidence": confidence}, **options))
+
+
 def test_a_slow_d3_holds_her_answer_only_until_the_timeout(tmp_path):
     async def body(rt, client):
         started = time.perf_counter()
@@ -258,6 +297,19 @@ def test_dashscope_judges_without_a_picture_while_d3_is_down(tmp_path):
     scenario(tmp_path, body, **looking())
 
 
+def test_the_confidence_gate_is_for_d3_only_the_fallback_judge_keeps_its_old_behaviour(tmp_path):
+    """11-14 “你看这边” was a real look at 0.33: the fallback judge's confidence is not calibrated."""
+    async def body(rt, client):
+        rt.d3.failed("ConnectError")
+        client.decision = FakeDecision({"choice": "front", "confidence": .33})
+        await ask_held(client, "u12", "你看这边")
+        await until(lambda: intents(rt))
+        decided = kinds(client, "vision.intent.decided")[-1]
+        assert (decided["judge"], decided["confidence"], decided["accepted"]) == (
+            "decision", .33, True)
+    scenario(tmp_path, body, **looking())
+
+
 def test_a_typed_question_is_judged_the_same_way(tmp_path):
     async def body(rt, client):
         accepted = await rt.realtime_text("a", "水桶在哪里")
@@ -288,6 +340,7 @@ def test_health_shows_the_judge_settings_and_the_camera_frames(tmp_path):
         assert frames.started and client.camera_frames is frames
         assert rt.health()["vision_look_decision"] == {
             "enabled": True, "scope": "cue", "timeout_ms": 700, "image": True,
+            "d3_min_confidence": 0.6,
             "camera_frames": {"a": {"status": "connected", "frames": 1}}}
         assert rt.health()["vision_intent"] == {"configured_robots": ["a"], "route": "cloud"}
     scenario(tmp_path, body, **looking(frames=frames))
@@ -306,7 +359,11 @@ def test_options_come_from_runtime_defaults_and_the_exhibit_livekit_env():
         vision = tomllib.load(file)["vision"]
     options = vision_intent_options(vision, LIVEKIT_ENV, ["annie-a", "annie-b"])
     assert options["vision_look_decision"] == {"enabled": True, "scope": "cue",
-                                               "timeout_ms": 700, "image": True}
+                                               "timeout_ms": 700, "image": True,
+                                               "d3_min_confidence": 0.6}
+    stricter = {"intent": {"decision": {"enabled": True, "d3_min_confidence": 0.8}}}
+    assert vision_intent_options(stricter, {}, [])["vision_look_decision"]["d3_min_confidence"] == 0.8
+    assert vision_intent_options({}, {}, [])["vision_look_decision"]["d3_min_confidence"] == 0.6
     assert options["livekit"] == {"url": "ws://192.168.1.13:7880", "api_key": "devkey",
                                   "api_secret": "lk-secret", "source": "camera-a",
                                   "rooms": {"annie-a": "robot-test"}}
@@ -338,7 +395,9 @@ def test_the_runtime_watches_livekit_only_for_cameras_d3_can_be_shown(tmp_path):
         vision_look_decision={"enabled": True}, livekit=livekit)
     assert no_judge.vision_look_decision is None and no_judge.camera_frames == {}
     for bad in ({"enabled": True, "scope": "every"}, {"enabled": True, "timeout_ms": 50},
-                {"enabled": "yes"}):
+                {"enabled": "yes"}, {"enabled": True, "d3_min_confidence": 1.5},
+                {"enabled": True, "d3_min_confidence": -0.1}, {"enabled": True, "d3_min_confidence": "high"},
+                {"enabled": True, "d3_min_confidence": True}):
         with pytest.raises(ValueError):
             runtime(tmp_path, vision_look_decision=bad)
 

@@ -5,12 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from annie_brain.decision_policy import HELD_REPEAT_QUESTION
 from annie_brain.inner_life import thought_prompt
 from annie_core import RobotConfig
 from annie_runtime import HarborRuntime
 from annie_runtime.realtime import CURRENT_TURN_RULE, visual_instructions
 from annie_runtime.wakeword import WakeAdmission
 
+from tests.test_decision_model import FakeDecision
 from tests.test_face_registration import FakeRegistry, run_live
 from tests.test_phase4_realtime import ROOT, FakeSocket
 
@@ -112,6 +114,58 @@ class HeldReplyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("「今晚天气怎么样」", notes[0])
         self.assertEqual(outbound[-1]["type"], "response.create")
         self.assertEqual(self.client._recovered_create["text"], "今晚天气怎么样")
+
+    def judged(self, choice):
+        """11-25: her last compliment, never confirmed played, lives only in the turn cache."""
+        self.client.decision = FakeDecision({"choice": choice, "confidence": .62})
+        self.client.robot.turn_cache["t9"] = {
+            "turn_id": "t9", "status": "completed", "turn_source": "user",
+            "user_text": "你能用陕西话夸一夸我吗？",
+            "assistant_generated_text": "哎呀，你这个人真是嫽咋咧！聪明又实在，跟你说话心里头美得很，舒坦！"}
+        return self.reply("stale", "stale-item",
+                          "好嘞，我这就用陕西话夸夸你。\n\n你这个人真是嫽得很！聪明又实在，跟你聊天心里头美滋滋的，舒坦！")
+
+    async def test_a_strangers_line_that_got_her_last_answer_again_is_ignored(self):
+        # 11-25 19:33:13: side talk came out as “透明优势感…” and got the compliment again.
+        await self.hear("q4", self.judged("not_for_her"), "透明优势感，肯定说话，肯定从魅力。")
+        outbound = self.client.socket.outbound
+        state, questions = self.client.decision.calls[0]
+        self.assertEqual(questions, {"repeat": HELD_REPEAT_QUESTION})
+        self.assertEqual(state["麦克风刚收到"], "透明优势感，肯定说话，肯定从魅力。")
+        self.assertIn("嫽咋咧", state["机器人前面回答的"])
+        self.assertIsNone(self.client.turn_id)
+        self.assertEqual(self.client.text, "")
+        self.assertIn({"type": "conversation.item.delete", "item_id": "stale-item"}, outbound)
+        self.assertIn({"type": "conversation.item.delete", "item_id": "q4"}, outbound)
+        self.assertFalse(any(item["type"] == "response.create" for item in outbound))
+        done = [e for e in self.client.events if e["kind"] == "turn.done"][-1]
+        self.assertEqual((done["status"], done["cancel_source"]), ("discarded", "not_for_her"))
+        judged = [e for e in self.client.events if e["kind"] == "reply.held_repeat_judged"][-1]
+        self.assertEqual(judged["choice"], "not_for_her")
+        self.assertEqual(self.client.decision_stats["repeat_checks"], 1)
+
+    async def test_a_new_line_that_got_her_last_answer_again_is_asked_again(self):
+        await self.hear("q5", self.judged("new"), "我叫海城。")
+        outbound = self.client.socket.outbound
+        self.assertIn({"type": "conversation.item.delete", "item_id": "stale-item"}, outbound)
+        self.assertTrue(any("已经撤回" in str(item) for item in outbound))
+        self.assertEqual(outbound[-1]["type"], "response.create")
+
+    async def test_asked_for_it_again_the_model_lets_the_same_answer_through(self):
+        await self.hear("q6", self.judged("again"), "再夸我一次呗。")
+        done = [e for e in self.client.events if e["kind"] == "turn.done"][-1]
+        self.assertEqual(done["status"], "completed")
+        self.assertIn("嫽得很", done["text"])
+        self.assertNotIn({"type": "conversation.item.delete", "item_id": "stale-item"},
+                         self.client.socket.outbound)
+
+    async def test_without_a_decision_model_only_the_old_rule_applies(self):
+        events = self.judged("not_for_her")
+        self.client.decision = None  # nobody to ask: a 0.7 likeness is not a repeat yet
+        await self.hear("q7", events, "透明优势感，肯定说话，肯定从魅力。")
+        done = [e for e in self.client.events if e["kind"] == "turn.done"][-1]
+        self.assertIn("嫽得很", done["text"])
+        self.assertFalse(any(e["kind"] == "reply.held_repeat_judged" for e in self.client.events))
 
     async def test_asked_to_say_it_again_she_says_it_again(self):
         await self.hear("q3", self.reply("again", "again-item", "小明，你来了呀"), "你再说一遍")

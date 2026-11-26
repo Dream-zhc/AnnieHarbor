@@ -232,6 +232,21 @@ def test_without_a_decision_model_a_named_dialect_is_trusted_for_one_reply(tmp_p
     live(tmp_path, body)
 
 
+def test_a_one_off_dialect_from_the_tool_is_gone_when_its_reply_ends(tmp_path):
+    """11-25: “你能用陕西话夸一夸我吗？” went through select_reply_style and the next, unrelated
+    reply (and its voice) stayed Shaanxi."""
+    async def body(rt, client):
+        await client.submit_text('用陕西话说一句话')
+        await client._tool_call({'call_id': 'o1', 'name': 'select_reply_style', 'arguments': json.dumps(
+            {'language': 'zh', 'dialect': 'shaanxi', 'emotion': 'playful'})})
+        assert client.language.intent['dialect'] == 'shaanxi'
+        client.language.response_finished()
+        assert client.language.intent is None
+        assert client.language.selection()['dialect'] != 'shaanxi'
+
+    live(tmp_path, body)
+
+
 def test_any_self_introduction_registers_and_the_rest_is_judged(tmp_path):
     registry = FakeRegistry()
     decision = FakeDecision({'choice': 'other', 'confidence': .8},
